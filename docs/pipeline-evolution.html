@@ -1,0 +1,1637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FORGE — Pipeline Evolution</title>
+<style>
+:root {
+  --gold: #e0c060;
+  --gold-dim: #a08840;
+  --bg: #111420;
+  --card: #1a1e2c;
+  --border: #303448;
+  --text: #f4f4f4;
+  --dim: #9098b0;
+
+  /* Established (blue) agents */
+  --est-bg: #142038;
+  --est-border: #2e5888;
+  --est-text: #80c8f8;
+  --est-dot: #4890d0;
+
+  /* New (green) agents */
+  --new-bg: #102c1c;
+  --new-border: #2a7048;
+  --new-text: #60d888;
+  --new-dot: #3aaa58;
+
+  /* Triage agents — purple */
+  --tri-bg: #1e1440;
+  --tri-border: #5038b8;
+  --tri-text: #c090ff;
+  --tri-dot: #9060d8;
+
+  /* Audit agents — lilac */
+  --aud-bg: #201630;
+  --aud-border: #603888;
+  --aud-text: #d0a0f0;
+  --aud-dot: #a870c8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Slide shell ── */
+#deck { flex: 1; position: relative; overflow: hidden; }
+
+.slide {
+  position: absolute; inset: 0;
+  display: none;
+  flex-direction: column;
+}
+.slide.active { display: flex; }
+
+/* ── Header ── */
+.hd {
+  flex-shrink: 0;
+  padding: 12px 28px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 14px;
+}
+.era-lbl {
+  font-size: 12px; font-weight: 700; letter-spacing: 2.5px;
+  text-transform: uppercase; color: var(--gold);
+  flex-shrink: 0;
+}
+.slide-title { font-size: 20px; font-weight: 700; }
+.slide-sub { font-size: 13px; color: var(--dim); margin-left: auto; font-style: italic; }
+
+/* ── Body ── */
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1px 380px;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.col-div { background: var(--border); }
+
+/* ── FORGE column ── */
+.forge-col {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  padding: 10px 14px 8px;
+  display: flex; flex-direction: column;
+}
+.forge-inner {
+  transform-origin: top left;
+  flex-shrink: 0;
+}
+
+/* ── Phase divider ── */
+.phase {
+  display: flex; align-items: center; gap: 8px;
+  margin: 5px 0 3px;
+  font-size: 9px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: #5a6070;
+}
+.phase::after { content:''; flex:1; height:1px; background:#303448; }
+
+/* ── Revision loop inline chip ── */
+.rev-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 6px; border-radius: 3px;
+  font-size: 12px; color: #c89040;
+  background: #221a08; border: 1px solid #786030;
+  flex-shrink: 0; white-space: nowrap;
+}
+.col-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 2.5px;
+  text-transform: uppercase; margin-bottom: 10px;
+}
+.col-lbl.forge { color: var(--gold); }
+.col-lbl.cmp   { color: #5090b8; }
+.col-lbl.gsd   { color: #58a060; }
+
+/* ── Compare column ── */
+.cmp-col {
+  padding: 14px 16px 10px;
+  display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto;
+  /* opacity set per-slide via JS */
+}
+.cmp-block { display: flex; flex-direction: column; gap: 8px; }
+.cmp-block + .cmp-block { padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* ── Description bar ── */
+.desc-bar {
+  flex-shrink: 0;
+  padding: 8px 28px;
+  border-top: 1px solid var(--border);
+  background: #181c28;
+  font-size: 13px; color: #b0b8cc; line-height: 1.5;
+  min-height: 36px;
+}
+.desc-bar strong { color: #90d8a8; }
+
+/* ── Pipeline rows ── */
+.pipe { display: flex; flex-direction: column; gap: 5px; }
+.row  { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.row-lbl {
+  font-size: 10px; color: var(--dim); letter-spacing: 1px;
+  text-transform: uppercase; margin-bottom: 1px;
+}
+
+/* ── Agent box ── */
+.ag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 5px;
+  font-size: 12px; font-weight: 600;
+  white-space: nowrap; border: 1px solid transparent;
+  transition: box-shadow 0.3s;
+}
+.ag .dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+
+/* Established — blue */
+.ag.est { background: var(--est-bg); border-color: var(--est-border); color: var(--est-text); }
+.ag.est .dot { background: var(--est-dot); }
+
+/* New — green */
+.ag.new { background: var(--new-bg); border-color: var(--new-border); color: var(--new-text); box-shadow: 0 0 8px #1a5a2a60; }
+.ag.new .dot { background: var(--new-dot); }
+
+/* Triage — purple (always established colour once introduced) */
+.ag.tri { background: var(--tri-bg); border-color: var(--tri-border); color: var(--tri-text); }
+.ag.tri .dot { background: var(--tri-dot); }
+.ag.tri.new { box-shadow: 0 0 8px #4a20a060; }
+
+/* Audit — lilac */
+.ag.aud { background: var(--aud-bg); border-color: var(--aud-border); color: var(--aud-text); }
+.ag.aud .dot { background: var(--aud-dot); }
+.ag.aud.new { box-shadow: 0 0 8px #6020a060; }
+
+/* Plain (compare side) */
+.ag.plain { background: #1e2030; border-color: #303448; color: #6068a0; }
+.ag.plain .dot { background: #404060; }
+.ag.user  { background: #22200e; border-color: #5a5020; color: var(--gold); }
+.ag.user .dot { background: var(--gold-dim); }
+
+/* ── Gate ── */
+.gate {
+  display: inline-flex; align-items: center;
+  padding: 5px 12px; border-radius: 5px;
+  font-size: 12px; font-weight: 700;
+  background: #201c00; border: 2px solid var(--gold-dim); color: var(--gold);
+  white-space: nowrap;
+}
+.gate.new { box-shadow: 0 0 12px #e0c06080; }
+
+/* ── Arrow ── */
+.arr { color: #505870; font-size: 13px; padding: 0 1px; }
+
+/* ── Groups ── */
+.grp {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 7px 9px; border-radius: 6px;
+}
+.grp.par { border: 1px dashed #2a4060; background: #0e1828; }
+.grp.par.new { border-color: #2a6050; background: #0e2018; box-shadow: 0 0 10px #2a7a4840; }
+.grp.wave { border: 1px dashed #204040; background: #0e1c1c; }
+.grp.wave.new { box-shadow: 0 0 10px #2a7a4840; }
+.grp-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; margin-bottom: 2px;
+}
+.grp.par .grp-lbl  { color: #5090b8; }
+.grp.wave .grp-lbl { color: #509050; }
+.grp.par.new .grp-lbl  { color: var(--new-text); }
+.grp.wave.new .grp-lbl { color: var(--new-text); }
+
+/* ── Injection badge ── */
+.inj {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 4px;
+  font-size: 10px;
+  background: #1c1830; border: 1px solid #5040a8; color: #b898f8;
+  white-space: nowrap;
+}
+.inj.new { box-shadow: 0 0 8px #7050d060; border-color: #6858d8; color: #d0b0ff; }
+
+/* ── Signal chips ── */
+.sigs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.sig {
+  padding: 2px 7px; border-radius: 3px;
+  font-size: 10px; font-family: monospace;
+  background: #201c0c; border: 1px solid #504820; color: #c8b060;
+}
+.sig.new { border-color: #687028; color: #e0d070; box-shadow: 0 0 6px #a0a03040; }
+
+/* ── Mode table ── */
+.modes { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.mode-row { display: flex; align-items: center; gap: 6px; }
+.mode-tag {
+  padding: 2px 8px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  white-space: nowrap;
+}
+.mode-tag.sprint { background: #0c2010; border: 1px solid #387030; color: #88e048; }
+.mode-tag.lean   { background: #102828; border: 1px solid #307878; color: #60d0d0; }
+.mode-tag.std    { background: #282810; border: 1px solid #787830; color: #d8d050; }
+.mode-tag.full   { background: #200e28; border: 1px solid #703878; color: #c868d8; }
+.mode-desc { font-size: 10px; color: #707890; }
+
+/* ── Navigation ── */
+#nav {
+  height: 40px; background: #080808;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center;
+  justify-content: space-between; padding: 0 20px;
+  flex-shrink: 0;
+}
+.nbtn {
+  padding: 5px 16px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text); font-size: 12px; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.nbtn:hover { border-color: var(--gold); color: var(--gold); }
+.nbtn:disabled { opacity: .3; cursor: default; }
+.nbtn:disabled:hover { border-color: var(--border); color: var(--text); }
+
+#prog { display: flex; align-items: center; gap: 10px; }
+#ctr { font-size: 11px; color: var(--dim); min-width: 52px; text-align: center; }
+.dots { display: flex; gap: 4px; }
+.dot-nav {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--border); cursor: pointer;
+  transition: background .15s;
+}
+.dot-nav.on { background: var(--gold); }
+.dot-nav:hover { background: var(--gold-dim); }
+
+/* ── Orchestrator box ── */
+.ag.orc { background: #20180a; border-color: #806030; color: #d0a848; }
+.ag.orc .dot { background: #907830; }
+
+/* ── Fan dispatch layout (triage → individual agents) ── */
+.fan { display: inline-flex; align-items: center; gap: 6px; }
+.fan-body { display: flex; flex-direction: column; gap: 3px; }
+.fan-row { display: flex; align-items: center; gap: 4px; }
+
+/* ── Triage deep-dive slide ── */
+.triage-board {
+  display: flex; flex-direction: column; gap: 5px;
+  border: 1px solid #2a4060; border-radius: 7px;
+  padding: 8px 12px; background: #0e1828;
+  align-self: center;
+}
+.tri-row { display: flex; align-items: center; gap: 6px; }
+.tri-row.skipped { opacity: 0.72; }
+.expt {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 7px; border-radius: 3px; min-width: 136px;
+  font-size: 10px; font-family: monospace;
+  background: #141e30; border: 1px solid #305878; color: #88c0e8;
+  white-space: nowrap;
+}
+.skip-note { font-size: 10px; color: #7090a8; min-width: 136px; text-align: center; font-style: italic; }
+.skip-ag {
+  display: inline-flex; align-items: center;
+  padding: 4px 8px; border-radius: 5px;
+  font-size: 11px; font-weight: 600;
+  background: #181c28; border: 1px dashed #404858; color: #6870a0;
+}
+.skip-mark { color: #c04848; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
+/* ── Mode deep-dive slide ── */
+.mode-block { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 6px; margin: 2px 0; }
+.mode-block.sprint { background: #0e1e10; border: 1px solid #2e6828; }
+.mode-block.lean   { background: #0e2020; border: 1px solid #307070; }
+.mode-block.std    { background: #201e08; border: 1px solid #707030; }
+.mode-block.full   { background: #1a0e20; border: 1px solid #683878; }
+.mode-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.mode-note { font-size: 10px; }
+.mode-block.sprint .mode-note { color: #80d858; }
+.mode-block.lean   .mode-note { color: #60b8b8; }
+.mode-block.std    .mode-note { color: #b8b048; }
+.mode-block.full   .mode-note { color: #c070d0; }
+
+/* ── Capability matrix ── */
+.cap-matrix { display: grid; grid-template-columns: 1.6fr repeat(5, 1fr); border: 1px solid #2a2e48; border-radius: 8px; overflow: hidden; }
+.cap-c { padding: 5px 8px; border-bottom: 1px solid #1e2238; font-size: 10px; display: flex; align-items: center; justify-content: center; }
+.cap-c.lbl { justify-content: flex-start; color: var(--dim); font-size: 10px; background: #14182a; padding-left: 10px; }
+.cap-c.hdr { background: #1c2038; font-weight: 700; font-size: 10px; padding: 7px 6px; flex-direction: column; gap: 2px; }
+.cap-c:last-child, .cap-c.no-border { border-bottom: none; }
+.cap-yes  { color: #60d870; font-size: 15px; font-weight: 700; }
+.cap-no   { color: #30344a; font-size: 15px; }
+.cap-part { color: #c8a040; font-size: 9px; text-align: center; line-height: 1.3; }
+.cap-cost { font-size: 9px; font-weight: 700; text-align: center; line-height: 1.3; }
+.cap-best { font-size: 8px; color: var(--dim); text-align: center; line-height: 1.4; font-style: italic; }
+.cap-gsd  { background: #141820; }
+.cap-spr  { background: #0e1c12; }
+.cap-lean { background: #0e1c1c; }
+.cap-std  { background: #1c1c0c; }
+.cap-full { background: #180e1c; }
+
+/* ── Signal deep-dive slide ── */
+.sig-table { display: flex; flex-direction: column; gap: 5px; }
+.sig-row { display: flex; align-items: baseline; gap: 8px; }
+.sig-chip-lbl {
+  font-size: 10px; font-family: monospace;
+  padding: 2px 7px; border-radius: 3px;
+  background: #201c0c; border: 1px solid #504820; color: #c8b060;
+  white-space: nowrap; flex-shrink: 0; min-width: 148px; text-align: center;
+}
+.sig-chip-lbl.new { border-color: #687028; color: #e0d070; }
+.sig-arrow { color: #4a9060; font-size: 11px; flex-shrink: 0; }
+.sig-effect { font-size: 10px; color: #8898a8; line-height: 1.4; flex: 1; }
+.sig-ui-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 3px; flex-shrink: 0;
+  white-space: nowrap;
+}
+.sig-ui-tag.gate  { background: #20180a; border: 1px solid #705820; color: #c09040; }
+.sig-ui-tag.ui    { background: #101828; border: 1px solid #284870; color: #6090c0; }
+.sig-ui-tag.loop  { background: #1c1010; border: 1px solid #502828; color: #c04848; }
+.sig-ui-tag.board { background: #101c10; border: 1px solid #285028; color: #60b060; }
+.sig-ui-tag.tab   { background: #140e20; border: 1px solid #382858; color: #9070c0; }
+.sig-ui-tag.wave  { background: #0e1c20; border: 1px solid #285058; color: #58a8b8; }
+.sig-divider { border: none; border-top: 1px solid #252838; margin: 2px 0; }
+
+/* ── Tooltip trigger indicator ── */
+[data-tip] { cursor: help; }
+[data-tip]:hover { filter: brightness(1.25); }
+
+/* ── Tooltip popup ── */
+#tip {
+  position: fixed; z-index: 9999;
+  max-width: 300px;
+  background: #1e2238; border: 1px solid #404868;
+  border-radius: 7px; padding: 10px 14px;
+  font-size: 13px; color: #d8dce8; line-height: 1.6;
+  box-shadow: 0 8px 28px #00000090;
+  pointer-events: none;
+  opacity: 0; transition: opacity 0.12s;
+}
+#tip.show { opacity: 1; }
+#tip strong { color: var(--gold); }
+
+/* ── New pip on agent ── */
+.new-pip {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--new-text); flex-shrink: 0;
+  animation: pulse-pip 1.6s ease-in-out infinite;
+}
+@keyframes pulse-pip { 0%,100%{opacity:1} 50%{opacity:0.3} }
+</style>
+</head>
+<body>
+<div id="deck"></div>
+<div id="nav">
+  <button class="nbtn" id="prev" onclick="go(-1)" disabled>← Prev</button>
+  <div id="prog"><div class="dots" id="dots"></div><span id="ctr"></span></div>
+  <button class="nbtn" id="next" onclick="go(1)">Next →</button>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// Helpers to build pipeline HTML
+// ─────────────────────────────────────────────────────────
+// Auto-tooltip lookup — any agent or gate with a recognised label gets a tip
+// without needing it passed explicitly at every call site.
+const TIPS = {
+  'planner':              'Breaks the feature into numbered tasks. Writes docs/PLAN.md. No code written yet.',
+  'researcher':           'Investigates technical unknowns raised by the planner. Writes findings to docs/RESEARCH/. Skipped in LEAN mode.',
+  'gotcha-checker':       'Cross-references the plan against known pitfalls in GENERAL.md and SKILLS.md. Catches avoidable mistakes before the coder starts.',
+  'coder':                'Writes docs/context/handoff.md — the implementation staging document. Never touches source files.',
+  'reviewer-triage':      'Reads the full handoff once, extracts a focused excerpt per reviewer domain, dispatches only the reviewers that are actually needed.',
+  'reviewer':             'Checks IPC boundaries, layer violations (renderer↔main separation), and TypeScript correctness.',
+  'reviewer-safety':      'Checks for shell injection, IPC vulnerabilities, path traversal, and unsafe Electron config.',
+  'reviewer-logic':       'Checks async flows, state mutations, re-entrancy risks, and conditional logic correctness.',
+  'reviewer-style':       'Checks naming conventions, formatting, and code structure patterns. Runs on Haiku to keep cost low.',
+  'reviewer-performance': 'Checks loops, reactive state, file reads, and DOM update patterns that would cause sluggish UI.',
+  'implementer':          'The only agent that writes to source files. Runs wave by wave after Gate #2 — parallel tasks per wave.',
+  'documenter':           'Updates CHANGELOG, ARCHITECTURE, and DECISIONS after implementation. Archives the completed plan section.',
+  'cleanup':              'Removes stale pipeline artefacts after every apply run: deletes the RESEARCH file for the shipped feature, trims features.json to 50 entries, archives PLAN-archive.md when oversized, wipes docs/context/reviewer-output/.',
+  'tool-call-auditor':    'Runs automatically after every apply cycle. Scans audit-log.jsonl for anti-patterns: repeated file reads, tool storms, blind writes. Only emits [auditor-recurring] when a pattern repeats across multiple runs — single occurrences are ignored.',
+  'agent-optimizer':      'Reads recurring audit findings and writes targeted prompt-fix proposals. Triggered only on recurring patterns.',
+  'architect':            'On-demand utility agent (direct: run architect). Audits the full codebase and writes ARCHITECTURE.md plus modules.json. Five focus modes: FULL, HEALTH, GAPS, CROSS-MODULE, REFACTOR. Output is cached and injected into every subsequent pipeline run.',
+  'integrity-checker':   'On-demand diagnostic agent (direct: integrity check). Runs 7 pipeline health checks: board validity, stale handoff, orphaned plan tasks, unresolved test items, custom agent shadowing, unregistered stack detection, missing archive directory.',
+  'nyquist-auditor':     'On-demand agent (direct: nyquist audit). Reads the most recent plan section and flags any user-observable requirements with no automated test stub. Writes stub files to docs/tests/<feature-slug>/.',
+  'skills-generator':    'On-demand agent (direct: generate skills for <stack>). Generates or updates SKILLS.md for one or more tech stacks. Used when onboarding a new project type.',
+  'regression-risk':      'Post-coder Haiku agent. Reads modules.json + handoff.md, identifies which modules are touched, and emits [health] signals for high-coupling or high-churn modules. Runs in STANDARD and FULL — skipped in LEAN and SPRINT.',
+  'completeness-checker': 'Post-coder Haiku agent. Verifies every active [ ] task in PLAN.md is addressed in handoff.md before the reviewer wave. Emits [reviewer-verdict] BLOCK if tasks are unaddressed — stops wasted reviewer tokens before they are spent.',
+  'spec agent':           'Opt-in pre-planner Haiku agent. Writes a structured spec to docs/SPEC.md with acceptance criteria, out-of-scope items, and open questions. Activated via "specAgent": true in project.json.',
+  'tdd agent':            'Opt-in pre-coder Haiku agent. Writes Given/When/Then test criteria to docs/TEST-CRITERIA.md before the coder runs. Gives the coder explicit pass/fail targets per task. Activated via "tddAgent": true in project.json.',
+  'domain-context':       'Pre-planner Haiku agent. Checks the feature request against docs/DOMAIN.md domain rules before the planner runs. Activated by the presence of a domain-context.md file in the project\'s .claude/agents/ directory.',
+  'observer':             'On-demand Haiku agent (direct: run observer). Logs reasoning-level agent behaviour patterns to docs/observer-log.jsonl. Feeds the agent-optimizer with context beyond raw tool calls.',
+  'researcher-triage':    'Reads PLAN.md once, extracts one focused brief per research question, then dispatches parallel researcher instances.',
+  'intent classifier':         'Haiku agent. Reads your message and routes automatically to the correct pipeline. Also recommends SPRINT/LEAN/STANDARD/FULL based on risk.',
+  'intent classifier (Haiku)': 'Haiku agent. Reads your message and routes automatically to the correct pipeline. Also recommends SPRINT/LEAN/STANDARD/FULL based on risk.',
+  'You': 'Your entry point. You write the feature description, approve the plan at Gate #1, and approve the implementation at Gate #2. Nothing proceeds or writes to disk without your explicit sign-off.',
+  'orchestrator': 'Claude Code following CLAUDE.md. Reads your message, decides which pipeline to run, and dispatches agents in sequence. Invisible during normal use — it is the engine behind every pipeline run.',
+  'Gate #1': 'You approve the plan here. Nothing proceeds to the coder until you say yes.',
+  'Gate #2': 'You approve the implementation here. Nothing writes to disk until you say yes.',
+
+  // ── Injection / context badges ──
+  '📁 .pipeline/ + CLAUDE.md + docs/ — auto-scaffolded': 'Wizard creates the full project structure on first setup: board.json, features.json, PLAN.md, ARCHITECTURE.md, CLAUDE.md with pipeline instructions, and the docs/ folder.',
+  '📁 .pipeline/ + CLAUDE.md scaffold':                  'Project scaffold created by the wizard: board.json, PLAN.md, CLAUDE.md with pipeline routing instructions.',
+  '📁 scaffold':                                          'Standard project scaffold: .pipeline/, docs/, CLAUDE.md. Created once by the wizard; agents read it on every run.',
+  '📦 modules.json + ARCHITECTURE.md':                   'Architect agent output: modules.json maps every functional module to its source files; ARCHITECTURE.md describes the system in prose. Both power the MODULES tab.',
+  '📦 modules.json':                                     'Module map written by the architect. Lists every functional module and its source files. Powers the MODULES tab and helps agents understand project structure.',
+  '📋 project.json → SKILLS.md filter → --append-system-prompt': 'Each project declares its tech stack in project.json. FORGE filters the matching SKILLS.md sections and injects them via --append-system-prompt so agents know the stack-specific gotchas without reading extra files.',
+  '📋 SKILLS injection':                                 'FORGE-owned SKILLS.md (lives in the app, not your project) filtered at runtime by your project\'s techStackLabels in project.json. Only matching sections are injected. Project-specific gotchas go in GENERAL.md — never in SKILLS.md.',
+  '📦 module map':                                       'modules.json injected so agents know which files belong to which feature area. Reduces unnecessary file reads.',
+  '🪝 ctx-post-tool.js → audit-log.jsonl (every tool call)': 'A Claude Code hook that records every tool call to docs/audit-log.jsonl. The tool-call auditor reads this after each run to flag repeated reads, tool storms, and blind writes.',
+  '🪝 audit hook':                                       'Post-tool hook (ctx-post-tool.js) records every tool call to audit-log.jsonl. Powers the tool-call auditor and agent-optimizer feedback loop.',
+  '[questions] → UI strip → you answer':                 'Planner detected ambiguity and emitted [questions]…[/questions]. The UI intercepts this signal and shows a Q&A strip. The planner reruns with your answers before proceeding.',
+  '[questions] → Q&A strip':                             'When the planner emits [questions], the UI shows an inline Q&A strip. You answer in plain text; the planner does a second pass with your answers before the pipeline continues.',
+};
+
+const a = (label, cls, isNew, tip='') => {
+  const t = tip || TIPS[label] || '';
+  return `<div class="ag ${cls}${isNew?' new':''}" ${t?`data-tip="${t.replace(/"/g,'&quot;')}"`:''} >${isNew?'<span class="new-pip"></span>':''}<span class="dot"></span>${label}</div>`;
+};
+
+const est = (label, cls='est', tip='') => a(label, cls, false, tip);
+const nw  = (label, cls='est', tip='') => a(label, cls, true,  tip);
+const arrow = () => `<span class="arr">→</span>`;
+const gate  = (label, isNew, tip='') => {
+  const t = tip || TIPS[label] || '';
+  return `<div class="gate${isNew?' new':''}" ${t?`data-tip="${t.replace(/"/g,'&quot;')}"`:''} >${label}</div>`;
+};
+const row   = (...items) => `<div class="row">${items.join('')}</div>`;
+const rlbl  = t => `<div class="row-lbl">${t}</div>`;
+const phase = t => `<div class="phase">${t}</div>`;
+const revchip = (isplan=false) => {
+  const tip = isplan
+    ? 'if REVISE → planner revises PLAN.md · only failing reviewers rerun · max 3 cycles · cap hit: escalates to you'
+    : 'if REVISE → coder revises handoff · reviewers rerun · max 2 cycles · cap hit: escalates to you';
+  return `<span class="rev-chip" data-tip="${tip}">↺</span>`;
+};
+
+const par = (isNew, lbl, ...items) =>
+  `<div class="grp par${isNew?' new':''}">
+    <div class="grp-lbl">${lbl}</div>
+    <div class="row">${items.join('')}</div>
+  </div>`;
+
+const wave = (isNew, lbl, ...rows) =>
+  `<div class="grp wave${isNew?' new':''}">
+    <div class="grp-lbl">${lbl}</div>
+    ${rows.join('')}
+  </div>`;
+
+const inj = (icon, text, isNew) =>
+  `<div class="inj${isNew?' new':''}">${icon} ${text}</div>`;
+
+const SIG_TIPS = {
+  '[suggest]':          'An agent output a follow-up suggestion. Appears as a chip in the prompt area; click to pre-fill it as your next message.',
+  '[todo]':             'Agent created a new TODO item on the board automatically during this run.',
+  '[summary]':          'End-of-pipeline summary. Intercepted by the orchestrator to build the Gate #1 or Gate #2 approval dialog — not shown raw.',
+  '[reviewer-verdict]': 'Structured verdict from a reviewer: APPROVED, REVISE, or BLOCK, plus blocker and warning counts. Intercepted — the orchestrator reads it to decide whether to loop, proceed, or escalate.',
+  '[wave-complete]':    'Implementer finished one wave of parallel tasks. Orchestrator uses this to sequence the next wave.',
+  '[health]':           'Health warning emitted by the architect or integrity-checker. Surfaced in the HEALTH tab as a flagged item.',
+  '[questions]':        'Planner detected ambiguity. Questions shown in the QA strip for you to answer; planner reruns with your answers before the pipeline continues.',
+  '[/questions]':       'Closes the [questions] block. Everything between [questions] and [/questions] is the list of questions shown in the QA strip.',
+  '[auditor-recurring]':'Tool-call auditor found a pattern that repeats across multiple runs (e.g. the same file read 5+ times). Triggers the agent-optimizer to propose a prompt fix.',
+  '[brief-for: N]':     'researcher-triage output: one focused brief per research question. Orchestrator dispatches one researcher instance per brief, running in parallel.',
+};
+
+// Fan dispatch: triage agent fans out to individual target agents
+const fan = (src, ...targets) =>
+  `<div class="fan">${src}<div class="fan-body">${targets.map(t=>`<div class="fan-row">${arrow()}${t}</div>`).join('')}</div></div>`;
+
+const sigs = (chips) =>
+  `<div class="sigs">${chips.map(([t,n]) => {
+    const tip = SIG_TIPS[t] || '';
+    return `<span class="sig${n?' new':''}" ${tip?`data-tip="${tip.replace(/"/g,'&quot;')}"`:''} >${t}</span>`;
+  }).join('')}</div>`;
+
+// ─────────────────────────────────────────────────────────
+// Slide data
+// ─────────────────────────────────────────────────────────
+// scale: applied to forge-inner transform
+// fade:  opacity applied to cmp-col (1.0 → dim)
+// desc:  what's NEW this era (HTML allowed)
+// forge: function returning HTML string for the full cumulative pipeline
+// ─────────────────────────────────────────────────────────
+
+const slides = [
+// ══ ERA 1 ══════════════════════════════════════════════
+{
+  era:'Era 1 · 2026-03-11', title:'UI for Claude', scale:1.0, fade:1.00, noYouRow:true,
+  sub:'FORGE begins as a lightweight wrapper — the field is level',
+  desc:`<strong>New:</strong> Electron wrapper around Claude CLI. <strong>TODO tab</strong> for tracking backlog items · <strong>PLANNED tab</strong> for in-progress features. No pipeline, no agents — just a structured place to work freeform with Claude.`,
+  forge: () => `<div class="pipe">
+    ${row( nw('You','user'), arrow(), nw('Claude CLI','est') )}
+    ${rlbl('day-one UI — the reason FORGE exists')}
+    <div style="display:flex;gap:6px;margin-top:2px;">
+      <div style="flex:1;padding:6px 10px;background:#101828;border:1px solid #202e48;border-radius:5px;">
+        <div style="font-size:9px;color:#4870a8;font-weight:700;margin-bottom:4px;">TODO</div>
+        <div style="font-size:8px;color:#303858;line-height:1.7;">• add settings page<br>• fix terminal scroll<br>• dark mode toggle</div>
+      </div>
+      <div style="flex:1;padding:6px 10px;background:#101828;border:1px solid #202e48;border-radius:5px;">
+        <div style="font-size:9px;color:#4870a8;font-weight:700;margin-bottom:4px;">PLANNED</div>
+        <div style="font-size:8px;color:#303858;line-height:1.7;">• settings page<div style="font-size:7px;color:#253050;font-style:italic">moved from TODO — being worked</div></div>
+      </div>
+    </div>
+  </div>`
+},
+// ══ ERA 2 ══════════════════════════════════════════════
+{
+  era:'Era 2', title:'Project Scaffolding', scale:1.0, fade:0.95, noYouRow:true,
+  sub:'New projects no longer start blank',
+  desc:`<strong>New:</strong> Wizard creates <strong>.pipeline/</strong>, <strong>CLAUDE.md</strong>, and the full docs structure automatically on every new project.`,
+  forge: () => `<div class="pipe">
+    ${row( est('You','user'), arrow(), est('Claude CLI') )}
+    ${row( nw('📁 .pipeline/ + CLAUDE.md + docs/ — auto-scaffolded','inj') )}
+  </div>`
+},
+// ══ ERA 3 ══════════════════════════════════════════════
+{
+  era:'Era 3', title:'The First Linear Pipeline', scale:1.0, fade:0.9,
+  sub:'Specialist agents replace the "do everything" prompt',
+  desc:`<strong>New:</strong> <strong>planner</strong> breaks the feature into tasks · <strong>researcher</strong> investigates unknowns · <strong>coder</strong> writes the implementation. Structured, sequential, specialist.`,
+  forge: () => `<div class="pipe">
+    ${row( nw('planner'), arrow(), nw('researcher'), arrow(), nw('coder'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 .pipeline/ + CLAUDE.md scaffold','inj') )}
+  </div>`
+},
+// ══ ERA 4 ══════════════════════════════════════════════
+{
+  era:'Era 4', title:'Gate #1 and the First Reviewer', scale:0.95, fade:0.85,
+  sub:'Human approval enters the loop',
+  desc:`<strong>New:</strong> <strong>gotcha-checker</strong> audits the plan · <strong>Gate #1</strong> — first human checkpoint, you explicitly approve before coder runs · single <strong>reviewer</strong> checks output before shipping.`,
+  forge: () => `<div class="pipe">
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), nw('gotcha-checker','est'), arrow(), nw('Gate #1',true), arrow(), est('coder'), arrow(), nw('reviewer'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 scaffold','inj') )}
+  </div>`
+},
+// ══ ERA 5 ══════════════════════════════════════════════
+{
+  era:'Era 5', title:'Gate #2 and the Reviewer Expansion', fade:0.78,
+  sub:'Nothing touches disk without human approval',
+  desc:`<strong>New:</strong> <strong>Gate #2</strong> — implementation cannot write to source files without approval · <strong>reviewer-safety</strong> and <strong>reviewer-logic</strong> join as specialist reviewers, running in parallel.`,
+  forge: () => `<div class="pipe">
+    ${phase('plan phase')}
+    ${row( est('planner','est','Breaks the feature into numbered tasks, wave annotations, and a Research needed section.'), arrow(), est('researcher','est','Investigates technical unknowns. Writes findings to docs/RESEARCH/.'), arrow(), est('gotcha-checker','est','Audits the plan for known pitfalls before Gate #1.'), arrow(), est('reviewer','est','Boundary reviewer — checks IPC contracts and layer violations in the plan.'), revchip(true), arrow(), est('Gate #1',false,'You approve the plan here. Nothing proceeds until you click yes.') )}
+    ${phase('implement phase')}
+    ${row( est('coder','est','Writes the implementation handoff document. Never touches source files.'), arrow(),
+      par(true,'parallel reviewers', est('reviewer'), nw('reviewer-safety','est','Checks for shell injection, IPC vulnerabilities, file path traversal, and unsafe Electron config.'), nw('reviewer-logic','est','Checks async flows, state mutations, re-entrancy risks, and conditional logic.')),
+      revchip(), arrow(), nw('Gate #2',true,'You approve the implementation here. Nothing writes to disk until you click yes.'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 scaffold','inj') )}
+  </div>`
+},
+// ══ TRIAGE DEEP DIVE ═══════════════════════════════════
+{
+  era:'Deep Dive', title:'How Reviewer-Triage Works', scale:0.88, fade:0.75, noYouRow:true,
+  sub:'Read once · excerpt per domain · skip what isn\'t needed',
+  desc:`<strong>reviewer-triage</strong> sits between the coder and the reviewer pool. It reads <strong>handoff.md</strong> in full exactly once, then extracts a small domain-scoped excerpt for each reviewer type. Reviewers whose domain has no relevant changes are skipped entirely. Each active reviewer sees only its excerpt — never the full document. Result: fewer tokens spent, no reviewer wasting context on irrelevant sections, and no blind-spots from over-narrowing.`,
+  forge: () => `<div class="pipe" style="align-items:center;">
+    ${row( inj('📄', 'handoff.md — full implementation staging doc', false) )}
+    ${row( arrow() )}
+    ${row( est('reviewer-triage','tri') )}
+    <div style="font-size:8px;color:#3a5a6a;text-align:center;margin:3px 0 6px;line-height:1.5">reads full doc <em>once</em> · extracts domain excerpts · decides which reviewers are needed</div>
+    <div class="triage-board">
+      <div class="tri-row dispatched">
+        <span class="expt" data-tip="Lines covering IPC channel definitions, preload bridge entries, and TypeScript type declarations — the boundary reviewer&#39;s domain.">boundary excerpt</span>
+        ${arrow()}
+        ${est('reviewer')}
+      </div>
+      <div class="tri-row dispatched">
+        <span class="expt" data-tip="Lines covering file path operations, shell invocations, and contextBridge usage — the safety reviewer&#39;s domain.">security excerpt</span>
+        ${arrow()}
+        ${est('reviewer-safety')}
+      </div>
+      <div class="tri-row skipped">
+        <span class="skip-mark">✗</span>
+        <span class="skip-note">no async or state-mutation changes</span>
+        <span class="skip-ag">reviewer-logic</span>
+      </div>
+      <div class="tri-row dispatched">
+        <span class="expt" data-tip="Lines covering new function signatures, variable names, and code structure — the style reviewer&#39;s domain.">style excerpt</span>
+        ${arrow()}
+        ${est('reviewer-style')}
+      </div>
+      <div class="tri-row skipped">
+        <span class="skip-mark">✗</span>
+        <span class="skip-note">no loops, reactive state, or DOM writes</span>
+        <span class="skip-ag">reviewer-performance</span>
+      </div>
+    </div>
+    <div style="font-size:8px;color:#3a5a6a;text-align:center;margin:6px 0 2px">each reviewer returns a verdict</div>
+    ${row( sigs([['[reviewer-verdict]',false],['[reviewer-verdict]',false],['[reviewer-verdict]',false]]) )}
+  </div>`
+},
+// ══ ERA 6 ══════════════════════════════════════════════
+{
+  era:'Era 6', title:'Five Reviewers · Triage · Coder/Implementer Split', fade:0.72,
+  sub:'The handoff becomes the staging area — nothing writes to disk before Gate #2',
+  desc:`<strong>New:</strong> <strong>reviewer-style</strong> + <strong>reviewer-performance</strong> · <strong>reviewer-triage</strong> routes to only needed reviewers · <strong>coder</strong> now only writes the handoff · <strong>implementer</strong> is the sole disk writer · <strong>documenter</strong> closes every feature.`,
+  forge: () => `<div class="pipe">
+    ${phase('plan phase')}
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(nw('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1','false','You approve the plan. Nothing proceeds until you say yes.') )}
+    ${phase('implement phase')}
+    ${row( est('coder','est','Writes handoff.md only — the staging document. Never touches source files.'), arrow(), fan(nw('reviewer-triage','tri','Reads the handoff once and decides which reviewers need to run. Skips unnecessary reviewers.'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), nw('reviewer-style','est','Checks naming conventions, formatting, and code structure patterns.'), nw('reviewer-performance','est','Checks loops, reactive state, file reads, and DOM updates triggered by user actions.')), revchip(), arrow(), est('Gate #2',false,'You approve the implementation. Nothing writes to disk until you say yes.') )}
+    ${phase('apply phase')}
+    ${row( nw('implementer','est','The only agent that writes to source files. Runs wave by wave after Gate #2.'), arrow(), nw('documenter','est','Updates CHANGELOG, ARCHITECTURE, DECISIONS, and archives the completed plan section.'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 scaffold','inj') )}
+  </div>`
+},
+// ══ ERA 7 ══════════════════════════════════════════════
+{
+  era:'Era 7', title:'Wave Execution', scale:0.72, fade:0.65,
+  sub:'Independent tasks run in parallel — wall-clock time drops significantly',
+  desc:`<strong>New:</strong> Planner annotates tasks with <strong>(wave: N)</strong> markers. Implementer runs all wave-N tasks in parallel, then wave N+1. Parallelism is explicit and auditable — never automatic.`,
+  forge: () => `<div class="pipe">
+    ${phase('plan phase')}
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${phase('apply phase')}
+    ${wave(true,'implementer — wave execution',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, nw('task A'), nw('task B'), nw('task C'), `<span style="font-size:9px;color:#3a8a50">parallel</span>`),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, nw('task D'), nw('task E'), `<span style="font-size:9px;color:#3a8a50">parallel</span>`)
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 scaffold','inj') )}
+  </div>`
+},
+// ══ ERA 8 ══════════════════════════════════════════════
+{
+  era:'Era 8', title:'Modular Building', scale:0.66, fade:0.58,
+  sub:'The codebase gets a structured map — agents stop guessing architecture',
+  desc:`<strong>New:</strong> <strong>architect</strong> agent (on-demand) reads the codebase and produces a module map written to <strong>modules.json</strong> and <strong>ARCHITECTURE.md</strong>. All plan-phase agents inherit this structured understanding.`,
+  forge: () => `<div class="pipe">
+    ${rlbl('on-demand')}
+    ${row( nw('architect','est'), arrow(), nw('📦 modules.json + ARCHITECTURE.md','inj') )}
+    ${rlbl('plan phase — all agents inherit module map')}
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${phase('apply phase')}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B'), est('task C')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 scaffold','inj') )}
+  </div>`
+},
+// ══ ERA 9 ══════════════════════════════════════════════
+{
+  era:'Era 9', title:'Tech Stacks and the SKILLS System', scale:0.61, fade:0.5,
+  sub:'Agents become stack-aware by injection — prompts stay lean',
+  desc:`<strong>New:</strong> Wizard collects the project's tech stack. <strong>SKILLS.md</strong> holds per-agent, per-stack rules filtered at runtime — only matching content is injected. Reviewer-safety gets Electron rules on Electron projects; nothing extra on vanilla HTML.`,
+  forge: () => `<div class="pipe">
+    ${row( nw('📋 project.json → SKILLS.md filter → --append-system-prompt','inj') )}
+    ${rlbl('on-demand')}
+    ${row( est('architect','est'), arrow(), est('📦 modules.json + ARCHITECTURE.md','inj') )}
+    ${rlbl('plan phase — stack-aware injection on every agent')}
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${phase('apply phase')}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('📁 scaffold','inj') )}
+  </div>`
+},
+// ══ PIPELINE MODES DEEP DIVE ════════════════════════════
+{
+  era:'Deep Dive', title:'Pipeline Modes — SPRINT · LEAN · STANDARD · FULL', scale:0.72, fade:0.46, noYouRow:true,
+  sub:'Same agents, different coverage — cost scales with risk',
+  desc:`<strong>SPRINT</strong> skips the plan entirely — coder works directly from your description, one Gate #2 checkpoint before disk writes. <strong>LEAN</strong> adds a structured plan, Gate #1, and one reviewer. <strong>STANDARD</strong> adds gotcha-checking and reviewer-triage so only relevant reviewers run. <strong>FULL</strong> runs everything unconditionally — all five reviewers every time.`,
+  forge: () => `<div class="pipe">
+    <div class="mode-block sprint">
+      <div class="mode-hdr">
+        <span class="mode-tag sprint">SPRINT</span>
+        <span class="mode-note">GSD-speed · no plan · no reviewers · coder works from your description · Gate #2 before any disk writes</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#88e048;white-space:nowrap">~$0.10–0.30 <span style="font-weight:400;font-size:9px;color:#4a8030">per feature</span></span>
+      </div>
+      ${row( est('coder'), revchip(), arrow(), est('Gate #2'), arrow(), `<span style="color:#3a8a50;font-size:10px;font-weight:600">apply</span>` )}
+    </div>
+    <div class="mode-block lean">
+      <div class="mode-hdr">
+        <span class="mode-tag lean">LEAN</span>
+        <span class="mode-note">fast · no gotcha-checker · no triage · single reviewer · ideal for small low-risk changes</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#60d0d0;white-space:nowrap">~$0.30–0.90 <span style="font-weight:400;font-size:9px;color:#3a8080">per feature</span></span>
+      </div>
+      ${row( est('planner'), arrow(), `<span style="font-size:9px;color:#3a7070;font-style:italic">researcher (if needed)</span>`, arrow(), est('reviewer'), revchip(true), arrow(), est('Gate #1') )}
+      ${row( est('coder'), arrow(), est('reviewer'), revchip(), arrow(), est('Gate #2'), arrow(), `<span style="color:#3a8a50;font-size:10px;font-weight:600">apply</span>` )}
+    </div>
+    <div class="mode-block std">
+      <div class="mode-hdr">
+        <span class="mode-tag std">STANDARD</span>
+        <span class="mode-note">balanced · research only if flagged · gotcha-checker runs · triage filters to needed reviewers</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#d8d050;white-space:nowrap">~$0.60–1.80 <span style="font-weight:400;font-size:9px;color:#808030">per feature · 40% less than FULL</span></span>
+      </div>
+      ${row( est('planner'), arrow(), `<span style="font-size:9px;color:#707030;font-style:italic">researcher*</span>`, arrow(), est('gotcha-checker'), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')), revchip(true), arrow(), est('Gate #1') )}
+      ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-style')), revchip(), arrow(), est('Gate #2'), arrow(), `<span style="color:#3a8a50;font-size:10px;font-weight:600">apply</span>` )}
+    </div>
+    <div class="mode-block full">
+      <div class="mode-hdr">
+        <span class="mode-tag full">FULL</span>
+        <span class="mode-note">thorough · research always runs · all 5 reviewers always run · for large or cross-cutting changes</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#c868d8;white-space:nowrap">~$1–3 <span style="font-weight:400;font-size:9px;color:#804898">per feature</span></span>
+      </div>
+      ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')), revchip(true), arrow(), est('Gate #1') )}
+      ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2'), arrow(), `<span style="color:#3a8a50;font-size:10px;font-weight:600">apply</span>` )}
+    </div>
+  </div>`
+},
+// ══ ERA 10 ══════════════════════════════════════════════
+{
+  era:'Era 10', title:'Pipeline Modes — SPRINT / LEAN / STANDARD / FULL', scale:0.56, fade:0.42,
+  sub:'One tool, four speeds — cost scales with risk',
+  desc:`<strong>New:</strong> Four selectable modes. <strong>SPRINT</strong> is GSD-speed — no plan, no reviewers, one Gate #2 before disk writes. <strong>LEAN</strong> adds a plan and one reviewer. <strong>STANDARD</strong> is conditional. <strong>FULL</strong> is unconditional. Same pipeline, different coverage.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), est('📦 module map','inj') )}
+    ${rlbl('on-demand')}
+    ${row( est('architect'), arrow(), est('📦 modules.json','inj') )}
+    ${rlbl('new — four modes')}
+    <div class="modes">
+      <div class="mode-row"><span class="mode-tag sprint">SPRINT</span><span class="mode-desc">coder → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag lean">LEAN</span><span class="mode-desc">planner → Gate #1 → coder → reviewer (1) → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag std">STANDARD</span><span class="mode-desc">planner → researcher* → gotcha-checker → reviewer-triage → dispatched reviewers → gates → apply</span></div>
+      <div class="mode-row"><span class="mode-tag full">FULL</span><span class="mode-desc">planner → researcher (always) → gotcha-checker → all 5 reviewers → gates → apply</span></div>
+    </div>
+    ${rlbl('full pipeline (STANDARD / FULL)')}
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+  </div>`
+},
+// ══ SIGNAL PROTOCOL DEEP DIVE ══════════════════════════
+{
+  era:'Deep Dive', title:'How Signal Protocols Work', scale:0.84, fade:0.38, noYouRow:true,
+  sub:'Structured tokens embedded in agent output — intercepted, never shown raw',
+  desc:`Agents don't call APIs or write to databases. They communicate by embedding structured tokens in their text output. FORGE's orchestrator scans every line of agent output for these signals and routes them: some drive UI state, some control pipeline flow, some trigger new agents. The agent just writes text — the signal does the rest.`,
+  forge: () => `<div class="pipe" style="align-items:stretch;">
+    <div style="font-size:8px;color:#3a5a6a;margin-bottom:6px;text-align:center">agent emits signal in output text → orchestrator intercepts → action taken</div>
+    <div class="sig-table">
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[summary]']||'').replace(/"/g,'&quot;')}">[summary]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Gate dialog built — title, diff summary, and approve/reject buttons rendered from signal content. Raw text never shown.</span>
+        <span class="sig-ui-tag gate">Gate #1 / #2</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[reviewer-verdict]']||'').replace(/"/g,'&quot;')}">[reviewer-verdict]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Orchestrator reads APPROVED / REVISE / BLOCK + counts. REVISE → coder reruns. BLOCK → escalate. APPROVED → proceed. Signal intercepted — never printed.</span>
+        <span class="sig-ui-tag loop">Review loop</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[wave-complete]']||'').replace(/"/g,'&quot;')}">[wave-complete] N</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Implementer signals wave N is done. Orchestrator dispatches the next wave of parallel tasks. Sequences multi-wave execution without the implementer knowing what comes next.</span>
+        <span class="sig-ui-tag wave">Wave sequencing</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[questions]']||'').replace(/"/g,'&quot;')}">[questions]…[/questions]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Planner detected ambiguity. Pipeline pauses. Q&amp;A strip renders in the prompt area. You answer; planner reruns with your answers. Zero tokens spent downstream until scope is confirmed.</span>
+        <span class="sig-ui-tag ui">Q&amp;A strip</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[suggest]']||'').replace(/"/g,'&quot;')}">[suggest]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Agent proposes a follow-up action. Appears as a clickable chip above the prompt bar — click to pre-fill it as your next message. Ignored if you don't click.</span>
+        <span class="sig-ui-tag ui">Suggest chip</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[todo]']||'').replace(/"/g,'&quot;')}">[todo]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Agent created a new board item during this run. Populates the TODO tab live without you typing anything.</span>
+        <span class="sig-ui-tag board">TODO board</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[health]']||'').replace(/"/g,'&quot;')}">[health]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Architect or integrity-checker flagged a structural issue. Surfaced in the HEALTH tab as a persistent item until resolved — not buried in terminal scroll.</span>
+        <span class="sig-ui-tag tab">HEALTH tab</span>
+      </div>
+      <hr class="sig-divider"/>
+      <div class="sig-row">
+        <span class="sig-chip-lbl" data-tip="${(SIG_TIPS['[auditor-recurring]']||'').replace(/"/g,'&quot;')}">[auditor-recurring]</span>
+        <span class="sig-arrow">→</span>
+        <span class="sig-effect">Tool-call auditor found a repeating anti-pattern across runs. Triggers agent-optimizer automatically — no manual intervention needed.</span>
+        <span class="sig-ui-tag loop">agent-optimizer</span>
+      </div>
+    </div>
+  </div>`
+},
+// ══ ERA 11 ══════════════════════════════════════════════
+{
+  era:'Era 11', title:'The Signal Protocol', scale:0.52, fade:0.34,
+  sub:'Agents reach into the UI — gates become data-driven, not text-scraped',
+  desc:`<strong>New:</strong> Agents embed structured tokens FORGE intercepts. <strong>[suggest]</strong> creates clickable chips · <strong>[todo]</strong> populates the TODO tab live · <strong>[summary]</strong> drives gate text · <strong>[reviewer-verdict]</strong> drives Gate #2 blocked/clear state from persisted data.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), est('📦 module map','inj') )}
+    ${rlbl('modes: SPRINT / LEAN / STANDARD / FULL')}
+    <div class="modes">
+      <div class="mode-row"><span class="mode-tag sprint">SPRINT</span><span class="mode-desc">coder → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag lean">LEAN</span><span class="mode-desc">planner → Gate #1 → coder → reviewer → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag std">STANDARD</span><span class="mode-desc">planner → researcher* → gotcha-checker → triage → dispatched reviewers → gates → apply</span></div>
+      <div class="mode-row"><span class="mode-tag full">FULL</span><span class="mode-desc">planner → researcher → gotcha-checker → all 5 reviewers → gates → apply</span></div>
+    </div>
+    ${phase('plan phase')}
+    ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${rlbl('new — signal protocol (intercepted from all agents)')}
+    ${sigs([['[suggest]',true],['[todo]',true],['[summary]',true],['[reviewer-verdict]',true],['[wave-complete]',true],['[health]',true]])}
+  </div>`
+},
+// ══ DEEP DIVE — Q&A STRIP ════════════════════════════════
+{
+  era:'Deep Dive', title:'How the Q&A Strip Works', scale:1.0, fade:0.30, noYouRow:true,
+  sub:'Ambiguity resolved before the plan — zero tokens spent downstream until scope is confirmed',
+  desc:`The planner runs twice when your description is ambiguous. Pass 1 detects missing scope and emits a <strong>[questions]</strong> block — the pipeline pauses and the questions surface in the UI as an answer strip. Your answers feed directly into pass 2, which writes a complete, unambiguous plan. No downstream agents run until you've confirmed scope.`,
+  forge: () => {
+    const qa_box = (q, a) => `<div style="display:flex;flex-direction:column;gap:2px;padding:5px 7px;background:#14182a;border:1px solid #2a2e48;border-radius:4px;">
+      <div style="font-size:9px;color:#8898b8;font-weight:600">${q}</div>
+      <div style="font-size:9px;color:#c8d8f0;background:#1c2238;border:1px solid #303860;border-radius:3px;padding:2px 5px;">${a}</div>
+    </div>`;
+    return `<div style="display:flex;gap:10px;align-items:stretch;width:100%;">
+
+      <!-- PASS 1 column -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:#0c1420;border:1px solid #1e3060;border-radius:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span style="font-size:11px;font-weight:700;color:#5888c0;letter-spacing:0.5px;">PASS 1</span>
+          <span style="font-size:8px;color:#3a5080;font-style:italic;">detects ambiguity · stops early</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${est('planner','est','Pass 1: reads your feature description. If any detail is ambiguous — scope unclear, multiple valid approaches, unknown target — it emits [questions] and stops.')}
+          <span style="font-size:9px;color:#3a5070;">→ reads description</span>
+        </div>
+        <div style="padding:7px 9px;background:#141828;border:1px solid #283050;border-radius:6px;flex:1;">
+          <div style="font-size:8px;color:#3a5878;margin-bottom:5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:700;">signal emitted — pipeline pauses</div>
+          <div style="font-family:monospace;font-size:8.5px;color:#c0a840;background:#181408;border:1px solid #3a3010;border-radius:4px;padding:5px 8px;line-height:1.8;">[questions]<br>• Which API endpoint to attach?<br>• Update existing modal or new overlay?<br>• Error handling required?<br>[/questions]</div>
+        </div>
+        <div style="padding:7px 9px;background:#101828;border:1px solid #203050;border-radius:6px;flex:1;">
+          <div style="font-size:8px;color:#3a5070;margin-bottom:5px;letter-spacing:0.6px;text-transform:uppercase;font-weight:700;">Q&amp;A strip — rendered in prompt area</div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            ${qa_box('Which API endpoint to attach?', '/api/v2/settings — the existing route')}
+            ${qa_box('Update existing modal or new overlay?', 'Update existing modal, add a new tab')}
+            ${qa_box('Error handling required?', 'Internal only — no user-facing error')}
+          </div>
+          <div style="margin-top:5px;font-size:8px;color:#2a4060;text-align:right;font-style:italic;">you answer → hit submit</div>
+        </div>
+        <div style="padding:4px 8px;background:#0e1020;border:1px solid #1e2840;border-radius:4px;">
+          <div style="font-size:8px;color:#3a4870;font-style:italic;">Pass 1 cost: <span style="color:#c0a040;font-weight:700;">low</span> — stops early, no downstream agents run</div>
+        </div>
+      </div>
+
+      <!-- PASS 2 column -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:#0a1810;border:1px solid #1e3828;border-radius:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+          <span style="font-size:11px;font-weight:700;color:#4a9060;letter-spacing:0.5px;">PASS 2</span>
+          <span style="font-size:8px;color:#2a5038;font-style:italic;">receives answers · writes full plan</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${est('planner','est','Pass 2: receives original description + your answers. Writes a complete, unambiguous PLAN.md — no gaps to guess at.')}
+          <span style="font-size:9px;color:#2a5030;">→ writes PLAN.md</span>
+        </div>
+        <div style="display:flex;gap:6px;flex:1;">
+          <div style="flex:1;padding:7px 9px;background:#101c10;border:1px solid #284028;border-radius:6px;">
+            <div style="font-size:8px;color:#3a6030;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">without Q&amp;A</div>
+            <div style="font-size:9px;color:#607858;line-height:1.6;">Planner guesses scope → researcher investigates the wrong thing → coder implements on assumptions → Gate #1 reveals the misunderstanding → revision cycle begins</div>
+          </div>
+          <div style="flex:1;padding:7px 9px;background:#101828;border:1px solid #284870;border-radius:6px;">
+            <div style="font-size:8px;color:#3a5888;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">with Q&amp;A strip</div>
+            <div style="font-size:9px;color:#5878a8;line-height:1.6;">Planner pauses → you answer 2–4 questions → pass 2 writes a complete plan → downstream agents run once with correct scope → Gate #1 approves cleanly</div>
+          </div>
+        </div>
+        <div style="padding:7px 9px;background:#14100e;border:1px solid #382818;border-radius:6px;">
+          <div style="font-size:8px;color:#806040;margin-bottom:3px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">token cost</div>
+          <div style="font-size:9px;color:#706050;line-height:1.5;">Pass 2: <span style="color:#60a860;font-weight:700;">normal</span> — same cost as a single planner run but with full, unambiguous context</div>
+          <div style="font-size:9px;color:#504030;margin-top:3px;font-style:italic;">researcher · gotcha-checker · reviewers — none run until pass 2 completes</div>
+        </div>
+      </div>
+
+    </div>`;
+  }
+},
+// ══ ERA 12 ══════════════════════════════════════════════
+{
+  era:'Era 12', title:'Clarifying Questions — the Q&A Strip', scale:0.48, fade:0.26,
+  sub:'Ambiguity resolved before the plan is written — not after',
+  desc:`<strong>New:</strong> Planner pass 1 emits <strong>[questions]...[/questions]</strong> if the description is ambiguous — pipeline pauses, Q&A strip renders in the UI. Pass 2 receives your answers and writes the full plan. Zero tokens spent on downstream agents until scope is confirmed.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), est('📦 module map','inj') )}
+    ${rlbl('modes: SPRINT / LEAN / STANDARD / FULL')}
+    <div class="modes">
+      <div class="mode-row"><span class="mode-tag sprint">SPRINT</span><span class="mode-desc">coder → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag lean">LEAN</span><span class="mode-desc">planner → Gate #1 → coder → reviewer → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag std">STANDARD</span><span class="mode-desc">planner → researcher* → gotcha-checker → triage → dispatched → gates → apply</span></div>
+      <div class="mode-row"><span class="mode-tag full">FULL</span><span class="mode-desc">planner → researcher → gotcha-checker → all 5 → gates → apply</span></div>
+    </div>
+    ${rlbl('new — planner: two-pass with Q&A')}
+    ${row( nw('planner pass 1','est'), arrow(), nw('[questions] → UI strip → you answer','inj') )}
+    ${row( nw('planner pass 2 (with answers)','est'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${sigs([['[suggest]',false],['[todo]',false],['[summary]',false],['[reviewer-verdict]',false],['[wave-complete]',false],['[health]',false],['[questions]',true],['[/questions]',true]])}
+  </div>`
+},
+// ══ ERA 13 ══════════════════════════════════════════════
+{
+  era:'Era 13', title:'Automated Auditing and Self-Improvement', scale:0.44, fade:0.18,
+  sub:'The pipeline observes itself — and improves its own agents',
+  desc:`<strong>New:</strong> <strong>ctx-post-tool.js hook</strong> logs every tool call to audit-log.jsonl · <strong>tool-call-auditor</strong> runs after every apply cycle and flags recurring anti-patterns · <strong>agent-optimizer</strong> proposes prompt fixes which go through Gate #2 before applying.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), est('📦 module map','inj'), nw('🪝 ctx-post-tool.js → audit-log.jsonl (every tool call)','inj') )}
+    ${rlbl('modes: SPRINT / LEAN / STANDARD / FULL')}
+    <div class="modes">
+      <div class="mode-row"><span class="mode-tag sprint">SPRINT</span><span class="mode-desc">coder → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag lean">LEAN</span><span class="mode-desc">planner → Gate #1 → coder → reviewer → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag std">STANDARD</span><span class="mode-desc">planner → researcher* → gotcha-checker → triage → dispatched → gates → apply</span></div>
+      <div class="mode-row"><span class="mode-tag full">FULL</span><span class="mode-desc">planner → researcher → gotcha-checker → all 5 → gates → apply</span></div>
+    </div>
+    ${rlbl('planner — two-pass Q&A')}
+    ${row( est('planner pass 1'), arrow(), est('[questions] → Q&A strip','inj'), est('planner pass 2'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${rlbl('new — automated audit loop (runs after every apply)')}
+    ${row( nw('tool-call-auditor','aud'), arrow(), `<span style="font-size:9px;color:#555">if recurring pattern →</span>`, arrow(), nw('agent-optimizer','aud'), arrow(), `<span style="font-size:9px;color:#555">prompt fix → Gate #2 → applied</span>` )}
+    ${sigs([['[suggest]',false],['[todo]',false],['[summary]',false],['[reviewer-verdict]',false],['[wave-complete]',false],['[health]',false],['[questions]',false],['[/questions]',false],['[auditor-recurring]',true]])}
+  </div>`
+},
+// ══ ERA 14 ══════════════════════════════════════════════
+{
+  era:'Era 14', title:'Quality Gate Expansion', scale:0.40, fade:0.15,
+  sub:'Six new specialist agents — coverage deepens before code touches disk',
+  desc:`<strong>New:</strong> <strong>regression-risk</strong> (post-coder, STANDARD/FULL) flags high-coupling modules touched by the change · <strong>completeness-checker</strong> (post-coder) blocks the reviewer wave if any PLAN.md task is unaddressed — stops wasted reviewer tokens · opt-in pre-pipeline: <strong>spec agent</strong> (pre-planner), <strong>domain-context</strong> (pre-planner), <strong>tdd agent</strong> (pre-coder) · <strong>observer</strong> joins on-demand agents · <strong>cleanup</strong> wired into every apply run · <strong>Gate #2 failure state</strong>: apply failures now render APPLY FAILED in red instead of silently completing.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), est('📦 module map','inj'), est('🪝 audit hook','inj') )}
+    ${rlbl('opt-in pre-pipeline (activated by project.json flags)')}
+    ${row( nw('spec agent','est'), arrow(), nw('domain-context','est'), `<span style="font-size:9px;color:#555"> — run before plan phase when configured</span>` )}
+    ${rlbl('modes: SPRINT / LEAN / STANDARD / FULL')}
+    <div class="modes">
+      <div class="mode-row"><span class="mode-tag sprint">SPRINT</span><span class="mode-desc">coder → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag lean">LEAN</span><span class="mode-desc">planner → Gate #1 → coder → reviewer → Gate #2 → apply</span></div>
+      <div class="mode-row"><span class="mode-tag std">STANDARD</span><span class="mode-desc">+ regression-risk · completeness-checker inserted before reviewer wave</span></div>
+      <div class="mode-row"><span class="mode-tag full">FULL</span><span class="mode-desc">same as STANDARD + all 5 reviewers unconditional</span></div>
+    </div>
+    ${rlbl('plan phase')}
+    ${row( est('planner pass 1'), arrow(), est('[questions] → Q&A strip','inj'), est('planner pass 2'), arrow(), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase — new quality layer before reviewer wave')}
+    ${row( nw('tdd agent','est'), arrow(), est('coder'), arrow(), nw('regression-risk','est'), arrow(), nw('completeness-checker','est'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${phase('apply phase')}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), nw('cleanup','aud'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${rlbl('audit loop — auto-runs after every apply')}
+    ${row( est('tool-call-auditor','aud'), arrow(), est('agent-optimizer','aud') )}
+    ${rlbl('on-demand — new: observer')}
+    ${row( nw('observer','aud'), est('architect','est'), est('integrity-checker','aud'), est('nyquist-auditor','aud'), est('skills-generator','aud') )}
+    ${sigs([['[suggest]',false],['[todo]',false],['[summary]',false],['[reviewer-verdict]',false],['[wave-complete]',false],['[health]',false],['[questions]',false],['[auditor-recurring]',false]])}
+  </div>`
+},
+// ══ ERA 15 ══════════════════════════════════════════════
+{
+  era:'Era 15', title:'Module Wiring and Pipeline Self-Knowledge', scale:0.40, fade:0.14,
+  sub:'Documenter keeps modules.json live — no manual architect run needed',
+  desc:`<strong>New:</strong> <strong>modules.json wiring fields</strong> — each module gains <code>keyFiles</code>, <code>stores</code>, <code>ipcChannels</code>, <code>dependsOn</code>, <code>usedBy</code> traced from source by the architect. <strong>Continuous wiring updates</strong> — the documenter's Step 5d now patches module wiring after every apply cycle so the map stays current. <strong>No orphaned features</strong> — planner generates a suggested module when no existing one fits. <strong>Docs consolidated</strong> — BACKSTAGE.md merged into FORGE-OVERVIEW.md; 36 stale todos archived.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), nw('📦 module map (with wiring)','inj'), est('🪝 audit hook','inj') )}
+    ${rlbl('new — module wiring fields (traced from source by architect)')}
+    ${row( nw('modules.json: keyFiles · stores · ipcChannels · dependsOn · usedBy','inj') )}
+    ${phase('plan phase')}
+    ${row( est('planner'), arrow(), est('[questions] → Q&A strip','inj'), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('tdd agent'), arrow(), est('coder'), arrow(), est('regression-risk'), arrow(), est('completeness-checker'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${phase('apply phase')}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), nw('documenter','est'), arrow(), est('cleanup','aud'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${rlbl('new — documenter patches modules.json wiring after every apply (no manual architect needed)')}
+    ${row( nw('documenter','est'), arrow(), nw('modules.json ← keyFiles · ipcChannels · stores updated per feature','inj') )}
+    ${row( est('tool-call-auditor','aud'), arrow(), est('agent-optimizer','aud') )}
+    ${sigs([['[suggest]',false],['[todo]',false],['[summary]',false],['[reviewer-verdict]',false],['[wave-complete]',false],['[health]',false],['[questions]',false],['[module]',true],['[auditor-recurring]',false]])}
+  </div>`
+},
+// ══ ERA 16 ══════════════════════════════════════════════
+{
+  era:'Era 16', title:'Capability-Scoped Skills and User Domain Knowledge', scale:0.38, fade:0.13,
+  sub:'Task-aware injection replaces stack-label injection — smaller prompts, better recall',
+  desc:`<strong>Problem solved:</strong> Stack-label injection was coarse — a Svelte component fix received all Electron IPC rules even though no main process was involved. Research confirmed rules in the middle of injected context are recalled at 40–50% vs 90% at start/end. <strong>Fix:</strong> <strong>per-capability files</strong> at <code>docs/gotchas/skills/</code> (<code>svelte5-reactivity</code>, <code>electron-ipc</code>, etc.). <strong>resolveCapabilitiesForTask()</strong> maps handoff file paths → capability IDs → only matching files injected. <strong>User domain knowledge</strong> field added to wizard — platform-specific facts appended to GENERAL.md at project creation.`,
+  forge: () => `<div class="pipe">
+    ${rlbl('before era 16 — stack-label injection (coarse)')}
+    ${row( est('techStackLabels: [Electron, Svelte5]','inj'), arrow(), `<span style="font-size:9px;color:#555">all Electron + Svelte rules → every agent, every run</span>` )}
+    ${rlbl('new — per-capability, task-aware injection')}
+    ${row( nw('capabilities: [svelte5-reactivity, svelte5-components]','inj'), arrow(), nw('resolveCapabilitiesForTask(handoff paths)','inj') )}
+    ${row( arrow(), nw('only svelte5-reactivity.md + svelte5-components.md injected','inj'), `<span style="font-size:9px;color:#3a8a50"> — IPC rules skipped</span>` )}
+    ${phase('plan phase (unchanged structure — smaller context per agent)')}
+    ${row( est('planner'), arrow(), est('[questions] → Q&A strip','inj'), est('researcher'), arrow(), est('gotcha-checker'),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('new — user domain knowledge (captured at project creation)')}
+    ${row( nw('wizard textarea → GENERAL.md: ## User-provided domain knowledge','inj'), `<span style="font-size:9px;color:#555"> — every agent that reads GENERAL.md inherits it</span>` )}
+    ${row( est('tool-call-auditor','aud'), arrow(), est('agent-optimizer','aud') )}
+    ${row( est('observer','aud'), est('architect','est'), est('integrity-checker','aud'), est('skills-generator','aud') )}
+  </div>`
+},
+// ══ METAPHOR ═════════════════════════════════════════════
+{
+  era:'Metaphor', title:'The Restaurant Kitchen', fade:0.13, noYouRow:true,
+  sub:'One Chat is a new front door — not a different kitchen',
+  desc:`The most common question about One Chat: <em>"Isn't this just going back to default Claude?"</em> No. You changed how you order. The kitchen is exactly the same.`,
+  forge: () => `<div style="display:flex;flex-direction:column;gap:10px;width:100%;">
+
+    <div style="display:flex;gap:10px;">
+
+      <!-- Home cooking -->
+      <div style="flex:1;padding:12px 14px;background:#141018;border:1px solid #2a2030;border-radius:8px;display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:18px;text-align:center;">🏠</div>
+        <div style="font-size:11px;font-weight:700;color:#706070;text-align:center;letter-spacing:0.5px;">GSD / raw Claude</div>
+        <div style="font-size:10px;color:#504858;text-align:center;font-style:italic;margin-bottom:2px;">cooking at home</div>
+        <div style="font-size:9px;color:#4a4050;line-height:1.7;">
+          You are the chef, the sous chef, and the dishwasher.<br>
+          Fast. No overhead.<br>
+          But everything depends on your own attention and skill.<br>
+          Miss something — it ships anyway.
+        </div>
+      </div>
+
+      <!-- Restaurant -->
+      <div style="flex:1.4;padding:12px 14px;background:#0e1820;border:1px solid #1e3850;border-radius:8px;display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:18px;text-align:center;">🍽️</div>
+        <div style="font-size:11px;font-weight:700;color:#4880b8;text-align:center;letter-spacing:0.5px;">FORGE</div>
+        <div style="font-size:10px;color:#3a6088;text-align:center;font-style:italic;margin-bottom:2px;">a proper restaurant</div>
+        <div style="font-size:9px;color:#406080;line-height:1.7;">
+          You describe what you want.<br>
+          The kitchen has <strong style="color:#4878a8">specialists</strong> — a planner writes the prep list, reviewers check every dish, an implementer plates it.<br>
+          The <strong style="color:#4878a8">glass wall</strong> is the pass — every dish is checked before it leaves the kitchen.<br>
+          Nothing reaches your table without clearing that window.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- One Chat row -->
+    <div style="padding:10px 14px;background:#0e1c14;border:1px solid #1e3828;border-radius:8px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:18px;">💬</div>
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:700;color:#3a7848;margin-bottom:3px;letter-spacing:0.5px;">One Chat — same restaurant, new way to order</div>
+        <div style="font-size:9px;color:#3a6040;line-height:1.7;">Instead of reading from a menu card and typing <span style="font-family:monospace;color:#4a8858;background:#0a1810;padding:1px 5px;border-radius:3px;">plan feature:</span>, you just say what you want naturally. The intent classifier reads it and routes to the right pipeline. <strong style="color:#4a7850">The kitchen is exactly the same.</strong> You changed how you order — not what happens behind the glass wall.</div>
+      </div>
+    </div>
+
+  </div>`
+},
+// ══ ERA 17 ══════════════════════════════════════════════
+{
+  era:'Era 17 · 2026-04-03', title:'One Chat Phase 1 — Conversation-First Front Door', scale:0.36, fade:0.12,
+  sub:'Type naturally · FORGE classifies · chips confirm · pipeline runs unchanged',
+  desc:`<strong>Shipped:</strong> <strong>Phase 1a</strong> — <code>classify-intent</code> IPC: Haiku classifier maps prompt → pipeline type + mode, 5s timeout, lean/chat fallback. <strong>Phase 1b</strong> — Two-Enter confirmation UI: first Enter classifies, <code>IntentConfirmRow</code> shows editable pipeline + mode chips, second Enter confirms and starts run. <code>pipelineModeOverride</code> threads through to runner (validated, never persisted). <strong>Chat path</strong> — <code>chat</code> pipeline routes to direct Claude reply via <code>run-chat</code> IPC, no agents. <strong>Intent log</strong> — every classification persisted to <code>.pipeline/intent-log.jsonl</code>. The pipeline is unchanged — only the front door is new.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 capability-scoped SKILLS','inj'), est('📦 module map (wired)','inj'), est('🪝 audit hook','inj') )}
+    ${phase('new — one chat front door (phase 1)')}
+    ${row( est('You','user'), arrow(), `<span style="font-size:9px;color:#8898a8;font-style:italic">type naturally</span>`, arrow(), nw('intent classifier (Haiku)','tri'), arrow(), `<span style="font-size:9px;color:#4daa70">IntentConfirmRow chips appear</span>` )}
+    ${row( `<span style="font-size:9px;color:#4a9060">plan feature · lean</span>`, `<span style="font-size:8px;color:#555"> — reason shown · dropdowns editable · Enter to confirm</span>` )}
+    ${phase('chat path (non-pipeline requests)')}
+    ${row( nw('chat classifier','tri'), arrow(), nw('run-chat IPC','est'), arrow(), `<span style="font-size:9px;color:#4a8060">direct Claude reply — no agents, no gate, no pipeline</span>` )}
+    ${phase('plan phase (on confirm — unchanged)')}
+    ${row( est('planner'), arrow(), est('[questions] → Q&A strip','inj'), est('researcher*'), arrow(), est('gotcha-checker'), arrow(),
+      fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')),
+      revchip(true), arrow(), est('Gate #1') )}
+    ${phase('implement phase')}
+    ${row( est('tdd agent'), arrow(), est('coder'), arrow(), est('regression-risk'), arrow(), est('completeness-checker'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic'), est('reviewer-style'), est('reviewer-performance')), revchip(), arrow(), est('Gate #2') )}
+    ${phase('apply phase')}
+    ${wave(false,'implementer waves',
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 1:</span>`, est('task A'), est('task B'), est('task C')),
+      row(`<span style="font-size:9px;color:#3a6a3a">wave 2:</span>`, est('task D'), est('task E'))
+    )}
+    ${row( arrow(), est('documenter'), arrow(), est('cleanup','aud'), arrow(), `<span style="color:#3a8a50;font-size:11px;font-weight:600">shipped</span>` )}
+    ${row( est('tool-call-auditor','aud'), arrow(), est('agent-optimizer','aud') )}
+    ${row( est('observer','aud'), est('architect','est'), est('integrity-checker','aud'), est('skills-generator','aud') )}
+    ${sigs([['[suggest]',false],['[todo]',false],['[summary]',false],['[reviewer-verdict]',false],['[wave-complete]',false],['[health]',false],['[questions]',false],['[auditor-recurring]',false]])}
+  </div>`
+},
+// ══ SIBLING PIPELINES ══════════════════════════════════
+{
+  era:'Sibling Pipelines', title:'Debug · Refactor · Failed Test', scale:0.64, fade:0.10,
+  sub:'Same building blocks, different entry — no plan phase, straight to Gate #2',
+  desc:`<strong>Always available:</strong> Not every job needs a plan. <strong>debug: &lt;description&gt;</strong> goes straight to coder → reviewer-triage → reviewers → Gate #2 → apply. <strong>refactor: &lt;area&gt;</strong> always includes reviewer-style. <strong>failed test:</strong> focuses on logic and safety. All three skip Gate #1 entirely — you only approve the implementation.`,
+  forge: () => `<div class="pipe">
+    ${row( est('📋 SKILLS injection','inj'), est('📦 module map','inj'), est('🪝 audit hook','inj') )}
+    ${rlbl('no plan phase — describe the problem, coder writes the fix handoff')}
+    ${phase('debug: <description>')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')), arrow(), est('Gate #2'), arrow(), est('implementer'), arrow(), est('documenter'), arrow(), est('cleanup','aud') )}
+    ${phase('refactor: <area>  ·  reviewer-style always dispatched')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-style'), est('reviewer-performance')), arrow(), est('Gate #2'), arrow(), est('implementer'), arrow(), est('documenter'), arrow(), est('cleanup','aud') )}
+    ${phase('failed test: <description>')}
+    ${row( est('coder'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-logic'), est('reviewer-safety')), arrow(), est('Gate #2'), arrow(), est('implementer'), arrow(), est('documenter'), arrow(), est('cleanup','aud') )}
+  </div>`
+},
+// ══ PROJECT TYPES ═══════════════════════════════════════
+{
+  era:'Project Types', title:'Code · Instructional', scale:0.88, fade:0.09, noYouRow:true,
+  sub:'FORGE is not just a coding tool — the pipeline adapts to the output type',
+  desc:`A <strong>Code project</strong> runs the full pipeline — plan, review, Gate #1, implement, Gate #2, ship. An <strong>Instructional project</strong> uses the same pipeline but stops at Gate #1: the approved PLAN.md <em>is</em> the deliverable. No Gate #2. Nothing writes to disk. Built for documentation, Power Automate flows, architecture plans — any structured output that isn't executable code.`,
+  forge: () => `<div style="display:flex;gap:10px;align-items:stretch;width:100%;">
+
+    <!-- Code project -->
+    <div style="flex:1;display:flex;flex-direction:column;gap:0;border:1px solid #1e3828;border-radius:8px;overflow:hidden;">
+      <div style="background:#0e1e14;padding:7px 12px;border-bottom:1px solid #1e3828;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:11px;font-weight:700;color:#4a9060;letter-spacing:0.5px;">Code Project</span>
+        <span style="font-size:8px;color:#2a5038;font-style:italic;">full pipeline</span>
+      </div>
+      <div style="padding:10px 12px;background:#0a1410;flex:1;display:flex;flex-direction:column;gap:6px;">
+        ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')), revchip(true), arrow(), est('Gate #1') )}
+        <div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+          <div style="flex:1;height:1px;background:#1e3828;"></div>
+          <span style="font-size:8px;color:#2a5038;font-style:italic;">you approve the plan — pipeline continues</span>
+          <div style="flex:1;height:1px;background:#1e3828;"></div>
+        </div>
+        ${row( est('tdd agent'), arrow(), est('coder'), arrow(), est('regression-risk'), arrow(), est('completeness-checker'), arrow(), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-style')), revchip(), arrow(), est('Gate #2') )}
+        <div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+          <div style="flex:1;height:1px;background:#1e3828;"></div>
+          <span style="font-size:8px;color:#2a5038;font-style:italic;">you approve the implementation</span>
+          <div style="flex:1;height:1px;background:#1e3828;"></div>
+        </div>
+        ${row( est('implementer'), arrow(), est('documenter'), arrow(), est('cleanup','aud'), arrow(), `<span style="color:#3a8a50;font-size:10px;font-weight:700">code ships to disk</span>` )}
+      </div>
+    </div>
+
+    <!-- Instructional project -->
+    <div style="flex:1;display:flex;flex-direction:column;gap:0;border:1px solid #1e2e50;border-radius:8px;overflow:hidden;">
+      <div style="background:#0e1428;padding:7px 12px;border-bottom:1px solid #1e2e50;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:11px;font-weight:700;color:#4870b0;letter-spacing:0.5px;">Instructional Project</span>
+        <span style="font-size:8px;color:#2a3860;font-style:italic;">pipeline ends at Gate #1</span>
+      </div>
+      <div style="padding:10px 12px;background:#0a1020;flex:1;display:flex;flex-direction:column;gap:6px;">
+        ${row( est('planner'), arrow(), est('researcher'), arrow(), est('gotcha-checker'), fan(est('reviewer-triage','tri'), est('reviewer'), est('reviewer-safety'), est('reviewer-logic')), revchip(true), arrow(), est('Gate #1') )}
+        <div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+          <div style="flex:1;height:1px;background:#1e2e50;"></div>
+          <span style="font-size:8px;color:#2a3860;font-style:italic;">you approve the plan — pipeline ends here</span>
+          <div style="flex:1;height:1px;background:#1e2e50;"></div>
+        </div>
+        ${row( `<span style="color:#4870b0;font-size:10px;font-weight:700">PLAN.md is the deliverable</span>` )}
+        <div style="margin-top:4px;padding:8px 10px;background:#0c1220;border:1px solid #1e2848;border-radius:5px;">
+          <div style="font-size:8px;color:#2a3858;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">example use cases</div>
+          <div style="font-size:9px;color:#3a5080;line-height:1.7;">Power Automate flow design<br>Architecture documentation<br>Step-by-step runbooks<br>Feature specification docs</div>
+        </div>
+        <div style="margin-top:auto;padding:5px 8px;background:#080e18;border:1px solid #182030;border-radius:4px;display:flex;align-items:center;gap:6px;">
+          <span style="font-size:10px;color:#2a3858;">🚫</span>
+          <span style="font-size:8px;color:#2a3050;">No Gate #2 · No implementer · Nothing writes to disk</span>
+        </div>
+      </div>
+    </div>
+
+  </div>`
+},
+// ══ DIRECT MODE ════════════════════════════════════════
+{
+  era:'Direct Mode', title:'Utility Agents — On-Demand', scale:0.72, fade:0.07, noYouRow:true,
+  sub:'Run any time — no plan, no gate, no pipeline required',
+  desc:`<strong>Always available:</strong> Type <code>direct: &lt;command&gt;</code> in the FORGE prompt to invoke a utility agent directly. These bypass the pipeline entirely — no Gate #1, no Gate #2, no reviewers. Use them to bootstrap architecture, diagnose pipeline health, or generate stack config.`,
+  forge: () => `<div class="pipe">
+    ${row( est('You','user'), arrow(), `<span style="font-size:9px;color:#9a8848">direct: &lt;command&gt;</span>`, arrow(), `<span style="font-size:9px;color:#555">runs immediately — no pipeline, no gates</span>` )}
+    ${phase('architecture & structure')}
+    ${row( est('architect','est'), arrow(), est('📦 modules.json + ARCHITECTURE.md','inj'), `<span style="font-size:9px;color:#555"> — modes: FULL / HEALTH / GAPS / CROSS-MODULE / REFACTOR</span>` )}
+    ${phase('health & quality')}
+    ${row( est('integrity-checker','aud'), arrow(), `<span style="font-size:9px;color:#555">7 pipeline health checks · emits [health] signals</span>` )}
+    ${row( est('nyquist-auditor','aud'), arrow(), `<span style="font-size:9px;color:#555">finds requirements with no test coverage · writes stub files to docs/tests/</span>` )}
+    ${phase('stack setup')}
+    ${row( est('skills-generator','aud'), arrow(), `<span style="font-size:9px;color:#555">generates SKILLS.md for declared tech stacks</span>` )}
+    ${phase('observability & learning')}
+    ${row( nw('observer','aud'), arrow(), `<span style="font-size:9px;color:#555">logs agent reasoning patterns to observer-log.jsonl · feeds agent-optimizer with behavioural context</span>` )}
+    ${phase('audit (also auto-runs after every apply)')}
+    ${row( est('tool-call-auditor','aud'), arrow(), `<span style="font-size:9px;color:#555">audit-log.jsonl → anti-pattern report</span>` )}
+    ${row( est('agent-optimizer','aud'), arrow(), `<span style="font-size:9px;color:#555">audit findings → prompt fix proposals → Gate #2</span>` )}
+  </div>`
+},
+// ══ UI COMPARISON ════════════════════════════════════════
+{
+  era:'UI', title:'Claude CLI vs FORGE', scale:1.0, fade:0.04, noYouRow:true,
+  sub:'Same model — completely different working environment',
+  desc:`FORGE started as a UI. Before any pipeline, before any agents, the goal was simple: give Claude a proper place to work in. Every capability added since has been built on top of that foundation.`,
+  forge: () => {
+    const y = `<span style="color:#60d870;font-size:14px;font-weight:700">✓</span>`;
+    const n = `<span style="color:#2a3050;font-size:14px;font-weight:700">✗</span>`;
+    const row2 = (label, cli, forge, note='') => `
+      <div style="display:contents;">
+        <div style="padding:5px 10px;font-size:9px;color:var(--dim);background:#14182a;border-bottom:1px solid #1e2238;display:flex;align-items:center;">${label}${note ? `<span style="font-size:7px;color:#2a3858;margin-left:6px;font-style:italic">${note}</span>` : ''}</div>
+        <div style="padding:5px 0;background:#111828;border-bottom:1px solid #1e2238;display:flex;align-items:center;justify-content:center;">${cli}</div>
+        <div style="padding:5px 0;background:#101c28;border-bottom:1px solid #1e2238;display:flex;align-items:center;justify-content:center;">${forge}</div>
+      </div>`;
+    return `<div style="display:grid;grid-template-columns:2fr 1fr 1fr;border:1px solid #2a2e48;border-radius:8px;overflow:hidden;">
+      <div style="padding:6px 10px;background:#1c2038;font-size:10px;font-weight:700;color:var(--dim);">Feature</div>
+      <div style="padding:6px 0;background:#181c30;font-size:10px;font-weight:700;color:#5060a0;text-align:center;">Claude CLI</div>
+      <div style="padding:6px 0;background:#12203a;font-size:10px;font-weight:700;color:#4890d0;text-align:center;">FORGE</div>
+      ${row2('Project tabs (TODO · PLANNED · HEALTH · USAGE · FILES)', n, y, 'day-one feature')}
+      ${row2('Glass wall — see every agent tool call in real time', n, y)}
+      ${row2('Persistent project context across sessions', n, y)}
+      ${row2('Gate #1 — approve the plan before coder runs', n, y)}
+      ${row2('Gate #2 — approve handoff before anything writes to disk', n, y)}
+      ${row2('Pipeline mode selector (SPRINT · LEAN · STANDARD · FULL)', n, y)}
+      ${row2('Agent progress chips — know which agent is running', n, y)}
+      ${row2('Structured signals → live board, health tab, suggest chips', n, y)}
+      ${row2('Token usage tracking per agent per run', n, y)}
+      ${row2('Direct mode utility agents (architect · integrity-checker…)', n, y)}
+      <div style="padding:5px 10px;font-size:9px;color:var(--dim);background:#14182a;display:flex;align-items:center;">Raw Claude model</div>
+      <div style="padding:5px 0;background:#111828;display:flex;align-items:center;justify-content:center;">${y}</div>
+      <div style="padding:5px 0;background:#101c28;display:flex;align-items:center;justify-content:center;">${y}</div>
+    </div>`;
+  }
+},
+// ══ FORGE vs GSD ════════════════════════════════════════
+{
+  era:'Comparison', title:'GSD · SPRINT · LEAN · STANDARD · FULL', scale:0.92, fade:0.0, noYouRow:true,
+  sub:'Pick the level of oversight that matches the risk of the change',
+  desc:`<strong>GSD</strong> and <strong>SPRINT</strong> are the right tools when you already know exactly what to change — minimal overhead, maximum speed. <strong>LEAN</strong> adds a plan and one reviewer at low cost. <strong>STANDARD</strong> and <strong>FULL</strong> earn their cost on complex, cross-cutting, or high-risk changes where a specialist reviewer would catch something you wouldn't.`,
+  forge: () => {
+    const y = (col) => `<div class="cap-c ${col}"><span class="cap-yes">✓</span></div>`;
+    const n = (col) => `<div class="cap-c ${col}"><span class="cap-no">✗</span></div>`;
+    const p = (col, t) => `<div class="cap-c ${col}"><span class="cap-part">${t}</span></div>`;
+    const c = (col, t, clr) => `<div class="cap-c ${col}"><span class="cap-cost" style="color:${clr}">${t}</span></div>`;
+    const b = (col, t) => `<div class="cap-c ${col}"><span class="cap-best">${t}</span></div>`;
+    return `<div class="cap-matrix">
+      <div class="cap-c hdr lbl" style="background:#1c2038"></div>
+      <div class="cap-c hdr cap-gsd"><span style="color:#9098b0;font-size:11px;font-weight:700">GSD</span><span style="font-size:8px;color:#505870;font-weight:400">baseline</span></div>
+      <div class="cap-c hdr cap-spr"><span class="mode-tag sprint" style="font-size:9px">SPRINT</span></div>
+      <div class="cap-c hdr cap-lean"><span class="mode-tag lean" style="font-size:9px">LEAN</span></div>
+      <div class="cap-c hdr cap-std"><span class="mode-tag std" style="font-size:9px">STANDARD</span></div>
+      <div class="cap-c hdr cap-full"><span class="mode-tag full" style="font-size:9px">FULL</span></div>
+
+      <div class="cap-c lbl">Structured plan (PLAN.md)</div>
+      ${n('cap-gsd')}${n('cap-spr')}${y('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Gate #1 — approve plan</div>
+      ${n('cap-gsd')}${n('cap-spr')}${y('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Research agent</div>
+      ${n('cap-gsd')}${n('cap-spr')}${p('cap-lean','if needed')}${p('cap-std','if needed')}${y('cap-full')}
+
+      <div class="cap-c lbl">Gotcha-checker</div>
+      ${n('cap-gsd')}${n('cap-spr')}${n('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Reviewer-triage</div>
+      ${n('cap-gsd')}${n('cap-spr')}${n('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Specialist reviewers</div>
+      ${n('cap-gsd')}${n('cap-spr')}${p('cap-lean','1 reviewer')}${p('cap-std','1–3 dispatched')}${p('cap-full','all 5')}
+
+      <div class="cap-c lbl">Regression-risk + completeness check</div>
+      ${n('cap-gsd')}${n('cap-spr')}${n('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Gate #2 — approve implementation</div>
+      ${n('cap-gsd')}${y('cap-spr')}${y('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Wave execution (parallel tasks)</div>
+      ${n('cap-gsd')}${n('cap-spr')}${y('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Cleanup after every apply</div>
+      ${n('cap-gsd')}${y('cap-spr')}${y('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl">Audit trail (tool-call-auditor)</div>
+      ${n('cap-gsd')}${y('cap-spr')}${y('cap-lean')}${y('cap-std')}${y('cap-full')}
+
+      <div class="cap-c lbl" style="font-weight:600;color:var(--text)">Cost per feature</div>
+      ${c('cap-gsd','~$0.05','#707890')}
+      ${c('cap-spr','~$0.10–0.30','#88e048')}
+      ${c('cap-lean','~$0.30–0.90','#60d0d0')}
+      ${c('cap-std','~$0.60–1.80','#d8d050')}
+      ${c('cap-full','~$1–3','#c868d8')}
+
+      <div class="cap-c lbl no-border" style="font-weight:600;color:var(--text)">Best for</div>
+      <div class="cap-c cap-gsd no-border"><span class="cap-best" style="color:#7880a0;font-style:italic">when you have the time &amp; expertise to review every line yourself</span></div>
+      ${b('cap-spr no-border','quick focused change, one checkpoint before disk writes')}
+      ${b('cap-lean no-border','most tasks — structured but fast')}
+      ${b('cap-std no-border','production features, team codebase')}
+      ${b('cap-full no-border','critical paths &amp; complex cross-system changes')}
+    </div>`;
+  }
+},
+// ══ COMPETITIVE COMPARISON ════════════════════════════════
+{
+  era:'Versus', title:'FORGE vs the Field', scale:1.0, fade:0.0, noYouRow:true,
+  sub:'Honest comparison — what we have, what they have, what we still need',
+  desc:`Sourced from a first-principles pipeline audit (2026-03-25). <strong>Green ✓</strong> = has this. <strong>Red ✗</strong> = does not. <strong>Amber ~</strong> = partial. The gate system, specialist reviewers, and self-improvement loop are FORGE's structural differentiators. Git integration, test execution, and multi-model support are the gaps still to close.`,
+  forge: () => {
+    const cell = (bg, content) => `<div class="cap-c" style="background:${bg};border-bottom:1px solid #1e2238;">${content}</div>`;
+    const y  = bg => cell(bg, `<span class="cap-yes">✓</span>`);
+    const n  = bg => cell(bg, `<span class="cap-no">✗</span>`);
+    const p  = (bg, t) => cell(bg, `<span class="cap-part">${t}</span>`);
+    const yn = (bg, t) => cell(bg, `<span class="cap-part" style="color:#c8a040">${t}</span>`);
+    const lbl = t => `<div class="cap-c lbl" style="background:#14182a;">${t}</div>`;
+    const sect = t => `<div style="grid-column:1/-1;padding:4px 10px;background:#181c2e;font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#505878;border-bottom:1px solid #252a40;">${t}</div>`;
+    const CLI='#141820', GSD='#0e1c12', IDE='#0e1c1c', FRG='#1c1c0c';
+    return `<div class="cap-matrix" style="grid-template-columns:2.2fr repeat(4,1fr);overflow-y:auto;max-height:calc(100vh - 180px);">
+      <div class="cap-c hdr lbl" style="background:#1c2038;"></div>
+      <div class="cap-c hdr" style="background:${CLI};color:#5060a0;">Claude CLI<span style="font-size:7.5px;font-weight:400;color:#30344a;display:block;">raw baseline</span></div>
+      <div class="cap-c hdr" style="background:${GSD};color:#50a060;">Aider / GSD<span style="font-size:7.5px;font-weight:400;color:#2a5030;display:block;">plan + execute</span></div>
+      <div class="cap-c hdr" style="background:${IDE};color:#4898a8;">Cursor / IDE<span style="font-size:7.5px;font-weight:400;color:#1e4a50;display:block;">inline assist</span></div>
+      <div class="cap-c hdr" style="background:${FRG};color:var(--gold);">FORGE<span style="font-size:7.5px;font-weight:400;color:#706030;display:block;">full pipeline</span></div>
+
+      ${sect('Quality & Control')}
+      ${lbl('Human approval gate before disk write')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+      ${lbl('Specialist reviewer agents (safety · logic · style · perf)')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+      ${lbl('Q&A clarification before planning starts')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+      ${lbl('Pipeline self-improvement loop')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+      ${lbl('Pre-implementation completeness check')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+
+      ${sect('Development Flow')}
+      ${lbl('Structured plan with tasks + wave ordering')}${n(CLI)}${p(GSD,'basic')}${n(IDE)}${y(FRG)}
+      ${lbl('Parallel task wave execution')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+      ${lbl('Architecture & module awareness')}${n(CLI)}${p(GSD,'repo map')}${p(IDE,'index')}${y(FRG)}
+      ${lbl('Diff review before applying changes')}${n(CLI)}${y(GSD)}${y(IDE)}${y(FRG)}
+      ${lbl('Regression-risk check (blast-radius flagging)')}${n(CLI)}${n(GSD)}${n(IDE)}${y(FRG)}
+
+      ${sect('Visibility & Cost')}
+      ${lbl('Live pipeline / tool call visibility (glass wall)')}${n(CLI)}${p(GSD,'file diffs')}${n(IDE)}${y(FRG)}
+      ${lbl('Per-run cost telemetry')}${n(CLI)}${p(GSD,'basic')}${n(IDE)}${y(FRG)}
+      ${lbl('Quick / incremental fix mode')}${y(CLI)}${y(GSD)}${y(IDE)}${p(FRG,'Sprint')}
+
+      ${sect('Gaps to close')}
+      ${lbl('Git integration (auto-commit · branch · PR)')}${n(CLI)}${y(GSD)}${p(IDE,'via IDE')}${yn(FRG,'planned')}
+      ${lbl('Test execution loop (run → fail → fix)')}${n(CLI)}${y(GSD)}${y(IDE)}${yn(FRG,'planned')}
+      <div class="cap-c lbl no-border" style="background:#14182a;border-bottom:none;">Multi-model support (GPT-4o, Gemini…)</div>
+      <div class="cap-c no-border" style="background:${CLI};border-bottom:none;display:flex;align-items:center;justify-content:center;"><span class="cap-yes">✓</span></div>
+      <div class="cap-c no-border" style="background:${GSD};border-bottom:none;display:flex;align-items:center;justify-content:center;"><span class="cap-yes">✓</span></div>
+      <div class="cap-c no-border" style="background:${IDE};border-bottom:none;display:flex;align-items:center;justify-content:center;"><span class="cap-yes">✓</span></div>
+      <div class="cap-c no-border" style="background:${FRG};border-bottom:none;display:flex;align-items:center;justify-content:center;"><span class="cap-part" style="color:#c8a040">planned</span></div>
+    </div>`;
+  }
+},
+// ══ WHAT'S NEXT ══════════════════════════════════════════
+{
+  era:'Upcoming', title:"What's Next", scale:1.0, fade:0.0,
+  sub:'One Chat Phase 1 shipped · Phases 2–4 and pipeline evolution still ahead',
+  desc:`<strong style="color:#4daa70">One Chat Phase 1 shipped (Era 17).</strong> What remains: completing the conversation-first experience through Phases 2–4, dynamic pipeline construction, and closing competitive gaps with test execution and multi-model support.`,
+  forge: () => `<div style="display:flex;flex-direction:column;gap:10px;padding:2px 0;">
+
+    <div style="font-size:8px;font-weight:700;letter-spacing:0.12em;color:#4daa70;text-transform:uppercase;margin-bottom:2px;">One Chat — remaining phases</div>
+
+    <div style="display:flex;gap:8px;">
+      <div style="flex:1;background:#0e1a12;border:1px solid #2a4a2a;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;color:#4daa70;margin-bottom:5px;">Phase 1.5 — LIVE Tab Agent Preview</div>
+        <div style="font-size:9px;color:#8a9a8a;line-height:1.6;">Orchestrator emits <code style="color:#6aaa80">[live-team]</code> before the first agent runs. LIVE tab pre-populates with pending agent cards — user sees the full team before any output arrives.</div>
+      </div>
+      <div style="flex:1;background:#0e1a12;border:1px solid #2a4a2a;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;color:#4daa70;margin-bottom:5px;">Phase 2 — Gates as Chat Messages</div>
+        <div style="font-size:9px;color:#8a9a8a;line-height:1.6;">Gate1Bar and Gate2Bar become rich chat messages with embedded approve/reject chips. Gate logic unchanged — just where it renders. Deferred until Phase 1 usage data collected.</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <div style="flex:1;background:#0e1a12;border:1px solid #2a4a2a;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;color:#4daa70;margin-bottom:5px;">Phase 3 — Layout</div>
+        <div style="font-size:9px;color:#8a9a8a;line-height:1.6;">Chat column becomes primary. Terminal becomes companion panel on the right — always live, always the glass wall. Biggest visual change, least logic change.</div>
+      </div>
+      <div style="flex:1;background:#0e1a12;border:1px solid #2a4a2a;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;color:#4daa70;margin-bottom:5px;">Transparent Dynamic Pipeline Construction</div>
+        <div style="font-size:9px;color:#8a9a8a;line-height:1.6;">Orchestrator presents the full agent team with reasoning before any agent runs. "Skipping reviewer-performance — no performance-sensitive code touched." User can override before tokens are spent.</div>
+        <div style="font-size:9px;color:#666;line-height:1.6;margin-top:4px;">Stage 1 (mode recommendation) shipped with Phase 1b. Stage 2 requires Phase 1 track record first.</div>
+      </div>
+    </div>
+
+    <div style="font-size:8px;font-weight:700;letter-spacing:0.12em;color:#c8a040;text-transform:uppercase;margin-top:4px;margin-bottom:2px;">Post One Chat — blocked on routing architecture</div>
+
+    <div style="display:flex;gap:8px;">
+      <div style="flex:1;background:#1a1500;border:1px solid #3a3000;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;color:#c8a040;margin-bottom:5px;">Test Execution Loop</div>
+        <div style="font-size:9px;color:#8a9a88;line-height:1.6;">Run the project's test suite after every apply cycle. Failures feed into the debug pipeline automatically — up to 3 auto-fix attempts. Closes the gap with Aider and Cursor.</div>
+      </div>
+      <div style="flex:1;background:#1a1500;border:1px solid #3a3000;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;color:#c8a040;margin-bottom:5px;">Multi-Model Support</div>
+        <div style="font-size:9px;color:#8a9a88;line-height:1.6;">Different pipeline agents on different providers — GPT-4o, Gemini, future models. Per-agent model overrides in project.json. Requires One Chat routing architecture to stabilise first.</div>
+      </div>
+    </div>
+
+  </div>`
+},
+];
+
+// Compare column — static across all slides
+const cmpHTML = `
+  <div class="cmp-block">
+    <div class="col-lbl cmp">Claude Code (CLI)</div>
+    <div style="display:flex;align-items:center;gap:4px;">
+      <div class="ag user"><span class="dot"></span>You</div>
+      <span class="arr">→</span>
+      <div class="ag plain"><span class="dot"></span>Claude CLI</div>
+    </div>
+    <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.6">
+      Raw Claude. You direct every step.<br>
+      Maximum flexibility, zero overhead.<br>
+      You are the architect, reviewer, and implementer.<br>
+      <span style="color:#6080a0">Best for: exploration, prototyping, one-offs.</span>
+    </div>
+  </div>
+  <div class="cmp-block">
+    <div class="col-lbl gsd">get-shit-done</div>
+    <div style="display:flex;align-items:center;gap:4px;">
+      <div class="ag user"><span class="dot"></span>You</div>
+      <span class="arr">→</span>
+      <div class="ag plain"><span class="dot"></span>plan</div>
+      <span class="arr">→</span>
+      <div class="ag plain"><span class="dot"></span>execute</div>
+      <span class="arr">→</span>
+      <div class="ag plain"><span class="dot"></span>done</div>
+    </div>
+    <div style="font-size:11px;color:var(--dim);margin-top:6px;line-height:1.6">
+      Lightweight plan→execute on top of Claude CLI.<br>
+      No review cycles, no approval gates.<br>
+      You are the quality gate — fast when you know what you want.<br>
+      Lower token cost, faster wall-clock time.<br>
+      <span style="color:#608060">Best for: small well-scoped tasks, solo work, clear-requirement changes where you can review the output yourself.</span>
+    </div>
+  </div>`;
+
+// ─────────────────────────────────────────────────────────
+// Render slides
+// ─────────────────────────────────────────────────────────
+const deck = document.getElementById('deck');
+const dotsEl = document.getElementById('dots');
+let current = 0;
+
+slides.forEach((s, i) => {
+  const el = document.createElement('div');
+  el.className = 'slide' + (i===0?' active':'');
+  el.innerHTML = `
+    <div class="hd">
+      <span class="era-lbl">${s.era}</span>
+      <span class="slide-title">${s.title}</span>
+      <span class="slide-sub">${s.sub}</span>
+    </div>
+    <div class="body">
+      <div class="forge-col">
+        <div class="col-lbl forge">FORGE</div>
+        <div class="forge-inner" style="transform-origin:top left;">
+          ${s.noYouRow ? '' : row( est('You','user'), arrow(), est('orchestrator','orc') )}
+          ${s.forge()}
+        </div>
+      </div>
+      <div class="col-div"></div>
+      <div class="cmp-col" style="opacity:${s.fade}">${cmpHTML}</div>
+    </div>
+    <div class="desc-bar">${s.desc}</div>`;
+  deck.appendChild(el);
+
+  const dot = document.createElement('div');
+  dot.className = 'dot-nav' + (i===0?' on':'');
+  dot.onclick = () => goTo(i);
+  dotsEl.appendChild(dot);
+});
+
+function autoScale() {
+  const slide    = document.querySelectorAll('.slide')[current];
+  const forgeCol = slide.querySelector('.forge-col');
+  const inner    = slide.querySelector('.forge-inner');
+  if (!inner || !forgeCol) return;
+
+  // Only pipeline era slides get nowrap rows — deep-dives and custom-layout slides keep wrap
+  const era = slides[current].era || '';
+  const isPipeline = /^Era /.test(era) || ['Sibling Pipelines', 'Direct Mode', 'Upcoming'].includes(era);
+  inner.querySelectorAll('.row').forEach(r => { r.style.flexWrap = isPipeline ? 'nowrap' : ''; });
+  inner.querySelectorAll('.pipe').forEach(p => { p.style.minWidth = isPipeline ? 'max-content' : ''; });
+
+  inner.style.transform = 'scale(1)';
+  const availH = forgeCol.clientHeight - inner.offsetTop - 8;
+  const availW = forgeCol.clientWidth - 28;
+  const naturalH = inner.scrollHeight;
+  const naturalW = inner.scrollWidth;
+  const scaleH = naturalH > availH ? availH / naturalH : 1;
+  const scaleW = naturalW > availW ? availW / naturalW : 1;
+  const s = Math.max(0.20, Math.min(scaleH, scaleW));
+  if (s < 1) inner.style.transform = `scale(${s})`;
+}
+
+function goTo(n) {
+  document.querySelectorAll('.slide')[current].classList.remove('active');
+  dotsEl.children[current].classList.remove('on');
+  current = Math.max(0, Math.min(slides.length-1, n));
+  document.querySelectorAll('.slide')[current].classList.add('active');
+  dotsEl.children[current].classList.add('on');
+  document.getElementById('ctr').textContent = (current+1)+' / '+slides.length;
+  document.getElementById('prev').disabled = current===0;
+  document.getElementById('next').disabled = current===slides.length-1;
+  requestAnimationFrame(autoScale);
+}
+
+function go(d) { goTo(current+d); }
+goTo(0);
+
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key==='ArrowDown') go(1);
+  if (e.key==='ArrowLeft'||e.key==='ArrowUp') go(-1);
+});
+window.addEventListener('resize', () => requestAnimationFrame(autoScale));
+
+// ── Tooltip system ──
+const tipEl = document.createElement('div');
+tipEl.id = 'tip';
+document.body.appendChild(tipEl);
+
+let tipTimeout;
+deck.addEventListener('mouseover', e => {
+  const target = e.target.closest('[data-tip]');
+  if (!target) return;
+  clearTimeout(tipTimeout);
+  tipEl.innerHTML = target.dataset.tip;
+  // Position near cursor but keep in viewport
+  const pad = 14;
+  let x = e.clientX + 16;
+  let y = e.clientY + 12;
+  tipEl.style.left = '0'; tipEl.style.top = '0';
+  tipEl.classList.add('show');
+  const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  if (x + tw > window.innerWidth - pad) x = e.clientX - tw - 12;
+  if (y + th > window.innerHeight - pad) y = e.clientY - th - 12;
+  tipEl.style.left = x + 'px';
+  tipEl.style.top  = y + 'px';
+});
+
+deck.addEventListener('mousemove', e => {
+  if (!tipEl.classList.contains('show')) return;
+  const target = e.target.closest('[data-tip]');
+  if (!target) return; // don't hide here — only update position when over a tip element
+  clearTimeout(tipTimeout);
+  const pad = 14;
+  let x = e.clientX + 16, y = e.clientY + 12;
+  const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  if (x + tw > window.innerWidth - pad) x = e.clientX - tw - 12;
+  if (y + th > window.innerHeight - pad) y = e.clientY - th - 12;
+  tipEl.style.left = x + 'px';
+  tipEl.style.top  = y + 'px';
+});
+
+deck.addEventListener('mouseout', e => {
+  const target = e.target.closest('[data-tip]');
+  if (!target) return;
+  // Ignore transitions between children of the same [data-tip] element
+  if (target.contains(e.relatedTarget)) return;
+  tipTimeout = setTimeout(() => tipEl.classList.remove('show'), 120);
+});
+</script>
+</body>
+</html>

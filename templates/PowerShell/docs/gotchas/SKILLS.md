@@ -1,0 +1,1 @@
+SKILLS.md has been written with per-agent guidance for all seven roles: planner, researcher, coder, reviewer, implementer, tester, and documenter. Each section covers PowerShell-specific rules, patterns, pitfalls, and version compatibility notes (5.1 vs 7+).

@@ -1,0 +1,12 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+
+# Pipeline runtime state (per-project, not plugin source)
+.pipeline/run-active.json
+.pipeline/gate-pending.json
+.pipeline/review-archive/
+docs/audit-log.jsonl

@@ -1,0 +1,139 @@
+[
+  {
+    "id": "pipeline-agents",
+    "name": "Pipeline Agents",
+    "description": "27 agent definitions that form the multi-stage development pipeline — from planning through review to implementation.",
+    "notes": "Each agent is a Markdown file with YAML frontmatter (name, description, model, tools). Agents are loaded by Claude Code on invocation. The pipeline sequence is: brainstormer → planner → researcher → gotcha-checker → reviewers (plan stage), then coder → completeness-checker → reviewers (implement stage), then implementer → documenter (apply stage).",
+    "capabilities": [
+      { "id": "plan-pipeline", "text": "Plan features via brainstormer + planner + researcher + gotcha-checker + reviewers", "addedAt": 0 },
+      { "id": "implement-pipeline", "text": "Implement features via coder + completeness-checker + reviewers", "addedAt": 0 },
+      { "id": "apply-pipeline", "text": "Apply changes to source files via implementer + documenter", "addedAt": 0 },
+      { "id": "debug-pipeline", "text": "Debug issues via debug agent + reviewers", "addedAt": 0 },
+      { "id": "refactor-pipeline", "text": "Refactor code via refactor agent + reviewers", "addedAt": 0 },
+      { "id": "architecture-analysis", "text": "Audit project structure via architect agent", "addedAt": 0 },
+      { "id": "code-review", "text": "Multi-reviewer code review (safety, logic, style, performance, boundary)", "addedAt": 0 }
+    ],
+    "keyFiles": [
+      "agents/planner.md",
+      "agents/coder.md",
+      "agents/implementer.md",
+      "agents/documenter.md",
+      "agents/reviewer.md",
+      "agents/reviewer-safety.md",
+      "agents/reviewer-logic.md",
+      "agents/reviewer-triage.md",
+      "agents/architect.md",
+      "agents/debug.md",
+      "agents/brainstormer.md"
+    ],
+    "stores": [],
+    "ipcChannels": [],
+    "dependsOn": [],
+    "usedBy": ["slash-commands"],
+    "addedAt": 0,
+    "updatedAt": 0
+  },
+  {
+    "id": "slash-commands",
+    "name": "Slash Commands",
+    "description": "17 user-facing commands for pipeline control, project management, and status.",
+    "notes": "Commands live in commands/forge/*.md. User types /forge:plan, /forge:implement, etc. Each command is a Markdown prompt that orchestrates one or more agents. Commands reference agents by name — Claude Code resolves them from the agents/ directory.",
+    "capabilities": [
+      { "id": "plan-command", "text": "Plan a feature with brainstormer + planner", "addedAt": 0 },
+      { "id": "implement-command", "text": "Implement a planned feature with coder + reviewers", "addedAt": 0 },
+      { "id": "apply-command", "text": "Apply approved implementation to source files", "addedAt": 0 },
+      { "id": "debug-command", "text": "Debug a bug with structured analysis", "addedAt": 0 },
+      { "id": "init-command", "text": "Initialize a new project with FORGE pipeline files", "addedAt": 0 },
+      { "id": "status-command", "text": "Show project pipeline status", "addedAt": 0 },
+      { "id": "todo-command", "text": "Manage TODO items on the board", "addedAt": 0 }
+    ],
+    "keyFiles": [
+      "commands/forge/plan.md",
+      "commands/forge/implement.md",
+      "commands/forge/apply.md",
+      "commands/forge/debug.md",
+      "commands/forge/init.md",
+      "commands/forge/status.md",
+      "commands/forge/chat.md",
+      "commands/forge/todo.md",
+      "commands/forge/config.md"
+    ],
+    "stores": [],
+    "ipcChannels": [],
+    "dependsOn": ["pipeline-agents"],
+    "usedBy": [],
+    "addedAt": 0,
+    "updatedAt": 0
+  },
+  {
+    "id": "hooks",
+    "name": "Hooks",
+    "description": "Session tracking, context monitoring, workflow guard, and role enforcement hooks.",
+    "notes": "Hooks are Node.js scripts declared in hooks/hooks.json. They fire on Claude Code events (SessionStart, PreToolUse, PostToolUse). Scripts receive JSON on stdin and communicate via stdout/stderr/exit code. Paths use ${CLAUDE_PLUGIN_ROOT} for portability.",
+    "capabilities": [
+      { "id": "context-tracking", "text": "Track context window usage and emit checkpoint signals", "addedAt": 0 },
+      { "id": "tool-call-audit", "text": "Log all tool calls to audit file for post-run analysis", "addedAt": 0 },
+      { "id": "workflow-guard", "text": "Block writes that violate pipeline workflow rules", "addedAt": 0 },
+      { "id": "role-enforcement", "text": "Enforce per-agent write-path restrictions via agent-roles.json", "addedAt": 0 }
+    ],
+    "keyFiles": [
+      "hooks/hooks.json",
+      "hooks/ctx-post-tool.js",
+      "hooks/ctx-pre-tool.js",
+      "hooks/ctx-session-start.js",
+      "hooks/workflow-guard.js",
+      "hooks/forge-banner.js"
+    ],
+    "stores": [],
+    "ipcChannels": [],
+    "dependsOn": [],
+    "usedBy": ["pipeline-agents"],
+    "addedAt": 0,
+    "updatedAt": 0
+  },
+  {
+    "id": "parallel-sessions",
+    "name": "Parallel Sessions",
+    "description": "Git worktree-based isolation for running multiple pipeline sessions concurrently.",
+    "notes": "forge-worktree.js manages worktree lifecycle (create, list, merge, cleanup). Each worktree gets isolated .pipeline/, docs/, .claude/ directories. forge-status.js reads state from all worktrees to show combined progress in the terminal status line.",
+    "capabilities": [
+      { "id": "worktree-create", "text": "Create isolated git worktree for a pipeline session", "addedAt": 0 },
+      { "id": "worktree-merge", "text": "Merge completed worktree back to main branch", "addedAt": 0 },
+      { "id": "status-display", "text": "Show combined progress across all active sessions", "addedAt": 0 }
+    ],
+    "keyFiles": [
+      "forge-worktree.js",
+      "forge-status.js"
+    ],
+    "stores": [],
+    "ipcChannels": [],
+    "dependsOn": [],
+    "usedBy": ["slash-commands"],
+    "addedAt": 0,
+    "updatedAt": 0
+  },
+  {
+    "id": "project-templates",
+    "name": "Project Templates",
+    "description": "Scaffold templates for initializing new projects with FORGE pipeline files.",
+    "notes": "Templates are directory trees copied by /forge:init. Each template type (code, code-csharp, power-automate, instructional, etc.) provides starter CLAUDE.md, docs/, and .pipeline/ files tailored to that stack. The architect agent then customizes GENERAL.md and modules.json for the specific project.",
+    "capabilities": [
+      { "id": "code-template", "text": "TypeScript/JavaScript project template with full pipeline scaffold", "addedAt": 0 },
+      { "id": "csharp-template", "text": "C# project template", "addedAt": 0 },
+      { "id": "power-automate-template", "text": "Power Automate project template", "addedAt": 0 },
+      { "id": "instructional-template", "text": "Non-code instructional project template", "addedAt": 0 }
+    ],
+    "keyFiles": [
+      "templates/code/CLAUDE.md",
+      "templates/code-csharp/docs/",
+      "templates/power-automate/docs/",
+      "templates/instructional/CLAUDE.md"
+    ],
+    "stores": [],
+    "ipcChannels": [],
+    "dependsOn": [],
+    "usedBy": ["slash-commands"],
+    "addedAt": 0,
+    "updatedAt": 0
+  }
+]

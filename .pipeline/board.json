@@ -1,0 +1,632 @@
+{
+  "todos": [
+    {
+      "id": "one-chat-gap-chat-misclassify",
+      "priority": "high",
+      "text": "BUG: Haiku classifier returns \"chat\" for detailed multi-file feature specs (e.g. \"Add a favourites system across the site...\"). Prompt tightening alone did not fix it — Haiku over-applies the uncertainty fallback even when the request is unambiguously a feature. Options to investigate: (1) few-shot examples in the system prompt showing long feature specs classified as plan feature, (2) lowering the classification threshold by removing the uncertainty fallback entirely and defaulting to plan feature instead of chat when uncertain, (3) pre-screening prompt length/structure before sending to Haiku.",
+      "done": true,
+      "addedAt": 1775505186820,
+      "tags": [
+        "one-chat"
+      ],
+      "doneAt": 1775537722077
+    },
+    {
+      "id": "agent-skills-audit",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "EXPLORE + ARCHITECT: Audit agent skills, tools, and pipeline composition for gaps and dead weight.\n\nRun an EXPLORE pass first, then invoke the architect agent over the full agent system.\n\nFindings from initial assessment (2026-04-02):\n\nGaps to address:\n- gotcha-checker has no SKILLS.md section — fires every plan-stage STANDARD run but has zero domain guidance\n- documenter has no SKILLS.md section — runs every apply cycle, no project-type context for what to record\n- LEAN plan mode skips gotcha-checker entirely — too lean; gotcha-checker is cheap and should stay in LEAN\n- No universal signals reference in SKILLS.md (reviewer-verdict, pipeline-summary, wave-complete formats only documented per-agent)\n\nLow ROI candidates to evaluate:\n- observer agent — manual invocation, log not surfaced in UI, overlaps with tool-call-auditor\n- spec-agent, domain-context, tdd-agent — gated behind project.json flags nobody sets; add orchestrator branching with near-zero usage\n- Several agents were retired in the April 2026 cleanup (nyquist-auditor, spec-agent, domain-context). Remaining audit scope: observer agent ROI, tdd-agent usage, gotcha-checker SKILLS.md gap\n\nThe architect agent should review the full .claude/agents/ directory, SKILLS.md, and templates/code/CLAUDE.md pipeline routing and produce a structured recommendation: what to add, what to retire, what to simplify.",
+      "addedAt": 1775203200000
+    },
+    {
+      "id": "smart-module-assignment",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "FEATURE: Automatic intelligent module assignment for planned tasks.\n\nWhen a planned item has no module assigned, automatically call an LLM (like enrich-todo) with the full modules.json structure + the feature title/description. The model decides:\n- ASSIGN: feature belongs to an existing module as-is\n- RESTRUCTURE: feature fits an existing module but its children need updating (rename, add, move capabilities)\n- CREATE: feature genuinely warrants a new module (high bar — only when no existing module is even close)\n\nQuality constraints the prompt must enforce:\n- Not one module per feature\n- No overlapping modules\n- Proposed restructuring must not break existing children unless explicitly replacing them\n- A CREATE response must justify why no existing module fits\n\nThe result is applied to modules.json automatically, and the planned item gets the module name set. If the model proposes RESTRUCTURE or CREATE, the changes to modules.json are also written.\n\nReplace the existing manual 'suggested: X? CONFIRM' flow — this becomes fully automatic on promotion to PLANNED. The existing board task module-assignment-planned-create-new is superseded by this one.",
+      "addedAt": 1775160000010
+    },
+    {
+      "id": "todo-planned-promotion-bug",
+      "priority": "low",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "BUG (PARKED): TODO→PLANNED promotion silently drops the task.\n\nThree root causes were identified and fixed:\n1. guessModule crash — mod.name undefined → added nullish coalescing\n2. saveTerminalHistory IPC clone error — Svelte 5 proxy → added JSON round-trip\n3. Board wiped after promotion — auto-save effect used wrong serialisation + getBoard reload overwrote with empty arrays → reverted to $state.snapshot + added guard\n\nAll three fixes are in the current code. Bug has not reproduced since early April 2026. PARKED — if it reappears, the race condition to investigate is: auto-save effect (App.svelte line ~59) firing between promoteTodoToPlanned() and the explicit saveBoard() call (line ~762), combined with the board reload (line ~850) reading stale disk data before the explicit save lands.\n\nKey files: src/renderer/src/stores/project.svelte.ts (promoteTodoToPlanned), src/renderer/src/App.svelte (auto-save effect + onDone promotion + board reload sequencing).",
+      "addedAt": 1775160000003
+    },
+    {
+      "id": "agent-model-audit",
+      "priority": "high",
+      "text": "FEATURE: Audit and update agent models — review every agent's assigned model, update LIVE tab and Settings agent tab to display model badges accurately.\n\nTwo parts:\n1. Model audit: review each agent's model assignment in .claude/agents/*.md and confirm Sonnet vs Haiku assignments are correct for the role (e.g. triage agents on Haiku, heavy writers on Sonnet). Update any that are wrong.\n2. UI: ensure the LIVE tab agent cards and the Settings > Agents tab both show the correct model name/badge per agent so the user can see at a glance which model is running.",
+      "done": true,
+      "addedAt": 1775001600001,
+      "doneAt": 1775081919000
+    },
+    {
+      "id": "todo-enrichment-level2",
+      "priority": "high",
+      "text": "FEATURE: Tone down TODO enrichment to Level 2 — rewrite for clarity without scope creep, 2–3 sentences max.\n\nCurrent prompt says 'expand' and 'provide enough context that an AI agent can act without follow-up questions', which causes it to invent requirements (WCAG, hover states, JSON files, fuzzy matching) that the user never asked for.\n\nNew behaviour: clarify intent and add one scope boundary (what's NOT included), 1–2 sentences max. Do not add technical details, edge cases, or implementation choices not present in the original.\n\nChange is in src/main/handlers/pipeline-data.ts — the `enrich-todo` IPC handler prompt string only.",
+      "done": true,
+      "addedAt": 1775001600000,
+      "doneAt": 1775081919000
+    },
+    {
+      "id": "batch-api-documenter-cleanup",
+      "priority": "low",
+      "text": "⛔ PARKED — see reason below.\n\nTOKEN COST: Route documenter and cleanup agents through the Anthropic Batch API for ~50% cost reduction.\n\nThe gap: documenter and cleanup run after the apply phase and are not time-sensitive. The Anthropic Batch API gives ~50% cost reduction with async processing.\n\n---\n\n⛔ PARKED (2026-03-30): Research confirmed the Batch API is not accessible via the Claude CLI subprocess — it requires direct Anthropic SDK calls. The critical blocker is that the Batch API has NO tool use support. Documenter and cleanup both rely heavily on tools (Read/Write/Edit/Grep/Glob) to read CHANGELOG.md, write board.json, archive PLAN.md, etc. To use the batch path, these agents would need to receive all inputs pre-loaded into the prompt and return structured diffs/JSON for FORGE to apply — a significant rework of how both agents operate, not a simple swap of spawn calls. Effort upgraded from M–L to L–XL. The ~50% saving is real but the tool-use constraint makes this a major architectural change. Park until higher-priority improvements are done and/or Anthropic adds tool use to the Batch API.",
+      "done": false,
+      "addedAt": 1743342016000,
+      "tags": [
+        "improvement",
+        "token-cost",
+        "batch-api",
+        "documenter",
+        "cleanup",
+        "async",
+        "parked"
+      ]
+    },
+    {
+      "id": "task-blocked-by-support",
+      "priority": "medium",
+      "blockedBy": [],
+      "text": "FEATURE: Implement blockedBy support for board tasks — UI rendering and agent/chat settable.\n\nThe gap: `blockedBy` is already a data field in board.json (used by one-chat-vision-ux-redesign and dynamic-pipeline-construction-retire-modes) but FORGE has no awareness of it. Tasks show as normal even when their blockers are unresolved. Agents and chat have no way to set or update the field.\n\n**Part 1 — UI rendering (PlannedPanel.svelte):**\nRead `blockedBy` array from each task. If any referenced task id is not done, mark the task as blocked: show a 'BLOCKED' badge, grey out the row, and show which task(s) are blocking it on hover or as a subtitle. Blocked tasks cannot be started (clicking them does nothing or shows a tooltip).\n\n**Part 2 — IPC + signal (agent/chat settable):**\nAdd a new signal `[task-block] <task-id>|<blocker-id>` that agents (or the One Chat intent classifier) can emit to mark one task as blocked by another. Wire an IPC handler that reads board.json, finds the task by id, appends to its `blockedBy` array, and writes back. This enables the user to say in chat 'block X until Y is done' and have it reflected immediately in the PLANNED tab.\n\nThis is the foundation for One Chat to manage task relationships conversationally — a natural follow-on to One Chat Phase 1.\n\nAffected files: src/renderer/src/components/panels/PlannedPanel.svelte (UI), src/main/handlers/ (new IPC handler), src/preload/index.ts, src/renderer/src/types/claude.d.ts, src/renderer/src/lib/ipc.ts, docs/gotchas/GENERAL.md (document [task-block] signal).",
+      "done": false,
+      "addedAt": 1774828800001,
+      "tags": [
+        "feature",
+        "ux",
+        "board",
+        "planned-panel",
+        "one-chat"
+      ]
+    },
+    {
+      "id": "module-assignment-planned-create-new",
+      "priority": "medium",
+      "text": "UX GAP: In the PLANNED tab, each planned item has a MODULE input with an autocomplete datalist and a keyword-based suggestion ('suggested: X? CONFIRM'). But if no existing module fits, the user must type a freeform name that never gets linked to an actual module record in modules.json — it's an orphaned string. There is also no 'Create new module' affordance.\n\n**What should change:**\n(1) If the user types a module name that doesn't match any existing module in modules.json, show a 'CREATE MODULE' button inline that creates a minimal module record in modules.json with just a name (and empty capabilities[]) — so the feature ships into a real registered module, not a ghost string.\n(2) After 'CREATE MODULE', the new name should immediately appear in the autocomplete datalist for all other planned items.\n(3) If the user leaves MODULE empty and hits IMPLEMENT, show a soft warning: 'No module assigned — this feature won't appear in the module registry. Continue?' (non-blocking, can be dismissed).\n\n**Also:** At TODO stage there is no module concept at all — this is intentional (TODOs are raw ideas). Module assignment only becomes relevant at PLANNED stage, which is correct. No change needed there.",
+      "done": true,
+      "addedAt": 1774656000000,
+      "tags": [
+        "ux",
+        "modules",
+        "planned",
+        "registry",
+        "dx"
+      ],
+      "doneAt": 1775736831197
+    },
+    {
+      "id": "git-integration-epic",
+      "priority": "medium",
+      "text": "FEATURE: Git integration epic — auto-commit, branch-per-feature, provider config, optional PR creation.\n\nPart 1 — Apply pipeline integration: on apply feature start, create a feature branch (feature/<slug>). After implementer completes, auto-commit with a descriptive message derived from the plan. On apply success, optionally merge to main or create a PR.\n\nPart 2 — Provider config: per-project git provider settings (GitHub/GitLab/Azure DevOps). Store in project.json. Support personal access tokens for PR creation.\n\nPart 3 — UI: git status indicator in Titlebar or LIVE tab. Branch name visible. Commit history for the current feature.\n\nExisting infrastructure: session.ts already uses git for pause/resume (git add + commit). spawn pattern established. Build on that.\n\nCloses competitive gap with Aider (git-native) and Cursor (git-aware).",
+      "done": false,
+      "addedAt": 1743019200000,
+      "tags": [
+        "feature",
+        "git",
+        "apply-pipeline",
+        "dx",
+        "competitive-gap",
+        "epic"
+      ]
+    },
+    {
+      "id": "explore-weakness-claude-cli-dependency",
+      "priority": "medium",
+      "text": "EXPLORE: FORGE has a hard dependency on the Claude CLI and its stream-json output format. If Anthropic changes the CLI, stream-json schema, Task tool behavior, or pricing — FORGE breaks with no fallback. Explore: (1) map all the coupling points in runner.ts and shared.ts that are Claude-specific (Task tool, stream-json event types, --resume, --agents flags); (2) could FORGE detect CLI version and warn on breaking changes? (3) what is the minimum abstraction layer that would let FORGE swap the CLI without rewriting runner.ts? (4) how much of the agent behavior depends on Claude-specific capabilities vs standard tool-use patterns? Goal: understand the blast radius of a CLI change and find the cheapest way to reduce it.",
+      "done": true,
+      "addedAt": 1743019200000,
+      "tags": [
+        "explore",
+        "architecture",
+        "risk",
+        "claude-cli",
+        "dependency",
+        "competitive"
+      ],
+      "doneAt": 1775571171880
+    },
+    {
+      "id": "multi-ai-model-support-explore",
+      "priority": "medium",
+      "text": "EXPLORE/DISCUSS: How should FORGE support multiple AI models beyond Claude CLI? Current options to evaluate: (1) PATH-BASED — add a field in FORGE settings where the user pastes the path to another CLI executable (e.g. codex.exe, gemini-cli, gpt-engineer). FORGE spawns it the same way it spawns claude, passing prompt via stdin and reading stream-json or plain stdout. Requires each CLI to support a compatible output format — unlikely without adapters. (2) ADAPTER LAYER — build a thin adapter per model that translates FORGE's stream-json expectations to/from that model's output format. More work but model-agnostic. (3) API-DIRECT — call model APIs directly from the main process (no CLI dependency). Removes the Claude CLI dependency entirely but requires API key management and loses Claude's built-in tool use (Task, Read, Glob, etc.). (4) MODEL PER AGENT — let each agent declare which model it uses in its frontmatter (already supported in .md agent files). Budget agents use haiku, reviewer-safety uses opus. Evaluate which approach gives the most value with the least complexity. The PATH-BASED approach for a second CLI is the quickest win if the target CLI supports similar output.",
+      "done": true,
+      "addedAt": 1743019200000,
+      "tags": [
+        "explore",
+        "discuss",
+        "multi-model",
+        "architecture",
+        "strategy"
+      ],
+      "doneAt": 1775571171880
+    },
+    {
+      "id": "test-execution-loop",
+      "priority": "medium",
+      "text": "FEATURE: Add automated test execution to the apply pipeline. Currently FORGE generates docs/TESTING.md (a manual checklist) but never runs actual tests. Proposed: after the implementer applies changes, detect the project test runner (npm test, pytest, cargo test, etc.) from project.json tech stacks or package.json; run the tests; if failures occur, surface them in the terminal and optionally trigger a debug: run automatically. This closes the biggest gap vs Devin and similar autonomous tools. Key design questions: (1) should test execution be opt-in or default? (2) what is the timeout? (3) should FORGE auto-debug on failure or surface and wait for user instruction? Recommended: opt-in toggle in project settings, 60s timeout, surface failures and emit [suggest] debug: <feature> rather than auto-fixing.",
+      "done": false,
+      "addedAt": 1743019200000,
+      "tags": [
+        "feature",
+        "testing",
+        "apply-pipeline",
+        "automation"
+      ]
+    },
+    {
+      "id": "why-file-fill-in-more",
+      "priority": "low",
+      "text": "CONTENT: docs/BACKSTAGE.md currently covers 5 pipeline decisions (gotcha-checker order, planner questions, two gates, researcher order, reviewer-logic timing). Expand it with more entries as FORGE matures — good candidates: why apply feature is a separate pipeline from implement feature, why the coder never touches source files, why reviewer-safety always runs (non-demotable), why EXPLORE mode is read-only, why chat mode skips agent injection, why wave execution is opt-in, why the plan validity rule exists, why DIRECT mode has a redirect protocol. Add entries whenever a non-obvious design decision is made or a user asks why does it work this way.",
+      "done": true,
+      "addedAt": 1743019200000,
+      "tags": [
+        "docs",
+        "why",
+        "content"
+      ],
+      "doneAt": 1775571171880
+    },
+    {
+      "id": "agent-overview-rethink-a1g2-e3n4",
+      "priority": "low",
+      "text": "DISCUSS: Verify that agent overview is correctly split between FORGE SETTINGS and ACTIVE PROJECT. The split is believed to be implemented: (1) FORGE SETTINGS → AGENTS tab shows FORGE scaffold agents in read-only view via listForgeAgents; (2) ACTIVE PROJECT shows only custom (non-scaffold) project agents with edit/delete controls. Test: open FORGE SETTINGS and confirm all pipeline agents (planner, coder, reviewers, etc.) appear in the AGENTS tab with their descriptions; open ACTIVE PROJECT for a project with custom agents and confirm only non-scaffold agents appear with edit/delete; confirm scaffold agents are NOT editable from either view. Mark done when both views are verified working.",
+      "done": false,
+      "addedAt": 1742977200000,
+      "tags": [
+        "discuss",
+        "agents",
+        "settings",
+        "project-overview"
+      ]
+    },
+    {
+      "id": "docs-folder-consolidation",
+      "priority": "low",
+      "text": "PARTIALLY DONE: FORGE-OVERVIEW split into narrative-only (Eras) + generated FORGE-REFERENCE.md. Recipe created. Remaining: consolidate docs/ further — FLOW.md, PIPELINE-ARCHITECTURE.md, QA-TEST-PLAN.md quarantined. Consider merging ARCHITECTURE.md content into FORGE-REFERENCE.md generation.",
+      "done": false,
+      "addedAt": 1743019200000,
+      "tags": [
+        "docs",
+        "why",
+        "overview",
+        "content",
+        "structure"
+      ]
+    },
+    {
+      "id": "competitive-evaluation-external-perspective",
+      "priority": "medium",
+      "text": "DISCUSS: Pretend you are the developer of a competing AI dev tool (e.g. get-shit-done, aider, cursor, or similar) evaluating FORGE for the first time. Give an honest external assessment: (1) STRENGTHS — what would genuinely impress you compared to your own tool? Think: gate system, pipeline structure, specialised agents, signal protocol, wave execution, skills system, the fact that FORGE develops itself; (2) WEAKNESSES — what would make you uncomfortable or unconvinced? Think: token cost, pipeline complexity, orchestrator reliability, onboarding friction for new users, dependency on Claude CLI, no test automation, single-user focus; (3) MISSING — what features does your tool have that FORGE clearly lacks? (4) OVER-ENGINEERED — what would you call unnecessarily complex for the value it delivers? (5) VERDICT — would you be worried about FORGE as a competitor, and why or why not? Be harsh. The goal is to find real gaps and blind spots before real users do.",
+      "done": false,
+      "addedAt": 1743019200000,
+      "tags": [
+        "discuss",
+        "strategy",
+        "competitive",
+        "evaluation"
+      ]
+    },
+    {
+      "id": "one-chat-capability-audit-post-launch",
+      "priority": "medium",
+      "blockedBy": [
+        "one-chat-vision-ux-redesign"
+      ],
+      "text": "DISCUSS/DESIGN: After One Chat ships as a routing layer, audit what it still cannot handle — specifically multi-step requests that require chaining (e.g. \"update the architect schema then run it\", \"mark this done and add a follow-up task\"). Decide whether these belong in the routing layer itself (intent classifier emits a chain of actions) or as a separate orchestration capability on top. Goal: One Chat should be able to handle natural requests that today require the user to break into manual steps.",
+      "done": false,
+      "addedAt": 1774895366744,
+      "tags": [
+        "discuss",
+        "one-chat",
+        "orchestration",
+        "post-one-chat",
+        "ux"
+      ]
+    },
+    {
+      "id": "a3c54baa-355b-4c8f-af0e-224d9d752c90",
+      "text": "False positive plan-stage BLOCK traceability: tool-call-auditor only runs after apply pipelines, so false positive BLOCKs in plan pipelines (e.g. reviewer-logic reading stale handoff.md) are not audited. Options: (1) run tool-call-auditor after plan pipelines too, or (2) write a structured entry to audit-log.jsonl when PLAN-BLOCK-ESCALATED fires or orchestrator diagnoses a false positive. verdicts.jsonl captures the BLOCK verdict but not the why.",
+      "done": true,
+      "priority": "high",
+      "createdAt": 1775074703325,
+      "doneAt": 1775081919000
+    },
+    {
+      "id": "reviewer-triage-module-risk",
+      "priority": "medium",
+      "text": "REFACTOR: Fold regression-risk logic into reviewer-triage and delete the standalone agent.\n\nregression-risk is a separate Haiku agent that reads modules.json + handoff.md, identifies high-risk modules touched by the change, and emits [health] warnings. Nobody acts on those warnings — they sit in the HEALTH tab disconnected from reviewer dispatch.\n\nFold the logic into reviewer-triage: when triage reads the handoff to decide which reviewers to dispatch, also read modules.json and check which modules are touched. If high-risk modules are involved (shared utilities, IPC handlers, stores), promote reviewer-logic and/or reviewer-safety dispatch regardless of mode. The warning becomes an action.\n\nAfter fold: delete .claude/agents/regression-risk.md. Remove from SCAFFOLD_AGENT_NAMES in shared.ts. Remove from pipeline agent lists in constants.ts and templates/code/CLAUDE.md.\n\nAffected: .claude/agents/reviewer-triage.md (add module risk logic), .claude/agents/regression-risk.md (delete), src/main/shared.ts (SCAFFOLD_AGENT_NAMES), src/renderer/src/lib/constants.ts (PIPELINES agent lists).",
+      "done": true,
+      "addedAt": 1743638400001,
+      "tags": [
+        "refactor",
+        "agents",
+        "reviewer-triage",
+        "token-efficiency",
+        "cleanup"
+      ],
+      "doneAt": 1775736831197
+    },
+    {
+      "id": "triage-count-based-gate",
+      "priority": "high",
+      "text": "IMPROVEMENT: Trigger reviewer-triage based on reviewer count, not mode — so LEAN runs that pick up a contextual reviewer still get triage when it pays off.\n\n**The gap:** The routing table ties triage to mode (LEAN=no triage, STANDARD=triage). But contextual reviewers (reviewer-logic, reviewer-performance, reviewer-style) can be added to a LEAN run based on task signals. When that happens, N=3 reviewers all read the full handoff independently — past the break-even point where triage saves tokens, but triage still doesn't run.\n\n**The fix:** After contextual reviewers are resolved and the final reviewer list is known, check the count. If N≥3 (regardless of mode), inject reviewer-triage before dispatching. Each reviewer then reads a focused excerpt instead of the full handoff. Mode stays as declared — no auto-promotion, no user surprise.\n\n**Where to change:** `templates/code/CLAUDE.md` — in the `implement feature:` and `debug:/refactor:` pipeline sections, add an orchestrator rule: 'After resolving the reviewer list, if len(reviewers) >= 3 and mode is not FULL (FULL already includes triage unconditionally), invoke reviewer-triage before dispatching reviewers.'\n\n**Why not mode promotion:** Promoting LEAN → STANDARD changes the user's declared mode, which could pull in completeness-checker and other STANDARD-only agents unexpectedly. Count-based triage is surgical — it only adds the token-saving coordination layer, nothing else.\n\n**Break-even:** Triage costs ~1 full handoff read. It saves (N-1) full handoff reads by giving each reviewer a focused excerpt. Break-even is N=2; profitable at N≥3.",
+      "done": true,
+      "addedAt": 1775224000000,
+      "tags": [
+        "improvement",
+        "pipeline",
+        "reviewer-triage",
+        "token-efficiency",
+        "lean-mode"
+      ],
+      "doneAt": 1775575189113
+    },
+    {
+      "id": "pipeline-type-usage-audit",
+      "priority": "medium",
+      "text": "AUDIT: Review all 11 pipeline types in MODES array — identify which are actively used by the One Chat orchestrator and which are dead. Candidates to evaluate: is 'failed test' ever triggered? Is 'architect' mode distinct from 'direct'? Are all apply-phase modes needed or could they collapse into one? Also add [run-pipeline] signal logging so we can track which pipelines the orchestrator actually triggers in real usage.\n\nAUDIT RESULTS (2026-04-07):\n- one-chat: ACTIVE (primary path)\n- plan/implement/apply feature: ACTIVE (via One Chat handoff + gates)\n- debug, apply debug: ACTIVE\n- refactor, apply refactor: ACTIVE\n- direct: ACTIVE (auto-chains, utility)\n- architect: ACTIVE (import flow, suggest chips)\n- explore: MARGINAL (read-only safety mode, rarely invoked)\n- failed test: DORMANT (no UI trigger, but orchestrator can emit [run-pipeline] failed test — pipeline definition and gate detection work)\n- chat: DORMANT (run-chat IPC handler still functional, but UI routes through one-chat orchestrator instead — redundant but not broken)\n\n[run-pipeline] signal already logged via logSignal().",
+      "done": true,
+      "addedAt": 1775572462278,
+      "tags": [
+        "audit",
+        "pipeline",
+        "one-chat",
+        "cleanup"
+      ],
+      "doneAt": 1775575288994
+    },
+    {
+      "id": "project-json-versioning",
+      "priority": "medium",
+      "text": "FEATURE: Add version field and migration logic to project.json.\n\nproject.json has grown organically — techStacks, agentSlots, references, pipelineMode, testerMode, enrichLevel. When multi-engine config lands (engine field, agentEngines overrides), existing projects need migration. Add:\n1. \"version\": 1 field to project.json (current implicit schema)\n2. A migrations array in shared.ts: each entry is { from: N, to: N+1, migrate: (json) => json }\n3. On read, check version and run pending migrations automatically\n4. On write, always stamp current version\n\nFirst migration (v1 → v2): add engine: \"claude\" default. Future migrations handle schema changes without breaking existing projects.\n\nAffected: src/main/shared.ts (migration runner), src/main/handlers/project-json.ts (version check on read/write), templates/code/.pipeline/project.json (add version to template).",
+      "done": true,
+      "addedAt": 1775573404335,
+      "tags": [
+        "feature",
+        "config",
+        "architecture",
+        "multi-engine"
+      ],
+      "doneAt": 1775737936915
+    },
+    {
+      "id": "project-references-fetch-store",
+      "priority": "high",
+      "text": "FEATURE: Fetch and store project references — URLs, PDFs, and local files become persistent project knowledge.\n\nCore flow: user adds a reference (URL, PDF path, or local file) → FORGE fetches/reads the content → extracts text → saves as clean markdown to docs/references/<slug>.md in the project. Agents and the orchestrator can read these files like any project doc.\n\nNew IPC: fetch-reference handler. Accepts { type: url|pdf|file, source: string, name: string, projectFolder: string }. For URLs: WebFetch + HTML-to-markdown extraction. For PDFs: text extraction (pdf-parse or similar). For local files: copy and convert to markdown. Output capped at 50KB per reference — warn if source is larger, offer to fetch specific sections.\n\nStorage: docs/references/<slug>.md with frontmatter: source URL/path, fetch date, size, type. Managed list in .pipeline/project.json references array (already exists — extend with fetchedAt, contentPath, sizeBytes fields).\n\nAffected: new handler src/main/handlers/references.ts, src/main/index.ts (register), src/preload/index.ts, src/renderer/src/lib/ipc.ts, src/renderer/src/types/claude.d.ts.",
+      "done": true,
+      "addedAt": 1775576097540,
+      "tags": [
+        "feature",
+        "references",
+        "knowledge",
+        "ipc",
+        "high-impact"
+      ],
+      "doneAt": 1775576893197
+    },
+    {
+      "id": "project-references-formats",
+      "priority": "medium",
+      "text": "FEATURE: Multi-format reference ingestion — handle URLs, PDFs, and local files.\n\nURL handling: fetch HTML, strip navigation/headers/footers, convert to clean markdown. Use a lightweight HTML-to-markdown approach (regex-based or a small library). Handle common doc sites: ReadTheDocs, Swagger/OpenAPI, GitHub READMEs, generic HTML.\n\nPDF handling: extract text from PDF files. Options: (1) pdf-parse npm package (pure JS, works in Electron main process), (2) spawn a CLI tool, (3) Claude vision on PDF pages. Recommend pdf-parse for simplicity.\n\nLocal file handling: .md files copied as-is, .txt files wrapped in markdown, .docx needs a converter (mammoth npm package or similar).\n\nAll outputs: clean markdown, frontmatter with source metadata, capped at 50KB. If source exceeds cap, truncate with a note: \"[Content truncated at 50KB — original source has N bytes. Fetch specific sections for complete coverage.]\"\n\nAffected: src/main/handlers/references.ts (format-specific extraction functions).\n\nIMPLEMENTED: Supported formats: URL (HTML→text), .md, .txt, .html/.htm, .json (pretty-printed), .csv, .yaml, .xml, and other text files (used as-is). PDF, docx, images, and binaries return clear error messages telling the user to convert first. No external dependencies needed — all handled natively.",
+      "done": true,
+      "addedAt": 1775576097540,
+      "tags": [
+        "feature",
+        "references",
+        "formats",
+        "pdf",
+        "html"
+      ],
+      "doneAt": 1775584913212
+    },
+    {
+      "id": "full-mode-use-triage",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "CHANGE: FULL pipeline mode should use reviewer-triage instead of skipping it. Currently FULL = all 5 reviewers unconditionally with no triage. Triage doesn't reduce quality — it provides file/line citations that make reviewers more focused and effective, and can still dispatch all 5 when warranted. New behaviour: FULL = triage runs with a floor of all 5 reviewers (triage annotates focus areas but cannot skip any reviewer). Saves tokens when a change genuinely doesn't touch a reviewer's domain while improving reviewer accuracy via targeted citations. Affects: CLAUDE.md pipeline mode table, agent prompts for reviewer-triage, and any orchestrator logic that checks mode to decide whether to run triage.",
+      "addedAt": 1744070400000,
+      "tags": [
+        "pipeline",
+        "efficiency"
+      ]
+    },
+    {
+      "id": "azure-endpoint-documentation",
+      "priority": "low",
+      "text": "DOCS/FAQ: Document how FORGE works with Azure AI Foundry (and Bedrock/Vertex). FORGE spawns Claude Code CLI as a subprocess — it doesn't talk to the API directly. If Claude Code CLI adds Azure endpoint support, FORGE inherits it automatically. Investigate whether Claude Code CLI currently supports alternative backends (Azure, Bedrock, Vertex) and document the answer. Add as a FAQ item for enterprise users asking about running FORGE in their Azure environment.",
+      "done": false,
+      "addedAt": 1744070400000,
+      "tags": [
+        "docs",
+        "enterprise"
+      ]
+    },
+    {
+      "id": "reviewer-agent-file-read-failure",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "BUG: Reviewer subagent failed to read docs/PLAN.md during plan-stage review — file exists on disk (verified) but the agent reported 'does not exist'. Happened twice: first the original reviewer BLOCKED with 2 blockers but empty output file, then the re-run couldn't find PLAN.md at all. Likely a path resolution issue in the subagent context — the agent may be resolving relative paths from a different working directory, or the Read tool is failing silently. Also affects reviewer-safety which couldn't read triage excerpt files (separate but related). Investigate: how subagents resolve working directory, whether docs/PLAN.md path works from the agent's perspective, and why output files are empty when verdicts are emitted.",
+      "addedAt": 1744156800000,
+      "tags": [
+        "bug",
+        "agents",
+        "pipeline"
+      ]
+    },
+    {
+      "id": "widen-default-agent-roles",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "BUG: Default agent-roles.json for new projects only allows implementer to write to src/**. Projects that create files in config/, tests/, data/, or other top-level directories get blocked mid-apply and require manual patching. Seen on Diesel priser project — implementer couldn't write config/settings.json or tests/**. Fix: widen the default allowed paths in the scaffolded agent-roles.json to include config/**, tests/**, data/**, and any other common project directories. Affects: templates/*/agent-roles.json scaffold, .pipeline/agent-roles.json in FORGE root (copied to new projects).",
+      "addedAt": 1744070400000,
+      "tags": [
+        "bug",
+        "pipeline",
+        "scaffolding"
+      ]
+    },
+    {
+      "id": "lean-mode-reviewer-triage-excerpt-bug",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "BUG: In LEAN mode, reviewers expect triage excerpt files that don't exist. LEAN mode runs reviewer-safety + reviewer directly (no triage step), but the reviewer agents look for docs/context/triage-excerpts/*.md which is only produced by reviewer-triage in STANDARD/FULL mode. Reviewer-safety failed on Diesel priser Fetch plan because of this — had to be manually re-invoked. Fix: reviewer agent prompts should not require triage excerpts; they should fall back to reading PLAN.md or handoff.md directly when no excerpt exists.",
+      "addedAt": 1744070400000,
+      "tags": [
+        "bug",
+        "pipeline",
+        "lean-mode"
+      ]
+    },
+    {
+      "id": "agent-repeated-reads-waste",
+      "priority": "high",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "EFFICIENCY: Multiple agents read the same file 3-7 times per run. Observed patterns: (1) completeness-checker reads handoff.md 4-5 times, (2) boundary reviewer writes reviewer.md 3-5 times per run (same content), (3) tool-call auditor reads audit log 3-7 times. These are token-wasting anti-patterns that the agent-optimizer should address. Root cause is likely agent prompts that re-read files they already have in context, or retry loops that re-read on each attempt. Fix: audit agent prompts for redundant read patterns and add explicit 'read once, cache in context' instructions.",
+      "addedAt": 1744070400000,
+      "tags": [
+        "efficiency",
+        "agents",
+        "tokens"
+      ]
+    },
+    {
+      "id": "audit-add-bash-to-implementer",
+      "priority": "medium",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "AGENT FIX: Add Bash tool to implementer agent. Currently implementer has Read/Write/Edit/Glob/Grep but no Bash — can't run mkdir, build commands, or verify changes. Seen in pipeline runs where implementer can't create directories. Affects: .claude/agents/implementer.md frontmatter.",
+      "addedAt": 1744156800000,
+      "tags": [
+        "agents",
+        "pipeline"
+      ]
+    },
+    {
+      "id": "audit-fix-reviewer-triage-bash",
+      "priority": "medium",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "AGENT FIX: Replace Bash tool usage in reviewer-triage with Write tool. Triage currently uses `cat > file << 'EOF'` via Bash to write excerpt files, which is fragile on Windows (caused failures in pipeline runs). Should use Write tool directly. Affects: .claude/agents/reviewer-triage.md — change tools from Bash to Write, update excerpt writing instructions.",
+      "addedAt": 1744156800000,
+      "tags": [
+        "agents",
+        "pipeline",
+        "bug"
+      ]
+    },
+    {
+      "id": "audit-merge-regression-risk-into-triage",
+      "priority": "medium",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "REFACTOR: Merge regression-risk agent into reviewer-triage. Both read handoff.md + modules.json. Regression-risk flags risky modules, triage dispatches reviewers — these should be one agent. Saves one agent spawn per implement run. Affects: .claude/agents/reviewer-triage.md (add module risk analysis), .claude/agents/regression-risk.md (delete), constants.ts (remove from pipeline lists).",
+      "addedAt": 1744156800000,
+      "tags": [
+        "agents",
+        "efficiency",
+        "refactor"
+      ]
+    },
+    {
+      "id": "audit-delete-dead-agents",
+      "priority": "low",
+      "text": "CLEANUP: Delete or archive dead/unused agents: implementer-triage (now wired — keep), tester (always skipped per user preference), observer (manual-only, unused), tdd-agent (never enabled). Tester and observer could be archived to .quarantine/ rather than deleted.",
+      "done": true,
+      "addedAt": 1744156800000,
+      "tags": [
+        "agents",
+        "cleanup"
+      ],
+      "doneAt": 1775739627438
+    },
+    {
+      "id": "trim-lean-drop-coder-scout",
+      "priority": "medium",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "EFFICIENCY: Drop coder-scout from LEAN mode pipeline. The scout reads the plan, greps for files, and writes scout.json — but the coder already reads the plan and has the same tools. In LEAN mode (simple features), the scout adds a full agent spawn for information the coder discovers in its first 3-4 tool calls. Saves ~10-15s + ~5k tokens per implement run. Affects: PIPELINE_MODE_AGENTS in constants.ts (remove coder-scout from lean), orchestrator LEAN routing.",
+      "addedAt": 1744070400000,
+      "tags": [
+        "efficiency",
+        "pipeline",
+        "lean-mode"
+      ]
+    },
+    {
+      "id": "trim-lean-drop-completeness-checker",
+      "priority": "medium",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "EFFICIENCY: Skip completeness-checker in LEAN mode. With 5-8 tasks, the coder either hits them all or the reviewer catches gaps. Across 3 real pipeline runs (Diesel priser), completeness-checker approved instantly every time — never found anything. Saves ~8-12s + ~4k tokens per implement run. Affects: PIPELINE_MODE_AGENTS in constants.ts (remove completeness-checker from lean).",
+      "addedAt": 1744070400000,
+      "tags": [
+        "efficiency",
+        "pipeline",
+        "lean-mode"
+      ]
+    },
+    {
+      "id": "trim-merge-documenter-cleanup",
+      "priority": "medium",
+      "done": true,
+      "doneAt": 1775737021010,
+      "text": "EFFICIENCY: Merge cleanup agent into documenter — one agent pass instead of two. Cleanup checks two conditions (RESEARCH file exists, PLAN-archive > 500 lines) and does simple file ops. The documenter already reads the same files and could do this inline at the end of its run. Saves one agent spawn (~10s + ~3k tokens) per apply run. Also eliminates cleanup's redundant handoff.md re-read. Affects: .claude/agents/documenter.md (add cleanup steps), remove cleanup agent invocation from apply pipeline.",
+      "addedAt": 1744070400000,
+      "tags": [
+        "efficiency",
+        "pipeline",
+        "agents"
+      ]
+    },
+    {
+      "id": "trim-cache-agent-context-across-runs",
+      "priority": "low",
+      "text": "EFFICIENCY: Cache agent prompts (GENERAL.md, SKILLS.md, CLAUDE.md) across runs in the same session. Every agent invocation re-reads these files even though they don't change between runs. Use --continue/--resume to keep them in context, or inject once at session start. Saves ~2-4k input tokens per agent × 5-8 agents = 10-30k tokens per run. Risk: stale context if user edits GENERAL.md mid-session — add file-hash check. Affects: runner.ts spawn logic, potentially CLI --continue integration.",
+      "done": false,
+      "addedAt": 1744070400000,
+      "tags": [
+        "efficiency",
+        "tokens",
+        "architecture"
+      ]
+    },
+    {
+      "id": "one-chat-qa-before-approach",
+      "priority": "medium",
+      "text": "DESIGN: Move Q&A clarifying questions from the planner into the One Chat orchestrator, before the approach proposal. Current flow: orchestrator proposes pipeline → user approves → planner asks questions → writes plan. Problem: planner questions can reveal the task is simpler or more complex than the orchestrator assumed, but by then the pipeline/mode are locked in. New flow: orchestrator asks clarifying questions first (in conversation) → user answers → orchestrator proposes pipeline/mode/agents with full context → user approves → planner receives answers and skips Q&A. Trade-off: adds one round-trip before approach, but produces better pipeline decisions. Architectural change to One Chat flow — touches ORCHESTRATOR_RULES, planner agent prompt, QaStrip integration.",
+      "done": true,
+      "addedAt": 1744070400000,
+      "tags": [
+        "one-chat",
+        "ux",
+        "design",
+        "pipeline"
+      ],
+      "doneAt": 1775738655170
+    },
+    {
+      "id": "knowledge-compound-step",
+      "priority": "high",
+      "text": "FEATURE: Knowledge compounding step — after each apply pipeline, capture the solution in a structured docs/solutions/ directory with YAML frontmatter (problem_type, module, tags, files_touched). Future planner/coder runs search these via a learnings-researcher pattern. Inspired by Compound Engineering Plugin. This replaces flat DECISIONS.md as the searchable knowledge store. Agents read it during plan/implement to avoid repeating past mistakes and reuse proven patterns.",
+      "done": true,
+      "addedAt": 1775741662740,
+      "tags": [
+        "knowledge",
+        "pipeline",
+        "compound"
+      ],
+      "doneAt": 1775745381763
+    },
+    {
+      "id": "knowledge-compound-refresh",
+      "priority": "medium",
+      "text": "FEATURE: Knowledge maintenance — periodic command that scans docs/solutions/ against current codebase. Flags stale docs (reference deleted/renamed files), consolidates duplicates, archives outdated solutions. Prevents knowledge rot. Inspired by Compound Engineering compound-refresh.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "knowledge",
+        "maintenance"
+      ]
+    },
+    {
+      "id": "ideate-command",
+      "priority": "medium",
+      "text": "FEATURE: Ideate step — proactive codebase analysis that suggests high-impact improvements. Goes beyond architect HEALTH mode by being adversarial (what is wrong, what could be better, what is risky). Emits [todo] signals for suggested improvements. Can run as explore-mode command or as optional pre-planner step. Inspired by Compound Engineering ideate.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "knowledge",
+        "exploration"
+      ]
+    },
+    {
+      "id": "scope-guardian-check",
+      "priority": "medium",
+      "text": "FEATURE: Scope guardian — add a scope-creep check to the gotcha-checker or as a new lightweight agent. Asks: is this plan trying to do too much? Does the scope match the original request? Catches oversized plans before they enter the review cycle. Inspired by Compound Engineering scope-guardian-reviewer.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "pipeline",
+        "agents"
+      ]
+    },
+    {
+      "id": "session-history-search",
+      "priority": "medium",
+      "text": "FEATURE: Past session search — when planning or debugging, search signal-log.jsonl and audit-log.jsonl from past runs to find related patterns and solutions. Have we seen this error before? Did a previous run touch these files? Feeds into the planner and debug agents as context. Inspired by Compound Engineering session-historian.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "knowledge",
+        "pipeline"
+      ]
+    },
+    {
+      "id": "context7-integration",
+      "priority": "medium",
+      "text": "FEATURE: Context7 MCP integration — add @upstash/context7-mcp as a tool available to researcher and coder agents for live framework documentation lookup. Covers 1000+ libraries. Free, no API key. Replaces unreliable WebSearch for framework-specific questions. Spawn as MCP server process or call REST API directly.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "knowledge",
+        "tools",
+        "mcp"
+      ]
+    },
+    {
+      "id": "parallel-sessions-worktree",
+      "priority": "high",
+      "text": "FEATURE/DESIGN: Parallel pipeline sessions with git worktree isolation.\n\nThe killer feature: start task B while task A is still running. Each pipeline run gets its own git worktree so file changes dont conflict. User switches between sessions to check progress.\n\nHow it works:\n1. User starts a pipeline (plan feature, implement, etc.)\n2. FORGE creates a git worktree for the task\n3. Pipeline runs in the background (Agent tool with run_in_background)\n4. User immediately starts another task in a new session\n5. A dashboard command shows all running sessions with progress\n6. User can expand any session to see live agent progress (like Claude Code native agent viewer)\n7. Completed sessions merge back via git\n\nPlugin model enables this naturally — multiple terminal windows, each its own Claude Code session, sharing worktrees. Electron model is limited to one CLI process.\n\nDesign questions:\n- How does the session dashboard work? /forge:dashboard reads run-active.json markers across worktrees?\n- How do we handle the merge step? Auto-merge on completion, or manual?\n- Should sessions share the same board.json or each have their own?\n- How do we prevent two sessions from planning against the same stale codebase?\n- Agent viewer: expandable cards showing per-agent progress (tool calls, status) — like Claude Code native but integrated\n\nThis reshapes how FORGE works — from sequential (wait for pipeline) to parallel (start and move on). Strongest argument for the plugin migration.",
+      "done": false,
+      "addedAt": 1775749036266,
+      "tags": [
+        "architecture",
+        "plugin",
+        "parallel",
+        "worktree",
+        "killer-feature"
+      ]
+    },
+    {
+      "id": "forge-web-dashboard",
+      "priority": "medium",
+      "text": "FEATURE: Lightweight web dashboard for FORGE plugin — tiny Node server (~100 lines) serving a single HTML page. File-watches .pipeline/ for changes, WebSocket pushes updates to browser. Shows: session cards with pipeline progress, board (TODO/PLANNED), health signals. Read-only viewer — all control stays in CLI. Optional — everything works without it. Follow-up to the plugin migration, not a prerequisite.",
+      "done": false,
+      "addedAt": 1775749835561,
+      "tags": [
+        "plugin",
+        "ui",
+        "dashboard"
+      ]
+    }
+  ],
+  "planned": [
+    {
+      "id": "test-execution-loop",
+      "priority": "medium",
+      "blockedBy": [
+        "one-chat-vision-ux-redesign"
+      ],
+      "text": "FEATURE: Automated test execution loop — run the project's test suite after every apply cycle, feed failures back to the debug pipeline automatically.\n\nThe gap: FORGE applies implementation changes and marks the pipeline done. Whether the code actually works is left to the user. Competitors (Aider/GSD, Cursor) automatically run tests after applying changes — if tests fail, they initiate a fix cycle without human intervention. FORGE has no equivalent.\n\n**What should change:**\n(1) Add a 'test command' field to project.json (e.g. 'npm test', 'pytest', 'go test ./...'). Blank = test execution disabled.\n(2) After the implementer completes successfully (Gate #2 approved, apply done), FORGE spawns the configured test command as a subprocess, captures stdout/stderr and exit code.\n(3) If tests pass: emit a green 'TESTS PASSED' chip and mark the cycle complete.\n(4) If tests fail: capture the failure output, auto-trigger the debug pipeline with the failure as the input prompt, increment a 'test-fix loop counter'. Cap at 3 auto-fix attempts before handing off to the user.\n(5) The tester agent (already exists) can validate whether the test command output matches expected patterns.\n\n**Why blocked by One Chat:** The automated loop fits naturally into the One Chat 'conversation continues until done' model — where the pipeline self-heals until the user-facing outcome (passing tests) is achieved. The loop architecture is cleaner to build after One Chat defines how pipeline steps chain.\n\n**Competitive gap:** Claude CLI ✗, Aider ✓, Cursor ✓, FORGE ✗",
+      "done": false,
+      "addedAt": 1774832400000,
+      "tags": [
+        "feature",
+        "quality",
+        "testing",
+        "automation",
+        "debug-loop",
+        "competitive-gap",
+        "post-one-chat"
+      ]
+    }
+  ]
+}

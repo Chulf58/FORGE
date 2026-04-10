@@ -1,0 +1,587 @@
+# FORGE — Complete Team Reference
+
+> A living document covering everything your team needs to understand FORGE: what it is, why it exists, how it works, and how it compares to similar tools.
+
+---
+
+## Table of Contents
+
+1. [What Is FORGE?](#1-what-is-forge)
+2. [The Glass Wall Principle](#2-the-glass-wall-principle)
+3. [FORGE vs Plain Claude CLI](#3-forge-vs-plain-claude-cli)
+4. [FORGE vs Similar Tools](#4-forge-vs-similar-tools)
+5. [Why Use FORGE for New Projects](#5-why-use-forge-for-new-projects)
+6. [The Evolution of FORGE's Pipeline — Eras](#6-the-evolution-of-forges-pipeline)
+
+> **Looking for technical reference?** Agent tables, signal protocol, pipeline modes, module wiring, and key files live in [FORGE-REFERENCE.md](FORGE-REFERENCE.md) — generated on demand from source-of-truth files.
+
+---
+
+## 1. What Is FORGE?
+
+FORGE is an **Electron desktop application** that wraps the Claude CLI into a structured, multi-agent software development pipeline with human approval gates, parallel review waves, persistent project state, and stack-aware skill injection.
+
+FORGE is a **tool for developing your projects** — it is not used to develop itself. FORGE's codebase is maintained separately with standard tooling. The pipeline discipline FORGE enforces is for the software you are building with it, not for FORGE as a product.
+
+FORGE does not replace Claude. It orchestrates Claude by:
+1. Launching the Claude CLI subprocess with a carefully assembled `--agents` JSON payload
+2. Streaming its output through a classifier that interprets control signals
+3. Pausing for human approval at defined checkpoints (gates)
+4. Persisting state, verdicts, todos, and project metadata across sessions
+
+---
+
+## 2. The Glass Wall Principle
+
+Everything FORGE does is designed around one idea: **you should always be able to see what is happening and why.**
+
+When you submit a prompt to a plain AI tool, work disappears into a black box. You get a result. You don't know what decisions were made, what was considered and rejected, what assumptions were baked in, or why the output looks the way it does. If something is wrong you can't trace it. If something is right you can't learn from it. You are a recipient, not a participant.
+
+FORGE is built on the opposite premise. The terminal is not a log — it is a live window into the work as it happens. You watch the planner reason through your feature. You watch the researcher investigate an unknown. You watch reviewer-safety raise a concern and the coder revise its approach in response. Every agent's thinking, every tool call, every signal is visible as it streams. Nothing is buffered and delivered as a finished product.
+
+**This is the glass wall:** the work happens behind glass — agents run, tokens are spent, decisions are made — but the glass is transparent. You are always on the other side watching.
+
+### Why it matters
+
+**Trust.** You approved a plan at Gate #1. You watched the coder write a handoff. Reviewers flagged two issues; you saw them resolved. By the time Gate #2 appears, you have watched everything that led to it. You are not being asked to trust a result — you are confirming something you observed. That is a fundamentally different relationship with an AI system.
+
+**Control.** When you can see every step, you can intervene at every step. You can stop a pipeline mid-run because you saw the planner head in the wrong direction. You can reject Gate #2 because you watched reviewer-logic approve something that felt off to you. The gates are the formal control points, but the terminal is the continuous one.
+
+**Accountability.** Every run is auditable after the fact. The terminal shows what ran. The audit log shows every tool call. The verdicts log shows every reviewer decision. If a bug ships, you can trace exactly which agent missed it and improve that agent's prompt. Nothing is hidden.
+
+**Learning.** Watching agents work teaches you how the pipeline thinks. Over time you build intuition about when a plan is underdone, when a reviewer is overcautious, when research is necessary. Users who engage with the terminal become better at using FORGE than users who just click gates.
+
+### The principle applied throughout FORGE
+
+The glass wall is not just the terminal. It is a design principle that shows up everywhere:
+
+- **Gates** show the plan or handoff summary and verdict before asking for approval — you are approving something you can read, not a blind "yes"
+- **Suggest chips** show the next logical step rather than silently deciding it
+- **The Q&A strip** makes the planner's questions visible before a plan is written, rather than having assumptions baked in silently
+- **Reviewer verdicts** are shown in the terminal as they arrive, not aggregated into a single pass/fail
+- **The signal protocol** (`[summary]`, `[reviewer-verdict]`, `[wave-complete]`) gives agents a formal way to communicate intent to you, not just to each other
+- **Transparent pipeline construction** (planned) — when the orchestrator decides which agents to run for a request, it will explain that decision before running, extending the glass wall to the meta level
+
+### An analogy — the open kitchen
+
+Think of an expensive restaurant with an open kitchen. You sit at your table and talk to the waiter. The waiter guides you — asks clarifying questions about your preferences, suggests what pairs well, describes the options. You place your order. The waiter carries it to the kitchen, which has a full glass wall facing the restaurant floor.
+
+From your seat you can watch everything the chefs are doing. You might not understand every technique — only they truly know what they're making and why — but you can see the work happening in real time. You can see when something gets adjusted, when a dish gets a second pass, when the head chef checks the plate before it goes out. If something looks wrong from where you're sitting, you could say something. When your meal arrives, you watched it being made every step of the way.
+
+FORGE works the same way. You talk to the interface (the waiter). It guides you with questions and suggestions, then carries your request to the pipeline (the kitchen). The terminal is the glass wall — the chefs (agents) are the specialists doing the work, each with their own domain and expertise, and you may not understand every decision they make. But the transparency is always there. By the time your feature arrives — reviewed, implemented, documented — you watched it being made.
+
+---
+
+### What the glass wall is not
+
+The terminal being live and visible does not mean you have to watch it constantly or understand every line. You can submit a prompt and come back when the gate appears. The glass wall is an offer of visibility, not a demand for attention. The point is that it is always *available* — you can look whenever you want, and what you see is the real thing, not a summary or a sanitised output.
+
+---
+
+## 3. FORGE vs Plain Claude CLI
+
+| Capability | FORGE | Claude CLI |
+|---|---|---|
+| Named, pre-defined pipelines | Yes (10+ modes) | No — manual sequencing required |
+| Human approval gates | Yes — Gate #1 (plan→implement), Gate #2 (review→apply) | No |
+| Parallel reviewer waves | Yes — 4+ reviewers simultaneously | Possible via `--agents` but no orchestration |
+| Wave execution (task parallelism) | Yes — with prerequisite verification | No |
+| Signal protocol (`[suggest]`, `[todo]`, etc.) | Yes — intercepted before terminal | No — plain text |
+| Reviewer verdict logging | Yes — persisted to `verdicts.jsonl` | No |
+| Context checkpointing | Yes — up to 5 automatic reinvocations | No |
+| SKILLS.md stack-aware filtering | Yes — per-agent, per-stack guidance | No |
+| Project state persistence | Yes — todos, modules, health, context usage | No |
+| Tester gate | Yes — optional pause before documenter | No |
+| Desktop UI with tabs, panels, gates | Yes | No — terminal only |
+| Project agent slots | Yes — inject custom agents at hook points | No |
+
+**Summary:** Claude CLI is a single-invocation tool. FORGE is a development workflow engine built on top of it.
+
+---
+
+## 4. FORGE vs Similar Tools
+
+### FORGE vs Get-Shit-Done (GSD)
+
+GSD was an earlier workflow methodology that used Claude CLI directly with manually assembled prompts and loose conventions. It demonstrated that structured agent sequencing produced better output than open-ended chat, but it had no UI, no persistence, no gate system, and no way to onboard an existing project. Every run was stateless — context had to be re-supplied manually, there was no TODO board, no reviewer verdict history, and no SKILLS injection. GSD was a proof-of-concept that the pipeline idea was worth building. FORGE is what that idea looks like as a proper product.
+
+| Capability | FORGE | GSD |
+|---|---|---|
+| Desktop UI | Yes — tabs, panels, gates, live agent view | No — terminal only |
+| Gate system (human approval) | Yes — Gate #1 and #2 | No |
+| Persistent project state | Yes — todos, modules, verdicts, history | No — stateless |
+| Stack-aware skill injection | Yes — SKILLS.md filtered per run | No |
+| Project onboarding (existing codebases) | Yes — import wizard + architect agent | No |
+| Reviewer verdict history | Yes — HEALTH tab, `verdicts.jsonl` | No |
+| Custom project agents | Yes — agent slots at hook points | No |
+| Revision cycles | Yes — automatic REVISE loops | Manual |
+
+---
+
+### FORGE vs Cursor / GitHub Copilot
+
+Cursor and Copilot are **in-editor AI assistants** — they help you write code line-by-line inside your IDE. They have no concept of a planning phase, no multi-agent review, no approval gates, and no persistent project state across sessions. They are autocomplete tools that scale up to chat. FORGE is a pipeline tool that structures an entire feature lifecycle — from planning through review, implementation, and documentation — with human checkpoints at each major transition.
+
+| Capability | FORGE | Cursor / Copilot |
+|---|---|---|
+| Planning before code | Yes — planner + researcher + gotcha-checker | No |
+| Multi-agent specialist review | Yes — 4+ reviewers in parallel | No |
+| Human approval gates | Yes — can't proceed without explicit YES | No |
+| Operates outside an IDE | Yes — standalone desktop app | No (Cursor) / Extension only (Copilot) |
+| Persistent project knowledge | Yes — modules, todos, health signals | No |
+| Works on any project structure | Yes — wizard + import | Language-aware but no project model |
+
+---
+
+### FORGE vs Aider
+
+Aider is a terminal-based AI coding tool that applies Claude or GPT changes to your files via git-aware diffs. It handles file writes well but has no pipeline structure, no planning phase, no reviewer wave, and no gate system. It is closer to Claude CLI than to FORGE — a capable single-agent tool that requires the developer to direct every step. FORGE adds the orchestration layer Aider lacks: specialists, gates, persistence, and a UI that makes the process legible.
+
+---
+
+### FORGE vs Autonomous Agents (Devin, OpenHands, etc.)
+
+Fully autonomous agents attempt to complete entire tasks without human involvement. FORGE takes the opposite philosophical position: **human judgment at every major transition is a feature, not a limitation**. Gate #1 stops before code is written. Gate #2 stops before code is applied. The developer remains the decision-maker; FORGE makes that decision well-informed by surfacing research, reviewer verdicts, and a structured plan — rather than skipping the human entirely.
+
+---
+
+## 5. Why Use FORGE for New Projects
+
+### Structured from Day One
+Every FORGE project starts with a wizard that captures:
+- **Tech stack** (used to filter agent skill guidance)
+- **Project structure** (standalone / plugin / library / service / module)
+- **References** (URLs, notes, file paths injected into every agent prompt)
+- **Custom agents** (domain-expert agents from your team, slotted into pipeline hooks)
+
+This context is stored in `.pipeline/project.json` and automatically included in every pipeline run.
+
+### Planning Before Code
+FORGE enforces a planning phase before any code is written:
+- **Planner** breaks the feature into numbered tasks with wave assignments
+- **Researcher** investigates unknowns and writes findings to `docs/RESEARCH/`
+- **Gotcha-checker** validates the plan against 10 quality dimensions before it reaches the coder
+- **Gate #1** requires your explicit approval before implementation starts
+
+You never discover a fundamental design problem mid-implementation.
+
+### Multiple Specialists Review Every Change
+Before any code lands on disk, 4 specialist reviewers examine the implementation plan in parallel:
+- `reviewer-safety` — shell injection, XSS, secrets, Electron security
+- `reviewer-logic` — async correctness, edge cases, race conditions
+- `reviewer-style` — Svelte 5 runes, naming conventions, CSS tokens
+- `reviewer-performance` — sync calls, unnecessary re-renders, IPC patterns
+
+All 4 run **simultaneously**. If any returns `BLOCK`, Gate #2 is disabled until issues are fixed.
+
+### Audit Trail Built In
+Every reviewer verdict is persisted to `.pipeline/verdicts.jsonl` with a timestamp and agent name. The HEALTH tab shows historical approval rates per reviewer, making it easy to see recurring problem areas.
+
+### Project State Accumulates Over Time
+As FORGE develops your project, it builds up:
+- A **TODO board** (`docs/BACKLOG.md` as source of truth, `.pipeline/board.json` as runtime cache) with prioritized tasks
+- A **feature registry** (`.pipeline/features.json`) with shipped features
+- A **module map** (`.pipeline/modules.json`) with FORGE's understanding of your architecture
+- **Health signals** from the architect agent flagging dead code, gaps, and refactor candidates
+
+---
+
+## 6. The Evolution of FORGE's Pipeline
+
+FORGE's pipeline was not designed all at once. Each layer was added because the previous version had a clear, concrete failure. This section traces the progression so you understand why each piece exists and what it replaced.
+
+---
+
+### Era 1 — UI for Claude (the beginning)
+
+FORGE started as a lightweight Electron wrapper around the Claude CLI — a way to give structure to what would otherwise be freeform prompting. The core UI had a TODO tab and a PLANNED tab: raw ideas on the left, approved features on the right. The only pipeline was "talk to Claude, get output, track it manually."
+
+The problem this solved: keeping context across sessions. Claude forgets everything between chats. FORGE gave the work a home.
+
+---
+
+### Era 2 — Project scaffolding
+
+Before scaffolding existed, pointing FORGE at a project meant manually setting up the right files — creating the `.pipeline/` directory, writing a `CLAUDE.md` with pipeline routing rules, adding the docs structure. Every new project was a copy-paste job.
+
+Scaffolding formalised the concept of a FORGE project and made creation a guided act:
+
+**The wizard:** A multi-step creation flow that collected the project name, description, tech stack, and structure type, then generated the initial folder layout automatically. A FORGE project became something you create rather than something you assemble by hand.
+
+**`project.json`:** The machine-readable project identity file — `techStacks`, `techStackLabels`, `structure`, `projectName`, `projectDescription`. Every pipeline run reads this file to know what it is working on.
+
+**Templates per tech stack:** Rather than one universal CLAUDE.md and one universal SKILLS.md, FORGE gained a `templates/` directory with per-stack variants (`code/`, `VanillaHTMLCSSJavaScript/`, `instructional/`, `power-automate/`). A new project gets the right starting files for its declared stack.
+
+**How it evolved:** The initial model copied everything — CLAUDE.md, SKILLS.md, hooks — into the project folder at creation time. This created orphan copies: fixing a routing bug in FORGE's templates never reached existing projects. The model shifted toward runtime injection: SKILLS.md is no longer copied, it is read from FORGE's own templates directory on every run. CLAUDE.md is moving toward a thin project brief only, with routing rules injected by FORGE at run time. The goal is a project folder that holds only project data, with FORGE owning and injecting all operational logic.
+
+---
+
+### Era 3 — The first linear pipeline
+
+```
+planner → researcher → coder → shipped
+```
+
+FORGE grew its first real pipeline: a planner broke the feature into tasks, a researcher investigated technical unknowns, and a coder wrote the implementation. No gates, no reviewers, no human checkpoint between steps.
+
+The problem this solved: unstructured vibe-coding. A single "do everything" prompt produces a first draft with no plan and no research. Splitting into specialist agents produced more coherent output.
+
+The gap it exposed: the coder's output went straight to disk, unreviewed. Bugs, security issues, and wrong approaches shipped without any check.
+
+---
+
+### Era 4 — Gate #1 and the first reviewer
+
+```
+planner → researcher → gotcha-checker → Gate #1 → coder → 1 reviewer → shipped
+```
+
+Two things were added simultaneously: a gotcha-checker that audited the plan before approval, and Gate #1 — the first human checkpoint. The user now had to explicitly approve the plan before the coder ran. A single boundary reviewer then checked the coder's output before shipping.
+
+The problem this solved: plans with structural errors (wrong wave ordering, scope creep, missing IPC channels) were catching problems after implementation instead of before. Gate #1 made the plan approval a deliberate act rather than an implicit step.
+
+The gap it exposed: one reviewer wasn't enough. It caught boundary violations but missed logic bugs, security vulnerabilities, and performance problems. And there was still no Gate #2 — the single reviewer's output had no approval moment; it went straight to applied.
+
+---
+
+### Era 5 — Gate #2 and the reviewer expansion
+
+```
+planner → researcher → gotcha-checker → 1 reviewer → Gate #1
+                                                         ↓
+                                              coder → 3 reviewers → Gate #2 → shipped
+```
+
+Gate #2 was added as the second human checkpoint — the user now had to approve the implementation before it touched source files. The reviewer count expanded to three: boundary, safety, and logic. Each owned a non-overlapping domain.
+
+The problem this solved: the coder's handoff was going directly to source files after one reviewer's sign-off. A security bug caught by reviewer-safety after Gate #2 would require a rollback. The new gate made "reviewed and human-approved" a precondition for any write to disk.
+
+The gap it exposed: three reviewers still missed style regressions and performance issues. And the plan-phase review was still a single reviewer — the plan got less scrutiny than the implementation.
+
+---
+
+### Era 6 — Five reviewers, implementer/documenter split, reviewer-triage
+
+```
+planner → researcher → gotcha-checker → plan-reviewers (3–5) → Gate #1
+                                                                    ↓
+                                              coder → reviewer-triage → impl-reviewers (5) → Gate #2
+                                                                                                ↓
+                                                                          implementer → documenter → shipped
+```
+
+Several things matured together:
+
+**Five specialist reviewers:** reviewer-safety, reviewer-logic, reviewer-style, reviewer-performance, and reviewer (boundary/aggregator). Each owns a completely separate domain. Running in parallel, they cover more ground in less wall-clock time than sequential review.
+
+**reviewer-triage:** A fast Haiku agent that reads the handoff first and decides which reviewers actually need to run for this specific change. A pure CSS change doesn't need reviewer-logic. A config file change doesn't need reviewer-performance. Triage prevents unnecessary reviewer runs and focuses attention where the risk is real.
+
+**Coder/implementer split:** The coder now only writes the handoff document — it never touches source files. The implementer is the only agent that writes to disk, and only after Gate #2 approval. This made the handoff the canonical "staging area": reviewers check a document, not a half-applied diff.
+
+**Documenter:** Shipping a feature now ends with a documenter pass that updates CHANGELOG.md, ARCHITECTURE.md, DECISIONS.md, and archives the completed plan section. The shipped state became auditable and searchable.
+
+The gap it exposed: running all five reviewers on every change was expensive and slow for simple features. A one-line CSS fix went through the same review gauntlet as a complex IPC refactor.
+
+---
+
+### Era 7 — Wave execution
+
+```
+implementer (wave 1: parallel tasks) → [wave-complete] 1
+           (wave 2: parallel tasks) → [wave-complete] 2
+           → documenter → shipped
+```
+
+The planner gained the ability to annotate independent tasks with `(wave: N)` markers. The implementer runs all tasks in wave N in parallel, verifies each output (key-link verification), then proceeds to wave N+1. Tasks with no dependencies on each other no longer waited in a queue.
+
+The problem this solved: a feature with 8 independent tasks used to run sequentially — task 1 finished before task 2 started. Wave execution cut wall-clock implementation time significantly for large features.
+
+The key design decision: waves are opt-in via explicit planner annotations, not automatic. Automatic dependency inference from natural language task descriptions is unreliable. The planner marks `(wave: N)` only when it is certain tasks are independent — making the parallelism contract explicit and auditable.
+
+---
+
+### Era 8 — Modular building
+
+Until this point, FORGE tracked work as flat lists: TODOs, planned items, shipped features. The project existed as a collection of files, but there was no structured understanding of what the codebase was made of — no map of which components served which purpose, and no way to assign a feature to the part of the app it would affect.
+
+Three things were introduced together:
+
+**The architect agent:** An on-demand agent that reads the codebase and produces a structured map of functional modules — each with a name, description, and list of capabilities. It writes this to `.pipeline/modules.json` and updates `docs/ARCHITECTURE.md`. Running the architect gives every agent an accurate, up-to-date picture of the project's structure without relying on per-agent file exploration.
+
+**Module assignment for planned features:** In the PLANNED tab, each planned feature can be assigned to a module. This made planning modular — "add gallery filter" would be assigned to the gallery-module, making the board a living document of what is changing where, not just what is changing.
+
+**The MODULES tab:** A dedicated UI panel showing every identified module, its description, and its capabilities. Meant to always reflect the real codebase — the architect updates it when the structure changes, and the documenter (planned) appends new capabilities as features ship.
+
+The problem this solved: as projects grow, agents lose track of which files are responsible for what. Without a module map, the planner has to infer structure from file names and a flat directory listing. With modules, every agent that reads `docs/ARCHITECTURE.md` inherits the architect's structured understanding of the project — and plans naturally align to the existing structure rather than creating new, orphaned files.
+
+---
+
+### Era 9 — Tech stacks and the SKILLS system
+
+```
+project.json: techStackLabels → filterSkillsByStacks → --append-system-prompt
+```
+
+Until this point, every agent ran with the same instructions regardless of what the project was built with. A reviewer-safety checking an Electron app and one checking a vanilla HTML site ran identical prompts — the Electron-specific checks (contextIsolation, nodeIntegration, IPC validation, sandbox flags) were either hardcoded in the agent prompt for every project, or missing entirely.
+
+Two things were introduced together:
+
+**Tech stacks in the wizard:** The project creation wizard began collecting the project's tech stack (Electron, Svelte 5, TypeScript, Vanilla HTML/CSS/JavaScript, Power Automate, etc.) and saving it to `project.json` as `techStackLabels`. This gave FORGE a machine-readable declaration of what technology the project uses.
+
+**SKILLS.md — per-agent, per-stack guidance:** A structured markdown file organised by agent name and stack name. Each agent section contains stack-specific rules that only apply when working on that stack. FORGE reads SKILLS.md at runtime, filters it to the project's declared stack labels, and injects only the matching content into every agent's system prompt via `--append-system-prompt`.
+
+The problem this solved: agent prompts were bloated with stack-specific rules that only applied to one technology. reviewer-safety's Electron security checklist was irrelevant noise when reviewing a plain HTML site. reviewer-logic's Svelte 5 rune mutation rules meant nothing in a Python project. SKILLS.md moved all of that out of agent prompts and into a single filterable file — agents became stack-agnostic by default and stack-aware by injection.
+
+**Ownership decision:** FORGE owns SKILLS.md. It lives in FORGE's templates directory and is never copied into active projects. This means every project always gets the current version of the guidance — fixing a SKILLS entry in FORGE fixes it for all projects immediately, with no per-project migration.
+
+---
+
+### Era 10 — Pipeline modes (LEAN / STANDARD / FULL)
+
+**Plan phase:**
+
+| Mode | Agent sequence |
+|------|----------------|
+| `LEAN` | planner → researcher (conditional) → reviewer (boundary only — no gotcha-checker, no reviewer-triage, no specialists) → Gate #1 |
+| `STANDARD` | planner → researcher (conditional) → gotcha-checker → reviewer-triage → dispatched reviewers → Gate #1 |
+| `FULL` | planner → researcher (always, unconditional) → gotcha-checker → reviewer-triage → all 5 reviewers → Gate #1 |
+
+**Implement/debug/refactor phase:**
+
+| Mode | Agent sequence |
+|------|----------------|
+| `LEAN` | coder/debug/refactor → reviewer (boundary only — no reviewer-triage, no specialists) → Gate #2 |
+| `STANDARD` | coder/debug/refactor → reviewer-triage → reviewer + reviewer-safety (always) + conditionally logic/style/performance → Gate #2 |
+| `FULL` | coder/debug/refactor → reviewer-triage → all 5 reviewers → Gate #2 |
+
+The mode is stored in `.pipeline/project.json` as `pipelineMode` and injected as `PIPELINE MODE: <VALUE>` in every agent's `--append-system-prompt`. When absent, STANDARD is assumed. The mode controls reviewer depth — it never skips a gate.
+
+Three modes give users control over the speed/quality trade-off. LEAN is fast feedback for simple, familiar changes — one boundary reviewer, no specialist wave. STANDARD is the default: research and reviewers are dispatched selectively based on what changed. FULL is for high-risk changes — all reviewers run unconditionally.
+
+The problem this solved: STANDARD mode was over-engineered for a small CSS tweak and under-configured for a critical security-sensitive feature. LEAN exists for speed; FULL exists for confidence.
+
+---
+
+### Era 11 — Suggest chips and the signal protocol
+
+Agents produce plain text output streamed to the terminal. Early on, that output was only ever for the user to read. There was no way for an agent to reach into the FORGE UI and do something — suggest the next step, add a TODO, emit a summary the gate could display.
+
+The signal protocol changed this. Agents began embedding structured tokens on their own lines that FORGE intercepts before the text reaches the terminal renderer:
+
+**`[suggest] <text>`** — creates a clickable chip in the UI above the prompt bar. Clicking it pre-fills the prompt with that text. Agents use this to guide users toward the natural next action: after a plan is written, a `[suggest] implement feature: X` chip appears; after Gate #2 approval, `[suggest] apply feature: X`. Users no longer had to remember what to type next.
+
+**`[todo] <text>`** — adds an item to the TODO tab in real time, without the user having to open the board. Agents surface ideas, gaps, and follow-up work as they encounter them.
+
+**`[summary] <text>`** — sets the summary text that Gate #1 and Gate #2 display. Gates stopped showing raw terminal output and started showing the one-line human-readable summary the agent deliberately wrote.
+
+**`[reviewer-verdict] {...}`** — a JSON signal emitted by each reviewer, intercepted and appended to `.pipeline/verdicts.jsonl` before the text reaches the terminal. Gate #2's blocked/clear state is driven entirely by these persisted signals, not by string-scanning terminal output.
+
+The problem this solved: before signals, FORGE had to scrape terminal text to guess what happened. Gate state was brittle, next steps required the user to know the pipeline by heart, and agent output disappeared after the session. Signals gave agents a first-class way to communicate intent to the UI, not just to the human reading the terminal.
+
+---
+
+### Era 12 — Clarifying questions and the Q&A strip
+
+Until this point, when a feature description was ambiguous the planner had two bad options: guess and potentially write the wrong plan, or produce a plan so hedged it required rewriting after the first Gate #1 review. Both options wasted tokens and time.
+
+The Q&A strip introduced a two-pass planner behaviour:
+
+**Pass 1 (questions):** If the feature description leaves design-critical decisions unanswered, the planner emits a `[questions]` / `[/questions]` block with 2–8 structured questions and stops immediately — no plan written. FORGE intercepts the block, renders it as an inline Q&A strip in the UI, and waits.
+
+**Pass 2 (plan):** The user fills in answers and submits. FORGE re-invokes the full plan pipeline with an `[answers]` block prepended to the prompt. The planner skips questions on this pass and writes the full plan with the correct context already in hand.
+
+The problem this solved: plans built on guesses had a structural defect from the start. The Q&A strip moved requirement clarification to before the plan existed — before any tokens were spent on research, gotcha-checking, or review. A two-question exchange up front prevented entire pipeline reruns due to a wrong scope assumption.
+
+The signal was also repurposed for the debug pipeline — ambiguous bug reports (`"X is broken"` with no error output) could trigger a short questions pass before the debug agent traced a root cause.
+
+---
+
+### Era 13 — Automated auditing and self-improvement
+
+As FORGE ran more pipelines, a pattern emerged: the same agent mistakes kept recurring across sessions. A reviewer would repeatedly read source files it didn't need. An implementer would re-read the handoff on every task instead of once. These were prompt-level inefficiencies — fixable, but only visible to someone watching many runs over time.
+
+Automated auditing made the pipeline observe itself:
+
+**The hook (ctx-post-tool.js):** A post-tool hook that fires after every tool call in a Claude CLI session. It appends a compact record — agent name, tool name, file path, timestamp — to `docs/audit-log.jsonl`. Every pipeline run accumulates its own audit trail without any agent being aware of it.
+
+**tool-call-auditor:** An agent that runs at the end of every apply pipeline, after the documenter. It reads the current session's audit log and checks for known anti-patterns: repeated reads of the same file, tool call storms (many calls with no work between them), blind writes without a preceding read, repeated greps on the same pattern. It also compares against prior sessions — if a pattern appears in 3 or more distinct sessions, it is flagged as recurring with `[auditor-recurring]`.
+
+**agent-optimizer:** Triggered only on `[auditor-recurring]`. It reads the recurring findings, maps each to the responsible agent `.md` file, and writes targeted prompt-fix proposals to `docs/context/handoff.md`. Those proposals then go through Gate #2 — the same human approval gate used for any code change — before an implementer applies them to the actual agent files.
+
+The problem this solved: agent prompt quality had no feedback loop. A reviewer that wasted 3000 tokens on unnecessary file reads in every session cost real money and time, but there was no systematic way to catch it. Automated auditing created a feedback loop where the pipeline improves its own agents based on observed behaviour, not just on human intuition.
+
+**Token efficiency rules:** After observing real 500k-token pipeline runs, four concrete rules were embedded directly into the researcher and planner agent prompts:
+- **No bash commands** — use Glob/Grep/Read tools only; `ls`, `find`, `cat`, `echo` forbidden
+- **One-fetch rule** — never fetch the same URL more than once per session (a researcher was observed fetching the same docs page ×8 in a single run)
+- **No caniuse for mainstream APIs** — skip caniuse checks for browser APIs with >95% support (Fetch, Geolocation, CSS Grid, etc.)
+- **One-read rule** — read each file path exactly once; PLAN.md named explicitly
+
+These rules reduced plan-phase token consumption significantly on runs where researchers had previously fetched reference documentation repeatedly.
+
+---
+
+### Era 14 — Strategic optimisation: competitive analysis and pipeline completeness
+
+By Era 13, FORGE's self-improvement loop was running. The next question was no longer "what is broken?" but "what are we missing compared to the best multi-agent systems in production?"
+
+A systematic competitive analysis compared FORGE against CrewAI, LangGraph, AutoGen, MetaGPT, and patterns from documented production pipelines. The result was not a list of weaknesses — FORGE's gate system, signal protocol, reviewer wave, and self-improvement loop were confirmed as genuinely ahead of the field. The result was a structured improvement backlog: 17 items catalogued with effort estimates, reward projections (token reduction % or quality improvement %), and feasibility verdicts.
+
+**The methodology:** For each item requiring more investigation, a dedicated `explore:` agent run answered a specific feasibility question before any planning or implementation was committed. Six explore agents ran in parallel to assess the new specialist agents; five had run in the previous session for pipeline improvement items. This produced concrete answers: where an agent slots, what signals it emits, whether infrastructure already exists or needs to be built, and how it interacts with existing agents.
+
+**Key findings from the explore phase:**
+- The `BEFORE_PLAN` hook already exists in the type system (`claude.d.ts`) and the project-agents handler infers it automatically for agents with "domain" or "context" in their description — but CLAUDE.md has zero orchestrator logic to activate it. Infrastructure exists; wiring is missing.
+- The handoff summarizer is a natural extension to reviewer-triage (which already reads the full handoff once) rather than a new agent — reviewer-triage currently produces no summary, only a dispatch list and per-reviewer excerpts.
+- The TDD agent and verification-aware planning are orthogonal, not duplicates: TDD writes executable test code stubs; Verify: lines write human-readable pass/fail criteria. Different artifacts for different audiences.
+- The observer agent needs a separate `docs/observer-log.jsonl` (not appended to audit-log.jsonl) to maintain schema isolation — the tool-call-auditor and agent-optimizer work only with tool statistics; the observer would capture reasoning-level patterns from output text.
+- modules.json exposes id, name, description, notes, and capabilities — no coupling or dependency data. The regression-risk agent would work from module names and handoff file paths, emitting `[health]` signals rather than structured coupling graphs.
+
+**The improvement backlog is tracked in `docs/competitive-eval.md`** with a full effort/reward table. Prioritised by ratio: planner checkpoint (XS effort, silent failure eliminated), model version in verdicts (XS effort, A/B analysis enabled), handoff summarizer (S effort, 15–20% reviewer token reduction every run), verification-aware planning (S effort, ~15% less implementer rework), circuit breaker (S effort, 5–15% token saving on revision loops).
+
+**Shipped in Era 14 (Group 1 sprint):**
+- **Model version in reviewer verdicts** — all 5 reviewer agents now emit `"model"` in their `[reviewer-verdict]` JSON; GENERAL.md signal spec updated. Enables A/B analysis after model upgrades.
+- **Handoff summarizer** — reviewer-triage extended to emit a `[handoff-summary]...[/handoff-summary]` block before the dispatch block; CLAUDE.md injects it into every reviewer's context prefix.
+- **Planner checkpoint/resume** — discovered already implemented. Marked done.
+- **Debug/refactor revision loop** — discovered already implemented. Marked done.
+
+**Shipped in Era 14 (Groups 2–5 sprint, 2026-03-30):**
+- **Diff review UI (Gate2Bar)** — collapsible file sections, copy-to-clipboard button for the full diff.
+- **Per-agent latency budget (RunTimer)** — warning state after 5 min: timer turns gold, "· slow" label appears.
+- **Verification-aware planning** — planner now writes a `Verify:` line per task; implementer uses it for wave self-checks; gotcha-checker validates Verify: coverage.
+- **Circuit breaker for revision loops** — orchestrator compares BLOCK reasons across cycles; stops and escalates if same reason appears unchanged (added to all 3 revision loops in templates/code/CLAUDE.md).
+- **Prompt injection guard** — researcher sanitises web-fetched content and emits `[INJECTION-WARNING]` for adversarial patterns; reviewer-safety scans docs/RESEARCH/.
+- **Regression-risk agent** — Haiku agent (step 1b in implement feature STANDARD/FULL); reads modules.json + handoff.md, flags high-risk touched modules via `[health]` signals.
+- **Spec agent** — Haiku pre-planner agent; writes structured spec to docs/SPEC.md with acceptance criteria, out-of-scope, open questions. Opt-in via `"specAgent": true`.
+- **Observer agent** — Haiku on-demand agent (invoked via `direct: run observer`); logs reasoning-level patterns to docs/observer-log.jsonl, feeds agent-optimizer.
+- **TDD agent** — Haiku pre-coder agent; writes Given/When/Then criteria to docs/TEST-CRITERIA.md before coder runs. Opt-in via `"tddAgent": true`.
+- **Domain-context agent** — Haiku pre-planner agent; checks feature against docs/DOMAIN.md domain rules. Activated by file presence in project's `.claude/agents/`.
+- **Completeness-checker agent** — Haiku agent (step 1c in implement feature STANDARD/FULL); reads PLAN.md + handoff.md, emits `[reviewer-verdict]` BLOCK for unaddressed tasks.
+- **Per-run cost telemetry** — `load-token-usage` IPC now returns last 5 runs; agents.svelte.ts stores `recentRuns`; USAGE tab shows "RECENT RUNS" section (mode, cost, tokens).
+- **Parallel coder fix** — FORGE's CLAUDE.md and templates/code/CLAUDE.md now explicitly state sprint coder must run sequentially (all coders write to same handoff.md).
+- **One Chat Phase 2 agent catalog** — board entry updated with 3-tier catalog (always-pipeline / conditional-pipeline / on-demand-only) for the intent classifier.
+- **Missing-project-folder-handling** — `check-folder-exists` IPC wired through all four layers (handler → preload → types → ipc.ts); ProjectsModal shows ⚠ MISSING badge on projects whose folder no longer exists, disables selecting them, and adds a LOCATE button to re-point to the new path via browse dialog + re-registration.
+
+---
+
+### Era 15 — Module wiring, pipeline self-knowledge, and docs consolidation (2026-03-30)
+
+The module system existed but was static — the architect wrote it once and it drifted. This era made it live.
+
+**Module wiring fields:** The architect agent's `modules.json` schema gained five new fields per module: `keyFiles`, `stores`, `ipcChannels`, `dependsOn`, `usedBy`. The architect was run against FORGE in FULL mode to backfill all 12 existing modules with real wiring data traced from source. The result: before touching any module, an agent (or developer) can see exactly which other modules depend on it and which stores/IPC channels it uses.
+
+**Continuous wiring updates:** The documenter's Step 5d now keeps `modules.json` fresh after every apply cycle — it scans the handoff for new file paths, IPC channel strings, and store references and appends them to the matched module's wiring fields, with an `updatedAt` timestamp. No manual architect run needed to keep wiring current.
+
+**No orphaned features:** The planner's Step 4 (module assignment) now handles the case where no module fits — it generates a suggested module name from the feature description and existing taxonomy, presents it in the QA strip with an Accept default, and emits `[module] <new-id>` on re-invocation. The documenter creates the new module record on apply. Every feature ships into a registered module.
+
+**BACKSTAGE.md merged into FORGE-OVERVIEW.md:** The separate design rationale file (15 "why it works this way" entries) was folded inline into the relevant sections of this document. The Backstage button in FORGE now surfaces this complete reference instead of a smaller separate file. BACKSTAGE.md deleted.
+
+**Board hygiene:** 36 completed todos cleaned from `board.json` — 5 orphaned entries deleted, 31 archived to `PLAN-archive.md`. Documenter Step 5c replaced 7-day silent purge with immediate archival so completed todos always have a permanent record.
+
+---
+
+### Era 16 — Capability-scoped skills and user domain knowledge
+
+```
+project.json: capabilities[] → resolveCapabilitiesForTask() → filterSkillsByCapabilities() → --append-system-prompt
+```
+
+The Era 9 SKILLS system filtered by stack label — a task on an Electron project got all Electron rules. The problem: stack label is coarse. A fix to a Svelte component still received Electron IPC rules even though no main process code was involved. Research on the "lost in the middle" effect confirmed why this mattered — rules placed in the middle of injected context are recalled at ~40–50% vs ~90% at the start or end. Irrelevant rules don't just waste tokens; they crowd out the rules that do apply.
+
+**Per-capability files** broke the monolithic SKILLS.md subsections into individual concern files at `templates/code/docs/gotchas/skills/<id>.md` — `electron-ipc`, `electron-security`, `svelte5-reactivity`, `svelte5-components`, `typescript-strict`. Each file is independently stamped with a generated date so the integrity-checker can flag stale sections in isolation rather than the whole file.
+
+**Task-aware injection** added `resolveCapabilitiesForTask()` in `shared.ts`. It parses file paths mentioned in the handoff, maps them to capability IDs via a `FILE_TO_CAPABILITIES` table, and intersects the result with the project's declared capabilities. A task touching only `.svelte` files gets only `svelte5-reactivity` and `svelte5-components` — main process IPC rules are not injected at all.
+
+**`capabilities[]` in `project.json`** is the machine-readable declaration of which capability files a project uses, separate from the display-oriented `techStackLabels`. The wizard, import flow, and the Project Overview add/remove stack actions all derive and persist capabilities automatically from the stack selection via `stackLabelToCapabilities()`.
+
+**Updated skills-generator** now generates per-capability files instead of adding subsections to a monolithic SKILLS.md. Each file covers one concern, one agent at a time, with 5–8 rules per section. The integrity-checker's Check 10 validates freshness for both the legacy SKILLS.md format and the new per-capability files.
+
+**User domain knowledge** added an optional textarea to the wizard and import flow. Platform-specific knowledge — WoW API rate limits, Power Automate connector constraints, anything the LLM doesn't know about the target platform — is appended to `GENERAL.md` at project creation as a `## User-provided domain knowledge` section. Every agent that reads `GENERAL.md` inherits it immediately, without requiring a separate agent or special injection step.
+
+The problem this solved: skills were stack-aware but not task-aware, and platform context had no home at creation time. The capability system makes injected context proportional to what's actually changing — smaller prompts, better rule recall, less noise for agents working in one layer of the stack.
+
+---
+
+### Era 17 — One Chat Phase 1: the conversation-first front door (2026-04-03)
+
+The biggest change to how FORGE is used since the pipeline itself was built. The mode selector and pipeline prefix typing (`plan feature:`, `debug:`) are no longer the front door. You type what you want. FORGE figures out the rest.
+
+**Phase 1a — Intent detection IPC:** A Haiku classifier runs on prompt submit via a new `classify-intent` IPC channel (`src/main/handlers/intent.ts`). It calls `spawnClaudeJson()` with a structured system prompt that maps natural language to one of 7 pipeline types and 5 modes. The result is a typed `IntentResult` — `{ ok: true; pipeline; mode; reason }` — stored in the editor store (`intentResult`, `intentPending`). A 5-second timeout with lean fallback ensures the UI never hangs on a cold Haiku start.
+
+**Phase 1b — Intent confirmation UI:** The two-Enter confirmation flow. First Enter: classification runs, `IntentConfirmRow.svelte` appears below the textarea showing pipeline and mode as editable chips — the user sees what FORGE detected and why (the `reason` field). Second Enter: confirmed, run starts. The mode chip is a dropdown — override is one click, not a trip to settings. The original mode selector hides while chips are visible; an "override" link restores it to dismiss classification entirely. `pipelineModeOverride` threads through as an optional seventh param to `ipc.run()` and is validated in `runner.ts` before reaching the system prompt — no injection risk. After confirmation, the terminal shows `→ detected: <pipeline> · <MODE> — <reason>` above the run header.
+
+**What did not change:** Every pipeline, every agent, every gate, every reviewer, the terminal glass wall. The routing rules are the same — the user just no longer has to know them.
+
+**Why this matters:** FORGE now works the way a conversation with a collaborator works. You say what you want. The system proposes a plan. You confirm or adjust. Work begins. The pipeline complexity is real and valuable — it's just no longer the user's problem to navigate.
+
+**Stage 1 of dynamic pipeline construction is also delivered:** The classifier recommends a mode (LEAN/STANDARD/FULL) based on the risk profile of the request, not just the pipeline type. A CSS tweak gets LEAN. An auth feature gets FULL. The user sees the recommendation and can override it before a single agent runs.
+
+**Shipped in this era:**
+- Phase 1a intent detection IPC (`classify-intent`, Haiku classifier, 5s timeout, lean fallback)
+- Phase 1b intent confirmation UI (two-Enter flow, IntentConfirmRow editable chips, `pipelineModeOverride`)
+- Intent classification log persistence (`log-intent-override` IPC, `.pipeline/intent-log.jsonl`, 1000-entry cap)
+- Classifier gap fixes: TRIVIAL mode distinct UX (amber chip, "direct edit — no agents will run"), stale chip clear on textarea edit, Escape key dismissal, apply modes excluded from classification
+- Pipeline type routing made functional: `resolvedPipeline` drives `ipc.run()`, classifier output actually determines which pipeline runs
+- Count-based triage gate: invoke reviewer-triage when ≥3 reviewers regardless of mode
+- **Non-pipeline request handling (Phase 1.5 POC):** `'chat'` pipeline type routes questions/greetings to a direct Claude reply — no pipeline, no agents. LEAN_FALLBACK changed from `'plan feature'` to `'chat'` for safer timeout handling.
+- **LIVE tab agent preview (Phase 1.5):** After classification succeeds, LIVE tab pre-populates with pending agent cards for the resolved pipeline before the user confirms. Dropdowns sync cards live.
+- **Cost optimisations (shipped alongside Phase 1):** Coder-scout Haiku pre-step resolves file paths before coder runs (max 5 files). Tier-based model routing: planner emits `[tier]` signal, coder routed to Haiku for tier-a (bug fixes), Sonnet for tier-b/c. Key facts extraction in research (max 100 tokens). Revision mode for coder skips static context on retry loops. Tightened BLOCK thresholds across all 5 reviewers — block only on silent runtime failures, security breaches, or unrecoverable races.
+- **Gates inline with terminal:** Gate #1 and Gate #2 render inside the terminal's scrollable content as conversation pauses, not fixed UI chrome.
+
+---
+
+### Era 18 — Real One Chat: the conversational orchestrator (2026-04-07)
+
+The Haiku classifier from Era 17 was a step in the right direction, but it still felt like operating a tool — type, wait for classification, confirm, then work happens. Real One Chat removes that friction entirely. You talk to FORGE the same way you talk to Claude in the CLI. One Enter. A conversation. Pipelines are invisible infrastructure.
+
+**What replaced what:** The Haiku `classify-intent` IPC call + `IntentConfirmRow` two-Enter confirmation is gone. In its place: a single Sonnet orchestrator session that receives every message. The orchestrator is conversational — it can chat, answer questions, discuss ideas, and propose pipeline approaches. Only when the user approves an approach does a pipeline run.
+
+**The 90% context reduction:** The Haiku classifier was fast because it was small. The orchestrator is Sonnet — it needs to be fast too. The key insight: the orchestrator doesn't need the 240KB of agent definitions that pipeline runs require. For conversation, it only needs GENERAL.md (~8KB), SKILLS.md (~23KB), and the ORCHESTRATOR_RULES (~3KB). Agent injection is skipped entirely for `one-chat` mode. The result: ~34KB of system context, comparable to a direct Claude CLI conversation.
+
+**Pipeline handoff via signal:** When the orchestrator proposes an approach and the user approves, it emits `[run-pipeline] plan feature | standard | Add dark mode toggle`. App.svelte captures this signal, stops the lightweight orchestrator session, and auto-starts a proper pipeline run with full agent injection. The user sees one continuous flow in the terminal — the orchestrator's proposal, the approval, then agents spinning up in the LIVE tab.
+
+**Thinking suppression:** In one-chat mode, extended thinking blocks are silently consumed instead of rendered as dim terminal lines. The model still reasons internally, but the terminal shows only the conversation — matching the feel of a direct Claude Code session. Pipeline modes still render thinking for glass-wall transparency.
+
+**Enriched TODOs:** The orchestrator writes detailed, actionable TODO items by default — with TYPE prefix, clear title, and context. No separate Haiku enrichment call needed because Sonnet is already writing the text.
+
+**What was explored and rejected:** A three-column layout (conversation | terminal | data panels) was built and tested. The user found it worse — the conversation surface felt separated from the glass wall. The terminal + prompt below IS the conversation. The two-column layout was restored.
+
+**Shipped in this era:**
+- `one-chat` mode with ORCHESTRATOR_RULES system prompt
+- 90% context reduction (skip agent injection for conversational mode)
+- Single-Enter PromptBar (no classification, no confirmation chips)
+- `[run-pipeline]` signal + pipeline handoff in onDone
+- Thinking suppression for one-chat mode
+- Enriched TODO instructions in orchestrator prompt
+- Right panel width 240px → 290px (fits all tabs with collapse arrow)
+- Removed: IntentConfirmRow usage, editor intent state, Haiku classification flow
+- **Terminal readability overhaul (8 improvements):** Dim work lines / brighten conversation (opacity layering), gold accent border on orchestrator prose, user prompt echo restyled with bold + background tint, separator lines between conversation turns, bold markdown headers in gold, auto-collapsible work blocks in one-chat mode (click to expand), sticky gate bar pinned to bottom when approval needed with amber pulse, rotating idle messages (40 per pool) for empty terminal and prompt placeholder
+- **TODO enrichment levels:** 3-tier enrichment setting (Light / Standard / Full) in FORGE Settings. Controls both the Haiku `enrich-todo` IPC (≈ button in TODO panel) and the One Chat orchestrator's `[todo]` signal detail level. Runner reads `enrichLevel` from `forge-settings.json` and injects `ENRICH LEVEL` directive into orchestrator system prompt.
+- **Documentation restructure:** FORGE-OVERVIEW.md trimmed to narrative-only (Eras + philosophy, 580 lines from 1363). Technical reference sections moved to FORGE-REFERENCE.md (generated on demand from source-of-truth files). Update recipe written to `FORGE-OVERVIEW-RECIPE.md` covering both documents and the slide deck.
+- **Modules audit:** Added One Chat module to modules.json. Updated pipeline-system (removed deleted agents, added agent-skip capability), prompt-run-controls (One Chat single-Enter), terminal-output (8 readability capabilities), settings (enrichLevel), task-board (3-tier enrichment + orchestrator cross-reference).
+
+---
+
+### What's planned next
+
+**One Chat stabilisation (immediate priority):** The conversational orchestrator is built but untested in production. Priority is building, testing, and tuning the orchestrator prompt based on real usage. Edge cases: session resume across conversation turns, orchestrator emitting `[run-pipeline]` signal reliably, prompt carrying through the handoff accurately, user changing topic mid-conversation.
+
+**Transparent dynamic pipeline construction:** The orchestrator already proposes which pipeline and mode to use. Next: proposing the specific agent team with reasoning — "I'm adding reviewer-logic because there's complex state, skipping reviewer-performance because no hot paths." Natural extension of the conversational approach.
+
+**Terminal as glass wall — structured output:** Terminal currently shows raw stdout. Goal: render tool calls as structured entries (collapsible, with file/command previews), thinking blocks rendered distinctly, matching the "alive glass-wall" feel of Claude Code CLI.
+
+**Test execution loop:** After every apply cycle, run the project's configured test command automatically. Failures feed directly into the debug pipeline — up to 3 auto-fix attempts before handing off. Closes competitive gap with Aider and Cursor.
+
+**Multi-model support:** Per-agent model overrides — route specific agents to different providers (GPT-4o, Gemini) based on cost/capability. Provider abstraction layer in runner.ts.
+
+**Triage agents — extending the reviewer-triage pattern:** Complete reviewer-triage as a full triage agent (focused excerpt per reviewer, not just dispatch list). Extend pattern to researcher-triage and implementer-triage. Prototype agent files exist in `.claude/agents/` but are not yet wired.
+
+**Documenter maintains modules.json:** Automate module updates — the documenter already updates CHANGELOG, DECISIONS, and ARCHITECTURE after every apply. Adding modules.json update removes manual maintenance.
+
+### Design decisions — what FORGE deliberately does not do
+
+**No test coverage agent (yet).** A nyquist-auditor agent was prototyped and deleted in April 2026. It wrote structured manual test stubs to `docs/tests/<feature-slug>/` after each apply cycle and emitted `[health]` signals for uncovered requirements. The problem: the stubs connected to nothing — no test runner reads them, the directory isn't surfaced in the UI, and nobody checked them manually. Test coverage tooling is the right idea but the wrong time. When the test execution loop ships (run `npm test` after every apply, feed failures back into debug), a coverage agent should be designed as part of that loop from the start. A bolt-on stub generator before the loop exists produces files into a void.
+
+**No spec agent.** A spec-agent (converting a raw feature description into a structured SPEC.md before the planner runs) was prototyped and deleted in April 2026. The planner's Q&A step already covers the same ground: when scope is ambiguous the planner emits questions, the user answers in the Q&A strip, and those answers become the acceptance criteria and scope boundaries. A separate spec step would produce a document the planner immediately re-reads to ask roughly the same questions — a detour to the same destination. Scope clarification belongs in the conversation, not in a pre-step file.
+
+---
+
+*Last updated: 2026-04-07. For complete technical reference, see [FORGE-REFERENCE.md](FORGE-REFERENCE.md). For architecture decisions, see `docs/DECISIONS.md`. For the update recipe, see `docs/FORGE-OVERVIEW-RECIPE.md`.*
