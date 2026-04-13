@@ -60,6 +60,25 @@ rl.on('close', () => { main(input).catch(() => process.exit(0)); });
 
 ---
 
+## PostCompact hook — do not use for context reinjection
+
+Proven against the current Claude Code runtime (2026-04). All four output shapes were tested live:
+
+| Output shape | Validator | UX |
+|---|---|---|
+| `hookSpecificOutput` JSON envelope | **Rejected** ("Hook JSON output validation failed") | n/a |
+| Plain stdout text | Accepted | Echoed verbatim into `/compact` completion line |
+| Top-level `{"systemMessage": "...", "suppressOutput": true}` | Accepted | Echoed verbatim — `suppressOutput` does not hide it |
+| Top-level `{"additionalContext": "...", "suppressOutput": true}` | Accepted | Echoed verbatim — `suppressOutput` does not hide it |
+
+There is **no supported PostCompact output shape that both injects context and stays out of the visible completion-line chrome**. `hooks/ctx-post-compact.js` is therefore a deliberate silent no-op (exit 0, zero stdout, zero stderr) until the protocol changes.
+
+Do not add any `process.stdout.write` or `console.log` to this hook — anything it emits will be dumped into the user's view on every compaction.
+
+For future silent re-injection, use a different mechanism (e.g. `PreCompact` writes a marker file, `UserPromptSubmit` injects it via `hookSpecificOutput.additionalContext` and deletes the marker — `UserPromptSubmit` is on the validator's `hookSpecificOutput` allow-list, so silent injection is viable there).
+
+---
+
 ## Hook paths — always use absolute or ${CLAUDE_PLUGIN_ROOT}
 
 In `hooks/hooks.json`, use `${CLAUDE_PLUGIN_ROOT}` for paths:
