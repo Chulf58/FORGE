@@ -1034,9 +1034,10 @@
     {
       "id": "pipeline-failure-recovery",
       "priority": "high",
-      "text": "FEATURE: Pipeline failure recovery. Use Claude Code native --resume/--continue for session recovery. Add simple lock file in run-active.json to track current unit. On resume, detect stale lock, synthesize recovery briefing from file state. Do not build complex custom recovery — combine native session management with file-based state. See also worktree-crash-recovery. Scope TBD after restructure.",
+      "text": "FEATURE: Pipeline failure recovery. Original framing: use Claude Code native --resume/--continue for session recovery, track current unit via a lock file in run-active.json, detect stale lock on resume, synthesize recovery briefing from file state. FIRST SLICE DONE (2026-04-13): report-only recovery primitives shipped — (1) currentUnit marker written by hooks/subagent-start.js and cleared by hooks/subagent-stop.js (59d0346); (2) /forge:resume stale-lock notice via forge_resume_run + skills/resume/SKILL.md (59d0346); (3) SessionStart stale-lock notice via hooks/ctx-session-start.js (277023a); (4) terminal-marker truthfulness cleanup on both surfaces — SessionStart clears the marker when the referenced run is completed/failed/discarded (903c339), forge_resume_run suppresses it from the response payload in the same case (953d70f); (5) regression coverage + runner ergonomics — paired narrow tests at mcp/resume-terminal-suppression-test.mjs (a0ad246) and hooks/ctx-session-start-terminal-cleanup-test.js (78de15c), a lightweight runner at scripts/run-tests.mjs (dd5c425), silent-failure fix in hooks/apply-context-inject-test.js (edf7a03), root `npm test` entry (1f99b32), and anchored root package-lock ignore (e8fba82). DEFERRED (larger recovery ambitions not in this slice): synthesized recovery briefings from file/tool-call state, automatic restart/retry at the interrupted step (covered by sibling task pipeline-stage-restart), worktree crash recovery with surviving-call forensics (covered by sibling task worktree-crash-recovery), and native --resume/--continue orchestration (belongs to user-side session management, not FORGE code).",
+      "done": true,
+      "doneAt": 1776109511739,
       "tags": [
-        "needs-detail",
         "pipeline",
         "resilience"
       ]
