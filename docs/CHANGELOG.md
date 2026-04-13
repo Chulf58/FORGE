@@ -1,5 +1,14 @@
 ## [2026-04-13] Visibility, Targeting, Windows Compatibility
 
+### Worktree-aware ctx-pre-tool path matching
+- `hooks/ctx-pre-tool.js`: allowedPaths matching now relativizes the target file against `run-active.json.worktreePath` when the file is inside the active worktree, and falls back to `process.cwd()` otherwise
+- Unblocks `/forge:apply` writes under `.worktrees/<runId>/…` against patterns like `src/**` without broadening any role's allowedPaths
+- Root cause (Diesel Priser e2e): valid worktree paths were being relativized against the main project root, producing `.worktrees/<runId>/src/…` which never matched role patterns
+- Two small helpers added: `readActiveWorktreePath(projectDir)` (sync read of `.pipeline/run-active.json`, null on any failure) and `isInside(absFilePath, worktreeAbs)` (case-insensitive, slash-normalized containment check)
+- Pattern-match logic, role manifest, read-only and empty-allowedPaths branches, and the deny envelope are untouched
+- Out-of-bounds files inside the worktree (e.g. `<wt>/secrets/config.json`) still deny — the fix changes the comparison origin, not the allowed surface
+- Commit `3cb6da8`
+
 ### Run resume (`/forge:resume`)
 - New skill `skills/resume/SKILL.md` and backing MCP tool `forge_resume_run({ runId })` in `mcp/server.js`
 - `/forge:resume <runId>` re-enters a paused or in-progress run; `/forge:resume` with no argument lists resumable runs (`running`, `gate-pending`, `created`) sorted by `updatedAt` desc
