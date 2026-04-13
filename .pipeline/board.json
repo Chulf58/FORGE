@@ -724,9 +724,10 @@
     {
       "id": "plugin-e2e-validation",
       "priority": "high",
-      "text": "VALIDATION: End-to-end plugin test. PARTIAL (2026-04-11): Static checks passed — MCP server starts, 22 tools registered, 4 lib modules import clean, 6 JSON configs valid, 28 agents valid frontmatter, hook scripts syntax-ok, 20 skills present, router logic tested. FRESH-SESSION PASS (2026-04-13): SessionStart hooks (banner, mcp-deps-install, ctx-session-start) fire correctly; /forge:status invocation passed; /forge:resume (newly added) discoverable and functional; live PreToolUse bash-guard direct-block path confirmed denying cat/grep/etc.; MCP tools dispatched end-to-end via Claude Code protocol. Config bootstrap fallback now seeded by /forge:init when CLAUDE_PLUGIN_DATA is unset. REMAINING: full pipeline in Diesel Priser (plan → gate1 → implement → gate2 → apply end-to-end against a real codebase).",
-      "done": false,
+      "text": "VALIDATION: End-to-end plugin test. PARTIAL (2026-04-11): Static checks passed — MCP server starts, 22 tools registered, 4 lib modules import clean, 6 JSON configs valid, 28 agents valid frontmatter, hook scripts syntax-ok, 20 skills present, router logic tested. FRESH-SESSION PASS (2026-04-13): SessionStart hooks (banner, mcp-deps-install, ctx-session-start) fire correctly; /forge:status invocation passed; /forge:resume (newly added) discoverable and functional; live PreToolUse bash-guard direct-block path confirmed denying cat/grep/etc.; MCP tools dispatched end-to-end via Claude Code protocol. Config bootstrap fallback now seeded by /forge:init when CLAUDE_PLUGIN_DATA is unset. FULL-PIPELINE PASS (2026-04-13, Diesel Priser): /forge:plan PASS, Gate 1 PASS, /forge:implement PASS, Gate 2 PASS, /forge:apply PASS after commit 3cb6da8 (worktree-aware ctx-pre-tool); implementer wrote inside .worktrees/<runId>/ successfully, documenter cleanup ran, worktree commit succeeded, run closed with status=completed, currentStep=done. NOTE: merge-back soft-failed because the main tree was already dirty (pre-existing uncommitted changes) — this is a non-blocking hygiene issue handled by the apply-skill contract (\"log and continue\"), not an apply-path regression.",
+      "done": true,
       "addedAt": 1775846876432,
+      "doneAt": 1776106192875,
       "tags": [
         "validation",
         "plugin",
