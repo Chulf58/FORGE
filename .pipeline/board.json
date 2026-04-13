@@ -1184,6 +1184,17 @@
       ]
     },
     {
+      "id": "merge-blocked-run-handling",
+      "priority": "high",
+      "text": "FEATURE: Surface and handle merge-blocked runs. Current behavior: `bin/forge-worktree.js merge()` detects conflicts, runs `git merge --abort`, preserves the worktree/branch, and exits non-zero (safe-fail only — the run is effectively stranded until the user notices and intervenes manually). Missing: a first-class representation so the user is told. First slice should be report-only and registry-backed, mirroring the pipeline-failure-recovery pattern: (a) when merge() fails, persist a `mergeBlocked: { reason, conflictedFiles?, detectedAt }` field on the run and optionally on `run-active.json`; (b) surface this state through `/forge:status`, `/forge:resume`, and the sidecar dashboard (once that lands); (c) offer a `/forge:merge` skill/MCP tool that retries or discards after manual resolution — no auto-merge, no auto-discard. Deferred to later slices: dependency-aware wave scheduling (covered by `dependency-analysis-waves`), surviving-call forensics (covered by `worktree-crash-recovery`), and any form of automatic conflict resolution. Scope TBD beyond slice 1.",
+      "tags": [
+        "worktree",
+        "pipeline",
+        "resilience",
+        "needs-detail"
+      ]
+    },
+    {
       "id": "worktree-stuck-detection",
       "priority": "medium",
       "text": "FEATURE: Stuck loop detection — detect when same task dispatches twice without progress. Retry once with diagnostics, then stop and report which file/artifact was expected. Prevents infinite agent loops burning tokens. GSD pattern. Scope TBD after restructure.",
