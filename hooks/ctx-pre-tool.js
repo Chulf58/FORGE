@@ -11,6 +11,36 @@ function exitOk() {
 }
 
 /**
+ * Read the active run's worktreePath from .pipeline/run-active.json, if any.
+ * Returns null when no active run, no worktreePath, or the file is unreadable.
+ */
+function readActiveWorktreePath(projectDir) {
+  try {
+    const raw = fs.readFileSync(
+      path.join(projectDir, '.pipeline', 'run-active.json'),
+      'utf8'
+    );
+    const data = JSON.parse(raw);
+    return data && typeof data.worktreePath === 'string' && data.worktreePath
+      ? data.worktreePath
+      : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Return true when absFilePath is inside worktreeAbs (or equals it).
+ * Comparison is case-insensitive on Windows and tolerant of slash direction.
+ */
+function isInside(absFilePath, worktreeAbs) {
+  const norm = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
+  const f = norm(absFilePath);
+  const w = norm(worktreeAbs);
+  return f === w || f.startsWith(w + '/');
+}
+
+/**
  * Check whether a normalized relative file path matches one of the allowedPaths
  * patterns defined in agent-roles.json.
  *
@@ -119,11 +149,22 @@ async function main(rawInput) {
     }
 
     // Normalize to a relative path for comparison.
-    // If the path is absolute, make it relative to CWD so patterns like "src/**" match.
+    // If the active run has a worktreePath and the target file is inside it,
+    // relativize against the worktree root so patterns like "src/**" match
+    // writes inside .worktrees/<runId>/. Otherwise relativize against CWD.
     let normalizedPath;
     try {
+      const worktreePath = readActiveWorktreePath(process.cwd());
+      let relBase = process.cwd();
+      if (
+        worktreePath &&
+        path.isAbsolute(rawFilePath) &&
+        isInside(rawFilePath, worktreePath)
+      ) {
+        relBase = worktreePath;
+      }
       const resolved = path.isAbsolute(rawFilePath)
-        ? path.relative(process.cwd(), rawFilePath)
+        ? path.relative(relBase, rawFilePath)
         : rawFilePath;
       normalizedPath = path.normalize(resolved);
     } catch (_) {
