@@ -52,12 +52,54 @@ async function getLastUsage(transcriptPath) {
   return null;
 }
 
+/**
+ * Report-only recovery primitive: if .pipeline/run-active.json exists and
+ * contains a non-null `currentUnit` with an `agent` field, emit a one-line
+ * stale-lock notice via hookSpecificOutput.additionalContext. This means the
+ * previous session ended (crashed / cleared) while a FORGE agent was in flight
+ * — SubagentStop never fired to clear the marker. Report-only: we do NOT
+ * clear the marker, mutate run state, or trigger any recovery workflow.
+ * Returns true iff a notice was emitted (so callers can short-circuit
+ * competing hookSpecificOutput writes on this same hook invocation).
+ */
+function emitStaleUnitNoticeIfAny(projectDir) {
+  try {
+    const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
+    const raw = fs.readFileSync(runActivePath, 'utf8');
+    const data = JSON.parse(raw);
+    const unit = data && data.currentUnit;
+    if (!unit || typeof unit !== 'object' || typeof unit.agent !== 'string' || !unit.agent) {
+      return false;
+    }
+    const notice = 'FORGE notice: the previous session ended while ' + unit.agent + ' was in flight.';
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext:
+          'Display the following FORGE notice to the user on its own line, exactly as written, before any other response. Do not paraphrase, do not add advice, do not offer to restart or resume the run:\n\n' +
+          notice,
+      },
+    }) + '\n');
+    return true;
+  } catch (_) {
+    // File absent / unreadable / unparseable — fail silently. Report-only.
+    return false;
+  }
+}
+
 async function main(rawInput) {
   let payload;
   try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
 
   const sessionId      = payload.session_id;
   const transcriptPath = payload.transcript_path;
+
+  // Stale-lock notice is independent of context-window logic and session_id —
+  // fire it first so it appears even when we exit early below.
+  const projectDir = (payload.cwd && typeof payload.cwd === 'string' && payload.cwd.trim())
+    ? payload.cwd.trim()
+    : process.cwd();
+  emitStaleUnitNoticeIfAny(projectDir);
 
   if (!sessionId) { exitOk(); return; }
 
