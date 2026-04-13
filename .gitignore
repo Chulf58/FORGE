@@ -5,6 +5,12 @@ out
 .eslintcache
 *.log*
 
+# Root-only: the root package.json exists solely to host `npm test` — a
+# casual `npm install` here would generate a lockfile we don't track.
+# Nested lockfiles (mcp/, packages/forge-core/) are tracked and unaffected
+# because this pattern is anchored with a leading slash.
+/package-lock.json
+
 # Pipeline runtime state (per-project, not plugin source)
 .pipeline/run-active.json
 .pipeline/gate-pending.json
