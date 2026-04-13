@@ -49,6 +49,54 @@ function requirePipeline(projectDir) {
   return { ok: true, pipelineDir };
 }
 
+// Case-insensitive on Windows; absolute-path equality after slash normalization.
+// Used by forge_resume_run to verify the run's projectRoot matches the current project.
+function pathsEqual(a, b) {
+  const A = resolve(a).replace(/\\/g, "/");
+  const B = resolve(b).replace(/\\/g, "/");
+  return process.platform === "win32" ? A.toLowerCase() === B.toLowerCase() : A === B;
+}
+
+// Pipeline currentStep -> human-readable stage label.
+// DUPLICATED from bin/forge-status.js PIPELINE_STAGES — keep in sync. The duplication
+// is intentional: bin/forge-status.js is CommonJS and not importable from this ESM
+// module, and a shared extraction was deferred until a second consumer needed it.
+// forge_resume_run is the second consumer; if a third arrives, extract to mcp/lib/.
+const PIPELINE_STAGE_LABELS = {
+  plan: {
+    "started": "starting", "brainstormer-decision": "brainstorming",
+    "planner": "planner", "researcher": "researcher", "gotcha-checker": "gotcha-check",
+    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate1": "gate1",
+  },
+  implement: {
+    "started": "starting", "setup": "setup",
+    "implementation-architect": "scoping slice", "coder-scout": "scout", "coder": "coder",
+    "completeness-checker": "completeness",
+    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate2": "gate2",
+  },
+  apply: {
+    "started": "starting", "setup": "setup",
+    "implementer-triage": "triage", "implementer": "implementer",
+    "testing": "tests", "documenter": "documenter",
+    "worktree-commit": "wt-commit", "merge-back": "merge-back", "done": "done",
+  },
+  debug: {
+    "started": "starting", "debug": "tracing",
+    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate2": "gate2",
+  },
+  refactor: {
+    "started": "starting", "refactor": "analyzing",
+    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate2": "gate2",
+  },
+};
+
+function stageLabelFor(pipelineType, currentStep) {
+  if (!currentStep) return null;
+  const map = PIPELINE_STAGE_LABELS[pipelineType];
+  if (!map) return currentStep;
+  return map[currentStep] || currentStep;
+}
+
 // -- Server ------------------------------------------------------------------
 
 const server = new McpServer({
@@ -1046,6 +1094,106 @@ server.registerTool(
       return textResult(run);
     } catch (err) {
       return errorResult("forge_create_worktree failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_resume_run --------------------------------------------------
+//
+// Restores steering context for a paused or in-progress run. Does NOT mutate
+// the run's status, currentStep, gateState, or agents — resume only updates
+// run-active.json so the current Claude conversation is pointed at this run,
+// and returns the structured state the future /forge:resume skill needs to
+// render its output. Refuses cleanly on terminal status, unknown runId, wrong
+// project, or missing bound worktree. See docs/RESEARCH/ + handoff for the
+// approved contract.
+
+server.registerTool(
+  "forge_resume_run",
+  {
+    title: "FORGE Resume Run",
+    description: "Re-enters a paused or in-progress run by runId. Restores .pipeline/run-active.json steering pointer; does not progress the run autonomously and does not invoke any pipeline skill.",
+    inputSchema: z.object({
+      runId: z.string().describe("Run ID to resume (e.g. r-a1b2c3d4). The 'r-' prefix is added if missing."),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ runId }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const check = requirePipeline(projectDir);
+      if (!check.ok) return check.result;
+
+      // Normalize runId — accept both "r-abc" and "abc"
+      const normalizedId = runId.startsWith("r-") ? runId : ("r-" + runId);
+
+      // Precondition 1: run exists in registry
+      const run = getRun(projectDir, normalizedId);
+      if (!run) {
+        return errorResult("Run " + normalizedId + " not found in registry");
+      }
+
+      // Precondition 2: status is non-terminal
+      const RESUMABLE = new Set(["running", "gate-pending", "created"]);
+      if (!RESUMABLE.has(run.status)) {
+        return errorResult(
+          "Run " + normalizedId + " is " + run.status + "; resume only supports running, gate-pending, or created"
+        );
+      }
+
+      // Precondition 3: projectRoot matches current project
+      if (run.projectRoot && !pathsEqual(run.projectRoot, projectDir)) {
+        return errorResult(
+          "Run " + normalizedId + " belongs to project " + run.projectRoot +
+          "; current project is " + projectDir
+        );
+      }
+
+      // Precondition 4: bound worktree, if any, must exist on disk
+      if (run.worktreePath && !existsSync(run.worktreePath)) {
+        return errorResult(
+          "Run " + normalizedId + "'s worktree at " + run.worktreePath +
+          " no longer exists. Restore the worktree directory or discard the run."
+        );
+      }
+
+      // Success effect: overwrite run-active.json steering pointer.
+      // We do NOT mutate run.status, currentStep, gateState, or agents — those are
+      // owned by the pipeline skills; resume only restores the per-session pointer.
+      const runActiveData = {
+        startedAt: Date.now(),
+        runId: run.runId,
+        pipelineType: run.pipelineType,
+        mode: run.mode,
+        feature: run.feature,
+        agents: [],
+      };
+      if (run.worktreePath) runActiveData.worktreePath = run.worktreePath;
+
+      const runActivePath = join(check.pipelineDir, "run-active.json");
+      try {
+        writeJsonSafe(runActivePath, runActiveData);
+      } catch (writeErr) {
+        return errorResult(
+          "Failed to update run-active.json: " + writeErr.message + ". Run-active state was not modified."
+        );
+      }
+
+      // Return structured fields for the future /forge:resume skill to render.
+      return textResult({
+        runId: run.runId,
+        pipelineType: run.pipelineType,
+        mode: run.mode,
+        feature: run.feature,
+        status: run.status,
+        currentStep: run.currentStep || null,
+        stageLabel: stageLabelFor(run.pipelineType, run.currentStep),
+        gateState: run.gateState || null,
+        worktreePath: run.worktreePath || null,
+        branchName: run.branchName || null,
+      });
+    } catch (err) {
+      return errorResult("forge_resume_run failed: " + err.message);
     }
   },
 );

@@ -1,3 +1,69 @@
+# Handoff: Run resume capability
+
+## Overview
+
+Shipped `/forge:resume` end-to-end: a backend MCP tool, a user-facing skill, and reference/changelog docs. Resume re-enters a paused or in-progress FORGE run by `runId` and restores the per-session steering pointer (`run-active.json`) — but does **not** progress the run autonomously, does **not** invoke any pipeline skill, and does **not** mutate the run's own `status` / `currentStep` / `gateState` / `agents`. After resume, the user (or the LLM on the next prompt) drives the next step.
+
+## What shipped
+
+### Backend (`mcp/server.js`)
+- New tool `forge_resume_run({ runId })`. Normalizes runId (auto-prepends `r-`), runs four preconditions in order, and on success overwrites `.pipeline/run-active.json` with `{ startedAt, runId, pipelineType, mode, feature, agents: [], worktreePath? }`.
+- Two new helpers near the existing helper block:
+  - `pathsEqual(a, b)` — Windows-aware absolute-path equality used for the `projectRoot` precondition.
+  - `PIPELINE_STAGE_LABELS` + `stageLabelFor(...)` — small map duplicated from `bin/forge-status.js` `PIPELINE_STAGES.steps` for human-readable stage labels in the response. Marked clearly with a "DUPLICATED — keep in sync" comment and a "extract to mcp/lib/ if a third consumer arrives" note.
+- Returns structured fields the skill needs: `runId`, `pipelineType`, `mode`, `feature`, `status`, `currentStep`, `stageLabel`, `gateState`, `worktreePath`, `branchName`.
+
+### User-facing (`skills/resume/SKILL.md`)
+- Frontmatter mirrors `approve` / `discard` / `status` (`name`, `description`, `allowed-tools: "Read Write"`).
+- Step 1 routes between two paths based on argument presence.
+- Step 2 (no-arg path) calls `forge_list_runs`, filters to `running`/`gate-pending`/`created`, sorts by `updatedAt` desc, prints `<runId>  <pipelineType>  <status>  <feature>  · updated <relative time>` per row + footer. Empty-list path prints the prescribed fallback message.
+- Step 3 (specific-run path) calls `forge_resume_run`, surfaces backend errors verbatim with `[forge:resume] ` prefix, and on success renders the six-section output block (header / identity / status / optional worktree / blank line / next step) with status-specific wording for `gate-pending+gate1`, `gate-pending+gate2`, `running`, and `created`.
+- Trailing wording-rules section forbids "background", "another session", "auto-resume", "scheduling".
+
+### Docs
+- `docs/FORGE-REFERENCE.md` — added `/forge:resume` row to "Status & data skills" table, added explanatory paragraph naming the non-promise, added `forge_resume_run` row to the "Run registry" MCP tool table.
+- `docs/CHANGELOG.md` — added a `### Run resume (/forge:resume)` subsection at the top of the existing `[2026-04-13]` block.
+
+## Core contract (preserve in any future change)
+
+- **Resumable statuses:** `running`, `gate-pending`, `created`. Terminal statuses (`completed`, `failed`, `discarded`) refuse cleanly.
+- **Effects:** overwrite `.pipeline/run-active.json` only. Run.json itself is untouched.
+- **Non-promises:** no autonomous progress; no skill invocation; no worktree recreation; no cross-session coordination (last-writer-wins on `run-active.json`).
+- **Refusal cases:** unknown runId · terminal status · wrong project (`run.projectRoot` mismatch) · bound worktree missing on disk · IO failure writing run-active.json.
+- **Surface:** skill (`skills/resume/SKILL.md`), not a slash command. The repo migrated commands → skills in `fbc54f3` to fix runtime shadowing; resume follows the established pattern alongside `approve`/`discard`/`status`/`dashboard`.
+
+## Why skill, not command
+
+`commands/forge/` was deliberately emptied in `fbc54f3 Migrate commands/forge/ to skills/ — fix runtime skill shadowing`. Every FORGE pipeline operation is now a skill: skills get both natural-language intent dispatch and `/forge:<name>` invocation from the same artifact. Reintroducing a slash command for resume would re-trigger the shadowing bug that `fbc54f3` fixed, for zero gain over the skill surface.
+
+## Verification done
+
+Six-case logic verification driver (run from `.git/forge-resume-verify.mjs`, gitignored, deleted after use) exercised the resume flow against scratch projects in `os.tmpdir()`. All passed:
+1. **Success — gate-pending:** writes correct `run-active.json`.
+2. **Refusal — terminal/completed:** exact contracted message.
+3. **Refusal — unknown runId:** exact contracted message.
+4. **Refusal — missing worktree:** message includes the absolute path.
+5. **RunId normalization:** accepts both `r-abc` and `abc` forms.
+6. **Refusal — wrong project:** registry-lookup short-circuits with "not found in registry" (the explicit `projectRoot` mismatch path is defense-in-depth for manually-copied run.json files).
+
+`node --check mcp/server.js` passed. Skill frontmatter parity confirmed against `approve`/`discard`/`status`. Forbidden-wording grep against `skills/resume/SKILL.md` returned zero leaks.
+
+## Deferred follow-ups (intentional)
+
+- **Stage-label map extraction:** `PIPELINE_STAGE_LABELS` is duplicated between `bin/forge-status.js` (CommonJS) and `mcp/server.js` (ESM). Extract to `mcp/lib/pipeline-stages.js` only when a third consumer arrives. Drift risk noted in the inline comment at both sites.
+- **Intent-dispatch overlap with `/forge:status`:** the resume skill description includes "list resumable runs" as a trigger; if natural-language users start mis-routing between resume and status, refine descriptions. Not a problem yet.
+- **Run vs session terminology sweep:** `docs/FORGE-OVERVIEW.md`, `docs/FORGE-REFERENCE.md`, statusline labels, and several skill bodies still mix "run" and "session". Decision-only architecture pass already chose "run" as the canonical user-facing identity term. Sweep is a future slice.
+- **Cross-Claude-session coordination:** two Claude sessions in the same project will race on `run-active.json`. Acceptable until forced by real concurrent use; revisit only when needed.
+- **Worktree resurrection on resume:** intentionally refused rather than silently re-created via `git worktree add forge/<runId>` — avoids resurrecting outdated branch state. Forces explicit human recovery decision.
+
+## Adjacent decisions made this session (carry-over context)
+
+- **PostCompact closure (`b8205e2`):** all four PostCompact stdout shapes were proven echoed/rejected; `hooks/ctx-post-compact.js` is now a deliberate silent no-op. Runtime truth in `docs/gotchas/GENERAL.md` § "PostCompact hook — do not use for context reinjection". For future silent reinjection, use PreCompact-marker + UserPromptSubmit-inject.
+- **Plugin-era catch-up baseline (`597c1df`):** large interleaved backlog was committed as one honest catch-up rather than fictionalized themed splits. Granular commits resume from this baseline forward. `.gitignore` extended to suppress `.pipeline/runs/`, `docs/context/*-status.json`, `docs/context/reviewer-output/`, `docs/context/triage-excerpts/`, `.claude/settings.local.json`, `mcp_stderr.txt`, `.forge-hook-canary.txt`.
+- **Session/run model decision:** a "run" is a durable, identity-bearing, pause-able logical unit — not a guaranteed background worker. Multi-run semantics are real today (registry, gate-pending, runId targeting, worktree isolation, statusline fanout) but autonomous progress is not. Future dashboard scope = registry inspection + actions, NOT process supervision.
+
+---
+
 # Handoff: Visibility, Targeting, Windows Compatibility
 
 ## Overview

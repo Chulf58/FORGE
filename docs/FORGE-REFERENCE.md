@@ -447,12 +447,15 @@ rl.on('close', () => {
 | Skill | Description |
 |-------|-------------|
 | `/forge:status` | Project status (mode, board counts, active feature, gate) |
-| `/forge:dashboard` | Styled cards for all active sessions |
+| `/forge:dashboard` | Styled cards for all active and gate-pending runs from the registry |
+| `/forge:resume` | Re-enter a paused or in-progress run by runId; lists resumable runs when called with no argument |
 | `/forge:planned` | Show planned items from board |
 | `/forge:health` | Show health signals |
 | `/forge:todo` | List/add TODOs on the board |
 | `/forge:config` | View/update project settings |
 | `/forge:overview` | Full inventory of agents, skills, hooks, MCP tools |
+
+`/forge:resume` restores steering context for a paused or in-progress run — it overwrites `.pipeline/run-active.json` to point at the requested run and prints the next step the user should take. **It does not progress the run autonomously and does not invoke any pipeline skill.** Once steering is restored, the user (or the LLM on the user's next prompt) drives the next action: re-invoke `/forge:<pipelineType>` for `running`/`created` runs, or `/forge:approve` / `/forge:discard` for `gate-pending` runs. Refuses cleanly on unknown runId, terminal status (`completed`/`failed`/`discarded`), wrong project, or missing bound worktree.
 
 ### Setup & maintenance skills
 
@@ -480,7 +483,7 @@ The same rule applies after Gate #2: the implement run becomes `completed` on ap
 The statusline and dashboard are two different surfaces with disjoint scopes. They MUST stay disjoint to remain useful.
 
 - **Statusline** is a compressed awareness surface for what is in flight RIGHT NOW. It shows project identity plus a small bounded number of active runs (currently `MAX_VISIBLE_RUNS = 2`) with stage progress and gate-waiting indicators. It is read-only, single-line, and updates live. It must not contain feature names, per-agent activity, cost metrics, mode/worktree metadata, history, or interactive controls — those exceed what one line can compress truthfully.
-- **Dashboard** owns full queue/detail/action surfaces: complete list of all active and recent runs, per-run detail (feature name, agents, timing, cost, worktree), routed attention between multiple competing gates, approval/discard controls, history browsing, and cross-session views. The dashboard does not yet exist; this rule defines its scope when it does.
+- **Dashboard** owns full queue/detail/action surfaces: complete list of all active and recent runs, per-run detail (feature name, agents, timing, cost, worktree), routed attention between multiple competing gates, approval/discard controls, history browsing, and cross-run views across the registry. The dashboard does not yet exist; this rule defines its scope when it does.
 - **`+N more` is the explicit overflow handoff.** When the statusline cannot compress further without lying, it points to the dashboard rather than overflowing the line. Future contributors must not raise `MAX_VISIBLE_RUNS` to "fix" overflow — fanout beyond a small N belongs in the dashboard, not the statusline.
 
 This boundary is a hard product rule. Statusline content additions that move toward queue/detail/action responsibilities should be rejected as scope creep.
@@ -623,6 +626,7 @@ Resolve at call time via resolveProjectDir() — never cache at module level
 | `forge_list_runs` | Yes | Lists runs, filtered by status/type |
 | `forge_update_run` | No | Patches run (status, currentStep, worktreePath, branchName, gateState) |
 | `forge_create_worktree` | No | Creates git worktree at .worktrees/<runId>/ |
+| `forge_resume_run` | No | Restores `run-active.json` steering pointer to a non-terminal run; refuses on terminal status, wrong project, or missing bound worktree. Does not mutate the run's own status, currentStep, gateState, or agents. |
 
 #### Model routing
 

@@ -1,5 +1,12 @@
 ## [2026-04-13] Visibility, Targeting, Windows Compatibility
 
+### Run resume (`/forge:resume`)
+- New skill `skills/resume/SKILL.md` and backing MCP tool `forge_resume_run({ runId })` in `mcp/server.js`
+- `/forge:resume <runId>` re-enters a paused or in-progress run; `/forge:resume` with no argument lists resumable runs (`running`, `gate-pending`, `created`) sorted by `updatedAt` desc
+- Restores steering only — overwrites `.pipeline/run-active.json` with `{ startedAt, runId, pipelineType, mode, feature, agents: [], worktreePath? }`. Does NOT mutate the run's own `status`, `currentStep`, `gateState`, or `agents`, and does NOT invoke any pipeline skill autonomously
+- Refuses cleanly on unknown runId, terminal status (`completed`/`failed`/`discarded`), wrong project (`run.projectRoot` mismatch), or bound worktree missing on disk
+- Wording rules baked into the skill: uses "paused at", "previously at", "in this conversation"; never "background", "another session", "auto-resume", "scheduling"
+
 ### Pipeline skill visibility
 - Removed `context: fork` from 6 core pipeline skills (plan, implement, apply, debug, refactor, chat)
 - Pipelines now run in main conversation — agent reasoning, tool calls, reviewer verdicts visible live
