@@ -65,7 +65,7 @@ Example surfacing:
 
 ### If the call returns success
 
-The response contains: `runId`, `pipelineType`, `mode`, `feature`, `status`, `currentStep`, `stageLabel`, `gateState`, `worktreePath`, `branchName`.
+The response contains: `runId`, `pipelineType`, `mode`, `feature`, `status`, `currentStep`, `stageLabel`, `gateState`, `worktreePath`, `branchName`, `currentUnit`.
 
 Print the success block in this exact order:
 
@@ -100,9 +100,15 @@ Print the success block in this exact order:
    ```
    Omit this line entirely when there is no worktree binding.
 
-5. **Blank line.**
+5. **Stale-lock line (only if `currentUnit` is a non-null object with an `agent` field):**
+   ```
+   Note: the previous session ended while <currentUnit.agent> was in flight.
+   ```
+   Omit this line entirely when `currentUnit` is null or absent. Do not add advice, retry instructions, or automating language — the line is a stale-lock signal only.
 
-6. **Next-step line — choose exactly one based on `status` (and gate, if pending):**
+6. **Blank line.**
+
+7. **Next-step line — choose exactly one based on `status` (and gate, if pending):**
    - `gate-pending` + `gateState.gate === "gate1"`:
      ```
      Next: review docs/PLAN.md, then run /forge:approve to accept the plan or /forge:discard to drop it.
@@ -121,7 +127,7 @@ Print the success block in this exact order:
      Next: re-invoke /forge:<pipelineType> in this conversation to start this run.
      ```
 
-7. Stop. Do not invoke any other skill, do not call any pipeline tool, and do not paraphrase the next-step line.
+8. Stop. Do not invoke any other skill, do not call any pipeline tool, and do not paraphrase the next-step line.
 
 ## Wording rules
 

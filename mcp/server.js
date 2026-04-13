@@ -1157,6 +1157,24 @@ server.registerTool(
         );
       }
 
+      // Report-only recovery primitive: read the previous run-active.json's
+      // `currentUnit` BEFORE overwriting. If it is non-null, the prior session
+      // ended while a FORGE agent was in flight (SubagentStop never fired).
+      // We surface this to the skill as a stale-lock signal; the new
+      // run-active.json starts with a clean slate (no in-flight marker).
+      const runActivePath = join(check.pipelineDir, "run-active.json");
+      let staleUnit = null;
+      try {
+        const priorRaw = readFileSync(runActivePath, "utf8");
+        const prior = JSON.parse(priorRaw);
+        if (prior && prior.currentUnit && typeof prior.currentUnit === "object") {
+          staleUnit = prior.currentUnit;
+        }
+      } catch (_) {
+        // Absent / unreadable / unparseable — no stale signal, not an error.
+        staleUnit = null;
+      }
+
       // Success effect: overwrite run-active.json steering pointer.
       // We do NOT mutate run.status, currentStep, gateState, or agents — those are
       // owned by the pipeline skills; resume only restores the per-session pointer.
@@ -1170,7 +1188,6 @@ server.registerTool(
       };
       if (run.worktreePath) runActiveData.worktreePath = run.worktreePath;
 
-      const runActivePath = join(check.pipelineDir, "run-active.json");
       try {
         writeJsonSafe(runActivePath, runActiveData);
       } catch (writeErr) {
@@ -1191,6 +1208,7 @@ server.registerTool(
         gateState: run.gateState || null,
         worktreePath: run.worktreePath || null,
         branchName: run.branchName || null,
+        currentUnit: staleUnit,
       });
     } catch (err) {
       return errorResult("forge_resume_run failed: " + err.message);

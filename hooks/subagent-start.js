@@ -104,11 +104,25 @@ async function main(rawInput) {
   }
 
   // Push new entry into agents array (mutate in-place)
+  const nowTs = Date.now();
   data.agents.push({
     agent_id: agentId,
     agent_type: agentType,
-    startedAt: Date.now(),
+    startedAt: nowTs,
   });
+
+  // Report-only recovery primitive: mark this agent as the current in-flight
+  // unit. SubagentStop clears it. If the session crashes mid-agent, this
+  // marker survives on disk as a stale-lock signal for /forge:resume.
+  // Strip the "forge:" namespace prefix so rendered output reads naturally
+  // ("planner" rather than "forge:planner").
+  const normalizedAgent = agentType && agentType.startsWith('forge:')
+    ? agentType.slice('forge:'.length)
+    : agentType;
+  data.currentUnit = {
+    agent: normalizedAgent,
+    startedAt: nowTs,
+  };
 
   // Ensure .pipeline directory exists before writing
   const pipelineDir = path.join(projectDir, '.pipeline');

@@ -137,6 +137,12 @@ async function main(rawInput) {
     : null;
   entry.outcome = outcome;
 
+  // Report-only recovery primitive: clear the in-flight marker. The marker is
+  // per-session and per-agent; the start hook writes it, this hook clears it.
+  // If the session crashes before this runs, the marker persists on disk and
+  // surfaces through /forge:resume as a stale-lock signal.
+  data.currentUnit = null;
+
   try {
     await fs.promises.writeFile(runActivePath, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
