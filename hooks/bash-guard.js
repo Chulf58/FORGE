@@ -38,7 +38,7 @@ const BLOCKED_COMMANDS = {
 };
 
 /**
- * Extracts the first command word from a shell command string.
+ * Extracts the first command word from a shell command segment.
  * Strips leading variable assignments (FOO=bar), whitespace, and sudo.
  */
 function extractCommandWord(command) {
@@ -59,6 +59,43 @@ function extractCommandWord(command) {
   // First whitespace-delimited token is the command word
   const firstToken = trimmed.split(/\s/)[0];
   return firstToken || '';
+}
+
+/**
+ * Splits a shell command into operator-separated segments so blocked commands
+ * chained after an allowed first segment (e.g. `cd . && cat file`) are still
+ * detected. Quoted substrings are masked before splitting so operators inside
+ * quotes (e.g. `echo "a && b"`) don't cause false segment boundaries. This is
+ * intentionally a simple scan — full shell parsing (subshells, command
+ * substitution, heredocs) is out of scope; false negatives are preferred over
+ * false positives on exotic forms.
+ */
+function splitIntoSegments(command) {
+  if (!command || typeof command !== 'string') return [];
+  // Mask quoted substrings so operators inside them don't split segments.
+  const masked = command
+    .replace(/"(?:\\.|[^"\\])*"/g, s => '"' + 'x'.repeat(Math.max(0, s.length - 2)) + '"')
+    .replace(/'(?:\\.|[^'\\])*'/g, s => "'" + 'x'.repeat(Math.max(0, s.length - 2)) + "'");
+  const segments = [];
+  let start = 0;
+  const re = /&&|\|\||;|\|/g;
+  let match;
+  while ((match = re.exec(masked)) !== null) {
+    segments.push(command.slice(start, match.index));
+    start = match.index + match[0].length;
+  }
+  segments.push(command.slice(start));
+  return segments.map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Returns the first command word of every operator-separated segment.
+ * Used to detect blocked commands anywhere in a chained expression.
+ */
+function extractAllCommandWords(command) {
+  return splitIntoSegments(command)
+    .map(seg => extractCommandWord(seg))
+    .filter(Boolean);
 }
 
 /**
@@ -86,37 +123,36 @@ async function main(rawInput) {
     return;
   }
 
-  const cmdWord = extractCommandWord(command);
-  if (!cmdWord) {
+  const cmdWords = extractAllCommandWords(command);
+  if (cmdWords.length === 0) {
     exitOk();
     return;
   }
 
-  // Check blocked commands map
-  const redirectTool = BLOCKED_COMMANDS[cmdWord];
-
-  if (redirectTool) {
-    // Special case: echo and cat are only blocked with output redirection
-    if (cmdWord === 'cat' && !hasOutputRedirect(command)) {
-      // cat without redirect — still blocked (should use Read)
-      // Only cat << heredoc WITH redirect is the write case,
-      // but plain cat is always a read
+  // Check every operator-separated segment's first word. If any segment starts
+  // with a blocked command, deny the whole expression — chained commands like
+  // `cd . && cat file` must not smuggle a blocked command in past an allowed
+  // first segment.
+  for (const cmdWord of cmdWords) {
+    const redirectTool = BLOCKED_COMMANDS[cmdWord];
+    if (redirectTool) {
+      exitBlock(
+        '[bash-guard] Use ' + redirectTool + ' tool instead of `' + cmdWord + '`. ' +
+        'Bash is reserved for git, npm, node, and process operations.'
+      );
+      return;
     }
 
-    exitBlock(
-      '[bash-guard] Use ' + redirectTool + ' tool instead of `' + cmdWord + '`. ' +
-      'Bash is reserved for git, npm, node, and process operations.'
-    );
-    return;
-  }
-
-  // Special case: echo with output redirect should use Write
-  if (cmdWord === 'echo' && hasOutputRedirect(command)) {
-    exitBlock(
-      '[bash-guard] Use Write tool instead of `echo > file`. ' +
-      'Bash is reserved for git, npm, node, and process operations.'
-    );
-    return;
+    // Special case: echo with output redirect should use Write.
+    // Redirect check uses the full command (conservative — any redirect anywhere
+    // in a chained expression counts, matching the pre-segment-aware behavior).
+    if (cmdWord === 'echo' && hasOutputRedirect(command)) {
+      exitBlock(
+        '[bash-guard] Use Write tool instead of `echo > file`. ' +
+        'Bash is reserved for git, npm, node, and process operations.'
+      );
+      return;
+    }
   }
 
   // Allowed — pass through
