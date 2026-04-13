@@ -1,69 +1,82 @@
-# Handoff: Worktree-aware ctx-pre-tool path matching
+# Handoff: ctx-pre-tool worktree fix + plugin-e2e-validation closure
 
 ## Overview
 
-Diesel Priser e2e validation confirmed `/forge:plan`, Gate 1, `/forge:implement`, and Gate 2 all pass, but `/forge:apply` failed: the implementer subagent was blocked editing `…\.worktrees\r-36df5ba7\src\main\main.js`. Root cause was in `hooks/ctx-pre-tool.js` — allowedPaths were evaluated after relativizing against `process.cwd()` (the main project root), so a valid worktree path `.worktrees/<runId>/src/main/main.js` never matched an agent role pattern like `src/**`.
+This session closed the final Diesel Priser e2e blocker and recorded the result on the board. Two material changes landed:
 
-Fix lands a tightly-scoped, single-file, worktree-aware relativization step in the existing path-enforcement branch. Role manifest, pattern-match logic, workflow-guard, gate logic, and handoff-location rules are all untouched.
+1. **`hooks/ctx-pre-tool.js`** — made allowedPaths matching worktree-aware so `/forge:apply` can write inside `.worktrees/<runId>/…` against role patterns like `src/**`.
+2. **`.pipeline/board.json`** — closed `plugin-e2e-validation` with accepted Diesel Priser runtime evidence (plan + both gates + implement + apply all PASS) and recorded the merge-back soft-failure nuance (non-blocking, caused by pre-existing dirty main tree).
 
 ## What shipped
 
-### `hooks/ctx-pre-tool.js`
+### `hooks/ctx-pre-tool.js` (commit `3cb6da8`)
 - New helper `readActiveWorktreePath(projectDir)`:
-  - Reads `.pipeline/run-active.json` with `fs.readFileSync` (sync to preserve the hook's single entry-point flow).
-  - Returns `data.worktreePath` when present and truthy; otherwise `null`.
-  - Any IO or parse failure → `null` (silent fall-through to main-root behavior).
+  - Sync read of `.pipeline/run-active.json`; returns `data.worktreePath` when truthy, else `null`.
+  - Any IO or parse failure → silent `null` (falls through to main-root behavior).
 - New helper `isInside(absFilePath, worktreeAbs)`:
   - Case-insensitive, slash-normalized containment check (Windows-safe).
   - Treats exact equality and `prefix + '/'` as "inside".
-- Allowed-paths branch updated:
+- Allowed-paths branch:
   - Determines `relBase` = `worktreePath` when the target file is absolute AND inside `worktreePath`; otherwise `process.cwd()` (unchanged).
-  - `path.relative(relBase, rawFilePath)` produces the comparison path, then `path.normalize`.
-  - Pattern matching (`matchesPattern`) is untouched.
-- No changes to read-only agents, empty-allowedPaths agents, manifest loading, or the PreToolUse envelope.
+  - `path.relative(relBase, rawFilePath)` → `path.normalize` → existing `matchesPattern` untouched.
+- Read-only agents, empty-allowedPaths agents, manifest loading, and deny envelope all unchanged.
+
+### `.pipeline/board.json` (commit `44b71a2`)
+- `plugin-e2e-validation.done` flipped `false` → `true`; added `doneAt: 1776106192875`.
+- Appended `FULL-PIPELINE PASS (2026-04-13, Diesel Priser)` segment to `text`: plan PASS, Gate 1 PASS, implement PASS, Gate 2 PASS, apply PASS after `3cb6da8`; implementer wrote inside worktree; documenter cleanup ran; worktree commit succeeded; run closed with `status=completed, currentStep=done`.
+- Final `NOTE:` captures the merge-back soft-failure cause (pre-existing dirty main tree) and classifies it per the apply skill's `"log and continue"` contract — explicitly not an apply-path regression.
+
+### Docs (commit `731deb1`)
+- `docs/CHANGELOG.md`: new subsection at the top of the `[2026-04-13]` block for the ctx-pre-tool worktree fix.
+- `docs/context/handoff.md`: prior intermediate handoff (now superseded by this file).
 
 ## Core contract (preserve in any future change)
 
-- **Scope:** only the relativization base for already-approved allowedPaths matching changes. Deny paths, role manifest lookup, read-only short-circuit, and decision envelope are identical to pre-fix.
-- **Trigger:** worktree base is used only when (a) `run-active.json.worktreePath` exists and is a non-empty string, AND (b) the target file path is absolute, AND (c) `isInside(target, worktreePath)` is true.
-- **Non-trigger cases fall through to `process.cwd()`** — identical to legacy behavior.
-- **Out-of-bounds files inside the worktree still deny.** Relativizing against the worktree gives `secrets/config.json`, which fails `src/**` / `docs/**` patterns. The fix does NOT broaden permissions for anything under `.worktrees/`; it simply places comparison at the right origin.
-- **No `.worktrees/**` entries were added to `.pipeline/agent-roles.json`** — intentionally, per task constraints. Role patterns stay project-relative.
-
-## Why this shape (vs. alternatives considered)
-
-| Alternative | Why rejected |
-|---|---|
-| Add `.worktrees/**` to every implementer-type role | Explicitly forbidden by task brief; broadens permissions beyond source intent; still matches against main-root; fragile for nested worktrees. |
-| Change `matchesPattern` to try both bases | Violates "keep pattern matching unchanged"; doubles allowed surface silently. |
-| Move logic into `workflow-guard.js` | Out of scope; workflow-guard already handles worktree boundary enforcement (the complementary direction). ctx-pre-tool is the correct layer for per-agent allowedPaths. |
-| Use async `fs.promises.readFile` for run-active.json | Mixing sync manifest read with async worktree read in the same hot path adds a race window before the deny decision for negligible perf benefit on a small local JSON file. |
+- **ctx-pre-tool worktree trigger:** worktree base is used only when (a) `run-active.json.worktreePath` exists and is a non-empty string, AND (b) the target file path is absolute, AND (c) `isInside(target, worktreePath)` is true. All three conditions together.
+- **Not a permission broadening.** Out-of-bounds files inside the worktree (e.g. `<wt>/secrets/config.json`) still deny because `secrets/config.json` doesn't match `src/**`/`docs/**`. The fix changes comparison origin, not allowed surface.
+- **No `.worktrees/**` entries in `.pipeline/agent-roles.json`** — intentional; role patterns stay project-relative.
+- **Board truth:** `plugin-e2e-validation` is now closed. Historical PARTIAL (2026-04-11) and FRESH-SESSION PASS (2026-04-13) segments retained verbatim in `text`; no other board entries modified.
 
 ## Verification done
 
-Driver script (`C:\Users\cuj\AppData\Local\Temp\forge-test-hook\test-driver.js`, fixture-only, gitignored by location) spawned `node hooks/ctx-pre-tool.js` against a fixture with `run-active.json.worktreePath` set and `.pipeline/agent-roles.json = { implementer: { allowedPaths: ["src/**","docs/**"] } }`:
+Driver script (`C:\Users\cuj\AppData\Local\Temp\forge-test-hook\test-driver.js`, fixture-only, outside repo):
 
 | Case | Input | Expected | Observed |
 |---|---|---|---|
-| worktree-src-positive | `<wt>/src/main/main.js` | allow | `decision=allow, exit=0` ✅ — this is the exact Diesel Priser failure case |
-| main-root-src-positive | `<project>/src/main/main.js` | allow | `decision=allow, exit=0` ✅ — legacy path unchanged |
-| out-of-bounds-deny | `<project>/secrets/config.json` | deny | `decision=deny, exit=0` ✅ — correct deny reason emitted |
-| out-of-bounds-in-worktree-deny | `<wt>/secrets/config.json` | deny | `decision=deny, exit=0` ✅ — worktree relativization does NOT blanket-allow under worktree root |
+| worktree-src-positive | `<wt>/src/main/main.js` | allow | `decision=allow, exit=0` ✅ (Diesel Priser failure case) |
+| main-root-src-positive | `<project>/src/main/main.js` | allow | `decision=allow, exit=0` ✅ (legacy path unchanged) |
+| out-of-bounds-deny | `<project>/secrets/config.json` | deny | `decision=deny, exit=0` ✅ |
+| out-of-bounds-in-worktree-deny | `<wt>/secrets/config.json` | deny | `decision=deny, exit=0` ✅ |
 
-`node --check hooks/ctx-pre-tool.js` → OK.
+Plus:
+- `node --check hooks/ctx-pre-tool.js` → OK.
+- `JSON.parse(board.json)` → valid.
+- Post-commit `git status` → clean on `main` for each slice.
 
-Post-commit `git status` → clean on `main`.
+## Runtime evidence recorded on the board
 
-## Commit
+From the real Diesel Priser run after `3cb6da8`:
+- `/forge:plan` PASS → Gate 1 PASS → `/forge:implement` PASS → Gate 2 PASS → `/forge:apply` PASS.
+- Implementer subagent wrote successfully inside `.worktrees/<runId>/src/…`.
+- Documenter cleanup ran.
+- Worktree commit succeeded.
+- Run closed with `status=completed, currentStep=done`.
+- Merge-back **soft-failed** because the main tree was already dirty (pre-existing uncommitted changes). This is within the skill contract (`log and continue`), not an apply-path blocker.
 
-- `3cb6da8` — fix(hooks): make ctx-pre-tool path checks worktree-aware
+## Commits (in order)
+
+1. `3cb6da8` — fix(hooks): make ctx-pre-tool path checks worktree-aware
+2. `731deb1` — docs(session): handoff + CHANGELOG for ctx-pre-tool worktree fix
+3. `44b71a2` — chore(board): close plugin-e2e-validation after Diesel Priser apply pass
+
+Tree currently clean on `main`.
 
 ## Risks / Notes
 
-- Synchronous `fs.readFileSync` added to the hook hot path. `run-active.json` is local, small, and already read by other hooks — impact negligible, and it keeps the enforcement path deterministic (no async gap before the deny decision).
-- `isInside` lowercases both paths — correct on Windows' case-insensitive FS, slightly permissive on case-sensitive filesystems. Acceptable because `worktreePath` is FORGE-managed, not user input.
-- If `run-active.json.worktreePath` is stored as a relative path (current wiring writes absolute via apply STEP 2b), `path.resolve` normalizes it against `process.cwd()` — matches how it was written. No regression observed.
+- Synchronous `fs.readFileSync` in `ctx-pre-tool.js` hot path — negligible (`run-active.json` is local and small) and keeps enforcement deterministic before the deny decision.
+- `isInside` lowercases both paths — correct on Windows' case-insensitive FS; acceptably permissive elsewhere since `worktreePath` is FORGE-managed, not user input.
+- Merge-back soft-fail is known and contracted; the only follow-up is hygiene on the Diesel Priser checkout (see next slice).
 
 ## Next recommended slice
 
-- Re-run `/forge:apply` on the Diesel Priser run with the existing gate2-approved state to confirm the blocker is gone, and surface the NEXT failure in isolation (statusline/background bug work remains out of scope per task brief).
+Clean the Diesel Priser main tree's pre-existing uncommitted changes (commit or stash), then re-run `/forge:apply` end-to-end on a fresh feature to confirm merge-back now completes **hard-success** — closing out the only remaining soft edge observed in the e2e lifecycle.

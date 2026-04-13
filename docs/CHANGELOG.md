@@ -1,5 +1,11 @@
 ## [2026-04-13] Visibility, Targeting, Windows Compatibility
 
+### Plugin e2e validation closed (Diesel Priser full pass)
+- `.pipeline/board.json`: `plugin-e2e-validation` flipped to `done: true` with `doneAt` stamped
+- Accepted runtime evidence: `/forge:plan` PASS → Gate 1 PASS → `/forge:implement` PASS → Gate 2 PASS → `/forge:apply` PASS after commit `3cb6da8`; implementer wrote inside `.worktrees/<runId>/`; documenter cleanup ran; worktree commit succeeded; run closed with `status=completed, currentStep=done`
+- Merge-back soft-failed only because the main tree was already dirty (pre-existing uncommitted changes) — non-blocking per apply-skill `"log and continue"` contract; not an apply-path regression
+- Commit `44b71a2`
+
 ### Worktree-aware ctx-pre-tool path matching
 - `hooks/ctx-pre-tool.js`: allowedPaths matching now relativizes the target file against `run-active.json.worktreePath` when the file is inside the active worktree, and falls back to `process.cwd()` otherwise
 - Unblocks `/forge:apply` writes under `.worktrees/<runId>/…` against patterns like `src/**` without broadening any role's allowedPaths
