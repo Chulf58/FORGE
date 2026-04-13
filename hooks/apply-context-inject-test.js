@@ -9,6 +9,20 @@ const { join } = require('path');
 const { tmpdir } = require('os');
 const { spawn, execSync } = require('child_process');
 
+// Track assertion failures. `console.assert` does NOT exit non-zero in Node,
+// so the shared script-style runner (scripts/run-tests.mjs) cannot trust it
+// as a pass/fail signal. This local `assert` increments a failure counter
+// and logs each violation; the counter is checked at end-of-run and drives
+// process.exit(1) when any assertion failed. We keep going past a failure
+// on purpose so one run surfaces every violation, not just the first.
+let __failures = 0;
+function assert(cond, msg) {
+  if (!cond) {
+    __failures++;
+    console.error('  ASSERTION FAILED: ' + msg);
+  }
+}
+
 async function runHook(payload) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['hooks/apply-context-inject.js'], {
@@ -73,7 +87,7 @@ async function test() {
     } catch (_) {}
 
     console.log('Context injected:', context !== null);
-    console.assert(context !== null, 'Should have additionalContext');
+    assert(context !== null, 'Should have additionalContext');
 
     if (context) {
       const hasWorktreePath = context.includes(wtPath.replace(/\\/g, '\\'));
@@ -82,9 +96,9 @@ async function test() {
       console.log('Contains worktree path:', hasWorktreePath);
       console.log('Contains branch:', hasBranch);
       console.log('Contains handoff reference:', hasHandoff);
-      console.assert(hasWorktreePath || context.includes('r-wt1'), 'Should mention worktree path');
-      console.assert(hasBranch, 'Should mention branch');
-      console.assert(hasHandoff, 'Should mention handoff');
+      assert(hasWorktreePath || context.includes('r-wt1'), 'Should mention worktree path');
+      assert(hasBranch, 'Should mention branch');
+      assert(hasHandoff, 'Should mention handoff');
     }
 
     const ok = context !== null && stderr.includes('Injected worktree context');
@@ -116,7 +130,7 @@ async function test() {
     } catch (_) {}
 
     console.log('Context injected:', context !== null);
-    console.assert(context !== null, 'Documenter should also get worktree context');
+    assert(context !== null, 'Documenter should also get worktree context');
     console.log(stderr.includes('Injected worktree context for documenter') ? '✓ PASS' : '✗ FAIL');
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -138,7 +152,7 @@ async function test() {
     });
 
     console.log('stdout:', stdout || '(empty)');
-    console.assert(stdout === '', 'Coder should not get worktree context');
+    assert(stdout === '', 'Coder should not get worktree context');
     console.log(stdout === '' ? '✓ PASS' : '✗ FAIL');
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -157,8 +171,8 @@ async function test() {
     });
 
     console.log('stderr:', stderr);
-    console.assert(stdout === '', 'No context when no runs exist');
-    console.assert(stderr.includes('No worktree-backed implement run'), 'Should log fallback');
+    assert(stdout === '', 'No context when no runs exist');
+    assert(stderr.includes('No worktree-backed implement run'), 'Should log fallback');
     console.log(stdout === '' ? '✓ PASS' : '✗ FAIL');
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -180,8 +194,8 @@ async function test() {
     });
 
     console.log('stderr:', stderr);
-    console.assert(stdout === '', 'No context when worktree dir missing');
-    console.assert(stderr.includes('missing on disk'), 'Should log missing worktree');
+    assert(stdout === '', 'No context when worktree dir missing');
+    assert(stderr.includes('missing on disk'), 'Should log missing worktree');
     console.log(stdout === '' ? '✓ PASS' : '✗ FAIL');
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -200,12 +214,16 @@ async function test() {
     });
 
     console.log('stderr:', stderr);
-    console.assert(stdout === '', 'No context when run has no worktree');
+    assert(stdout === '', 'No context when run has no worktree');
     console.log(stdout === '' ? '✓ PASS' : '✗ FAIL');
     rmSync(tmp, { recursive: true, force: true });
   }
 
   console.log('\nAll tests complete.');
+  if (__failures > 0) {
+    console.error(__failures + ' assertion(s) failed.');
+    process.exit(1);
+  }
 }
 
 test().catch(e => { console.error(e); process.exit(1); });
