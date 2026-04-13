@@ -1162,6 +1162,14 @@ server.registerTool(
       // ended while a FORGE agent was in flight (SubagentStop never fired).
       // We surface this to the skill as a stale-lock signal; the new
       // run-active.json starts with a clean slate (no in-flight marker).
+      //
+      // Truthfulness: if the prior marker belongs to a run that is already
+      // terminal (completed / failed / discarded), the marker is stale-by-
+      // finish rather than stale-by-crash — suppress it so /forge:resume
+      // doesn't render a misleading notice. Mirrors the SessionStart cleanup
+      // in hooks/ctx-session-start.js. Defensive: if the referenced run can't
+      // be verified (no prior runId / registry miss / throw), keep the marker.
+      const TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
       const runActivePath = join(check.pipelineDir, "run-active.json");
       let staleUnit = null;
       try {
@@ -1169,6 +1177,17 @@ server.registerTool(
         const prior = JSON.parse(priorRaw);
         if (prior && prior.currentUnit && typeof prior.currentUnit === "object") {
           staleUnit = prior.currentUnit;
+          const priorRunId = typeof prior.runId === "string" ? prior.runId : null;
+          if (priorRunId) {
+            try {
+              const priorRun = getRun(projectDir, priorRunId);
+              if (priorRun && TERMINAL_STATUSES.has(priorRun.status)) {
+                staleUnit = null;
+              }
+            } catch (_) {
+              // Registry lookup failed — keep the marker (defensive).
+            }
+          }
         }
       } catch (_) {
         // Absent / unreadable / unparseable — no stale signal, not an error.
