@@ -1235,6 +1235,156 @@ server.registerTool(
   },
 );
 
+// -- Tool: forge_dashboard_state ---------------------------------------------
+//
+// Read-only control-plane snapshot. Returns a compact registry-backed summary
+// of active runs, pending gates, recent completed runs, and board counts so
+// future UI surfaces (skill, TUI, tiny HTTP sidecar) can share one stable
+// data contract. Intentionally stops at the contract layer — no server, no
+// WebSocket, no file watcher, no background-worker assumptions.
+
+const DASHBOARD_TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
+const DASHBOARD_RECENT_COMPLETED_LIMIT = 5;
+const DASHBOARD_TOP_TODOS_LIMIT = 5;
+
+function readActiveUnit(pipelineDir) {
+  // Returns { runId, currentUnit } from run-active.json, or { runId: null, currentUnit: null }
+  // when the file is absent / unreadable / unparseable. Never throws.
+  try {
+    const raw = readFileSync(join(pipelineDir, "run-active.json"), "utf8");
+    const data = JSON.parse(raw);
+    const runId = data && typeof data.runId === "string" ? data.runId : null;
+    const cu = data && data.currentUnit;
+    const currentUnit =
+      cu && typeof cu === "object" && typeof cu.agent === "string" && cu.agent
+        ? cu
+        : null;
+    return { runId, currentUnit };
+  } catch (_) {
+    return { runId: null, currentUnit: null };
+  }
+}
+
+server.registerTool(
+  "forge_dashboard_state",
+  {
+    title: "FORGE Dashboard State",
+    description:
+      "Read-only control-plane snapshot: active runs, pending gates, recent completed runs, and board summary. Backed by the existing registry and board files — no new persisted state, no background worker, no file watcher. Future UI surfaces consume this single shape.",
+    inputSchema: z.object({}),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  },
+  async () => {
+    try {
+      const projectDir = resolveProjectDir();
+      const check = requirePipeline(projectDir);
+      if (!check.ok) return check.result;
+
+      // 1) Active unit marker — only the currently-steered run can carry one.
+      const { runId: activeRunId, currentUnit: activeUnit } = readActiveUnit(check.pipelineDir);
+
+      // 2) Enumerate runs from the registry (index or lazy-heal from disk).
+      let allEntries = [];
+      try {
+        allEntries = listRuns(projectDir, {});
+      } catch (_) {
+        allEntries = [];
+      }
+
+      // 3) Build activeRuns — non-terminal, hydrated from run.json where present.
+      const activeRuns = [];
+      for (const entry of allEntries) {
+        if (DASHBOARD_TERMINAL_STATUSES.has(entry.status)) continue;
+        let full = null;
+        try {
+          full = getRun(projectDir, entry.runId);
+        } catch (_) {
+          full = null;
+        }
+        const src = full || entry;
+        activeRuns.push({
+          runId: src.runId,
+          pipelineType: src.pipelineType,
+          mode: src.mode || null,
+          feature: src.feature || "",
+          status: src.status,
+          currentStep: src.currentStep || null,
+          stageLabel: stageLabelFor(src.pipelineType, src.currentStep),
+          gateState: src.gateState || null,
+          worktreePath: src.worktreePath || null,
+          currentUnit: src.runId === activeRunId ? activeUnit : null,
+          updatedAt: src.updatedAt || entry.updatedAt || null,
+        });
+      }
+      activeRuns.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+
+      // 4) gatesAwaiting — subset of activeRuns whose gateState is actionable.
+      const gatesAwaiting = activeRuns
+        .filter(r => r.status === "gate-pending" && r.gateState && r.gateState.status === "pending")
+        .map(r => ({
+          runId: r.runId,
+          pipelineType: r.pipelineType,
+          feature: r.feature,
+          gateState: r.gateState,
+          updatedAt: r.updatedAt,
+        }));
+
+      // 5) recentCompleted — last N terminal runs by updatedAt desc.
+      const recentCompleted = allEntries
+        .filter(e => DASHBOARD_TERMINAL_STATUSES.has(e.status))
+        .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+        .slice(0, DASHBOARD_RECENT_COMPLETED_LIMIT)
+        .map(e => ({
+          runId: e.runId,
+          pipelineType: e.pipelineType,
+          feature: e.feature || "",
+          status: e.status,
+          updatedAt: e.updatedAt || null,
+        }));
+
+      // 6) boardSummary — compact counts + top-priority open TODOs.
+      let boardSummary = {
+        todoCount: 0,
+        plannedCount: 0,
+        blockedTodoCount: 0,
+        topPriorityTodos: [],
+      };
+      const boardPath = join(check.pipelineDir, "board.json");
+      const boardRead = readJsonSafe(boardPath);
+      if (boardRead.ok && boardRead.data && typeof boardRead.data === "object") {
+        const board = boardRead.data;
+        const todos = Array.isArray(board.todos) ? board.todos : [];
+        const planned = Array.isArray(board.planned) ? board.planned : [];
+        const openTodos = todos.filter(t => t && t.done !== true);
+        boardSummary.todoCount = openTodos.length;
+        boardSummary.plannedCount = planned.length;
+        boardSummary.blockedTodoCount = openTodos.filter(
+          t => Array.isArray(t.blockedBy) && t.blockedBy.length > 0
+        ).length;
+        const priorityRank = { high: 0, medium: 1, low: 2 };
+        boardSummary.topPriorityTodos = openTodos
+          .slice()
+          .sort((a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9))
+          .slice(0, DASHBOARD_TOP_TODOS_LIMIT)
+          .map(t => ({
+            id: t.id || null,
+            priority: t.priority || null,
+            text: typeof t.text === "string" ? t.text.slice(0, 200) : "",
+          }));
+      }
+
+      return textResult({
+        activeRuns,
+        gatesAwaiting,
+        recentCompleted,
+        boardSummary,
+      });
+    } catch (err) {
+      return errorResult("forge_dashboard_state failed: " + err.message);
+    }
+  },
+);
+
 // -- Connect -----------------------------------------------------------------
 
 const transport = new StdioServerTransport();
