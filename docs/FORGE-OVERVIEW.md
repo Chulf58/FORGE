@@ -13,21 +13,24 @@
 5. [Why Use FORGE for New Projects](#5-why-use-forge-for-new-projects)
 6. [The Evolution of FORGE's Pipeline — Eras](#6-the-evolution-of-forges-pipeline)
 
-> **Looking for technical reference?** Agent tables, signal protocol, pipeline modes, module wiring, and key files live in [FORGE-REFERENCE.md](FORGE-REFERENCE.md) — generated on demand from source-of-truth files.
+> **Looking for technical reference?** Agent tables (29), signal protocol, pipeline modes, hook system (13 scripts), MCP tools (22), model routing, and key files live in [FORGE-REFERENCE.md](FORGE-REFERENCE.md) — generated on demand from source-of-truth files.
 
 ---
 
 ## 1. What Is FORGE?
 
-FORGE is an **Electron desktop application** that wraps the Claude CLI into a structured, multi-agent software development pipeline with human approval gates, parallel review waves, persistent project state, and stack-aware skill injection.
+FORGE is a **Claude Code plugin** that structures AI-powered software development into a multi-agent pipeline with human approval gates, parallel review waves, persistent project state, and stack-aware skill injection.
 
-FORGE is a **tool for developing your projects** — it is not used to develop itself. FORGE's codebase is maintained separately with standard tooling. The pipeline discipline FORGE enforces is for the software you are building with it, not for FORGE as a product.
+FORGE is a **tool for developing your projects** — and it dogfoods itself. The plugin's own codebase is maintained using its own pipelines. Install the plugin once, and every project gains the same structured workflow.
 
-FORGE does not replace Claude. It orchestrates Claude by:
-1. Launching the Claude CLI subprocess with a carefully assembled `--agents` JSON payload
-2. Streaming its output through a classifier that interprets control signals
-3. Pausing for human approval at defined checkpoints (gates)
-4. Persisting state, verdicts, todos, and project metadata across sessions
+FORGE does not replace Claude Code. It orchestrates it by:
+1. Providing 29 specialist agents loaded via the plugin system
+2. Exposing 19 skills (slash commands) that orchestrate those agents into pipelines
+3. Enforcing workflow rules through 13 hook scripts across 7 lifecycle events
+4. Offering 22 MCP tools for structured access to pipeline state
+5. Pausing for human approval at defined checkpoints (gates)
+6. Persisting state, todos, and project metadata across sessions
+7. Structurally enforcing gate sequencing at the write boundary (not just prompts)
 
 ---
 
@@ -55,11 +58,12 @@ FORGE is built on the opposite premise. The terminal is not a log — it is a li
 
 The glass wall is not just the terminal. It is a design principle that shows up everywhere:
 
-- **Gates** show the plan or handoff summary and verdict before asking for approval — you are approving something you can read, not a blind "yes"
-- **Suggest chips** show the next logical step rather than silently deciding it
-- **The Q&A strip** makes the planner's questions visible before a plan is written, rather than having assumptions baked in silently
-- **Reviewer verdicts** are shown in the terminal as they arrive, not aggregated into a single pass/fail
-- **The signal protocol** (`[summary]`, `[reviewer-verdict]`, `[wave-complete]`) gives agents a formal way to communicate intent to you, not just to each other
+- **Gates** (`/forge:approve`) show the plan or handoff summary and verdict before asking for approval — you are approving something you can read, not a blind "yes"
+- **Suggest chips** (`[suggest]` signals) show the next logical step rather than silently deciding it
+- **Clarifying questions** (`[questions]`/`[/questions]` signals) make the planner's questions visible before a plan is written, rather than having assumptions baked in silently
+- **Reviewer verdicts** (`[reviewer-verdict]` signals) stream as they arrive, not aggregated into a single pass/fail
+- **The signal protocol** gives agents a formal way to communicate intent to you, not just to each other
+- **Enforcement hooks** (bash-guard, workflow-guard) are transparent — when a tool call is blocked, the agent sees the reason and you see it in the terminal
 - **Transparent pipeline construction** (planned) — when the orchestrator decides which agents to run for a request, it will explain that decision before running, extending the glass wall to the meta level
 
 ### An analogy — the open kitchen
@@ -82,20 +86,22 @@ The terminal being live and visible does not mean you have to watch it constantl
 
 | Capability | FORGE | Claude CLI |
 |---|---|---|
-| Named, pre-defined pipelines | Yes (10+ modes) | No — manual sequencing required |
+| Named, pre-defined pipelines | Yes — 7 pipeline types, 5 modes | No — manual sequencing required |
 | Human approval gates | Yes — Gate #1 (plan→implement), Gate #2 (review→apply) | No |
-| Parallel reviewer waves | Yes — 4+ reviewers simultaneously | Possible via `--agents` but no orchestration |
+| 28 specialist agents | Yes — plan, implement, review, debug, refactor, architect, ideate | Possible via `--agents` but no orchestration |
+| Parallel reviewer waves | Yes — up to 5 reviewers simultaneously | No built-in review step |
 | Wave execution (task parallelism) | Yes — with prerequisite verification | No |
-| Signal protocol (`[suggest]`, `[todo]`, etc.) | Yes — intercepted before terminal | No — plain text |
-| Reviewer verdict logging | Yes — persisted to `verdicts.jsonl` | No |
-| Context checkpointing | Yes — up to 5 automatic reinvocations | No |
-| SKILLS.md stack-aware filtering | Yes — per-agent, per-stack guidance | No |
-| Project state persistence | Yes — todos, modules, health, context usage | No |
-| Tester gate | Yes — optional pause before documenter | No |
-| Desktop UI with tabs, panels, gates | Yes | No — terminal only |
-| Project agent slots | Yes — inject custom agents at hook points | No |
+| Signal protocol (`[suggest]`, `[todo]`, etc.) | Yes — consumed by skills and hooks | No — plain text |
+| Enforcement hooks | Yes — bash-guard, workflow-guard, role-based access | No |
+| 17 MCP tools for pipeline state | Yes — board, config, gates, modules, model routing | No |
+| Multi-model routing | Yes — per-agent model selection, external provider support (OpenAI) | Single model per session |
+| Context checkpointing | Yes — reinjection after compaction via PostCompact hook | No |
+| Stack-aware skill guidance | Yes — per-agent, per-stack guidance from SKILLS.md | No |
+| Project state persistence | Yes — todos, modules, health, run lifecycle tracking | No |
+| Subagent lifecycle tracking | Yes — SubagentStart/Stop hooks with duration and verdict extraction | No |
+| Git integration in apply pipeline | Yes — opt-in branch creation, auto-commit, auto-PR | No |
 
-**Summary:** Claude CLI is a single-invocation tool. FORGE is a development workflow engine built on top of it.
+**Summary:** Claude CLI is a single-session tool. FORGE is a development workflow engine built as a plugin on top of it.
 
 ---
 
@@ -103,18 +109,23 @@ The terminal being live and visible does not mean you have to watch it constantl
 
 ### FORGE vs Get-Shit-Done (GSD)
 
-GSD was an earlier workflow methodology that used Claude CLI directly with manually assembled prompts and loose conventions. It demonstrated that structured agent sequencing produced better output than open-ended chat, but it had no UI, no persistence, no gate system, and no way to onboard an existing project. Every run was stateless — context had to be re-supplied manually, there was no TODO board, no reviewer verdict history, and no SKILLS injection. GSD was a proof-of-concept that the pipeline idea was worth building. FORGE is what that idea looks like as a proper product.
+GSD (`get-shit-done-cc`) is an npm-based global CLI installer that auto-configures agents, commands, and hooks into 9 runtimes (Claude Code, Copilot, Gemini CLI, Cursor, Windsurf, etc.). It demonstrated that structured agent sequencing with spec-driven development produced better output than open-ended chat. GSD uses PreToolUse hooks for advisory enforcement (non-blocking warnings for read-before-edit, prompt injection scanning) and shared its approach via a `.planning/` directory per project.
+
+FORGE and GSD share the same philosophical root — structured, agent-based pipelines are better than freeform prompting. The differences are in enforcement model, scope, and distribution:
 
 | Capability | FORGE | GSD |
 |---|---|---|
-| Desktop UI | Yes — tabs, panels, gates, live agent view | No — terminal only |
-| Gate system (human approval) | Yes — Gate #1 and #2 | No |
-| Persistent project state | Yes — todos, modules, verdicts, history | No — stateless |
-| Stack-aware skill injection | Yes — SKILLS.md filtered per run | No |
-| Project onboarding (existing codebases) | Yes — import wizard + architect agent | No |
-| Reviewer verdict history | Yes — HEALTH tab, `verdicts.jsonl` | No |
-| Custom project agents | Yes — agent slots at hook points | No |
-| Revision cycles | Yes — automatic REVISE loops | Manual |
+| Distribution | Claude Code plugin (marketplace) | npm package (multi-runtime) |
+| Runtime support | Claude Code only | 9 runtimes |
+| Gate system (human approval) | Yes — Gate #1 and #2, explicit approval required | No formal gates |
+| Enforcement model | PreToolUse hooks with exit 2 (hard blocking) | PreToolUse hooks (advisory only, non-blocking) |
+| Pipeline modes | 5 modes (TRIVIAL→FULL) controlling reviewer depth | Single mode |
+| Persistent project state | Yes — board, modules, run lifecycle, usage tracking | Stateless per run |
+| MCP tool layer | Yes — 17 structured tools for pipeline state | No |
+| Multi-model routing | Yes — per-agent model selection, external providers | No |
+| Stack-aware skill injection | Yes — per-agent, per-stack guidance | No |
+| Knowledge compounding | Yes — docs/solutions/ with YAML frontmatter | No |
+| Revision cycles | Yes — automatic REVISE loops with circuit breaker | Manual |
 
 ---
 
@@ -125,11 +136,34 @@ Cursor and Copilot are **in-editor AI assistants** — they help you write code 
 | Capability | FORGE | Cursor / Copilot |
 |---|---|---|
 | Planning before code | Yes — planner + researcher + gotcha-checker | No |
-| Multi-agent specialist review | Yes — 4+ reviewers in parallel | No |
+| Multi-agent specialist review | Yes — up to 5 reviewers in parallel | No |
 | Human approval gates | Yes — can't proceed without explicit YES | No |
-| Operates outside an IDE | Yes — standalone desktop app | No (Cursor) / Extension only (Copilot) |
-| Persistent project knowledge | Yes — modules, todos, health signals | No |
-| Works on any project structure | Yes — wizard + import | Language-aware but no project model |
+| Enforcement hooks | Yes — bash-guard, workflow-guard block bad patterns | No |
+| Persistent project knowledge | Yes — modules, todos, health signals, solutions | No |
+| Works on any project structure | Yes — `/forge:init` + architect agent | Language-aware but no project model |
+
+---
+
+### FORGE vs Compound Engineering
+
+Compound Engineering by Every.to is the closest competitor in philosophy and architecture — also a Claude Code plugin (marketplace + npm), also structured into Plan → Work → Review → Compound. It has 26 agents, 23 commands, and 13 skills. Its core principle is that each feature should make the next easier to build ("compounding knowledge").
+
+FORGE and Compound Engineering share: plugin-native distribution, multi-agent pipelines, knowledge capture, and an ideation step. The differences are structural:
+
+| Capability | FORGE | Compound Engineering |
+|---|---|---|
+| Gate system | Yes — formal Gate #1 and #2 with block/approve | No formal gates |
+| Enforcement hooks | Yes — 3 PreToolUse hooks with exit 2 blocking | No enforcement hooks |
+| Pipeline modes | 5 modes controlling agent depth (TRIVIAL→FULL) | Single mode |
+| Multi-model routing | Yes — MCP-based, per-agent, external provider support | No |
+| MCP tool layer | Yes — 17 tools for structured state access | No |
+| Subagent lifecycle tracking | Yes — SubagentStart/Stop hooks with timing | No |
+| Distribution | Plugin marketplace | Plugin marketplace + npm (`@every-env/compound-plugin`) + multi-tool conversion |
+| Multi-runtime | Claude Code only | Codex, Windsurf, Gemini CLI via Bun converter |
+| Ideation | Yes — adversarial analysis (ideator agent) | Yes — ideation step |
+| Knowledge compounding | Yes — docs/solutions/ with YAML frontmatter | Yes — compound step (core philosophy) |
+
+Compound Engineering's multi-runtime support and npm distribution reach a broader audience. FORGE's enforcement model, gate system, and MCP tool layer provide deeper pipeline control within Claude Code.
 
 ---
 
@@ -148,41 +182,48 @@ Fully autonomous agents attempt to complete entire tasks without human involveme
 ## 5. Why Use FORGE for New Projects
 
 ### Structured from Day One
-Every FORGE project starts with a wizard that captures:
-- **Tech stack** (used to filter agent skill guidance)
-- **Project structure** (standalone / plugin / library / service / module)
-- **References** (URLs, notes, file paths injected into every agent prompt)
-- **Custom agents** (domain-expert agents from your team, slotted into pipeline hooks)
+Every FORGE project starts with `/forge:init` which scaffolds:
+- `.pipeline/project.json` — tech stack, pipeline mode, test command, git integration config
+- `docs/` — plan, context, gotchas, architecture
+- `CLAUDE.md` — pipeline routing instructions
 
-This context is stored in `.pipeline/project.json` and automatically included in every pipeline run.
+This context is automatically included in every pipeline run. The architect agent can further map your project's modules and conventions.
 
 ### Planning Before Code
 FORGE enforces a planning phase before any code is written:
+- **Brainstormer** (optional) — explores requirements when the request is vague
 - **Planner** breaks the feature into numbered tasks with wave assignments
 - **Researcher** investigates unknowns and writes findings to `docs/RESEARCH/`
-- **Gotcha-checker** validates the plan against 10 quality dimensions before it reaches the coder
-- **Gate #1** requires your explicit approval before implementation starts
+- **Gotcha-checker** validates the plan against known pitfalls and project conventions
+- **Gate #1** requires your explicit approval (`/forge:approve`) before implementation starts
 
 You never discover a fundamental design problem mid-implementation.
 
 ### Multiple Specialists Review Every Change
-Before any code lands on disk, 4 specialist reviewers examine the implementation plan in parallel:
-- `reviewer-safety` — shell injection, XSS, secrets, Electron security
+Before any code lands on disk, up to 5 specialist reviewers examine the implementation in parallel:
+- `reviewer-safety` — injection risks, secret leakage, input validation
 - `reviewer-logic` — async correctness, edge cases, race conditions
-- `reviewer-style` — Svelte 5 runes, naming conventions, CSS tokens
-- `reviewer-performance` — sync calls, unnecessary re-renders, IPC patterns
+- `reviewer-style` — naming conventions, formatting rules, code consistency
+- `reviewer-performance` — blocking I/O, memory leaks, hot path issues
+- `reviewer` — boundary correctness, type contracts, module isolation
 
-All 4 run **simultaneously**. If any returns `BLOCK`, Gate #2 is disabled until issues are fixed.
+The pipeline mode controls how many run: LEAN (2), STANDARD (triage-dispatched), FULL (all 5). If any returns `BLOCK`, Gate #2 is blocked until issues are fixed.
 
-### Audit Trail Built In
-Every reviewer verdict is persisted to `.pipeline/verdicts.jsonl` with a timestamp and agent name. The HEALTH tab shows historical approval rates per reviewer, making it easy to see recurring problem areas.
+### Enforcement Built In
+Three PreToolUse hooks enforce workflow discipline:
+- **bash-guard** blocks `cat`, `grep`, `find`, `sed` and redirects to dedicated tools (Read, Grep, Glob, Edit)
+- **workflow-guard** blocks source file writes when pipeline conditions are not met
+- **ctx-pre-tool** validates file paths against role-based access patterns
+
+Enforcement is hard — exit code 2 forces the agent to re-plan. No bypass possible.
 
 ### Project State Accumulates Over Time
 As FORGE develops your project, it builds up:
-- A **TODO board** (`docs/BACKLOG.md` as source of truth, `.pipeline/board.json` as runtime cache) with prioritized tasks
-- A **feature registry** (`.pipeline/features.json`) with shipped features
+- A **TODO board** (`.pipeline/board.json`) with prioritized, taggable, blockable tasks — managed via `/forge:todo` and MCP tools
 - A **module map** (`.pipeline/modules.json`) with FORGE's understanding of your architecture
-- **Health signals** from the architect agent flagging dead code, gaps, and refactor candidates
+- A **knowledge store** (`docs/solutions/`) capturing solutions with YAML frontmatter for future reuse
+- **Health signals** from the architect and ideator agents flagging gaps and improvement opportunities
+- **Run lifecycle data** in `.pipeline/run-active.json` — subagent timing, verdicts, outcomes
 
 ---
 
@@ -560,28 +601,148 @@ The Haiku classifier from Era 17 was a step in the right direction, but it still
 
 ---
 
-### What's planned next
+### Era 19 — The Plugin Era: from Electron app to Claude Code plugin (2026-04-08 → 2026-04-11)
 
-**One Chat stabilisation (immediate priority):** The conversational orchestrator is built but untested in production. Priority is building, testing, and tuning the orchestrator prompt based on real usage. Edge cases: session resume across conversation turns, orchestrator emitting `[run-pipeline]` signal reliably, prompt carrying through the handoff accurately, user changing topic mid-conversation.
+The biggest architectural change in FORGE's history. FORGE stopped being an Electron desktop application and became a pure Claude Code plugin.
 
-**Transparent dynamic pipeline construction:** The orchestrator already proposes which pipeline and mode to use. Next: proposing the specific agent team with reasoning — "I'm adding reviewer-logic because there's complex state, skipping reviewer-performance because no hot paths." Natural extension of the conversational approach.
+**Why the pivot happened:** The Electron app had three fundamental friction points that no amount of UI polish could fix:
+1. **Updates required re-scaffolding.** Fixing an agent prompt in FORGE meant rebuilding the app and copying updated files to every project. Template drift was constant.
+2. **Distribution required building installers.** Electron packaging, Node.js dependency management, platform-specific builds. A team member joining required a full install chain.
+3. **Maintenance required IPC boilerplate.** Every feature needed four layers: main process handler, preload bridge, type declaration, renderer store. A simple config change touched 4+ files.
 
-**Terminal as glass wall — structured output:** Terminal currently shows raw stdout. Goal: render tool calls as structured entries (collapsible, with file/command previews), thinking blocks rendered distinctly, matching the "alive glass-wall" feel of Claude Code CLI.
+A Claude Code plugin solves all three. Change once in the plugin, all projects get it immediately. Team members install via `claude plugin install forge`. No build step, no IPC, no main/preload/renderer split.
 
-**Test execution loop:** After every apply cycle, run the project's configured test command automatically. Failures feed directly into the debug pipeline — up to 3 auto-fix attempts before handing off. Closes competitive gap with Aider and Cursor.
+**What was built in 4 days:**
 
-**Multi-model support:** Per-agent model overrides — route specific agents to different providers (GPT-4o, Gemini) based on cost/capability. Provider abstraction layer in runner.ts.
+The plugin (v0.2.0) shipped with:
 
-**Triage agents — extending the reviewer-triage pattern:** Complete reviewer-triage as a full triage agent (focused excerpt per reviewer, not just dispatch list). Extend pattern to researcher-triage and implementer-triage. Prototype agent files exist in `.claude/agents/` but are not yet wired.
+- **28 agents** — every agent from the Electron app, stripped of IPC/Svelte/Electron references, upgraded with `maxTurns`, `effort`, and concrete `"Use when:"` descriptions
+- **18 skills** — replacing 17 slash commands that were migrated from `commands/forge/*.md` to `skills/<name>/SKILL.md` format, plus a new `/forge:overview` skill. Skills use `context: fork` for 92% token savings.
+- **11 hook scripts across 7 event types** — SessionStart (3: deps install, context measurement, banner), PreToolUse (3 with 5 matchers: bash-guard, workflow-guard, role-based access), PostToolUse (1: audit logging), Stop (1: incomplete pipeline detection), PostCompact (1: context reinjection), SubagentStart (1: lifecycle tracking), SubagentStop (1: verdict extraction)
+- **17 MCP tools** — structured access to board (4 tools), project config (2), pipeline state (3), modules (2), model routing (6). ESM server at `mcp/server.js` with Zod schemas and error handling.
+- **4 lib modules** — config-store (persistent config resolution), usage-store (per-project quota tracking), router (pure model recommendation with 4-priority fallback), openai-adapter (OpenAI Responses API via built-in fetch)
+- **Enforcement hooks** — bash-guard blocks `cat`/`grep`/`find`/`sed` with exit code 2, forcing dedicated tools. workflow-guard blocks source writes outside pipeline conditions. ctx-pre-tool enforces role-based file access. Inspired by GSD and Disciplined Process Plugin research.
+- **Git integration** — opt-in branch creation before implementer, auto-commit after tests, auto-PR via `gh` after documenter. Safety-first: git failures never block the pipeline.
+- **Test execution** — opt-in `testCommand` in project.json. 60s timeout. Emits `[suggest] debug` on failure, never auto-fixes.
+- **Subagent lifecycle tracking** — SubagentStart/SubagentStop hooks record agent_id, startedAt, completedAt, durationMs, and extracted reviewer verdict outcome in `run-active.json`.
+- **Context resilience** — PostCompact hook reinjects critical FORGE rules from `forge-rules.md` after mid-session context compression. Stop hook detects incomplete pipelines with 30-minute staleness guard.
+- **Model routing** — `forge-config.json` with provider registry, model catalog, per-agent preferred/fallback mappings. Budget modes (economy/standard/performance). OpenAI Codex as first external provider. Quota exhaustion detection.
 
-**Documenter maintains modules.json:** Automate module updates — the documenter already updates CHANGELOG, DECISIONS, and ARCHITECTURE after every apply. Adding modules.json update removes manual maintenance.
+**What was stripped:** All Electron/Svelte/IPC content removed from 22 agents, 7 templates, and all documentation. 4 Electron-specific skill files deleted. 89 dead board items removed. The Electron app at `C:\Users\cuj\Forge` is frozen permanently.
 
-### Design decisions — what FORGE deliberately does not do
+**What was gained that Electron couldn't do:**
 
-**No test coverage agent (yet).** A nyquist-auditor agent was prototyped and deleted in April 2026. It wrote structured manual test stubs to `docs/tests/<feature-slug>/` after each apply cycle and emitted `[health]` signals for uncovered requirements. The problem: the stubs connected to nothing — no test runner reads them, the directory isn't surfaced in the UI, and nobody checked them manually. Test coverage tooling is the right idea but the wrong time. When the test execution loop ships (run `npm test` after every apply, feed failures back into debug), a coverage agent should be designed as part of that loop from the start. A bolt-on stub generator before the loop exists produces files into a void.
+- Plugin updates reach all projects instantly — no re-scaffolding, no version drift
+- Multiple terminal windows can run parallel pipelines via git worktrees
+- MCP tools provide structured state access without IPC boilerplate
+- Hook enforcement is per-tool-call, not per-UI-action — more granular control
+- The plugin dogfoods itself (FORGE develops FORGE using its own pipeline)
 
-**No spec agent.** A spec-agent (converting a raw feature description into a structured SPEC.md before the planner runs) was prototyped and deleted in April 2026. The planner's Q&A step already covers the same ground: when scope is ambiguous the planner emits questions, the user answers in the Q&A strip, and those answers become the acceptance criteria and scope boundaries. A separate spec step would produce a document the planner immediately re-reads to ask roughly the same questions — a detour to the same destination. Scope clarification belongs in the conversation, not in a pre-step file.
+**What was lost:** The visual UI — reactive sidebar, LIVE tab with agent cards, gate bars with diff previews, HEALTH dashboard with verdict graphs. These are deferred to an optional web dashboard in the backlog, not rebuilt in the plugin. The terminal + Claude Code's native agent viewer are the glass wall now.
+
+**Shipped in this era:**
+- Plugin v0.2.0 with `.claude-plugin/plugin.json` manifest
+- 134 Electron violations identified and fixed across agents, skills, templates
+- Full Electron strip of 22 agents, 2 commands, 7 templates
+- Skills migration: 17 commands → 18 skills with `context: fork`
+- MCP server: 17 tools, 4 lib modules, Zod schemas, isError pattern
+- Model routing: 6 MCP tools, config-store, usage-store, router, openai-adapter
+- Enforcement hooks: bash-guard, workflow-guard, ctx-pre-tool (3 blocking hooks)
+- Lifecycle hooks: SubagentStart/Stop tracking, PostCompact reinjection, Stop advisory
+- Git integration: branch creation, auto-commit, auto-PR (opt-in)
+- Test execution: configurable testCommand, 60s timeout, debug suggest
+- Agent upgrade: all 28 agents got maxTurns, effort, concrete descriptions
+- Board rebuilt: 55 open tasks, 89 dead items removed
+- Competitive research: GSD distribution, Compound Engineering, enforcement patterns
 
 ---
 
-*Last updated: 2026-04-07. For complete technical reference, see [FORGE-REFERENCE.md](FORGE-REFERENCE.md). For architecture decisions, see `docs/DECISIONS.md`. For the update recipe, see `docs/FORGE-OVERVIEW-RECIPE.md`.*
+### Era 20 — Lifecycle Enforcement: from prompt trust to structural truth (2026-04-12)
+
+Era 19 built the plugin. Era 20 made it honest.
+
+**Before:** The plugin had 28 agents, 17 MCP tools, and 11 hooks — but the lifecycle was held together by prompt instructions. Skills told the model "call `forge_create_run`" — and the model usually did. Skills told the model "check Gate #2 before applying" — and the model sometimes did. Gate timestamps were overwritten on approval. `run-active.json` was missing the fields its readers expected. Orphaned runs disappeared when `index.json` was lost. `/forge:debug` and `/forge:refactor` operated outside the run lifecycle entirely. And the commands-to-skills migration was never committed — old command files at git HEAD were shadowing the new skills at runtime.
+
+The glass wall was cracked: the system could look truthful while silently running out of sequence.
+
+**What changed:** A systematic enforcement sweep that replaced prompt trust with structural truth at every gap:
+
+1. **Gate timestamps preserved.** `forge_set_gate(approved)` now reads the existing gate file to preserve the original pending `createdAt` instead of overwriting it. The run registry uses the gate's pending timestamp, not the run creation time.
+
+2. **`run-active.json` initialized at pipeline start.** `forge_create_run` now writes the top-level marker (`startedAt`, `pipelineType`, `mode`) that `workflow-guard.js` and `forge-status.js` need. The pipeline is visible from the moment it's created, not from the first agent spawn.
+
+3. **Orphaned run recovery.** New `rebuildIndex()` function reconstructs `index.json` from authoritative `r-*/run.json` files on disk. Called lazily by `listRuns()` when the index is missing or empty. Runs can no longer become permanently invisible.
+
+4. **Debug and refactor joined the lifecycle.** Both skills rewritten from prose to structured format with `forge_create_run`, step tracking, and explicit gate writes. All five pipeline types (plan, implement, apply, debug, refactor) now participate in the run lifecycle.
+
+5. **Commands-to-skills migration committed.** The 17 old `commands/forge/*.md` files were deleted from the working tree during the migration but never committed. Git HEAD still had them, and Claude Code's plugin loader was reading committed state — old prose commands were shadowing modern skills. One focused commit (`fbc54f3`) fixed all 17 shadows.
+
+6. **Init cleans legacy commands.** `/forge:init` now removes stale `.claude/commands/forge/` files before checking if the project is initialized. Legacy projects get cleaned on re-init.
+
+7. **Apply gate enforcement — structural, not prompt.** The SKILL.md prompt check (STEP 1b) was added but runtime tests proved the model bypasses it. The real fix: `workflow-guard.js` now hard-blocks source file writes during apply runs unless `gate-pending.json` shows gate2 approved. Exit code 2, unconditional, cannot be bypassed by the model. This is the first write-boundary enforcement in FORGE — a structural sequencing invariant, not a suggestion.
+
+8. **Implementation-architect agent.** New conditional agent (`implementation-architect`) that narrows broad plans to the next smallest safe implementation slice. Invoked before the coder when the plan has 8+ tasks, crosses 3+ directories, or contains risky keywords. Writes `docs/context/slice-brief.md`. The coder scopes to it.
+
+**What this exposed:** Prompt-level branching is not reliable for safety-critical sequencing. The model optimizes for task completion and treats "if X then stop" as optional. Structural enforcement (hooks that block at the write boundary) is the only reliable mechanism for invariants that must hold.
+
+**Shipped in this era:**
+- Gate timestamp preservation in `forge_set_gate` and run registry sync
+- `run-active.json` initialization in `forge_create_run`
+- `rebuildIndex.js` with lazy healing in `listRuns()`
+- `/forge:debug` structured lifecycle skill (38 lines)
+- `/forge:refactor` structured lifecycle skill (40 lines, reviewer-style always included)
+- Commands-to-skills migration commit (fbc54f3: 34 files, 715 insertions, 223 deletions)
+- `/forge:init` legacy command cleanup (STEP 1a commands, 1b hooks)
+- `/forge:init` `.gitignore` hygiene (STEP 1c) + tracked-state detection with remediation guidance (STEP 1d)
+- `/forge:apply` STEP 1b prompt-level gate check (defense-in-depth)
+- `/forge:apply` structural gate enforcement in `workflow-guard.js` (hard block, exit 2)
+- `/forge:apply` handoff-to-gate feature matching (word-based, filler removal, stemming)
+- `/forge:apply` worktree path isolation (source writes outside worktree blocked, exit 2)
+- Structural worktree binding: `forge_create_run` auto-resolves worktree from gate2 feature match, writes to `run-active.json`
+- Structural commit-before-merge: `forge-worktree.js merge` auto-commits real worktree changes
+- Safe merge conflict handling: abort on conflict, preserve worktree/branch, exit non-zero
+- `/forge:apply` worktree merge-back wiring (Steps 8-9 in skill + structural in merge script)
+- Template cleanup: removed 12 stale hook files + 3 settings.json from all templates
+- `implementation-architect` agent (138 lines) with conditional routing in implement skill
+- Coder `slice-brief.md` reading rule
+- Worktree auto-creation at gate2 in `gate-sync.js`
+- Apply-phase worktree context injection via `apply-context-inject.js`
+- Plugin now has 29 agents, 19 skills, 13 hooks, 22 MCP tools
+
+---
+
+### What's planned next
+
+*Source: `.pipeline/board.json` — 45 open items as of 2026-04-12.*
+
+**End-to-end worktree pipeline validation:** The full worktree lifecycle (create → bind → isolate → commit → merge → cleanup) is now structurally wired. Remaining: a full end-to-end test of a real feature through implement → approve → apply → merge-back in the Diesel Priser test project. This would validate all enforcement layers working together in production conditions.
+
+**Parallel sessions with worktree isolation:** Start task B while task A is still running. Each pipeline run gets its own git worktree. Design includes stuck detection, crash recovery, atomic commits per task, cost tracking per session.
+
+**Pipeline failure recovery:** Use Claude Code native `--resume`/`--continue` for session recovery. Lock file tracks current unit in `run-active.json`. On resume, synthesize recovery context from last checkpoint.
+
+**External model routing (Codex/OpenAI):** The `forge_call_external` adapter, router, config, and usage tracking are built and tested (auth + request format verified). Blocked on user's OpenAI API billing. When resolved, one test call activates it.
+
+**Knowledge and learning:** Knowledge compounding (capture solutions after each apply), knowledge refresh (prune stale docs/solutions/), session history search (have we seen this error before?).
+
+**Intent classification for /forge:chat:** Detect whether user input is plan/implement/debug/refactor/explore/chat and route automatically.
+
+**Distribution:** Marketplace.json for team sharing. Dual distribution (npm + marketplace). Enterprise docs for Azure/Bedrock/Vertex.
+
+**Optional web dashboard:** Lightweight Node server serving a single HTML page. File-watches `.pipeline/` for changes, WebSocket pushes updates. Read-only viewer — all control stays in CLI.
+
+### Design decisions — what FORGE deliberately does not do
+
+**No Electron app.** The Electron desktop application at `C:\Users\cuj\Forge` is frozen as of April 2026. The plugin approach solves distribution, updates, and maintenance friction that no amount of UI improvement could fix. The visual UI (LIVE tab, gate bars, HEALTH dashboard) is deferred to an optional web dashboard, not rebuilt. See `docs/DECISIONS.md` entry for 2026-04-10.
+
+**No test coverage agent (yet).** A nyquist-auditor agent was prototyped and deleted. It wrote manual test stubs that connected to nothing — no runner reads them, nobody checked them. Test coverage tooling is the right idea but the wrong time. The `testCommand` field in project.json provides the foundation — when test execution is mature, a coverage agent should be designed as part of that loop.
+
+**No spec agent.** A spec-agent was prototyped and deleted. The planner's Q&A step (via `[questions]`/`[/questions]` signals) already clarifies scope when ambiguous. A separate spec step would produce a document the planner immediately re-reads to ask roughly the same questions — a detour to the same destination.
+
+**No multi-runtime support.** FORGE is Claude Code-only. GSD supports 9 runtimes. Compound Engineering supports 5+ via a Bun converter. FORGE deliberately chose depth over breadth — enforcement hooks, MCP tools, subagent lifecycle tracking, and PostCompact reinjection are Claude Code-specific features that would require significant abstraction to port. The trade-off is accepted.
+
+**Skills replaced commands.** The 17 `commands/forge/*.md` files were migrated to 19 `skills/<name>/SKILL.md` files in v0.2.0 (17 replacements + 2 new: `/forge:overview` and `/forge:refresh-docs`). Skills use `context: fork` for 92% token savings — the skill prompt runs in a forked context rather than loading the full conversation. The old `commands/forge/` directory was removed.
+
+---
+
+*Last updated: 2026-04-11. For complete technical reference, see [FORGE-REFERENCE.md](FORGE-REFERENCE.md). For architecture decisions, see `docs/DECISIONS.md`. For the update recipe, see `docs/FORGE-OVERVIEW-RECIPE.md`.*

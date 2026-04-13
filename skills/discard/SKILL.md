@@ -6,11 +6,18 @@ allowed-tools: "Read Write Edit"
 
 Discard the pending FORGE gate.
 
-## Step 1 — Find the pending run
+## Step 1 — Find the target run
 
-Call `forge_list_runs` with `status: "gate-pending"`. If no runs are found, print "No pending gate to discard." and stop.
+**Prefer `runId` from `.pipeline/gate-pending.json`** (deterministic current-gate pointer):
 
-If exactly one run is found, save its `runId`. Call `forge_get_run` with that `runId` to get the full run object including `worktreePath` and `gateState`.
+1. Read `.pipeline/gate-pending.json` (use `forge_check_gate` MCP tool, or Read directly).
+2. If the gate file has a `runId` field: use it directly. Skip to Step 2.
+3. If the gate file has no `runId` (legacy gate file): call `forge_list_runs` with `status: "gate-pending"`.
+   - If exactly one run is found, save its `runId`.
+   - If multiple runs are found, use the most recently updated one (sort by `updatedAt` desc).
+   - If no runs are found, print "No pending gate to discard." and stop.
+
+Call `forge_get_run` with the `runId` to get the full run object including `worktreePath` and `gateState`.
 
 ## Step 2 — Resolve the gate file location
 

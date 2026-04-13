@@ -18,8 +18,8 @@ FORGE is a Claude Code plugin that manages AI-powered development pipelines. It 
 | Slash commands | `commands/forge/*.md` |
 | Hook declarations | `hooks/hooks.json` |
 | Hook scripts | `hooks/*.js` |
-| Status line script | `forge-status.js` |
-| Worktree manager | `forge-worktree.js` |
+| Status line script | `bin/forge-status.js` |
+| Worktree manager | `bin/forge-worktree.js` |
 | Project templates | `templates/` |
 | Pipeline state (per-project) | `.pipeline/` |
 | Pipeline docs (per-project) | `docs/` |
@@ -41,7 +41,7 @@ The plugin does NOT modify project files on install. Projects get their pipeline
 - `agents/` — agent prompt definitions
 - `commands/` — slash command definitions
 - `hooks/` — hook scripts and declarations
-- `forge-status.js`, `forge-worktree.js` — utility scripts
+- `bin/forge-status.js`, `bin/forge-worktree.js` — utility scripts
 - `templates/` — project scaffolding templates
 
 **Per-project files (created by /forge:init, live in the target project):**
@@ -62,6 +62,7 @@ Pipeline **types** (the slash command) determine which agents run. Pipeline **mo
 |------|---------|-----------|------|
 | Plan feature | `/forge:plan` | planner, researcher, gotcha-checker, reviewer-triage, reviewers | #1 |
 | Implement feature | `/forge:implement` | coder, completeness-checker, reviewer-triage, reviewers | #2 |
+| Implement feature (scoped) | `/forge:implement` | implementation-architect, coder, completeness-checker, reviewer-triage, reviewers | #2 |
 | Apply feature | `/forge:apply` | implementer, documenter | none |
 | Debug | `/forge:debug` | debug, reviewer-triage, reviewers | #2 |
 | Apply debug | `/forge:apply` | implementer, documenter | none |
@@ -145,6 +146,7 @@ Based on the assessment, determine which agents are needed. The pipeline and mod
 
 | Agent | Include when |
 |-------|-------------|
+| `implementation-architect` | Plan has 10+ tasks, crosses module boundaries, modifies shared state, involves migration sequencing, or prior implement runs failed/revised |
 | `researcher` | External API, unfamiliar library, or unknown technical constraint |
 | `gotcha-checker` | Pattern with known failure modes (file writes, process spawning, reactive state) |
 | `reviewer-logic` | Complex state mutations, async flows, data transforms, multi-step conditionals |

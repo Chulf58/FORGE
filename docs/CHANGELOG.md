@@ -1,3 +1,359 @@
+## [2026-04-13] Visibility, Targeting, Windows Compatibility
+
+### Pipeline skill visibility
+- Removed `context: fork` from 6 core pipeline skills (plan, implement, apply, debug, refactor, chat)
+- Pipelines now run in main conversation — agent reasoning, tool calls, reviewer verdicts visible live
+- Maintenance skills (ideate, refresh, refresh-docs) keep fork context
+
+### Canonical feature preservation
+- `mcp/server.js` `forge_update_run`: overrides `gateState.feature` with stored `run.feature` (catches skill paraphrasing)
+- `hooks/gate-sync.js`: uses `run.feature` for gateState updates in both pending and approved paths; repairs gate-pending.json drift
+- `forge_create_run` apply path: binds worktree by gate2-approved gateState (no fuzzy feature matching)
+
+### Gate runId targeting
+- `gate-pending.json` schema gained `runId` field — single deterministic current-gate pointer
+- `forge_set_gate` accepts optional `runId` parameter, persists it
+- `gate-sync.js` prefers runId for O(1) targeting; falls back to feature-match for legacy files; repairs missing runId
+- approve/discard skills read runId first
+- 4 pipeline skills (plan/implement/debug/refactor) include runId in Write instructions
+
+### Active-run contamination filter
+- `hooks/subagent-start.js` and `subagent-stop.js` filter by FORGE agent allowlist (derived from `agents/*.md`)
+- Built-in subagents (general-purpose, Explore, claude-code-guide) silently skipped
+- Tolerates `forge:` namespace prefix
+- Symmetric stop-hook filter prevents spurious warnings
+
+### createWorktree.js Windows compatibility
+- Replaced `git rev-parse --git-dir` PATH check with filesystem `.git` existence check
+- Added `getGitExecutable()`: tries PATH, falls back to Program Files\Git and LOCALAPPDATA\Programs\Git locations
+- Switched from `execSync` (shell quoting bugs) to `execFileSync` (direct process spawn)
+- Truthful error reporting on `git worktree add` failures
+
+### FORGE banner (one-time per session)
+- `forge-banner.txt` shared text file at plugin root
+- SessionStart hook writes `.pipeline/forge-banner-pending` flag
+- First PostToolUse picks up flag, injects banner via `additionalContext`, deletes flag
+- Banner appears on first response of fresh session and after `/clear`; never spams
+- PostCompact path removed (was producing raw JSON in compaction logs)
+
+### Statusline rollout
+- `bin/forge-status.js` rewritten: registry-driven derivation, pipeline stage mapping, gate1/gate2 distinction, multi-pipeline fanout with overflow
+- `/forge:init` STEP 1e generates `.claude/forge-status.cmd` wrapper using `process.execPath` (avoids bare-node PATH dependency and cmd.exe double-quoted-token bug)
+- Stdin timeout (500ms) prevents hangs
+- Migration: detects old bare-node forms in existing settings.json and upgrades to wrapper
+- Registry is authoritative over `run-active.json` — completed runs no longer render as active
+
+### Apply skill worktree wiring
+- STEP 2b: resolve worktree, persist worktreePath to run-active.json
+- STEP 3: prepend worktree path instructions for implementer/documenter
+- STEP 8: mandatory worktree commit before merge (`git -C <wtPath>`)
+- STEP 9: merge-back via `node bin/forge-worktree.js merge <runId>`
+
+### Worktree path isolation
+- `hooks/workflow-guard.js` blocks source writes outside resolved worktree during worktree-backed apply (exit 2)
+
+### Worktree merge safety
+- `bin/forge-worktree.js merge()` detects conflicts, aborts cleanly, preserves worktree on failure
+- Pre-merge commit only when `git status --porcelain` shows real changes (no --allow-empty)
+
+### PostCompact hook closed as silent no-op
+- `hooks/ctx-post-compact.js` converted to silent no-op after live testing in Claude Code v2.1.104 proved no PostCompact stdout shape (bare text, `hookSpecificOutput` envelope, top-level `systemMessage`/`additionalContext` with `suppressOutput`) can both inject context and stay out of `/compact`'s visible completion line
+- `/compact` output is now clean — no raw JSON, no validator error, no rules block printed
+- Runtime truth recorded in `docs/gotchas/GENERAL.md` (new "PostCompact hook — do not use for context reinjection" section); `docs/RESEARCH/context-reinjection.md` annotated with top-of-file correction so the older theoretical claims no longer mislead
+
+## [2026-04-12] Structural Worktree Enforcement, Init Hygiene, Merge Safety
+
+### Structural worktree binding for apply runs
+- `mcp/server.js`: `forge_create_run` with pipelineType "apply" now auto-resolves the worktree from approved gate2 feature match and writes `worktreePath` into `run-active.json` — zero prompt dependency
+- Feature matching uses normalize + bidirectional containment against implement runs
+
+### Structural commit-before-merge in merge script
+- `bin/forge-worktree.js`: `merge()` now runs `git -C <wtPath> status --porcelain` before merge — commits real changes only, no `--allow-empty`
+- If no changes exist, commit is skipped silently
+- If commit fails (pre-commit hooks), logs and continues
+
+### Worktree path isolation enforcement
+- `hooks/workflow-guard.js`: during worktree-backed apply, source writes outside the resolved worktree path are now blocked with exit 2
+- Uses `run-active.json.worktreePath` (set structurally by forge_create_run)
+
+### Safe merge failure handling
+- `bin/forge-worktree.js`: `merge()` now detects merge conflicts, runs `git merge --abort`, preserves worktree/branch, exits non-zero with actionable JSON error
+- Cleanup (worktree remove + branch delete) only runs after confirmed successful merge
+
+### Init: stale hook cleanup
+- `skills/init/SKILL.md`: STEP 1b removes 5 known FORGE-scaffolded hook files from `.claude/hooks/`
+- Removes empty `.claude/hooks/` directory after cleanup
+
+### Init: .gitignore for FORGE local state
+- `skills/init/SKILL.md`: STEP 1c ensures `.pipeline/` and `.worktrees/` are in `.gitignore`
+- Runs in the always-run section (works for both new and existing projects)
+
+### Init: tracked-state detection and remediation guidance
+- `skills/init/SKILL.md`: STEP 1d detects already-tracked `.pipeline/` and `.worktrees/` via `git ls-files`
+- Prints WARNING with exact `git rm -r --cached` remediation commands — does NOT execute them
+
+### Template cleanup
+- Deleted 12 stale hook files from all 3 templates (code, instructional, power-automate)
+- Cleared all 3 template `settings.json` to `{}` (no local hook registrations)
+- Removed 3 empty `.claude/hooks/` directories from templates
+
+### createWorktree.js investigation
+- Confirmed: `createWorktree.js` path logic works correctly on Windows with space-containing paths
+- "Not a git repository" failure was environmental (pre-git-init), not a code bug
+- Nested `.pipeline/.pipeline/` and `docs/docs/` are committed project artifacts, not createWorktree bugs
+
+## [2026-04-12] Apply Hardening, Worktree Merge, Era 20, Codex Investigation
+
+### Handoff-to-gate feature matching
+- `hooks/workflow-guard.js`: apply-time source writes now require handoff `# Handoff: <name>` to match `gate-pending.json.feature`
+- Word-based matching with filler removal and simple stemming (not character substring)
+- Four distinct deny reasons: gate unapproved, gate missing, handoff missing, feature mismatch
+
+### Worktree merge-back wiring
+- `skills/apply/SKILL.md`: added STEP 8 — calls `node bin/forge-worktree.js merge <runId>` after documenter/auto-PR
+- On success: merge + worktree removal + branch deletion
+- On failure: log with `[worktree]` prefix, leave worktree intact, continue
+
+### FORGE-OVERVIEW Era 20
+- Added Era 20: "Lifecycle Enforcement: from prompt trust to structural truth"
+- Updated counts (29 agents, 19 skills, 13 hooks, 22 MCP tools)
+- Updated "What's planned next" with current priorities
+
+### FORGE-REFERENCE refresh
+- Enforcement summary: 4 new rows (apply gate, orphaned run recovery, run marker init, gate timestamp)
+- workflow-guard: updated to reflect dual behavior (hard block + advisory)
+- Run registry: added rebuildIndex, updated createRun/listRuns descriptions
+- Fixed false worktree merge-back statement to match code truth
+
+### OpenAI Codex investigation
+- Codex CLI (Microsoft Store) is a standalone interactive agent, not an API endpoint — cannot be used as FORGE pipeline agent
+- `forge_call_external` → OpenAI Responses API adapter verified working (auth + request format correct)
+- Blocked on user's OpenAI API billing (429 quota error) — ready when billing is sorted
+- `forge-config.default.json` model name `codex-mini-latest` is stale — needs update when API access confirmed
+
+## [2026-04-12] Lifecycle Enforcement & Truthfulness Sweep
+
+### Gate timestamp truthfulness
+- `mcp/server.js`: `forge_set_gate(approved)` now preserves the original pending `createdAt` instead of overwriting with approval time
+- Run registry sync uses run's existing `gateState.createdAt` instead of `run.createdAt`
+
+### run-active.json initialization
+- `mcp/server.js`: `forge_create_run` now writes `run-active.json` with `{ startedAt, runId, pipelineType, mode, feature, agents: [] }`
+- Restores `workflow-guard.js` (`isPipelineActive`) and `forge-status.js` to functional state
+
+### Orphaned run index recovery
+- New `packages/forge-core/src/runs/rebuildIndex.js` — scans `r-*/run.json` files and reconstructs `index.json`
+- `listRuns.js` calls `rebuildIndex` lazily when index is missing/empty but run directories exist
+- Exported from `packages/forge-core/src/runs/index.js`
+
+### /forge:debug lifecycle participation
+- `skills/debug/SKILL.md` rewritten from 11-line prose to 38-line structured lifecycle skill
+- Mandatory `forge_create_run` (pipelineType: "debug"), step tracking, explicit gate2 write
+
+### /forge:refactor lifecycle participation
+- `skills/refactor/SKILL.md` rewritten from 13-line prose to 40-line structured lifecycle skill
+- Preserves mandatory `reviewer-style` inclusion for refactors
+
+### Command-to-skill migration commit (fbc54f3)
+- 17 old `commands/forge/*.md` deletions + 19 `skills/*/SKILL.md` additions committed
+- Fixed runtime skill shadowing — Claude Code loader was reading stale committed commands
+
+### /forge:init legacy cleanup
+- `skills/init/SKILL.md` rewritten from 3-line prose to 28-line structured skill
+- STEP 1 unconditionally removes stale `.claude/commands/forge/` before init-state check
+
+### /forge:apply gate enforcement
+- `skills/apply/SKILL.md`: STEP 1b prompt-level gate2 check (defense-in-depth)
+- `hooks/workflow-guard.js`: structural gate2 enforcement — blocks source file writes during apply unless `gate-pending.json` shows gate2 approved (exit 2, hard block, unconditional)
+
+### FORGE-REFERENCE.md regeneration
+- Full 817-line regeneration from all source files (29 agents, 19 skills, 13 hooks, 22 MCP tools)
+
+### Retroactive CHANGELOG entry
+- Documented the prior session's uncommitted work (commands→skills migration, MCP server, forge-core, hooks, templates)
+
+## [2026-04-12] Worktree Enforcement, Apply Routing, Implementation-Architect Agent
+
+### Worktree auto-creation at Gate #2
+- `hooks/gate-sync.js` now auto-creates a worktree when gate2 pending fires for an implement run with no worktree
+- Copies coder's handoff.md into the worktree automatically (via existing `createWorktree` docs/ copy)
+- Non-fatal on failure — logs and continues without blocking the pipeline
+- Tests 8-9 added to `hooks/gate-sync-test.js`
+
+### Apply-phase worktree context injection
+- New `hooks/apply-context-inject.js` — SubagentStart hook for implementer/documenter agents
+- Finds most recent implement run with a worktree, injects `additionalContext` with worktree path
+- Verifies worktree directory exists on disk before injecting (stale path protection)
+- Falls back silently when no worktree exists (SPRINT/DIRECT mode)
+- 6 test cases in `hooks/apply-context-inject-test.js`
+
+### Implementation-architect agent
+- New `agents/implementation-architect.md` — conditional specialist that narrows broad plans to the next smallest safe slice
+- Writes `docs/context/slice-brief.md` with in-scope, out-of-scope, dependency order, success criteria
+- Hard constraints: max 5 files per slice, system must work after each slice, shared state changes isolated
+- NOT always-on — only invoked when plan is large, cross-cutting, or migration-heavy
+
+### Implement skill routing
+- `skills/implement/SKILL.md` Step 2b added — three-condition checklist (8+ tasks, 3+ directories, risky keywords) conditionally invokes implementation-architect before coder
+- Coder (`agents/coder.md`) now reads `slice-brief.md` when present and scopes to its in-scope items
+
+### Documentation
+- `CLAUDE.md` updated with implementation-architect in contextual agents table and pipeline types table
+
+## [2026-04-12] Commands → Skills Migration + MCP Server + forge-core Package (retroactive)
+
+*End-of-session was missed for this work. Retroactive entry based on diff.*
+
+### Commands → Skills migration
+- All 16 slash commands deleted from `commands/forge/` (apply, approve, chat, config, dashboard, debug, discard, health, ideate, implement, init, plan, planned, refactor, refresh, status, todo)
+- Replaced by 18 proper skill definitions under `skills/*/SKILL.md` — same functionality, new structure with YAML frontmatter (name, description, argument-hint, context, allowed-tools, model)
+- New `skills/overview/SKILL.md` and `skills/chat/SKILL.md` added
+- Only `commands/forge/hello.md` retained (test command)
+
+### MCP server creation
+- `mcp/server.js` — full MCP server with 17 registered tools (forge_ prefix, Zod schemas)
+- `mcp/server-minimal.js` — lightweight fallback
+- `mcp/lib/config-store.js` — forge-config.json read/write with plugin data dir resolution
+- `mcp/lib/router.js` — pure model recommendation function
+- `mcp/lib/openai-adapter.js` — OpenAI Responses API adapter for multi-engine routing
+- `mcp/lib/usage-store.js` — per-provider usage tracking (request count, tokens, quota)
+- `mcp/package.json` — ESM package, separate from plugin root CommonJS
+- `.mcp.json` — declares server for Claude Code auto-start
+
+### forge-core package
+- `packages/forge-core/src/runs/` — run registry with Zod-validated schemas
+- createRun, getRun, listRuns, updateRun, createWorktree — full CRUD for pipeline runs
+- schemas.js — single source of truth for Run, RunStatus, GateState, RunAgent, RunIndex
+- storage.js — JSON read/write helpers with directory creation
+- Smoke tests for both runs and worktree creation
+
+### Script relocation
+- `forge-status.js` moved from root to `bin/forge-status.js`
+- `forge-worktree.js` moved from root to `bin/forge-worktree.js`
+
+### Plugin manifest
+- Version bumped 0.1.0 → 0.2.0
+- Added repository, license (MIT), keywords fields
+
+### Agent updates
+- All 27 agents modified: updated descriptions, model fields, maxTurns, effort values
+- Planner: added wave assignment, approach summary, tier signals, module assignment
+- Coder: added scout.json enforcement, revision mode, pre-flight checklist
+- Reviewer-triage: added triage-excerpts output directory
+- Implementer-triage: expanded wave-aware dispatch
+- Documenter: expanded solution capture, module wiring, todo closure logic
+
+### New hooks
+- `hooks/bash-guard.js` — PreToolUse hook blocking dangerous bash commands
+- `hooks/ctx-stop.js` — Stop hook for advisory pipeline checks (incomplete agents, pending gates, unapplied handoffs)
+- `hooks/ctx-post-compact.js` — PostCompact hook for context reinjection after compression
+- `hooks/gate-sync.js` — PostToolUse hook syncing gate file writes to run registry
+
+### Template cleanup
+- Stripped Electron/Svelte-specific gotchas from `templates/code/docs/gotchas/`
+- Deleted `skills/electron-ipc.md`, `skills/electron-security.md`, `skills/svelte5-components.md`, `skills/svelte5-reactivity.md` from code template
+- Updated SKILLS.md in code template to be stack-agnostic
+- Updated tool-call-auditor and workflow-guard hooks across all templates
+
+### Research docs
+- 10 new research docs under `docs/RESEARCH/`: enforcement patterns, model routing, MCP server scaffold, subagent hooks, plugin directory hooks, approval enforcement, compound distribution, GSD distribution, context reinjection
+
+### Configuration
+- `forge-config.default.json` — default model routing config (Anthropic + placeholder external providers)
+- `forge-rules.md` — 35-line curated rules for PostCompact reinjection
+
+### Board
+- `.pipeline/board.json` expanded significantly with new TODO/PLANNED items from all pipeline work
+
+## [2026-04-11] Hello World Slash Command
+
+- Added `/forge:hello` test command that responds with "Hello, World!"
+- Demonstrates minimal slash command structure for plugin testing
+
+## [2026-04-11] Session Summary: 13 Features + 3 Enforcement Mechanisms + 9 Ideator Fixes
+
+**Massive buildout day:** Model routing layer (MCP 6 tools + 4 lib modules), subagent lifecycle hooks, worktree scripts reorganized, all 28 agents upgraded (maxTurns, effort, descriptions), blockedBy task support, test execution in apply, git integration, bash guard enforcement, context reinjection on compaction, stop hook for advisory checks, and 9 targeted ideator fixes. Plugin now has 17 MCP tools, 7 hook event types, 28 fully-described agents, and framework for multi-model routing. See below for detailed entries per feature.
+
+---
+
+## [2026-04-11] Git Integration for Apply Pipeline
+
+- **Opt-in git workflow** in `/forge:apply`: branch creation before implementer, auto-commit after tests, auto-PR after documenter. All gated by `gitIntegration` config in project.json.
+- **Safety first:** all git steps log and continue on failure, never block. Forbidden: force push, amend, no-verify, reset, clean, stash.
+- **Slug sanitization:** feature name → lowercase, hyphens, stripped unsafe chars, 50-char cap.
+- **PR via gh CLI:** checks gh is installed, pushes branch first, skips gracefully if anything fails.
+- **Documented** in GENERAL.md with config shape and defaults.
+- **LEAN pipeline** with reviewer + reviewer-logic. 3 reviewer warnings addressed in implementation.
+
+## [2026-04-11] Stop Hook — Advisory Pipeline Checks
+
+- **Stop hook `hooks/ctx-stop.js`** — fires when Claude finishes responding. Checks 3 conditions: incomplete pipeline agents, pending gate, unapplied handoff. Outputs advisory reminder via additionalContext. Never blocks (exit 0 always).
+- **30-minute staleness guard** on all checks — prevents perpetual false positives from abandoned runs or old handoff content.
+- **hooks.json updated** with Stop entry.
+
+## [2026-04-11] Context Reinjection on Compaction
+
+- **PostCompact hook `hooks/ctx-post-compact.js`** — fires after mid-session context compression, re-injects critical FORGE rules via `additionalContext` stdout JSON.
+- **`forge-rules.md`** — 35-line curated rules file: tool selection, approach-first, pipeline mode, gate approval, token conservation. Only unbreakable laws.
+- **hooks.json updated** with PostCompact entry. Degrades gracefully if CLAUDE_PLUGIN_ROOT not set.
+
+## [2026-04-11] Bash Guard Hook — First Enforcement Law
+
+- **PreToolUse hook `hooks/bash-guard.js`** — blocks Bash commands that should use dedicated tools. Blocks: cat/head/tail (→Read), grep/rg (→Grep), find/ls (→Glob), sed/awk (→Edit), wc (→Read), echo with redirect (→Write). Allows: git, npm, node, process ops.
+- **Exit code 2 enforcement** — agent must re-plan, cannot bypass. Stderr message tells which tool to use.
+- **hooks.json updated** with PreToolUse Bash matcher.
+- Inspired by GSD and Disciplined Process Plugin enforcement patterns (docs/RESEARCH/enforcement-patterns.md).
+
+## [2026-04-11] Test Execution in Apply Pipeline
+
+- **Opt-in test execution** after implementer in `/forge:apply`. Set `testCommand` in `.pipeline/project.json` (e.g. `"npm test"`). 60s timeout, emits `[suggest] debug` on failure — never auto-fixes.
+- **`testCommand` added to `forge_update_config` allowlist** — configurable via MCP tool.
+- **Duplicate board entry removed** from planned array.
+
+## [2026-04-11] blockedBy Support for Board Tasks
+
+- **New MCP tool `forge_set_blocked_by`** — set/clear blockedBy array on any board task, validates blocker IDs exist.
+- **Extended `forge_read_board`** — new `blocked` filter (blocked/unblocked/all). MCP server now has 17 tools.
+- **[task-block] signal** documented in GENERAL.md signal table.
+- **Status skill** updated to show blocked task count.
+
+## [2026-04-11] Agent Description Quality
+
+- **Rewrote all 28 agent descriptions** with concrete trigger examples. Each description now has "Use when:" with 2-4 scenarios so Claude Code can better match agents to tasks. Descriptions quoted in YAML (contain colons).
+
+## [2026-04-11] Agent Frontmatter Upgrade
+
+- **Added `maxTurns` and `effort` to all 28 agents.** Three tiers: light (5 turns, low effort — triage/scout agents), medium (10 turns, medium — reviewers/utility), heavy (25 turns, high — coder/planner/implementer/researcher).
+
+## [2026-04-11] Worktree Scripts to bin/
+
+- **Moved** `forge-worktree.js` and `forge-status.js` to `bin/`. Both have `#!/usr/bin/env node` shebangs.
+- **Updated references** in CLAUDE.md, ARCHITECTURE.md, GENERAL.md, modules.json.
+
+## [2026-04-11] SubagentStart/SubagentStop Hooks
+
+- **Subagent lifecycle tracking:** Two new hook scripts (`hooks/subagent-start.js`, `hooks/subagent-stop.js`) fire on Claude Code's SubagentStart/SubagentStop events. Track agent_id, agent_type, startedAt, completedAt, durationMs, and outcome in `.pipeline/run-active.json`.
+- **Reviewer verdict extraction:** SubagentStop hook scans `last_assistant_message` for `[reviewer-verdict]` signals and extracts the verdict (APPROVED/BLOCK/REVISE) as the outcome.
+- **hooks.json updated:** SubagentStart and SubagentStop entries added with `"matcher": "*"` to capture all subagents.
+- **LEAN pipeline:** Plan + reviewer, no safety concerns (local file writes only).
+
+## [2026-04-11] Intelligent Model Routing
+
+- **Model routing layer added:** 4 new ESM lib modules in `mcp/lib/` — config-store (config resolution with CLAUDE_PLUGIN_DATA primary, .pipeline fallback), usage-store (per-project quota tracking), router (pure function recommendation engine with 4-priority fallback chain), openai-adapter (OpenAI Responses API via built-in fetch).
+- **6 new MCP tools:** `forge_get_model_recommendation`, `forge_call_external`, `forge_read_usage`, `forge_reset_usage`, `forge_update_agent_model`, `forge_list_models`. MCP server now has 16 tools total.
+- **forge-config.default.json:** Default config template with Anthropic + OpenAI providers, 4 model catalog entries, all 28 agents mapped with preferred/fallback models and required capabilities.
+- **Config bootstrap hook:** SessionStart hook copies default config to CLAUDE_PLUGIN_DATA on first session.
+- **OpenAI Codex integration:** External provider adapter for `codex-mini-latest` via `/v1/responses` endpoint. Budget-driven model selection (economy/standard/performance as soft preference). Quota exhaustion detection on 401/429 responses.
+- **Full STANDARD pipeline:** Plan with researcher + gotcha-checker, 5 reviewers (FULL mode), coder, implementer.
+
+## [2026-04-11] Electron Strip + Skills Migration + MCP Server
+
+- **Electron strip complete:** 22 agents, 2 commands, 7 templates cleaned of all IPC/Svelte/Electron references. 4 Electron-specific skill files deleted. Banner hook fixed to detect .pipeline/ instead of .forge.
+- **Skills migration:** 17 commands migrated from commands/forge/*.md to skills/<name>/SKILL.md. 8 pipeline skills use context: fork (92% token savings). commands/ directory removed. Plugin v0.2.0.
+- **MCP server built:** Full STANDARD pipeline (plan→research→review→implement→apply). 5 tools: forge_read_board, forge_add_todo, forge_update_task, forge_read_project, forge_update_config. ESM server at mcp/server.js with Zod schemas and isError pattern. SessionStart hook for dependency installation.
+- **Board rebuilt:** 55 open tasks. Added GSD-inspired items (cost tracking, stuck detection, atomic commits, crash recovery). Split parallel-sessions into 7 sub-tasks. 28 items tagged needs-detail for post-restructure fleshing out.
+- **Research:** Claude Code native features, Compound Engineering, GSD architecture, real plugin examples, MCP SDK patterns.
+
 ## [2026-04-10] Plugin Identity Overhaul — Docs, Board, Architecture
 
 - **CLAUDE.md rewritten:** Replaced Electron app description with plugin structure, file locations, pipeline type/mode tables, signal protocol, and session protocol.

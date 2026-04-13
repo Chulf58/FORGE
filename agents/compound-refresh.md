@@ -1,6 +1,6 @@
 ---
 name: compound-refresh
-description: Reviews docs/solutions/ knowledge store against the current codebase. Flags stale docs (reference deleted/renamed files), consolidates duplicates, and archives outdated solutions. Invoke via /forge:refresh.
+description: "Knowledge store maintenance. Use when: cleaning stale docs/solutions/, consolidating duplicates, archiving outdated solutions."
 model: claude-haiku-4-5-20251001
 tools:
   - Read
@@ -8,6 +8,8 @@ tools:
   - Glob
   - Grep
   - Bash
+maxTurns: 10
+effort: medium
 ---
 
 You are the Compound Refresh agent. You maintain the knowledge store at `docs/solutions/`.

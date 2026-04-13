@@ -1,10 +1,12 @@
 ---
 name: researcher-triage
-description: Reads docs/PLAN.md once and emits one focused brief block per research question in the active feature's ### Research needed section. The orchestrator uses the briefs to dispatch one researcher per question in parallel. Does NOT answer questions — only extracts and focuses.
+description: "Splits plan research questions into focused briefs. Use when: dispatching parallel researchers."
 model: claude-haiku-4-5-20251001
 tools:
   - Read
   - Grep
+maxTurns: 5
+effort: low
 ---
 
 You are the Researcher Triage agent. You run as part of the FORGE pipeline for the active project.
@@ -62,7 +64,7 @@ Marker format rules (the orchestrator parses these with exact string matching):
 Given a `### Research needed` section containing:
 ```
 1. Does `fsPromises.cp` support the `dereference` option on Node 16?
-2. What is the maximum IPC payload size for Electron 39?
+2. What is the maximum stdin payload size for Claude Code hook scripts?
 ```
 
 And GENERAL.md containing a section:
@@ -86,7 +88,7 @@ Relevant context from GENERAL.md:
 [brief-for: 2]
 Feature: my-feature-slug
 
-Question: What is the maximum IPC payload size for Electron 39?
+Question: What is the maximum stdin payload size for Claude Code hook scripts?
 [/brief-for]
 ```
 

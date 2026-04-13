@@ -10,11 +10,11 @@ FORGE is a Claude Code plugin that provides AI-powered development pipelines. It
 
 | Module | Description | Key files |
 |--------|-------------|-----------|
-| Pipeline Agents | 27 agent definitions that form the pipeline stages | `agents/*.md` |
+| Pipeline Agents | 28 agent definitions that form the pipeline stages | `agents/*.md` |
 | Slash Commands | 17 user-facing commands for pipeline control | `commands/forge/*.md` |
 | Hooks | Session tracking, workflow guard, context monitoring | `hooks/*.js`, `hooks/hooks.json` |
-| Parallel Sessions | Git worktree isolation for concurrent pipelines | `forge-worktree.js` |
-| Status Line | Multi-session progress display | `forge-status.js` |
+| Parallel Sessions | Git worktree isolation for concurrent pipelines | `bin/forge-worktree.js` |
+| Status Line | Multi-session progress display | `bin/forge-status.js` |
 | Project Templates | Scaffold templates for new project init | `templates/` |
 | Plugin Manifest | Plugin identity and metadata | `.claude-plugin/plugin.json` |
 
@@ -28,8 +28,8 @@ FORGE is a Claude Code plugin that provides AI-powered development pipelines. It
 
 ```
 /forge:plan  →  brainstormer? → planner → researcher? → gotcha-checker? → reviewers → Gate #1
-/forge:implement  →  coder-scout? → coder → completeness-checker? → reviewers → Gate #2
-/forge:apply  →  implementer → documenter
+/forge:implement  →  implementation-architect? → coder-scout? → coder → completeness-checker? → reviewers → Gate #2
+/forge:apply  →  implementer → documenter  (worktree context injected via SubagentStart hook)
 ```
 
 Each agent reads from and writes to files in the target project (`docs/PLAN.md`, `docs/context/handoff.md`, `.pipeline/board.json`, etc.).
@@ -52,10 +52,12 @@ Each agent reads from and writes to files in the target project (`docs/PLAN.md`,
 | Workflow guard | PreToolUse (Write/Edit) | `workflow-guard.js` | Enforces agent write-path restrictions |
 | Role enforcement | PreToolUse (Write/Edit) | `ctx-pre-tool.js` | Validates agent permissions via `agent-roles.json` |
 | Banner | SessionStart | `forge-banner.js` | Displays FORGE branding on session start |
+| Gate sync | PostToolUse (Write/Edit) | `gate-sync.js` | Syncs gate file writes to run registry; auto-creates worktrees at gate2 |
+| Apply context | SubagentStart | `apply-context-inject.js` | Injects worktree path into implementer/documenter agents |
 
 ## Parallel sessions
 
-`forge-worktree.js` creates git worktrees for isolated parallel pipeline runs. Each worktree gets its own `.pipeline/`, `docs/`, and `.claude/` directories. `forge-status.js` reads state from all worktrees to show combined progress.
+`bin/forge-worktree.js` creates git worktrees for isolated parallel pipeline runs. Each worktree gets its own `.pipeline/`, `docs/`, and `.claude/` directories. `bin/forge-status.js` reads state from all worktrees to show combined progress.
 
 ## Per-project state (created by /forge:init)
 

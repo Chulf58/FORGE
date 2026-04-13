@@ -13,7 +13,7 @@
 | Hook declarations | `hooks/hooks.json` | JSON — maps hook events to scripts |
 | Hook scripts | `hooks/*.js` | Node.js scripts (stdin JSON, stdout/stderr output) |
 | Plugin manifest | `.claude-plugin/plugin.json` | JSON — name, version, author |
-| Utility scripts | `forge-status.js`, `forge-worktree.js` | Node.js scripts (standalone) |
+| Utility scripts | `bin/forge-status.js`, `bin/forge-worktree.js` | Node.js scripts (standalone) |
 | Project templates | `templates/` | Directory trees copied by `/forge:init` |
 
 ---
@@ -108,7 +108,7 @@ The plugin itself has `.pipeline/` and `docs/` for tracking work on the plugin. 
 
 Files the pipeline reads/writes in the target project:
 - `.pipeline/board.json` — task board
-- `.pipeline/project.json` — project config
+- `.pipeline/project.json` — project config (includes optional `testCommand` for post-apply test execution)
 - `.pipeline/modules.json` — module registry
 - `.pipeline/run-active.json` — active run state (temporary)
 - `.pipeline/gate-pending.json` — pending gate (temporary)
@@ -129,6 +129,7 @@ Agents emit signals as lines starting with `[signal-name]`. These are consumed b
 | `[health]` | `[health] file\|aspect\|sev\|note` | Report code health issue |
 | `[questions]` / `[/questions]` | multi-line block | Agent clarification questions |
 | `[reviewer-verdict]` | `[reviewer-verdict] {...JSON}` | Reviewer result (APPROVED/BLOCK/REVISE) |
+| `[task-block]` | `[task-block] taskId blockedBy:id1,id2` | Mark a task as blocked by other tasks |
 | `[CONTEXT-CHECKPOINT]` | literal | Context window low — checkpoint needed |
 
 ---
@@ -155,3 +156,94 @@ User-supplied strings interpolated into YAML frontmatter or markdown can inject 
 | `docs/PLAN.md` | 80 lines | Archive completed sections to `docs/PLAN-archive.md` |
 | `docs/CHANGELOG.md` | 200 lines | Archive to `docs/archive/CHANGELOG_HISTORY.md` |
 | `docs/ARCHITECTURE.md` | 800 lines | Prune stale content on review |
+
+---
+
+## MCP server — forge-pipeline
+
+The plugin bundles an MCP server at `mcp/server.js` (ESM) that provides structured tool access to pipeline state. It is separate from the CommonJS hook scripts at the plugin root.
+
+**Key files:**
+- `mcp/server.js` — MCP server entry point (ESM, `import` syntax)
+- `mcp/package.json` — dependencies with `"type": "module"` (separate from plugin root to avoid breaking CommonJS hooks)
+- `.mcp.json` — declares the server for Claude Code auto-start; uses `${CLAUDE_PLUGIN_ROOT}` for the script path
+- `hooks/mcp-deps-install.js` — SessionStart hook that installs dependencies into `mcp/node_modules/` under `${CLAUDE_PLUGIN_ROOT}`
+
+**Project directory resolution:**
+- Primary: `process.cwd()` (set by Claude Code per MCP spec when spawning the server)
+- Override: `CLAUDE_PROJECT_DIR` env var (optional)
+- Call `resolveProjectDir()` inside each tool handler at invocation time — never cache the result at module level
+
+**Tool naming:** All tools use the `forge_` prefix with `snake_case` (e.g. `forge_read_board`, `forge_add_todo`).
+
+**Tool registration:** `server.registerTool(name, config, handler)` with Zod input schemas. The SDK converts Zod to JSON Schema automatically.
+
+**Error handling:** Every handler wraps logic in try/catch. Errors return `{ content: [{ type: "text", text: "..." }], isError: true }`. Never throw from handlers — thrown exceptions become protocol-level errors invisible to the LLM.
+
+**Never `console.log()` in the MCP server.** It writes to stdout and corrupts JSON-RPC messages. Use `console.error()` for debug output.
+
+**JSON read/write pattern:** Always read the full file, parse, mutate in-place, write the full object back. Never reconstruct objects from known fields only — this preserves unknown/extra fields.
+
+---
+
+## Git integration — gitIntegration config
+
+The apply pipeline supports opt-in git operations via `gitIntegration` in `.pipeline/project.json`:
+
+```json
+"gitIntegration": {
+  "enabled": false,
+  "branchPrefix": "forge/",
+  "autoCommit": false,
+  "autoPR": false
+}
+```
+
+- **enabled** — master switch. All git steps skip when false (default).
+- **branchPrefix** — prefix for feature branches (default: `"forge/"`). Branch name: `<prefix><sanitized-slug>`.
+- **autoCommit** — commit all changes after implementer + tests. Commit message: `feat(forge): <feature name>`.
+- **autoPR** — create PR via `gh pr create` after documenter. Requires `gh` CLI installed and authenticated.
+
+**Error handling:** Every git step logs with `[git-integration]` prefix and continues on failure. Git failures never block the pipeline.
+
+**Forbidden operations:** `--force`, `--amend`, `--no-verify`, `git reset`, `git clean`, `git stash` — never used by the apply pipeline.
+
+**Set via MCP:** `forge_update_config` with key `"gitIntegration"` and an object value.
+
+---
+
+## Model routing — forge-config.json
+
+The plugin includes an intelligent model routing layer. Key conventions:
+
+**Config file locations:**
+- Primary: `${CLAUDE_PLUGIN_DATA}/forge-config.json` — persistent across plugin updates; bootstrapped from `forge-config.default.json` on first session via SessionStart hook
+- Fallback: `.pipeline/forge-config.json` in the project directory — per-project override; used when `CLAUDE_PLUGIN_DATA` is not set
+
+**Environment variable resolution:**
+- `resolvePluginDataDir()` in `mcp/lib/config-store.js` returns `process.env.CLAUDE_PLUGIN_DATA || null`
+- Returns `null` when not set — callers fall back to the project `.pipeline/` directory
+- **`CLAUDE_PLUGIN_ROOT` is NOT reliably available as an env var in MCP server processes** — do not use it for config file resolution (it is only expanded in `.mcp.json` args and hook commands)
+
+**API key handling:**
+- API keys are referenced by environment variable name only (`envVar` field in provider config)
+- Never store plaintext API key values in `forge-config.json`
+- MCP tool handlers resolve keys at call time via `process.env[provider.envVar]`
+- Reject both `undefined` and empty string: `if (!apiKey) return errorResult(...)`
+
+**Two-track routing architecture:**
+- Anthropic models are routed via the `model:` field in agent frontmatter — Claude Code handles model selection natively; the router is advisory only for Anthropic
+- External providers (OpenAI, etc.) use the `forge_call_external` MCP tool — not subagent model selection
+- `forge_get_model_recommendation` returns a recommendation object but does not execute any call
+
+**Usage state:**
+- Lives in `.pipeline/usage.json` in the **project** directory (per-project, not global)
+- Tracks `requestCount`, `tokenCount`, `lastUsed`, `quotaExhausted`, `resetAt` per provider
+
+**Module layout:**
+- `mcp/lib/config-store.js` — config read/write; exports `readForgeConfig`, `writeForgeConfig`, `resolvePluginDataDir`
+- `mcp/lib/usage-store.js` — usage state read/write; exports `readUsage`, `writeUsage`, `markQuotaExhausted`, `recordUsage`
+- `mcp/lib/router.js` — pure recommendation function; no I/O; exports `recommendModel`
+- `mcp/lib/openai-adapter.js` — OpenAI Responses API adapter; exports `callOpenAI`
+- `mcp/server.js` — tool registration only; imports from `mcp/lib/`
+- Default config template bundled at plugin root as `forge-config.default.json`

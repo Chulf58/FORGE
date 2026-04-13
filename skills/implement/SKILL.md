@@ -2,7 +2,6 @@
 name: implement
 description: "Run the FORGE implement feature pipeline. Use when: user approved Gate #1 and wants to implement the planned feature."
 argument-hint: "[feature name]"
-context: fork
 allowed-tools: "Read Write Glob Grep Agent"
 model: claude-sonnet-4-6
 ---
@@ -78,7 +77,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
 4. **Reviewer-triage → reviewers:** dispatch based on mode
 5. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
-   - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"gate":"gate2","feature":"<feature name>","status":"pending","applyKeyword":"apply feature: <feature>"}`
+   - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<feature name>","status":"pending","applyKeyword":"apply feature: <feature>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
    - Present the implementation summary to the user
    - Ask user to type /forge:approve or /forge:discard
 

@@ -7,10 +7,6 @@ Global rules for this project. Loaded by every agent on every run.
 
 ---
 
-## Three-layer boundary (Electron projects)
-
-If this is an Electron app, never put Node.js code in the renderer or browser code in the main process. Always use IPC.
-
 ## No silent error swallowing
 
 Never catch an error and do nothing. Always propagate, log, or surface it to the user.

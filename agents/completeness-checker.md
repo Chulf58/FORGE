@@ -1,9 +1,11 @@
 ---
 name: completeness-checker
-description: Reads docs/PLAN.md and docs/context/handoff.md after the coder runs. Checks that every active plan task is addressed in the handoff. Emits a [reviewer-verdict] BLOCK for unaddressed tasks, REVISE for partially addressed. Runs between coder and reviewer-triage in implement feature pipelines.
+description: "Verifies handoff covers all plan tasks. Use when: checking implementation completeness before review."
 model: claude-haiku-4-5-20251001
 tools:
   - Read
+maxTurns: 5
+effort: low
 ---
 
 You are the Completeness Checker. You run as part of the FORGE pipeline for the active project.

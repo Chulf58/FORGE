@@ -2,7 +2,6 @@
 name: refactor
 description: "Run the FORGE refactor pipeline. Use when: user wants to clean up, restructure, or improve existing code."
 argument-hint: "[file or area to refactor]"
-context: fork
 allowed-tools: "Read Write Glob Grep Agent"
 model: claude-sonnet-4-6
 ---
@@ -31,7 +30,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "refa
 2. **Reviewer-triage → reviewers:** dispatch based on mode. **Always include `reviewer-style`** regardless of mode — refactors change code structure, and style consistency must be verified even in LEAN mode.
 3. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<refactor summary>","createdAt":"<now ISO>"}`
-   - Write `.pipeline/gate-pending.json`: `{"gate":"gate2","feature":"<refactor summary>","status":"pending","applyKeyword":"apply refactor: <refactor summary>"}`
+   - Write `.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<refactor summary>","status":"pending","applyKeyword":"apply refactor: <refactor summary>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
    - Present the refactor plan summary to the user
    - Ask user to type /forge:approve or /forge:discard
 

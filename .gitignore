@@ -9,4 +9,17 @@ out
 .pipeline/run-active.json
 .pipeline/gate-pending.json
 .pipeline/review-archive/
+.pipeline/runs/
 docs/audit-log.jsonl
+
+# Per-session agent scratch (operational, not committed)
+docs/context/*-status.json
+docs/context/reviewer-output/
+docs/context/triage-excerpts/
+
+# Per-user Claude Code settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Hook/MCP runtime debug artifacts
+mcp_stderr.txt
+.forge-hook-canary.txt

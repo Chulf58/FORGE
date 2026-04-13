@@ -1,0 +1,14 @@
+
+  ╔═══════════════════════════════════════╗
+  ║          F O R G E  v0.2.0            ║
+  ║   AI-Powered Development Pipeline     ║
+  ╚═══════════════════════════════════════╝
+
+  29 agents · 19 skills · 13 hooks · 22 MCP tools
+
+  /forge:plan    — plan a feature
+  /forge:implement — implement from plan
+  /forge:apply   — apply approved changes
+  /forge:debug   — diagnose and fix bugs
+  /forge:status  — project overview
+  /forge:init    — set up FORGE in a project

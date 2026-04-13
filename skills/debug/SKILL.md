@@ -2,7 +2,6 @@
 name: debug
 description: "Run the FORGE debug pipeline. Use when: user reports a bug, something is broken, or tests are failing."
 argument-hint: "[bug description]"
-context: fork
 allowed-tools: "Read Write Glob Grep Bash Agent"
 model: claude-sonnet-4-6
 ---
@@ -31,7 +30,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "debu
 2. **Reviewer-triage → reviewers:** dispatch based on mode
 3. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<bug summary>","createdAt":"<now ISO>"}`
-   - Write `.pipeline/gate-pending.json`: `{"gate":"gate2","feature":"<bug summary>","status":"pending","applyKeyword":"apply debug: <bug summary>"}`
+   - Write `.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<bug summary>","status":"pending","applyKeyword":"apply debug: <bug summary>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
    - Present the debug fix summary to the user
    - Ask user to type /forge:approve or /forge:discard
 

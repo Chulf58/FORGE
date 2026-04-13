@@ -132,6 +132,27 @@ async function main(rawInput) {
   let payload;
   try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
 
+  // --- Banner injection (once per session) ---
+  // SessionStart writes a flag file. The first PostToolUse picks it up,
+  // reads the banner, injects it as additionalContext, and deletes the flag.
+  const projectDir = process.cwd();
+  const bannerFlagPath = path.join(projectDir, '.pipeline', 'forge-banner-pending');
+  try {
+    if (fs.existsSync(bannerFlagPath)) {
+      fs.unlinkSync(bannerFlagPath);
+      const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+      const bannerPath = path.join(pluginRoot, 'forge-banner.txt');
+      if (fs.existsSync(bannerPath)) {
+        const banner = fs.readFileSync(bannerPath, 'utf8');
+        process.stdout.write(JSON.stringify({
+          additionalContext: 'Display the following FORGE banner to the user exactly as formatted (preserve the box drawing). Do not add commentary:\n\n' + banner,
+        }) + '\n');
+        exitOk();
+        return;
+      }
+    }
+  } catch (_) { /* banner pickup failed — continue normally */ }
+
   // Log every tool call (including Agent) before any early exits
   logToolCall(payload);
 

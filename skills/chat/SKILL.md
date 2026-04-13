@@ -2,7 +2,6 @@
 name: chat
 description: "FORGE conversational orchestrator. Use when: user starts a conversation, describes work naturally, or you need to detect intent and route to the right pipeline."
 argument-hint: "[what you want to do]"
-context: fork
 allowed-tools: "Read Write Glob Grep Bash Agent"
 model: claude-sonnet-4-6
 ---

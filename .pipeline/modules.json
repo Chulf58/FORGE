@@ -95,15 +95,15 @@
     "id": "parallel-sessions",
     "name": "Parallel Sessions",
     "description": "Git worktree-based isolation for running multiple pipeline sessions concurrently.",
-    "notes": "forge-worktree.js manages worktree lifecycle (create, list, merge, cleanup). Each worktree gets isolated .pipeline/, docs/, .claude/ directories. forge-status.js reads state from all worktrees to show combined progress in the terminal status line.",
+    "notes": "bin/forge-worktree.js manages worktree lifecycle (create, list, merge, cleanup). Each worktree gets isolated .pipeline/, docs/, .claude/ directories. bin/forge-status.js reads state from all worktrees to show combined progress in the terminal status line.",
     "capabilities": [
       { "id": "worktree-create", "text": "Create isolated git worktree for a pipeline session", "addedAt": 0 },
       { "id": "worktree-merge", "text": "Merge completed worktree back to main branch", "addedAt": 0 },
       { "id": "status-display", "text": "Show combined progress across all active sessions", "addedAt": 0 }
     ],
     "keyFiles": [
-      "forge-worktree.js",
-      "forge-status.js"
+      "bin/forge-worktree.js",
+      "bin/forge-status.js"
     ],
     "stores": [],
     "ipcChannels": [],

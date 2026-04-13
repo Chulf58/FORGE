@@ -1,0 +1,197 @@
+{
+  "providers": [
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "type": "anthropic",
+      "envVar": "ANTHROPIC_API_KEY",
+      "enabled": true,
+      "notes": "Anthropic models are routed via agent frontmatter — this entry tracks quota state only"
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "type": "openai",
+      "envVar": "OPENAI_API_KEY",
+      "enabled": false,
+      "notes": "Enable by setting OPENAI_API_KEY and flipping enabled to true"
+    }
+  ],
+  "models": [
+    {
+      "id": "claude-opus-4-6",
+      "providerId": "anthropic",
+      "capabilities": ["reasoning", "code", "long-context", "analysis"],
+      "costTier": "high",
+      "contextWindow": 200000,
+      "notes": "Highest capability Anthropic model; use for complex reasoning tasks"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "providerId": "anthropic",
+      "capabilities": ["reasoning", "code", "analysis"],
+      "costTier": "medium",
+      "contextWindow": 200000,
+      "notes": "Default balanced model; good throughput for most pipeline agents"
+    },
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "providerId": "anthropic",
+      "capabilities": ["code", "analysis", "fast"],
+      "costTier": "low",
+      "contextWindow": 200000,
+      "notes": "Fastest and cheapest Anthropic model; good for triage, lightweight review"
+    },
+    {
+      "id": "codex-mini-latest",
+      "providerId": "openai",
+      "capabilities": ["code"],
+      "costTier": "low",
+      "contextWindow": 200000,
+      "notes": "OpenAI Codex mini via Responses API; external provider — use forge_call_external"
+    }
+  ],
+  "agentModelMap": {
+    "agent-optimizer": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "architect": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "analysis"]
+    },
+    "brainstormer": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning"]
+    },
+    "cleanup": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code"]
+    },
+    "coder": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "code"]
+    },
+    "coder-scout": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "completeness-checker": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "compound-refresh": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "debug": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "code"]
+    },
+    "documenter": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "gotcha-checker": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "ideator": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning"]
+    },
+    "implementer": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "code"]
+    },
+    "implementer-triage": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "integrity-checker": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "planner": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "analysis"]
+    },
+    "refactor": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "code"]
+    },
+    "regression-risk": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "researcher": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "researcher-triage": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "reviewer": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "reviewer-logic": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["reasoning", "code"]
+    },
+    "reviewer-performance": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "reviewer-safety": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "reviewer-style": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "reviewer-triage": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    },
+    "skills-generator": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["code", "analysis"]
+    },
+    "tool-call-auditor": {
+      "preferred": "claude-haiku-4-5-20251001",
+      "fallback": "claude-sonnet-4-6",
+      "requiredCapabilities": ["analysis"]
+    }
+  },
+  "quotaTracking": true
+}

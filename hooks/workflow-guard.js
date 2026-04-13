@@ -62,15 +62,142 @@ async function isPipelineActive() {
 function isSourceFile(filePath) {
   if (!filePath || typeof filePath !== 'string') return false;
   const normalised = filePath.replace(/\\/g, '/');
-  // Must contain src/ or electron/ to be considered a source file
-  const isSource = normalised.includes('/src/') || normalised.includes('/electron/');
-  if (!isSource) return false;
-  // Exclude docs, agent prompt files, template directory, and markdown files
-  if (normalised.includes('/docs/')) return false;
-  if (normalised.includes('/.claude/agents/')) return false;
-  if (normalised.includes('/template/')) return false;
+  // Exclude pipeline, docs, config, and agent directories — everything else is source
+  const excluded = [
+    '/.pipeline/', '/docs/', '/.claude/', '/templates/',
+    '/node_modules/', '/.git/', '/mcp/', '/hooks/', '/agents/',
+    '/skills/', '/bin/',
+  ];
+  for (const ex of excluded) {
+    if (normalised.includes(ex)) return false;
+  }
+  // Exclude standalone config/doc files at project root
   if (normalised.endsWith('.md')) return false;
+  if (normalised.endsWith('.json') && !normalised.includes('/src/')) return false;
   return true;
+}
+
+// -- Gate #2 enforcement for apply runs --------------------------------------
+// Unconditional: if the active pipeline is "apply" and the write targets a
+// source file, gate-pending.json must show gate2 approved AND the handoff
+// must match the approved gate's feature. This prevents out-of-sequence
+// source mutations and wrong-handoff application.
+
+// Generic filler words stripped before comparison — these add no
+// feature-identifying signal and cause false mismatches.
+const FILLER_WORDS = new Set([
+  'feature', 'features', 'the', 'a', 'an', 'for', 'and', 'of', 'in',
+  'to', 'with', 'from', 'this', 'that', 'fix', 'add', 'update',
+]);
+
+function normalizeFeature(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function toMeaningfulWords(normalized) {
+  return normalized.split(/\s+/).filter(w => w && !FILLER_WORDS.has(w));
+}
+
+// Strip trailing 's' for simple singular/plural tolerance.
+function stem(word) {
+  if (word.length > 3 && word.endsWith('s')) return word.slice(0, -1);
+  return word;
+}
+
+function featuresMatch(gateFeature, handoffFeature) {
+  const g = normalizeFeature(gateFeature);
+  const h = normalizeFeature(handoffFeature);
+  if (!g || !h) return false;
+  if (g === h) return true;
+
+  const gWords = toMeaningfulWords(g);
+  const hWords = toMeaningfulWords(h);
+  if (gWords.length === 0 || hWords.length === 0) return false;
+
+  // The shorter side's meaningful words must all appear in the longer side
+  // (with simple singular/plural tolerance via stem()).
+  const shorter = gWords.length <= hWords.length ? gWords : hWords;
+  const longerStems = new Set((gWords.length <= hWords.length ? hWords : gWords).map(stem));
+
+  return shorter.every(w => longerStems.has(stem(w)));
+}
+
+// Returns null if write is allowed, or a deny-reason string if blocked.
+// filePath is the absolute or relative path the Write/Edit targets.
+async function checkApplyGateAndHandoff(filePath) {
+  const projectDir = process.cwd();
+  const pipelineDir = path.join(projectDir, '.pipeline');
+
+  // Read run-active.json to check if this is an apply run
+  let pipelineType = null;
+  let worktreePath = null;
+  try {
+    const raw = await fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), 'utf8');
+    const data = JSON.parse(raw);
+    pipelineType = data.pipelineType || null;
+    worktreePath = data.worktreePath || null;
+  } catch (_) {
+    return null; // no active run — not an apply, nothing to block
+  }
+
+  if (pipelineType !== 'apply') return null;
+
+  // This IS an apply run — check gate2 approval
+  let gateFeature = null;
+  try {
+    const raw = await fs.promises.readFile(path.join(pipelineDir, 'gate-pending.json'), 'utf8');
+    const gate = JSON.parse(raw);
+    if (gate.gate !== 'gate2' || gate.status !== 'approved') {
+      return 'FORGE: Cannot write source files during /forge:apply \u2014 Gate #2 has not been approved. ' +
+        'Run /forge:implement (or /forge:debug, /forge:refactor) and then /forge:approve before applying.';
+    }
+    gateFeature = gate.feature || '';
+  } catch (_) {
+    return 'FORGE: Cannot write source files during /forge:apply \u2014 gate-pending.json is missing or unreadable.';
+  }
+
+  // Gate2 is approved — now verify handoff matches the gate feature
+  let handoffFeature = null;
+  try {
+    const raw = await fs.promises.readFile(path.join(projectDir, 'docs', 'context', 'handoff.md'), 'utf8');
+    const firstLine = raw.split('\n')[0] || '';
+    // Extract feature name from "# Handoff: <name>" header
+    const match = firstLine.match(/^#\s*Handoff:\s*(.+)/i);
+    if (match) {
+      handoffFeature = match[1].trim();
+    }
+  } catch (_) {
+    // handoff missing or unreadable
+  }
+
+  if (!handoffFeature) {
+    return 'FORGE: Cannot write source files during /forge:apply \u2014 docs/context/handoff.md is missing or has no "# Handoff: <name>" header.';
+  }
+
+  if (!featuresMatch(gateFeature, handoffFeature)) {
+    return 'FORGE: Cannot write source files during /forge:apply \u2014 handoff does not match the approved gate. ' +
+      'Gate #2 approved for "' + gateFeature + '" but handoff is "' + handoffFeature + '". ' +
+      'Re-run the implement pipeline for this feature and approve Gate #2 again.';
+  }
+
+  // --- Worktree path enforcement ---
+  // If run-active.json has a worktreePath, source writes must be under it.
+  // This prevents the implementer from writing to the main project when a
+  // worktree was resolved. worktreePath is set by the apply skill in Step 2b.
+  if (worktreePath) {
+    const normalizedWrite = path.resolve(filePath).replace(/\\/g, '/').toLowerCase();
+    const normalizedWt = path.resolve(worktreePath).replace(/\\/g, '/').toLowerCase();
+
+    if (!normalizedWrite.startsWith(normalizedWt + '/') && normalizedWrite !== normalizedWt) {
+      return 'FORGE: Cannot write source files to the main project during a worktree-backed apply. ' +
+        'This apply run uses worktree: ' + worktreePath + '. ' +
+        'All source file writes must target paths under that directory. ' +
+        'Write to: ' + path.join(worktreePath, path.relative(projectDir, filePath));
+    }
+  }
+
+  return null; // gate2 approved, handoff matches, path is valid — allow
 }
 
 async function main(rawInput) {
@@ -88,6 +215,28 @@ async function main(rawInput) {
   // Fall back to path for robustness.
   const filePath = toolInput.file_path || toolInput.path || null;
   if (!filePath) { exitOk(); return; }
+
+  // --- Unconditional gate + handoff + path enforcement for apply runs ---
+  // This runs BEFORE the opt-in guard. It is not optional.
+  // Checks: (1) gate2 approved, (2) handoff matches gate, (3) write path inside worktree.
+  if (isSourceFile(filePath)) {
+    const denyReason = await checkApplyGateAndHandoff(filePath);
+    if (denyReason) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: denyReason,
+          },
+        }) + '\n'
+      );
+      process.exit(2);
+      return;
+    }
+  }
+
+  // --- Opt-in advisory guard (existing behavior) ---
 
   // Opt-in check — off by default
   if (!(await isGuardEnabled())) { exitOk(); return; }

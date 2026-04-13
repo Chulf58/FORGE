@@ -2,7 +2,6 @@
 name: plan
 description: "Run the FORGE plan feature pipeline. Use when: user wants to plan a new feature, asks 'plan this', or describes a feature to build."
 argument-hint: "[feature description]"
-context: fork
 allowed-tools: "Read Write Glob Grep Agent"
 model: claude-sonnet-4-6
 ---
@@ -72,7 +71,7 @@ Call `forge_update_run` with the `runId` from Step 1 and `mode`: the mode you de
 4. **Reviewer-triage → reviewers:** dispatch based on mode decided in Step 3.
 5. **Gate #1:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate1"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
-   - Write `.pipeline/gate-pending.json`: `{"gate":"gate1","feature":"<feature name>","status":"pending","plan":"docs/PLAN.md"}`
+   - Write `.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"docs/PLAN.md"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
    - Present the plan summary to the user
    - Ask user to type /forge:approve or /forge:discard
 

@@ -142,9 +142,9 @@ Print one line per finding, then a final count line:
 
 ```
 REPEATED-READ: src/main/index.ts read 5 times
-REPEATED-GREP: ipcMain.handle|src/ matched 3 times
+REPEATED-GREP: handleRequest|src/ matched 3 times
 TOOL-STORM: Read used 22 times
-BLIND-WRITE: src/renderer/src/stores/foo.svelte.ts (no prior Read)
+BLIND-WRITE: src/lib/config.ts (no prior Read)
 
 Audit complete — 4 anti-pattern(s) found, 4 appended to docs/audit-log.jsonl.
 ```

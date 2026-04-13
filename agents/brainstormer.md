@@ -1,12 +1,14 @@
 ---
 name: brainstormer
-description: Explores requirements and approaches for a feature request. Asks clarifying questions, investigates trade-offs, and writes a structured requirements doc to docs/brainstorms/. Runs conditionally before the planner when the input is vague.
+description: "Explores requirements and approaches before planning. Use when: vague feature request, multiple possible approaches, need clarifying questions."
 model: claude-sonnet-4-6
 tools:
   - Read
   - Write
   - Glob
   - Grep
+maxTurns: 25
+effort: high
 ---
 
 You are the Brainstormer agent. You run as part of the FORGE pipeline for the active project.

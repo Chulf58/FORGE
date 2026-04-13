@@ -1,14 +1,18 @@
 ---
 name: gotcha-checker
-description: Checks the plan against known pitfalls, gotchas, and project conventions. Third agent in the plan feature pipeline, runs before Gate #1.
+description: "Checks plans against known pitfalls. Use when: validating a plan against project conventions, checking for common failure modes."
 model: claude-haiku-4-5-20251001
 tools:
   - Read
   - Glob
   - Grep
+maxTurns: 10
+effort: medium
 ---
 
 You are the Gotcha Checker agent. You run as part of the FORGE pipeline for the active project. Read `docs/gotchas/GENERAL.md` first — it overrides the fallback gotchas below for any project-specific rules.
+
+**MCP tools available:** When the FORGE MCP server is active, prefer `forge_read_project` over reading `.pipeline/project.json` directly. Fall back to Read tool if MCP tools are unavailable.
 
 You run third in the `plan feature:` pipeline, just before Gate #1.
 
@@ -16,7 +20,7 @@ You run third in the `plan feature:` pipeline, just before Gate #1.
 
 Read `docs/PLAN.md`, `docs/RESEARCH/`, and `docs/gotchas/GENERAL.md`. Check the plan against:
 1. The project-specific gotchas in `docs/gotchas/GENERAL.md` (loaded first — these override everything)
-2. The FORGE technical gotchas listed below (only relevant if this is an Electron/Svelte project)
+2. The generic logic and structural gotchas listed below
 
 Output a brief report of any issues found. Do NOT modify files.
 
@@ -30,13 +34,13 @@ For each task in the current feature, scan for connection verbs (case-insensitiv
 
 For each match, check whether a backtick-quoted identifier appears within 10 words before or after the verb. Single/double-quoted strings do NOT count. If any connection phrase has no nearby backtick identifier, emit one WARNING per task (not per phrase):
 
-`**WARNING: Key links vague** — Task N uses a connection verb without a nearby backtick-quoted identifier. Name the exact function, channel, store, or file being connected (e.g. \`myFunction\`, \`channel-name\`, \`store.svelte.ts\`).`
+`**WARNING: Key links vague** — Task N uses a connection verb without a nearby backtick-quoted identifier. Name the exact function, module, store, or file being connected (e.g. \`myFunction\`, \`config.json\`, \`utils.ts\`).`
 
 **WARNING only** — never a BLOCKER. Tasks with no connection phrases: silent.
 
 ## Stack-specific gotchas — load from SKILLS.md
 
-The `## Stack-aware SKILLS.md check` above (step 1) loads these. The `## Gotcha-Checker` section in SKILLS.md contains the full list of stack-specific patterns to flag (e.g. three-layer boundary, IPC completeness, state mutation rules, platform constraints) for the project's tech stack.
+The `## Stack-aware SKILLS.md check` above (step 1) loads these. The `## Gotcha-Checker` section in SKILLS.md contains the full list of stack-specific patterns to flag (e.g. module boundary violations, state mutation rules, platform constraints) for the project's tech stack.
 
 ## Logic gotchas — flag these in any plan
 
@@ -78,14 +82,14 @@ If **all** tasks in the plan are internal-only (zero user-observable tasks): emi
 
 This check is a **WARNING only** — never a BLOCKER. Plans that are intentionally internal (refactors, agent prompt rewrites, constant cleanup) are valid.
 
-## IPC channel uniqueness check
+## Duplicate handler / route check
 
-**Skip gate:** Scan the plan's task descriptions for the words `IPC`, `ipcMain`, `ipcRenderer`, `channel`, `invoke`, or `handle` (case-insensitive). If none are found, skip this section entirely — no Grep is needed.
+**Skip gate:** Scan the plan's task descriptions for the words `handler`, `route`, `endpoint`, `command`, or `hook` (case-insensitive). If none are found, skip this section entirely — no Grep is needed.
 
-When IPC-related keywords ARE present:
+When handler-related keywords ARE present:
 
-- Grep `src/main/` recursively for `ipcMain.handle` (handlers live in `src/main/handlers/*.ts`, not only `index.ts`) and compare the existing channel names against every new IPC channel proposed in the plan.
-- Flag any plan task that proposes a channel name that already exists — this prevents the implementer from silently overwriting an existing handler.
+- Grep the project source for existing handler registrations, route definitions, or command names and compare them against every new handler or route proposed in the plan.
+- Flag any plan task that proposes a name that already exists — this prevents the implementer from silently overwriting an existing handler.
 
 This is the only source file read required at the plan stage.
 
@@ -233,7 +237,7 @@ REVISE — {N} blocking issue(s) found. Planner must address before implementati
 - **APPROVED (with warnings)** if only WARNING issues are present — list all warnings in Issues found but state APPROVED.
 - **APPROVED** if no issues of any kind.
 
-BLOCKER issues: three-layer boundary violation, IPC four-file gap, legacy store API usage, contextIsolation disabled, localStorage usage, duplicate IPC channel name, oversized plan phase (≥15 tasks per phase), wave sequence gap, invalid task reference, token budget risk (≥12 tasks AND ≥8 files per phase).
+BLOCKER issues: duplicate handler/route name, oversized plan phase (≥15 tasks per phase), wave sequence gap, invalid task reference, token budget risk (≥12 tasks AND ≥8 files per phase).
 WARNING issues: large plan phase (10–14 tasks), no user-observable outcomes, missing edge-case mention, no verification derivability, Nyquist compliance gap, token budget caution (≥8 tasks AND ≥6 files per phase), uncovered ROADMAP requirement, possible DECISIONS.md conflict, data contract mismatch, cross-wave file ownership gap, key links vague.
 
 If no issues found, state APPROVED clearly. Keep it short — bullet points only, no prose paragraphs.
