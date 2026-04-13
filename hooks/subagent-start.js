@@ -67,18 +67,23 @@ async function main(rawInput) {
 
   const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
 
-  // Read existing file or create minimal scaffold
+  // Read existing run-active.json. Identity (runId / pipelineType / mode /
+  // feature / startedAt) is owned exclusively by forge_create_run and
+  // forge_resume_run — if run-active.json is missing or unparseable, there is
+  // no authoritative pointer for this hook to amend, so exit silently rather
+  // than scaffolding a partial identity-less file that poisons downstream
+  // consumers (forge_get_active_run, statusline, workflow-guard).
   let data;
   try {
     const raw = await fs.promises.readFile(runActivePath, 'utf8');
     data = JSON.parse(raw);
-    // Guard: ensure agents array exists
-    if (!Array.isArray(data.agents)) {
-      data.agents = [];
-    }
   } catch (_) {
-    // File absent or unparseable — create minimal scaffold
-    data = { agents: [] };
+    exitOk();
+    return;
+  }
+  // Guard: ensure agents array exists on an otherwise valid run-active.json.
+  if (!Array.isArray(data.agents)) {
+    data.agents = [];
   }
 
   const agentId = payload.agent_id || null;
