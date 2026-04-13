@@ -11,18 +11,22 @@ FORGE is a Claude Code plugin that provides AI-powered development pipelines. It
 | Module | Description | Key files |
 |--------|-------------|-----------|
 | Pipeline Agents | 28 agent definitions that form the pipeline stages | `agents/*.md` |
-| Slash Commands | 17 user-facing commands for pipeline control | `commands/forge/*.md` |
+| Skills | 20 user-facing skills (pipeline + gate + status + setup) | `skills/*/SKILL.md` |
+| MCP Server | 22 forge_* tools backing skills and hooks; persists pipeline state | `mcp/server.js`, `mcp/lib/` |
+| Run Registry | Durable run identity + lifecycle (Zod schemas, on-disk index) | `packages/forge-core/src/runs/` |
 | Hooks | Session tracking, workflow guard, context monitoring | `hooks/*.js`, `hooks/hooks.json` |
-| Parallel Sessions | Git worktree isolation for concurrent pipelines | `bin/forge-worktree.js` |
-| Status Line | Multi-session progress display | `bin/forge-status.js` |
+| Parallel Runs | Git worktree isolation for concurrent pipelines | `bin/forge-worktree.js` |
+| Status Line | Multi-run progress display | `bin/forge-status.js` |
 | Project Templates | Scaffold templates for new project init | `templates/` |
 | Plugin Manifest | Plugin identity and metadata | `.claude-plugin/plugin.json` |
 
 ## Entry points
 
-- **User runs a command** (e.g. `/forge:plan`) → Claude Code loads `commands/forge/plan.md` → command orchestrates agents
-- **Hook fires** (e.g. PostToolUse) → `hooks/hooks.json` routes to `hooks/ctx-post-tool.js` → script processes event
-- **User runs `/forge:init`** → scaffolds `.pipeline/`, `docs/`, `CLAUDE.md` into the target project using templates
+- **User invokes a skill** (e.g. `/forge:plan`) → Claude Code loads `skills/plan/SKILL.md` → skill calls MCP tools and orchestrates agents.
+- **MCP tool call** → `mcp/server.js` dispatches → reads/writes `.pipeline/` + `packages/forge-core` run registry.
+- **User invokes `/forge:resume <runId>`** → restores `run-active.json` steering pointer; does not progress the run autonomously.
+- **Hook fires** (e.g. PostToolUse) → `hooks/hooks.json` routes to `hooks/ctx-post-tool.js` → script processes event.
+- **User runs `/forge:init`** → scaffolds `.pipeline/`, `docs/`, `CLAUDE.md` into the target project using templates.
 
 ## Agent pipeline flow
 
@@ -43,17 +47,17 @@ Each agent reads from and writes to files in the target project (`docs/PLAN.md`,
 5. User approves implementation (Gate #2)
 6. `/forge:apply` applies changes to source files and updates docs
 
+## Run model
+
+A **run** is the durable, identity-bearing, resumable logical unit of FORGE work — it has a stable `runId`, a persisted lifecycle (`created` → `running` → `gate-pending` → `completed`/`failed`/`discarded`), and on-disk state that survives Claude session restarts. The **Claude conversation** is the container that drives a run forward: a run only advances during turns where the conversation is actively orchestrating it.
+
+Run state lives at `.pipeline/runs/<runId>/run.json`; the lightweight registry index at `.pipeline/runs/index.json` tracks every run's status. `.pipeline/run-active.json` is the per-Claude-session steering pointer — it names the run the current conversation is driving and is overwritten by `forge_create_run` and `forge_resume_run`.
+
+**Runs do not advance autonomously between conversation turns.** There is no background worker; nothing happens to a run when the conversation isn't driving it. See `docs/FORGE-REFERENCE.md` § 8 for the statusline-vs-dashboard scope rule and the `/forge:resume` non-promise.
+
 ## Hooks
 
-| Hook | Event | Script | Purpose |
-|------|-------|--------|---------|
-| Context tracking | SessionStart | `ctx-session-start.js` | Reads transcript, computes remaining context % |
-| Context monitoring | PostToolUse | `ctx-post-tool.js` | Logs tool calls, emits `[CONTEXT-CHECKPOINT]` when low |
-| Workflow guard | PreToolUse (Write/Edit) | `workflow-guard.js` | Enforces agent write-path restrictions |
-| Role enforcement | PreToolUse (Write/Edit) | `ctx-pre-tool.js` | Validates agent permissions via `agent-roles.json` |
-| Banner | SessionStart | `forge-banner.js` | Displays FORGE branding on session start |
-| Gate sync | PostToolUse (Write/Edit) | `gate-sync.js` | Syncs gate file writes to run registry; auto-creates worktrees at gate2 |
-| Apply context | SubagentStart | `apply-context-inject.js` | Injects worktree path into implementer/documenter agents |
+See `docs/FORGE-REFERENCE.md` § 9 "Hook Inventory" for the canonical hook list (~13 scripts across SessionStart, PreToolUse, PostToolUse, PostCompact, Stop, SubagentStart, SubagentStop).
 
 ## Parallel sessions
 
@@ -70,8 +74,13 @@ target-project/
 │   ├── project.json        — project config (tech stack, pipeline mode)
 │   ├── modules.json        — module registry (written by architect agent)
 │   ├── agent-roles.json    — agent write permissions
-│   ├── run-active.json     — active run state (temporary)
-│   └── gate-pending.json   — pending gate approval (temporary)
+│   ├── run-active.json     — per-session steering pointer (temporary)
+│   ├── gate-pending.json   — pending gate approval (temporary)
+│   └── runs/
+│       ├── index.json              — run registry index
+│       └── <runId>/run.json        — durable per-run state
+├── .worktrees/
+│   └── <runId>/            — git worktree binding for an apply-stage run
 ├── docs/
 │   ├── PLAN.md             — active plan
 │   ├── ARCHITECTURE.md     — project architecture (written by architect)
