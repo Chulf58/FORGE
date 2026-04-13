@@ -6,6 +6,19 @@ const STDIN_TIMEOUT_MS = 10000;
 
 function exitOk() { process.exit(0); }
 function exitBlock(msg) {
+  // Emit the modern PreToolUse deny envelope (honored by the Claude Code
+  // validator) AND keep the legacy stderr + exit 2 as a backup. workflow-guard.js
+  // uses the same belt-and-suspenders pattern; exit 2 alone is silently
+  // discarded by the current runtime.
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: msg,
+      },
+    }) + '\n'
+  );
   console.error(msg);
   process.exit(2);
 }
