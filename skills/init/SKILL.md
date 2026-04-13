@@ -156,6 +156,30 @@ if (isOldForgeStatus) {
 
 This creates `.claude/settings.json` if absent, preserves all existing fields when valid, refuses to modify when the file is invalid JSON, and only adds `statusLine` when none exists. The user must restart the Claude Code session for the status line to appear.
 
+### 1f — Seed project-local forge-config.json (fallback when CLAUDE_PLUGIN_DATA is unset)
+
+`mcp/lib/config-store.js` reads model-routing config from `${CLAUDE_PLUGIN_DATA}/forge-config.json` first, then falls back to `.pipeline/forge-config.json`. The `hooks/mcp-deps-install.js` bootstrap handles the plugin-data path only when `CLAUDE_PLUGIN_DATA` is set; when it is not, the project-local fallback must exist or config-dependent MCP tools (model recommendation, external provider calls, usage tracking) fail with a "forge-config.json not found" error.
+
+Copy `${CLAUDE_PLUGIN_ROOT}/forge-config.default.json` to `.pipeline/forge-config.json` only when the destination does not already exist. Never overwrite — user edits to the project config must be preserved across re-runs of `/forge:init`.
+
+Use Bash:
+
+```
+if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
+  echo "[forge-config] CLAUDE_PLUGIN_ROOT not set — skipping project-local config seed."
+elif [ -f ".pipeline/forge-config.json" ]; then
+  echo "[forge-config] .pipeline/forge-config.json already exists — preserving."
+elif [ ! -f "$CLAUDE_PLUGIN_ROOT/forge-config.default.json" ]; then
+  echo "[forge-config] Default template not found at \$CLAUDE_PLUGIN_ROOT/forge-config.default.json — skipping."
+else
+  mkdir -p .pipeline
+  cp "$CLAUDE_PLUGIN_ROOT/forge-config.default.json" .pipeline/forge-config.json
+  echo "[forge-config] Seeded .pipeline/forge-config.json from default template."
+fi
+```
+
+This step is idempotent: running it repeatedly is safe. It never touches an existing config file, creates `.pipeline/` on demand, and degrades cleanly (no error, just a skip message) when either the plugin root or the default template is unavailable.
+
 ## STEP 2 — Check if already initialized
 
 Check if `.pipeline/project.json` exists. If it does, print "FORGE project already initialized." and stop.
