@@ -52,15 +52,40 @@ async function getLastUsage(transcriptPath) {
   return null;
 }
 
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
+
+/**
+ * Read the status of a run from the local registry at
+ * .pipeline/runs/<runId>/run.json. Returns the status string or null when
+ * the run file is absent, unreadable, unparseable, or missing a status.
+ * Defensive — never throws.
+ */
+function readRunStatus(projectDir, runId) {
+  if (!runId || typeof runId !== 'string') return null;
+  try {
+    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+    const raw = fs.readFileSync(runPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
  * Report-only recovery primitive: if .pipeline/run-active.json exists and
  * contains a non-null `currentUnit` with an `agent` field, emit a one-line
- * stale-lock notice via hookSpecificOutput.additionalContext. This means the
- * previous session ended (crashed / cleared) while a FORGE agent was in flight
- * — SubagentStop never fired to clear the marker. Report-only: we do NOT
- * clear the marker, mutate run state, or trigger any recovery workflow.
- * Returns true iff a notice was emitted (so callers can short-circuit
- * competing hookSpecificOutput writes on this same hook invocation).
+ * stale-lock notice via hookSpecificOutput.additionalContext.
+ *
+ * Truthfulness step: if the referenced run's status is terminal
+ * (completed / failed / discarded), the marker is stale-by-finish, not
+ * stale-by-crash — so instead of surfacing a misleading notice on every
+ * subsequent session, we quietly clear `currentUnit` in run-active.json
+ * and emit nothing. All other cases (unknown run, missing registry file,
+ * non-terminal status) preserve the prior notice behavior.
+ *
+ * Never mutates anything except `currentUnit` on the narrow terminal path.
+ * Never throws. Returns true iff a notice was emitted.
  */
 function emitStaleUnitNoticeIfAny(projectDir) {
   try {
@@ -71,6 +96,25 @@ function emitStaleUnitNoticeIfAny(projectDir) {
     if (!unit || typeof unit !== 'object' || typeof unit.agent !== 'string' || !unit.agent) {
       return false;
     }
+
+    // Terminal-run cleanup: only clear the marker when we can prove the
+    // referenced run is already done. Unknown/unreadable → keep the notice
+    // (defensive: never silently drop a marker we can't verify).
+    const runId = data && typeof data.runId === 'string' ? data.runId : null;
+    const runStatus = readRunStatus(projectDir, runId);
+    if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
+      try {
+        data.currentUnit = null;
+        fs.writeFileSync(runActivePath, JSON.stringify(data, null, 2), 'utf8');
+      } catch (_) {
+        // Cleanup failed — fall through silently. We deliberately do NOT
+        // emit the misleading notice in this case either; the marker just
+        // stays on disk until the next cleanup attempt or a successful
+        // start/stop cycle.
+      }
+      return false;
+    }
+
     const notice = 'FORGE notice: the previous session ended while ' + unit.agent + ' was in flight.';
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
