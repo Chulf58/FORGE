@@ -5,6 +5,7 @@
 //   GET  /                      → the dashboard HTML page (auto-refreshes)
 //   GET  /api/dashboard-state   → JSON from buildDashboardState()
 //   POST /api/gate-action       → approve or discard a pending gate
+//   POST /api/merge-action      → retry merge-back for a merge-blocked run
 //
 // Zero new runtime dependencies — Node's built-in `http` only. Reuses the
 // exact same state-builder the MCP tool does (mcp/lib/dashboard-state.js),
@@ -17,9 +18,15 @@
 
 import { createServer } from "node:http";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { buildDashboardState } from "../mcp/lib/dashboard-state.js";
 import { getRun, updateRun } from "../packages/forge-core/src/runs/index.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PLUGIN_ROOT = resolve(__dirname, "..");
+const MERGE_SCRIPT = resolve(PLUGIN_ROOT, "bin", "forge-worktree.js");
 
 const PORT = Number(process.env.FORGE_DASHBOARD_PORT) || 7878;
 const HOST = "127.0.0.1";
@@ -125,6 +132,45 @@ function handleGateAction(projectDir, run, action) {
   throw new Error("unknown action: " + action);
 }
 
+// -- Merge-retry action handler -----------------------------------------------
+// Re-attempts merge-back for a run that has mergeBlocked set. Calls the
+// existing bin/forge-worktree.js merge <runId> in the project directory.
+// On success: clears mergeBlocked via updateRun.
+// On failure: refreshes mergeBlocked with a new detectedAt + reason.
+
+function handleMergeRetry(projectDir, run) {
+  const runId = run.runId;
+  try {
+    execFileSync(process.execPath, [MERGE_SCRIPT, "merge", runId], {
+      cwd: projectDir,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    // Merge succeeded — clear the marker.
+    updateRun(projectDir, runId, { mergeBlocked: null });
+    return { ok: true, message: "Merge succeeded. Worktree merged and cleaned up." };
+  } catch (e) {
+    // Merge still failing — refresh the marker with a new timestamp.
+    const now = new Date().toISOString();
+    const stderrText = e.stderr ? String(e.stderr).trim() : "";
+    let reason = "Merge retry failed — conflicts or diverged branches still present.";
+    // Try to extract the hint from the script's stderr JSON.
+    try {
+      const errJson = JSON.parse(stderrText);
+      if (errJson.error) reason = errJson.error;
+    } catch (_) {}
+    try {
+      updateRun(projectDir, runId, {
+        mergeBlocked: { reason, detectedAt: now },
+      });
+    } catch (_) {
+      // Best-effort — if we can't update the marker, the response still
+      // tells the user the retry failed.
+    }
+    return { ok: false, message: reason };
+  }
+}
+
 const HTML_PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -156,6 +202,8 @@ const HTML_PAGE = `<!doctype html>
   button:disabled { opacity: 0.5; cursor: default; }
   .badge.merge-blocked { background: #fff3e0; color: #e65100; font-weight: 600; }
   .merge-reason { font-size: 12px; color: #bf360c; margin-left: 8px; }
+  .btn-retry { background: #fff3e0; border-color: #ffcc80; color: #e65100; }
+  .btn-retry:hover { background: #ffe0b2; }
   .btn-approve { background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; }
   .btn-approve:hover { background: #c8e6c9; }
   .btn-discard { background: #ffebee; border-color: #ef9a9a; color: #c62828; }
@@ -231,7 +279,7 @@ function renderActiveRuns(arr) {
       '<span class="runid">' + esc(r.runId) + '</span>' +
       '<span>' + esc(r.pipelineType) + '</span>' +
       badge("status", r.status) +
-      renderMergeBlocked(r.mergeBlocked) +
+      renderMergeBlocked(r.mergeBlocked, r.runId) +
       '<span>at ' + esc(stage) + '</span>' +
       '<span>· ' + esc(r.feature) + '</span>' +
       wt + inflight +
@@ -257,10 +305,12 @@ function renderGates(arr) {
   }).join("");
 }
 
-function renderMergeBlocked(mb) {
+function renderMergeBlocked(mb, runId) {
   if (!mb || typeof mb !== "object") return "";
+  const rid = esc(runId || "");
   return ' <span class="badge merge-blocked">merge blocked</span>' +
-    (mb.reason ? '<span class="merge-reason">' + esc(mb.reason) + '</span>' : '');
+    (mb.reason ? '<span class="merge-reason">' + esc(mb.reason) + '</span>' : '') +
+    (rid ? ' <button class="btn-retry" onclick="mergeAction(\\'' + rid + '\\')">Retry merge</button>' : '');
 }
 
 function renderRecent(arr) {
@@ -271,7 +321,7 @@ function renderRecent(arr) {
       '<span class="runid">' + esc(e.runId) + '</span>' +
       '<span>' + esc(e.pipelineType) + '</span>' +
       badge("status", e.status) +
-      renderMergeBlocked(e.mergeBlocked) +
+      renderMergeBlocked(e.mergeBlocked, e.runId) +
       '<span>· ' + esc(e.feature) + '</span>' +
       (e.updatedAt ? ' <span class="muted">· ' + relTime(e.updatedAt) + '</span>' : '') +
     '</div>'
@@ -295,6 +345,28 @@ function renderBoard(b) {
     ).join("");
   }
   $("boardSummary").innerHTML = html;
+}
+
+function mergeAction(runId) {
+  document.querySelectorAll(".btn-retry").forEach(b => b.disabled = true);
+  fetch("/api/merge-action", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId, action: "retry" }),
+  })
+    .then(r => r.json().then(j => ({ status: r.status, body: j })))
+    .then(({ status, body }) => {
+      if (status === 200 && body.ok) {
+        refreshDashboard();
+      } else {
+        alert("Merge retry failed: " + (body.message || body.error || "unknown error"));
+        refreshDashboard();
+      }
+    })
+    .catch(err => {
+      alert("Merge retry failed: " + err.message);
+      document.querySelectorAll(".btn-retry").forEach(b => b.disabled = false);
+    });
 }
 
 function gateAction(runId, action) {
@@ -402,6 +474,32 @@ const server = createServer(async (req, res) => {
       return json(res, 200, result);
     } catch (err) {
       return json(res, 500, { error: "gate-action failed", detail: String(err && err.message || err) });
+    }
+  }
+
+  if (req.method === "POST" && url === "/api/merge-action") {
+    try {
+      const body = await readBody(req);
+      const { runId, action } = body || {};
+      if (!runId || typeof runId !== "string") {
+        return json(res, 400, { error: "missing or invalid runId" });
+      }
+      if (action !== "retry") {
+        return json(res, 400, { error: "action must be 'retry'" });
+      }
+      const projectDir = resolveProjectDir();
+      const run = getRun(projectDir, runId);
+      if (!run) {
+        return json(res, 404, { error: "run " + runId + " not found" });
+      }
+      if (!run.mergeBlocked) {
+        return json(res, 409, { error: "run " + runId + " is not merge-blocked" });
+      }
+      const result = handleMergeRetry(projectDir, run);
+      const status = result.ok ? 200 : 409;
+      return json(res, status, result);
+    } catch (err) {
+      return json(res, 500, { error: "merge-action failed", detail: String(err && err.message || err) });
     }
   }
 
