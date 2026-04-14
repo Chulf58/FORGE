@@ -1,13 +1,19 @@
-## [2026-04-14] Dashboard Contract + Sidecar + Board Gaps
+## [2026-04-14] Dashboard Contract + Sidecar + Gate Actions
+
+### Dashboard phase 2 — auto-refresh, relative times, gate actions
+- Live auto-refresh: client-side `setInterval(refreshDashboard, 5000)` re-fetches and re-renders all four sections; "Last updated" timestamp on each tick; error self-healing (banner appears on failure, clears on recovery); "Refresh now" button calls `refreshDashboard()` directly (commit `1c0a312`)
+- Relative-time rendering: `relTime(iso)` helper in the inline `<script>`; gates show "updated 3 hr ago" instead of raw ISO; recent completions likewise; re-evaluates on each 5s tick; defensive on missing/invalid/future timestamps (commit `ba36f37`)
+- Gate approve/discard actions: `POST /api/gate-action` endpoint validates `{ runId, action }`, loads the run, checks `gate-pending` status (400/404/409 for bad input/missing/wrong status); `handleGateAction` mirrors `/forge:approve` and `/forge:discard` skill transitions — approve stamps gate file + `updateRun` to completed, discard deletes gate file + `updateRun` to discarded; worktree-scoped gate files handled; client-side buttons in each gate row with disabled-during-flight and immediate `refreshDashboard()` on success (commit `fa6f9f5`)
+- Regression test: `scripts/dashboard-gate-action-test.mjs` seeds a gate-pending fixture, spawns real sidecar, asserts approve 200+ok, post-action state transition (gate gone, run completed), re-approve 409, unknown 404, missing runId 400, bad action 400; auto-discovered by runner; bundle at 7/7 (commit `9dca636`)
 
 ### Dashboard state MCP contract + sidecar HTTP surface
 - New MCP tool `forge_dashboard_state` (commit `6e2581f`): read-only, zero-input; returns four-group snapshot — `activeRuns[]` (non-terminal, hydrated with `stageLabel`, `gateState`, `worktreePath`, `currentUnit`), `gatesAwaiting[]` (actionable pending gates), `recentCompleted[]` (bounded ≤5 terminal tail), `boardSummary` (counts + top-priority open TODOs bounded ≤5)
 - `/forge:dashboard` skill rewritten to consume the MCP tool as sole data source (commit `2d9d8d3`); explicit `.pipeline/*` direct-read prohibition; truthful wording rules
 - State-builder extracted to `mcp/lib/dashboard-state.js` — shared by both the MCP tool and the HTTP sidecar, guaranteeing identical payloads (commit `8e36703`)
 - Minimal local HTTP sidecar at `scripts/dashboard-server.mjs`: Node built-in `http` only, zero deps; `GET /` serves self-contained HTML, `GET /api/dashboard-state` returns JSON; loopback-only (`127.0.0.1`), default port 7878, `npm run dashboard` invocation (commit `8e36703`)
-- HTML renders four sections with status badges + monospace run IDs + optional `wt=`/`in-flight:` suffixes; refresh by page reload only; no WebSocket, no polling, no actions
+- HTML renders four sections with status badges + monospace run IDs + optional `wt=`/`in-flight:` suffixes
 - Regression tests: `mcp/dashboard-state-shape-test.mjs` (MCP path, full shape assertion against five-run fixture, commit `6e2581f`); `scripts/dashboard-server-endpoint-test.mjs` (HTTP path, spawns real server against fixture, asserts HTTP 200 + JSON + four keys + board counts, commit `954c824`)
-- Test runner extended: `scripts/run-tests.mjs` now discovers `scripts/*-test.mjs` alongside hooks and mcp (commit `954c824`); bundle at 6/6 passing
+- Test runner extended: `scripts/run-tests.mjs` now discovers `scripts/*-test.mjs` alongside hooks and mcp (commit `954c824`)
 
 ### Board: merge-blocked run handling task
 - New high-priority board task `merge-blocked-run-handling` (commit `448d59c`): captures the gap between current safe-fail behavior (`bin/forge-worktree.js merge()` aborts + preserves + exits non-zero) and the missing first-class user surface

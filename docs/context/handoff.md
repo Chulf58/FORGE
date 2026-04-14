@@ -1,78 +1,90 @@
-# Handoff: Dashboard contract + sidecar + merge-blocked board task
+# Handoff: Dashboard phase 2 — auto-refresh, relative times, gate actions
 
 ## Overview
 
-This session delivered the first complete dashboard arc — from data contract through skill consumer through HTTP sidecar — plus a board gap fix for merge-conflict handling. Five material commits on the dashboard path, one board addition, and supporting test/runner work.
+This session delivered three progressive dashboard improvements and their regression coverage, taking the sidecar from a static read-only snapshot to a live, actionable control plane for pending gates.
 
 ## Session commits (in order)
 
 | Commit | Subject |
 |---|---|
-| `448d59c` | chore(board): add merge-blocked run handling task |
-| `6e2581f` | feat(dashboard): add forge_dashboard_state MCP contract |
-| `2d9d8d3` | feat(dashboard): route /forge:dashboard through forge_dashboard_state |
-| `8e36703` | feat(dashboard): add minimal read-only sidecar dashboard |
-| `954c824` | test(dashboard): cover sidecar dashboard-state endpoint |
-
-*(Prior session commits `3cb6da8`–`716b0c1` are documented in the previous handoff and CHANGELOG.)*
+| `1c0a312` | feat(dashboard): add live auto-refresh to sidecar dashboard |
+| `ba36f37` | feat(dashboard): render relative times in sidecar dashboard |
+| `fa6f9f5` | feat(dashboard): add approve/discard actions for pending gates |
+| `9dca636` | test(dashboard): cover gate-action approve flow |
 
 ## What shipped
 
-### Board: merge-blocked run handling (`448d59c`)
-- New high-priority task `merge-blocked-run-handling` added to `.pipeline/board.json`.
-- Captures the gap: `bin/forge-worktree.js merge()` safe-fails on conflict but nothing surfaces the stranded run to the user.
-- First-slice scope defined (report-only, registry-backed): persist `mergeBlocked` field on the run, surface through status/resume/dashboard, offer a `/forge:merge` skill for manual retry.
-- Explicitly defers auto-resolution, wave scheduling (`dependency-analysis-waves`), and forensics (`worktree-crash-recovery`).
+### Auto-refresh (`1c0a312`)
+- Extracted the one-shot fetch into a named `refreshDashboard()` function.
+- Called immediately on page load, then every 5 seconds via `setInterval`.
+- "Last updated" indicator shows `toLocaleTimeString()` on each tick.
+- Error self-healing: on fetch failure, one `.error` banner appears; on next successful tick, it's removed automatically. Interval never stops.
+- "Refresh now" button calls `refreshDashboard()` directly (no full page reload).
+- Server-side unchanged — purely client-side polling.
 
-### Dashboard MCP contract (`6e2581f`)
-- New MCP tool `forge_dashboard_state` — zero-input, read-only, `readOnlyHint: true`.
-- Returns four top-level groups:
-  - `activeRuns[]` — non-terminal runs hydrated from registry, with `stageLabel`, `gateState`, `worktreePath`, `currentUnit` (populated only for the run matching `run-active.json`).
-  - `gatesAwaiting[]` — actionable pending gates (subset of activeRuns).
-  - `recentCompleted[]` — bounded (≤5) terminal runs sorted by `updatedAt` desc.
-  - `boardSummary` — `todoCount`, `plannedCount`, `blockedTodoCount`, `topPriorityTodos[]` (bounded ≤5, sorted by priority rank, text truncated at 200 chars).
-- Regression test: `mcp/dashboard-state-shape-test.mjs` — spawns the real MCP server over stdio, seeds five runs + board, asserts the full shape (order, counts, currentUnit presence/absence, sort, bounding).
+### Relative-time rendering (`ba36f37`)
+- Added `relTime(iso)` client-side helper: `""` for falsy, escaped raw string for unparseable, `"just now"` (<60s), `"N min ago"` (<1h), `"N hr ago"` (<24h), `"N d ago"` otherwise. Defensive on negative deltas (future timestamps → "just now").
+- Applied to gates section (`g.updatedAt`) and recent completions section (`e.updatedAt`).
+- Re-evaluates on each 5s auto-refresh tick — labels stay fresh without additional timers.
+- Server-side and contract unchanged.
 
-### Skill migration (`2d9d8d3`)
-- `skills/dashboard/SKILL.md` rewritten to consume `forge_dashboard_state` as the sole data source.
-- Explicit `Do **not** read .pipeline/* directly` rule.
-- Four rendered sections (Active runs, Gates awaiting approval, Recent completions, Board) each driven by the corresponding group from the tool.
-- Wording rules enforce truthful framing: "read-only snapshot", no "background" or "live" claims.
+### Gate approve/discard actions (`fa6f9f5`)
+- **Server-side:**
+  - `readBody(req)` — promise wrapper for JSON body parsing.
+  - `handleGateAction(projectDir, run, action)` — approve: stamps gate-pending.json + `updateRun` to `completed` / `<gate>-approved`; discard: deletes gate-pending.json + `updateRun` to `discarded`. Same transitions as `/forge:approve` and `/forge:discard` skills.
+  - `POST /api/gate-action` route: validates `runId` (400), `action` (400); loads run via `getRun` (404 if missing, 409 if not `gate-pending`); calls handler; returns 200 `{ ok, message }` or 500 on internal error.
+  - Route handler refactored from single GET guard to separate GET/POST branches.
+- **Client-side:**
+  - `gateAction(runId, action)` — POSTs to the endpoint, disables all gate buttons during flight, calls `refreshDashboard()` on success so the gate disappears, shows `alert()` on failure.
+  - Each gate row now has `Approve` and `Discard` buttons with green/red styling.
+- **New imports:** `readFileSync`, `writeFileSync`, `unlinkSync` from `node:fs`; `getRun`, `updateRun` from forge-core. Zero new npm dependencies.
 
-### Sidecar HTTP dashboard (`8e36703`)
-- **`mcp/lib/dashboard-state.js`** (new) — extracted `buildDashboardState(projectDir)` as a pure shared helper. Reused by both the MCP tool handler (collapsed to three lines) and the HTTP sidecar.
-- **`scripts/dashboard-server.mjs`** (new) — tiny local HTTP server using only Node's built-in `http`. Routes: `GET /` (self-contained HTML + inline CSS + one `<script>` fetch), `GET /api/dashboard-state` (JSON from `buildDashboardState`). Binds `127.0.0.1` only, default port 7878, override via `FORGE_DASHBOARD_PORT`. Zero external dependencies.
-- **`package.json`** — added `"dashboard": "node scripts/dashboard-server.mjs"` so `npm run dashboard` is the canonical invocation.
-- HTML renders four sections with status badges, monospace run IDs, optional `wt=` and `in-flight:` suffixes. Refresh by page reload only. No WebSocket, no polling, no actions.
-
-### Endpoint regression test (`954c824`)
-- `scripts/dashboard-server-endpoint-test.mjs` — spawns the real server against a seeded fixture, fetches `/api/dashboard-state`, asserts HTTP 200 + JSON content-type + four top-level keys + correct types + board counts from fixture.
-- `scripts/run-tests.mjs` extended: added `{ dir: 'scripts', suffix: '-test.mjs' }` to discovery so `scripts/*-test.mjs` files are auto-discovered. Bundle grew from 5 to 6 tests; all passing.
+### Gate-action regression test (`9dca636`)
+- `scripts/dashboard-gate-action-test.mjs` — seeds one gate-pending run, spawns the real sidecar, exercises six assertions:
+  1. Approve: HTTP 200, `ok: true`.
+  2. Post-action state: `gatesAwaiting=0`, `recentCompleted=1`, status `completed`.
+  3. Re-approve: 409 (not gate-pending anymore).
+  4. Unknown run: 404.
+  5. Missing runId: 400.
+  6. Invalid action: 400.
+- Auto-discovered by the runner (uses `scripts/*-test.mjs` convention). Bundle grew from 6 to 7 tests; all passing.
 
 ## Core contracts (preserve in any future change)
 
-1. **`buildDashboardState(projectDir)`** is the single source of truth for dashboard rendering. Both the MCP tool and the HTTP sidecar call it. Any new field or group must land here once; both consumers inherit it.
-2. **Four-group response shape** (`activeRuns`, `gatesAwaiting`, `recentCompleted`, `boardSummary`) is locked by two independent regression tests — `mcp/dashboard-state-shape-test.mjs` (MCP path) and `scripts/dashboard-server-endpoint-test.mjs` (HTTP path). Renaming or removing a key will fail both.
-3. **Loopback-only binding** — the sidecar binds `127.0.0.1`. Do not change to `0.0.0.0` without a corresponding auth/TLS security slice.
-4. **No auto-refresh** — the HTML page fetches once on load. Any auto-refresh (setInterval, meta-refresh, SSE, WebSocket) belongs to a separate slice with its own design.
-5. **`merge-blocked-run-handling`** is a board task, not a shipped feature. The dashboard will eventually surface `mergeBlocked` runs, but the field does not exist on runs yet.
+1. **`POST /api/gate-action` requires `{ runId, action }`.** `action` must be `"approve"` or `"discard"`. Run must be `gate-pending`. Returns `{ ok: true, message }` on success.
+2. **State transitions match skill semantics.** Approve → `status: "completed"`, `currentStep: "<gate>-approved"`, gateState updated. Discard → `status: "discarded"`, `currentStep: "discarded"`, gate file deleted.
+3. **Worktree-scoped gate files.** If `run.worktreePath` is set, the gate file is read/written/deleted at `<worktreePath>/.pipeline/gate-pending.json`. Otherwise at project root `.pipeline/gate-pending.json`.
+4. **Auto-refresh interval is 5 seconds.** Not configurable without editing the HTML template. Acceptable for a local sidecar.
+5. **`relTime()` recomputes on each render tick.** No stale-label risk.
+6. **Loopback-only binding.** No remote exposure, no CSRF protection. Acceptable for single-user local tool.
 
 ## Verification summary
 
-- `npm test` → `6/6 passed` (all existing + both new tests green).
-- Live sidecar verification: server booted on port 7879, `GET /api/dashboard-state` returned HTTP 200 / JSON / four keys with live data (43 open TODOs, 3 active runs, 5 top priorities); `GET /` returned 200 / HTML with all four section IDs + client-side fetch call; `GET /nonsense` returned 404.
-- `node --check` on all modified/new JS/MJS files returned OK at each step.
+- `npm test` → `7/7 passed`.
+- Ad-hoc round-trip driver verified the full approve lifecycle: gate appears → approve POST → gate disappears → run in recentCompleted → error paths return correct codes.
+- Live sidecar verified: HTML contains `setInterval`, `relTime`, `gateAction`, `btn-approve`, `btn-discard`. Endpoint contract unchanged (four top-level keys).
 
 ## Deferred / known debt
 
-- **`PIPELINE_STAGE_LABELS` appears in three places** (`bin/forge-status.js` CommonJS, `mcp/server.js` ESM, `mcp/lib/dashboard-state.js` ESM). The CommonJS/ESM boundary forces one copy; the two ESM copies should consolidate to `mcp/lib/stage-labels.js` in a near-term refactor.
-- **`TERMINAL_STATUSES` appears in three places** (`hooks/ctx-session-start.js` CommonJS, `mcp/server.js` forge_resume_run, `mcp/lib/dashboard-state.js`). Same consolidation opportunity.
-- **No test for the HTML page rendering** — the endpoint test covers the JSON shape; the HTML page content is verified by reading code, not by browser automation. Add only if rendering drift becomes an observed issue.
-- **Port collision** not gracefully handled — server crashes if port is in use. Override with `FORGE_DASHBOARD_PORT`.
-- **Server lifecycle is manual** — no daemon mode, no pidfile. Process-management wiring belongs to a later slice.
-- **Auto-refresh, actions, WebSocket, SSE** — all explicitly out of scope for this session.
-- **`merge-blocked-run-handling`** first-slice implementation — captured on board, not yet started.
+- **Discard does not clean `docs/PLAN.md`.** The `/forge:discard` skill also removes plan content for gate1 discards. The dashboard action only updates the gate file and run registry. Manual plan cleanup or CLI skill invocation handles this gap.
+- **No CSRF protection.** Loopback-only mitigates but does not eliminate the risk of a malicious page POSTing to localhost. Add origin checks if remote exposure is ever considered.
+- **No confirmation dialog for approve/discard.** One-click, matching CLI behavior. Add `confirm()` if user feedback requests it.
+- **`alert()` for errors.** Crude but functional. A proper toast/notification area would be cleaner if more actions are added.
+- **`PIPELINE_STAGE_LABELS` and `TERMINAL_STATUSES` remain duplicated** across multiple files. Consolidation deferred to a dedicated refactor slice.
+- **No browser/UI automation tests.** All tests exercise HTTP endpoints only. Browser rendering tested by code inspection.
+
+## Test bundle status
+
+7 regression tests, all discoverable by `npm test`:
+- `hooks/apply-context-inject-test.js`
+- `hooks/ctx-session-start-terminal-cleanup-test.js`
+- `hooks/gate-sync-test.js`
+- `mcp/dashboard-state-shape-test.mjs`
+- `mcp/resume-terminal-suppression-test.mjs`
+- `scripts/dashboard-gate-action-test.mjs`
+- `scripts/dashboard-server-endpoint-test.mjs`
 
 ## Next recommended slice
 
-Add auto-refresh to the sidecar dashboard — a small `setInterval` fetch in the client-side `<script>` that re-renders the four sections every N seconds (e.g. 5s), with a visible "last refreshed" timestamp. No server change required (the endpoint is already idempotent). One file edit (`scripts/dashboard-server.mjs`, HTML template only), no WebSocket, no SSE — just periodic polling from the browser.
+Run the Diesel Priser e2e validation against the sidecar dashboard: start the sidecar alongside a real pipeline run, verify the dashboard displays active runs + pending gates live, approve a gate from the browser, and confirm the post-action state transition renders correctly — proves the dashboard is production-usable before adding any further UI features.
