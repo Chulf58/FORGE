@@ -1,0 +1,24 @@
+{
+  "name": "forge-tools",
+  "owner": {
+    "name": "FORGE"
+  },
+  "metadata": {
+    "description": "FORGE — AI-powered development pipeline manager for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "forge",
+      "source": ".",
+      "description": "AI-powered development pipeline manager. Plans, implements, reviews, and applies features through a structured agent pipeline with 29 agents, 21 skills, and 24 MCP tools.",
+      "version": "0.2.0",
+      "author": {
+        "name": "FORGE"
+      },
+      "license": "MIT",
+      "keywords": ["pipeline", "agents", "review", "planning", "development", "workflow"],
+      "category": "productivity"
+    }
+  ]
+}
