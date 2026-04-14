@@ -1350,6 +1350,19 @@
         "distribution",
         "competitive"
       ]
+    },
+    {
+      "id": "f6fff350",
+      "priority": "high",
+      "text": "VALIDATION: Test marketplace-installed FORGE in a fresh session without --plugin-dir. The install flow works (marketplace add + plugin install both succeed, installed_plugins.json is correct), but the /plugin UI showed \"No plugins\" during the test session — likely because the test ran inside a --plugin-dir session. Need to verify: (1) start a fresh Claude Code session with NO --plugin-dir flag, (2) confirm FORGE loads automatically from the marketplace install at user scope, (3) confirm MCP tools, skills, hooks, and agents are all available, (4) confirm /plugin UI shows FORGE as installed. If it works, the self-hosted marketplace distribution path is fully validated end-to-end.",
+      "done": false,
+      "addedAt": 1776181274722,
+      "tags": [
+        "validation",
+        "distribution",
+        "marketplace",
+        "e2e"
+      ]
     }
   ],
   "planned": []
