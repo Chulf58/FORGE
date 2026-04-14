@@ -122,11 +122,27 @@ async function main() {
     const unknown = await post(base, { runId: 'r-nonexist', action: 'retry' });
     if (unknown.status !== 404) fail('unknown: expected 404, got ' + unknown.status);
 
-    // --- Assertion 5: invalid action returns 400 ---
-    const badAction = await post(base, { runId: 'r-blocked', action: 'discard' });
+    // --- Assertion 5: discard returns 200 and clears merge-blocked ---
+    const discard = await post(base, { runId: 'r-blocked', action: 'discard' });
+    if (discard.status !== 200) fail('discard: expected 200, got ' + discard.status);
+    if (discard.body.ok !== true) fail('discard: expected ok=true, got ' + JSON.stringify(discard.body));
+
+    // --- Assertion 6: post-discard state shows run as discarded, no mergeBlocked ---
+    const stateAfterDiscard = await (await fetch(base + '/api/dashboard-state')).json();
+    const discardedRun = stateAfterDiscard.recentCompleted.find(r => r.runId === 'r-blocked');
+    if (!discardedRun) fail('post-discard: r-blocked should still appear in recentCompleted');
+    if (discardedRun.status !== 'discarded') fail('post-discard: expected status=discarded, got ' + discardedRun.status);
+    if (discardedRun.mergeBlocked) fail('post-discard: mergeBlocked should be null/cleared');
+
+    // --- Assertion 7: re-discard returns 409 (no longer merge-blocked) ---
+    const reDiscard = await post(base, { runId: 'r-blocked', action: 'discard' });
+    if (reDiscard.status !== 409) fail('re-discard: expected 409, got ' + reDiscard.status);
+
+    // --- Assertion 8: invalid action returns 400 ---
+    const badAction = await post(base, { runId: 'r-normal', action: 'nuke' });
     if (badAction.status !== 400) fail('bad action: expected 400, got ' + badAction.status);
 
-    // --- Assertion 6: missing runId returns 400 ---
+    // --- Assertion 9: missing runId returns 400 ---
     const noId = await post(base, { action: 'retry' });
     if (noId.status !== 400) fail('missing runId: expected 400, got ' + noId.status);
 
@@ -135,6 +151,9 @@ async function main() {
     console.log('  post-retry state: mergeBlocked refreshed (detectedAt > original)');
     console.log('  not-blocked: 409');
     console.log('  unknown run: 404');
+    console.log('  discard: 200 ok=true');
+    console.log('  post-discard: status=discarded, mergeBlocked=null');
+    console.log('  re-discard: 409 (no longer merge-blocked)');
     console.log('  bad action: 400');
     console.log('  missing runId: 400');
 

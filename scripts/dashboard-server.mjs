@@ -172,6 +172,31 @@ function handleMergeRetry(projectDir, run) {
   }
 }
 
+// -- Merge-discard action handler ----------------------------------------------
+// Abandons a merge-blocked run: deletes the worktree + branch via
+// forge-worktree.js delete <runId>, clears mergeBlocked, sets run to discarded.
+
+function handleMergeDiscard(projectDir, run) {
+  const runId = run.runId;
+  // Attempt worktree deletion — best-effort; the worktree may already be gone.
+  try {
+    execFileSync(process.execPath, [MERGE_SCRIPT, "delete", runId], {
+      cwd: projectDir,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch (_) {
+    // Worktree may not exist on disk (already cleaned up or never created).
+    // Continue — the run state update is what matters.
+  }
+  updateRun(projectDir, runId, {
+    mergeBlocked: null,
+    status: "discarded",
+    currentStep: "discarded",
+  });
+  return { ok: true, message: "Merge-blocked run discarded. Worktree and branch removed." };
+}
+
 const HTML_PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -322,7 +347,8 @@ function renderMergeBlocked(mb, runId) {
   const rid = esc(runId || "");
   return ' <span class="badge merge-blocked">merge blocked</span>' +
     (mb.reason ? '<span class="merge-reason">' + esc(mb.reason) + '</span>' : '') +
-    (rid ? ' <button class="btn-retry" onclick="mergeAction(\\'' + rid + '\\')">Retry merge</button>' : '');
+    (rid ? ' <button class="btn-retry" onclick="mergeAction(\\'' + rid + '\\', \\'retry\\')">Retry merge</button>' +
+           ' <button class="btn-discard" onclick="mergeAction(\\'' + rid + '\\', \\'discard\\')">Discard</button>' : '');
 }
 
 function renderRecent(arr) {
@@ -398,25 +424,25 @@ function renderBoard(b) {
   $("boardSummary").innerHTML = html;
 }
 
-function mergeAction(runId) {
-  document.querySelectorAll(".btn-retry").forEach(b => b.disabled = true);
+function mergeAction(runId, action) {
+  document.querySelectorAll(".btn-retry, .btn-discard").forEach(b => b.disabled = true);
   fetch("/api/merge-action", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ runId, action: "retry" }),
+    body: JSON.stringify({ runId, action }),
   })
     .then(r => r.json().then(j => ({ status: r.status, body: j })))
     .then(({ status, body }) => {
       if (status === 200 && body.ok) {
         refreshDashboard();
       } else {
-        alert("Merge retry failed: " + (body.message || body.error || "unknown error"));
+        alert(action + " failed: " + (body.message || body.error || "unknown error"));
         refreshDashboard();
       }
     })
     .catch(err => {
-      alert("Merge retry failed: " + err.message);
-      document.querySelectorAll(".btn-retry").forEach(b => b.disabled = false);
+      alert(action + " failed: " + err.message);
+      document.querySelectorAll(".btn-retry, .btn-discard").forEach(b => b.disabled = false);
     });
 }
 
@@ -536,8 +562,8 @@ const server = createServer(async (req, res) => {
       if (!runId || typeof runId !== "string") {
         return json(res, 400, { error: "missing or invalid runId" });
       }
-      if (action !== "retry") {
-        return json(res, 400, { error: "action must be 'retry'" });
+      if (action !== "retry" && action !== "discard") {
+        return json(res, 400, { error: "action must be 'retry' or 'discard'" });
       }
       const projectDir = resolveProjectDir();
       const run = getRun(projectDir, runId);
@@ -547,7 +573,9 @@ const server = createServer(async (req, res) => {
       if (!run.mergeBlocked) {
         return json(res, 409, { error: "run " + runId + " is not merge-blocked" });
       }
-      const result = handleMergeRetry(projectDir, run);
+      const result = action === "discard"
+        ? handleMergeDiscard(projectDir, run)
+        : handleMergeRetry(projectDir, run);
       const status = result.ok ? 200 : 409;
       return json(res, status, result);
     } catch (err) {
