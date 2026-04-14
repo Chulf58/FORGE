@@ -1,7 +1,7 @@
 'use strict';
 
 // MCP Dependencies Installer — SessionStart hook.
-// Auto-installs MCP server dependencies into mcp/node_modules/ under
+// Auto-installs dependencies for mcp/ and packages/forge-core/ under
 // the plugin root directory. Runs npm install only when node_modules
 // is missing or package.json is newer than the lockfile.
 
@@ -50,47 +50,12 @@ async function main(rawInput) {
   // Parse stdin payload (required by hook protocol, not used here)
   try { JSON.parse(rawInput); } catch (_) { /* ignore parse failures */ }
 
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
   if (!pluginRoot) {
-    console.error('[forge-mcp] CLAUDE_PLUGIN_ROOT not set — skipping MCP dependency install');
+    console.error('[forge-mcp] Cannot resolve plugin root — skipping dependency install');
     exitOk();
     return;
   }
-
-  const mcpDir = path.join(pluginRoot, 'mcp');
-  const packageJson = path.join(mcpDir, 'package.json');
-  const nodeModules = path.join(mcpDir, 'node_modules');
-  const lockFile = path.join(nodeModules, '.package-lock.json');
-
-  // If package.json does not exist, nothing to install
-  if (!fs.existsSync(packageJson)) {
-    exitOk();
-    return;
-  }
-
-  let needsInstall = false;
-
-  if (!fs.existsSync(nodeModules)) {
-    // First run — node_modules missing entirely
-    needsInstall = true;
-  } else if (fs.existsSync(lockFile)) {
-    // Compare mtimes: if package.json is newer than the lockfile, re-install
-    const pkgMtime = fs.statSync(packageJson).mtimeMs;
-    const lockMtime = fs.statSync(lockFile).mtimeMs;
-    if (pkgMtime > lockMtime) {
-      needsInstall = true;
-    }
-  } else {
-    // node_modules exists but no lockfile — re-install to be safe
-    needsInstall = true;
-  }
-
-  if (!needsInstall) {
-    exitOk();
-    return;
-  }
-
-  console.error('[forge-mcp] Installing MCP server dependencies...');
 
   // Resolve npm-cli.js from the running Node installation so we don't depend
   // on bare `npm` being in PATH — which fails on marketplace-installed copies
@@ -103,18 +68,47 @@ async function main(rawInput) {
     ? '"' + process.execPath + '" "' + npmCli + '"'
     : 'npm';
 
-  try {
-    execSync(npmCmd + ' install --prefix "' + mcpDir.replace(/\\/g, '/') + '"', {
-      stdio: ['ignore', 'ignore', 'inherit'],
-      timeout: 60000
-    });
-    console.error('[forge-mcp] MCP dependencies installed successfully.');
-  } catch (err) {
-    console.error('[forge-mcp] Failed to install MCP dependencies: ' + err.message);
-    // Remove node_modules so next session retries
+  // Install dependencies for each package directory that has a package.json.
+  const installTargets = [
+    { label: 'mcp', dir: path.join(pluginRoot, 'mcp') },
+    { label: 'forge-core', dir: path.join(pluginRoot, 'packages', 'forge-core') },
+  ];
+
+  for (const target of installTargets) {
+    const packageJson = path.join(target.dir, 'package.json');
+    const nodeModules = path.join(target.dir, 'node_modules');
+    const lockFile = path.join(nodeModules, '.package-lock.json');
+
+    if (!fs.existsSync(packageJson)) continue;
+
+    let needsInstall = false;
+    if (!fs.existsSync(nodeModules)) {
+      needsInstall = true;
+    } else if (fs.existsSync(lockFile)) {
+      const pkgMtime = fs.statSync(packageJson).mtimeMs;
+      const lockMtime = fs.statSync(lockFile).mtimeMs;
+      if (pkgMtime > lockMtime) {
+        needsInstall = true;
+      }
+    } else {
+      needsInstall = true;
+    }
+
+    if (!needsInstall) continue;
+
+    console.error('[forge-mcp] Installing ' + target.label + ' dependencies...');
     try {
-      fs.rmSync(nodeModules, { recursive: true, force: true });
-    } catch (_) { /* best effort cleanup */ }
+      execSync(npmCmd + ' install --prefix "' + target.dir.replace(/\\/g, '/') + '"', {
+        stdio: ['ignore', 'ignore', 'inherit'],
+        timeout: 60000
+      });
+      console.error('[forge-mcp] ' + target.label + ' dependencies installed successfully.');
+    } catch (err) {
+      console.error('[forge-mcp] Failed to install ' + target.label + ' dependencies: ' + err.message);
+      try {
+        fs.rmSync(nodeModules, { recursive: true, force: true });
+      } catch (_) { /* best effort cleanup — next session retries */ }
+    }
   }
 
   // Bootstrap forge-config.json into CLAUDE_PLUGIN_DATA on first session
