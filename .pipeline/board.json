@@ -520,23 +520,25 @@
       "id": "knowledge-compound-refresh",
       "priority": "medium",
       "text": "FEATURE: Knowledge maintenance — periodic command that scans docs/solutions/ against current codebase. Flags stale docs (reference deleted/renamed files), consolidates duplicates, archives outdated solutions. Prevents knowledge rot. Inspired by Compound Engineering compound-refresh.",
-      "done": false,
+      "done": true,
       "addedAt": 1775741662740,
       "tags": [
         "knowledge",
         "maintenance"
-      ]
+      ],
+      "doneAt": 1776172299785
     },
     {
       "id": "ideate-command",
       "priority": "medium",
       "text": "FEATURE: Ideate step — proactive codebase analysis that suggests high-impact improvements. Goes beyond architect HEALTH mode by being adversarial (what is wrong, what could be better, what is risky). Emits [todo] signals for suggested improvements. Can run as explore-mode command or as optional pre-planner step. Inspired by Compound Engineering ideate.",
-      "done": false,
+      "done": true,
       "addedAt": 1775741662740,
       "tags": [
         "knowledge",
         "exploration"
-      ]
+      ],
+      "doneAt": 1776172299785
     },
     {
       "id": "scope-guardian-check",
@@ -592,7 +594,7 @@
     {
       "id": "forge-web-dashboard",
       "priority": "medium",
-      "text": "FEATURE: Lightweight web dashboard for FORGE plugin — tiny Node server (~100 lines) serving a single HTML page. File-watches .pipeline/ for changes, WebSocket pushes updates to browser. Shows: session cards with pipeline progress, board (TODO/PLANNED), health signals. Read-only viewer — all control stays in CLI. Optional — everything works without it. Follow-up to the plugin migration, not a prerequisite.",
+      "text": "FEATURE: Dashboard live-update and health signals. The sidecar dashboard (scripts/dashboard-server.mjs) is shipped with: HTML UI, active runs, gates, recent completions, board summary, welcome/help panel, gate approve/discard, merge-blocked retry/discard, auto-refresh via 5s client polling, in-session launch from /forge:dashboard. Remaining scope: (1) WebSocket or SSE push to replace polling — reduces latency and unnecessary network traffic; (2) health signal rendering — surface [health] signals from pipeline runs in the dashboard UI.",
       "done": false,
       "addedAt": 1775749835561,
       "tags": [
