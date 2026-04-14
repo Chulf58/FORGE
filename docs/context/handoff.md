@@ -2,7 +2,7 @@
 
 ## Overview
 
-This session delivered three UX/discoverability improvements: command-collision deconfliction, a startup-banner investigation, and a new `/forge:help` discoverability surface.
+This session delivered four UX/discoverability improvements: command-collision deconfliction, a startup-banner investigation, a new `/forge:help` skill, and a dashboard welcome/help panel.
 
 ## Session commits (in order)
 
@@ -11,6 +11,8 @@ This session delivered three UX/discoverability improvements: command-collision 
 | `fdc0b6c` | fix(commands): stop FORGE config from shadowing native /config |
 | `59039ee` | fix(commands): namespace all FORGE skill names |
 | `f7cdf2c` | feat(help): add /forge:help discoverability surface |
+| `73457a2` | docs(handoff): record banner investigation and help surface work |
+| `b203ce1` | feat(dashboard): add welcome/help panel to sidecar UI |
 
 ## What shipped
 
@@ -32,6 +34,16 @@ New skill at `skills/help/SKILL.md`. Compact quick reference with four sections:
 
 Uses `forge_dashboard_state` as sole data source. No direct `.pipeline/*` reads. Output capped at ~40 lines.
 
+### Dashboard welcome/help panel (`b203ce1`)
+
+Added a compact welcome panel to the sidecar dashboard (`scripts/dashboard-server.mjs`). The panel:
+- Shows when idle (no active runs, no pending gates); hides when busy
+- Displays 10 core FORGE commands in a two-column grid
+- Gives a contextual hint based on TODO count (suggests planning from TODOs, or starting fresh)
+- Notes that the dashboard can approve/discard gates and retry merge-blocked runs
+- Renders client-side from existing `forge_dashboard_state` — no new backend fields
+- Toggles on every 5s auto-refresh cycle
+
 ## What was investigated but not shipped
 
 ### Startup banner — Windows direct-console output
@@ -51,14 +63,14 @@ The experimental `CON` change was reverted. The `forge-banner.js` hook remains a
 2. **Commands in `commands/forge/` are auto-namespaced by folder structure.** No prefix needed in the file's `name:` field.
 3. **Bare commands outside `commands/forge/` are acceptable only when no native collision exists** (e.g., `ping`).
 4. **`/forge:help` uses `forge_dashboard_state` only.** No direct `.pipeline/*` reads.
+5. **Dashboard welcome panel uses existing state only.** No new backend fields or API endpoints.
 
 ## Deferred
 
-- Dashboard welcome/help panel (embed help content in the sidecar HTML)
 - Optional move of `commands/ping.md` to `commands/forge/ping.md` for consistency
 - Monitor Anthropic's command additions for any that collide with `forge:*` namespaced names
 - Investigate whether Claude Code's plugin SDK offers a formal namespace declaration
 
 ## Next recommended slice
 
-Dashboard welcome/help panel, Diesel Priser e2e validation, or the TERMINAL_STATUSES/PIPELINE_STAGE_LABELS consolidation refactor.
+Diesel Priser e2e validation, or the TERMINAL_STATUSES/PIPELINE_STAGE_LABELS consolidation refactor.

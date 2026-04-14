@@ -9,6 +9,9 @@
 ### /forge:help discoverability surface
 - New skill `/forge:help` (commit `f7cdf2c`): compact quick reference — header, grouped core commands, state-aware "right now" suggestions from `forge_dashboard_state`, and "where to look" pointers; no direct `.pipeline/*` reads; output capped at ~40 lines
 
+### Dashboard welcome/help panel
+- New welcome panel in sidecar dashboard (commit `b203ce1`): shows when idle (no active runs, no pending gates), hides when busy; 10 core commands in a two-column grid; contextual hint from TODO count; dashboard capability note; toggles on every 5s auto-refresh; no new backend fields
+
 ### Startup banner investigation (no code shipped)
 - Investigated Windows `CON` device as direct-console output path for SessionStart hooks
 - Full isolation test: disabled all three SessionStart hooks one-by-one — native Claude welcome screen remained absent in all cases
