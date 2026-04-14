@@ -17,6 +17,7 @@
 // Project root: process.cwd() by default; override with CLAUDE_PROJECT_DIR.
 
 import { createServer } from "node:http";
+import { exec } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -557,7 +558,15 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   const projectDir = resolveProjectDir();
-  console.log("[forge-dashboard] listening on http://" + HOST + ":" + PORT);
+  const url = "http://" + HOST + ":" + PORT;
+  console.log("[forge-dashboard] listening on " + url);
   console.log("[forge-dashboard] project: " + projectDir);
   console.log("[forge-dashboard] auto-refreshes every 5 s. Ctrl+C to stop.");
+
+  // Auto-open the dashboard in the default browser. Fire-and-forget —
+  // if the open command fails, the server continues running normally.
+  const cmd = process.platform === "win32" ? "start"
+    : process.platform === "darwin" ? "open"
+    : "xdg-open";
+  exec(cmd + " " + url, () => {});
 });
