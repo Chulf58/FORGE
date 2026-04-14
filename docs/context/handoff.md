@@ -1,8 +1,8 @@
-# Handoff: UX, discoverability, dashboard, and merge-blocked handling
+# Handoff: UX, discoverability, dashboard, merge-blocked handling, and board triage
 
 ## Overview
 
-This session delivered UX/discoverability improvements, dashboard enhancements (in-session launch, welcome panel follow-up, merge-blocked discard), board schema normalization, and concluded two investigations (startup briefing, /ping consistency).
+This session delivered UX/discoverability improvements, dashboard enhancements (in-session launch, welcome panel follow-up, merge-blocked discard), board schema normalization, concluded three investigations (startup briefing, session-data, /ping consistency), and triaged the board from 42 to 37 open tasks.
 
 ## Session commits (in order)
 
@@ -25,6 +25,10 @@ This session delivered UX/discoverability improvements, dashboard enhancements (
 | `81f9346` | fix(help): update dashboard guidance for in-session launch |
 | `cbc9c07` | feat(worktree): add targeted delete command |
 | `3b1bb1e` | feat(dashboard): add discard action for merge-blocked runs |
+| `4b05904` | docs: update handoff for dashboard and merge follow-ups |
+| `0107fc8` | chore(board): close stale tasks and refine dashboard scope |
+| `a3d7b4d` | chore(board): close landed utility and compound tasks |
+| `2a7b95c` | chore(board): close landed chat intent task |
 
 ## What shipped
 
@@ -84,13 +88,28 @@ File-based indirection (`session-data.md`) does not introduce a materially diffe
 6. **`/forge:dashboard` owns the sidecar launch lifecycle.** No other skill or hook spawns the sidecar.
 7. **Merge-blocked actions: retry OR discard.** Both via `POST /api/merge-action`. Retry re-runs merge. Discard calls `forge-worktree.js delete` + sets run to `discarded`.
 
+## Board triage (42 → 37 open tasks)
+
+Closed 5 stale tasks across 3 board-edit commits:
+- `knowledge-compound-refresh` — `/forge:refresh` skill + `compound-refresh` agent fully implement the scope
+- `ideate-command` — `/forge:ideate` skill + `ideator` agent fully implement the scope
+- `move-utils-to-bin` — `bin/forge-status.js` and `bin/forge-worktree.js` already in place
+- `plugin-knowledge-compound` — duplicate of closed `knowledge-compound-step`; documenter + compound-refresh cover it
+- `plugin-intent-classification` — `/forge:chat` skill handles intent detection via Claude reasoning as the task itself describes
+
+Refined 1 task:
+- `forge-web-dashboard` — narrowed from "build a dashboard" to "WebSocket/SSE upgrade + health signal rendering" (the sidecar is shipped)
+
+Left open as genuinely unimplemented: `worktree-dashboard` (per-session agent progress, wave status, cost tracking — distinct from the shipped sidecar).
+
 ## Deferred
 
 - Monitor Anthropic's command additions for native collision risk
 - Conflict-file surfacing in merge-blocked reason (deferred — risky git commands in conflicted state)
 - Confirmation dialog on merge discard (add if user requests)
 - `/ping` version string staleness (consider reading from `plugin.json`)
+- Broader board triage of remaining 37 tasks — the obvious stale items are now closed; remaining tasks appear genuinely open
 
 ## Next recommended slice
 
-Diesel Priser e2e validation, TERMINAL_STATUSES/PIPELINE_STAGE_LABELS consolidation refactor, or board task cleanup (review 42 open tasks for staleness).
+Diesel Priser e2e validation, TERMINAL_STATUSES/PIPELINE_STAGE_LABELS consolidation refactor, or `add-plugin-settings` (settings.json with default permissions).

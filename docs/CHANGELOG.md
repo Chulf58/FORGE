@@ -31,6 +31,11 @@
 - Dashboard "Discard" button alongside "Retry merge" for merge-blocked runs (commit `3b1bb1e`); calls `forge-worktree.js delete`, clears `mergeBlocked`, sets run to `discarded`; `POST /api/merge-action` now accepts both `action: "retry"` and `action: "discard"`
 - Regression test updated: discard 200 ok, post-discard state (status=discarded, mergeBlocked=null), re-discard 409, bad action 400
 
+### Board triage (42 → 37 open tasks)
+- Closed 5 stale tasks: `knowledge-compound-refresh`, `ideate-command`, `move-utils-to-bin`, `plugin-knowledge-compound`, `plugin-intent-classification` (commits `0107fc8`, `a3d7b4d`, `2a7b95c`)
+- Refined `forge-web-dashboard` scope to WebSocket/SSE + health signals only (commit `0107fc8`)
+- Verified `worktree-dashboard` is genuinely open (per-session agent progress, wave status, cost not yet implemented)
+
 ### Startup banner investigation (no code shipped)
 - Investigated Windows `CON` device as direct-console output path for SessionStart hooks
 - Full isolation test: disabled all three SessionStart hooks one-by-one — native Claude welcome screen remained absent in all cases
