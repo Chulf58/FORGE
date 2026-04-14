@@ -1,5 +1,5 @@
 ---
-name: discard
+name: forge:discard
 description: "Discard the pending FORGE gate. Use when: user wants to cancel the current pipeline, reject the plan, or start over."
 allowed-tools: "Read Write Edit"
 ---

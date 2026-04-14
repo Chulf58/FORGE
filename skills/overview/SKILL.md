@@ -1,5 +1,5 @@
 ---
-name: overview
+name: forge:overview
 description: "Generate a comprehensive FORGE plugin overview. Use when: user wants a full inventory of agents, skills, hooks, MCP tools, board state, and enforcement mechanisms."
 allowed-tools: "Read Glob Grep Bash"
 ---

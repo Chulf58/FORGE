@@ -1,5 +1,5 @@
 ---
-name: dashboard
+name: forge:dashboard
 description: "Show all FORGE runs and board state at a glance. Use when: user asks 'what's running', wants a control-plane overview, checks pending gates, or wants to see recent completions + top TODOs."
 allowed-tools: "Read Glob"
 ---

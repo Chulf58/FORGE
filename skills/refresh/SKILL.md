@@ -1,5 +1,5 @@
 ---
-name: refresh
+name: forge:refresh
 description: "Run the FORGE knowledge refresh -- maintain the docs/solutions/ knowledge store. Use when: user wants to clean up stale solutions or maintain the knowledge base."
 argument-hint: "[optional: focus area]"
 context: fork

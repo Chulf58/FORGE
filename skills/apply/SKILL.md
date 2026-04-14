@@ -1,5 +1,5 @@
 ---
-name: apply
+name: forge:apply
 description: "Run the FORGE apply pipeline. Use when: user approved Gate #2 and wants to apply the implementation to source files."
 argument-hint: "[feature name]"
 allowed-tools: "Read Write Edit Glob Grep Bash Agent"

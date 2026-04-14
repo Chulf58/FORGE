@@ -1,5 +1,5 @@
 ---
-name: refresh-docs
+name: forge:refresh-docs
 description: "Regenerate FORGE-OVERVIEW.md and FORGE-REFERENCE.md from source files. Use when: user wants to update the overview/reference docs, says 'refresh docs', or after a major milestone."
 argument-hint: "[optional: 'reference-only' or 'overview-only' to limit scope]"
 context: fork

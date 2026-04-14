@@ -1,5 +1,5 @@
 ---
-name: approve
+name: forge:approve
 description: "Approve the pending FORGE gate. Use when: user wants to approve Gate #1 or Gate #2 to proceed with the pipeline."
 allowed-tools: "Read Write"
 ---

@@ -1,5 +1,5 @@
 ---
-name: planned
+name: forge:planned
 description: "Show FORGE planned items. Use when: user asks about planned work, upcoming tasks, or the sprint backlog."
 allowed-tools: "Read"
 ---

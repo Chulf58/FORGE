@@ -1,5 +1,5 @@
 ---
-name: init
+name: forge:init
 description: "Initialize a new FORGE project. Use when: user wants to set up FORGE in a new project, or says 'init', 'setup', 'initialize'."
 argument-hint: "[optional: project name]"
 allowed-tools: "Read Write Glob Bash"

@@ -1,5 +1,5 @@
 ---
-name: resume
+name: forge:resume
 description: "Re-enter a paused or in-progress FORGE run by runId. Use when: user wants to resume a specific run after interruption, pick up a gate-pending run, or list resumable runs."
 allowed-tools: "Read Write"
 ---

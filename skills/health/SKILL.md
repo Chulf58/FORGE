@@ -1,5 +1,5 @@
 ---
-name: health
+name: forge:health
 description: "Show FORGE health signals for this project. Use when: user asks about code health, warnings, or quality issues."
 allowed-tools: "Read Glob Grep"
 ---

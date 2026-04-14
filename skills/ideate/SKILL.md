@@ -1,5 +1,5 @@
 ---
-name: ideate
+name: forge:ideate
 description: "Run the FORGE ideator -- adversarial codebase analysis. Use when: user wants improvement ideas, asks 'what should we fix', or wants a critical review of the project."
 argument-hint: "[optional: focus area]"
 context: fork

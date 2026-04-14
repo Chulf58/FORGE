@@ -1,5 +1,5 @@
 ---
-name: status
+name: forge:status
 description: "Show FORGE project status with actionable next-step hints. Use when: user asks 'what's the status', 'where are we', wants a project overview, or asks 'what can I do?'."
 allowed-tools: "Read Glob"
 ---

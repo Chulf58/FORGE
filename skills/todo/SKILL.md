@@ -1,5 +1,5 @@
 ---
-name: todo
+name: forge:todo
 description: "Manage FORGE TODO board. Use when: user wants to see TODOs, add a TODO, or check the backlog."
 argument-hint: "[optional: new todo text]"
 allowed-tools: "Read Write"

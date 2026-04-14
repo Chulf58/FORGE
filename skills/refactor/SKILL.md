@@ -1,5 +1,5 @@
 ---
-name: refactor
+name: forge:refactor
 description: "Run the FORGE refactor pipeline. Use when: user wants to clean up, restructure, or improve existing code."
 argument-hint: "[file or area to refactor]"
 allowed-tools: "Read Write Glob Grep Agent"

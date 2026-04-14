@@ -1,5 +1,5 @@
 ---
-name: debug
+name: forge:debug
 description: "Run the FORGE debug pipeline. Use when: user reports a bug, something is broken, or tests are failing."
 argument-hint: "[bug description]"
 allowed-tools: "Read Write Glob Grep Bash Agent"

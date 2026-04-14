@@ -1,5 +1,5 @@
 ---
-name: plan
+name: forge:plan
 description: "Run the FORGE plan feature pipeline. Use when: user wants to plan a new feature, asks 'plan this', or describes a feature to build."
 argument-hint: "[feature description]"
 allowed-tools: "Read Write Glob Grep Agent"

@@ -1,5 +1,5 @@
 ---
-name: implement
+name: forge:implement
 description: "Run the FORGE implement feature pipeline. Use when: user approved Gate #1 and wants to implement the planned feature."
 argument-hint: "[feature name]"
 allowed-tools: "Read Write Glob Grep Agent"
