@@ -21,8 +21,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 
 const TEST_LOCATIONS = [
-  { dir: 'hooks', suffix: '-test.js' },
-  { dir: 'mcp',   suffix: '-test.mjs' },
+  { dir: 'hooks',   suffix: '-test.js' },
+  { dir: 'mcp',     suffix: '-test.mjs' },
+  { dir: 'scripts', suffix: '-test.mjs' },
 ];
 
 function discover() {
