@@ -1,10 +1,15 @@
 'use strict';
 
 // forge-banner.js — SessionStart hook
-// Creates a banner-pending flag file. The first PostToolUse hook invocation
-// (ctx-post-tool.js) picks it up, injects the banner as additionalContext,
-// and deletes the flag. This ensures the banner appears once on the first
-// model response that follows a tool call — reliable and visible.
+// Reads forge-banner.txt and emits it directly via hookSpecificOutput
+// additionalContext on SessionStart. The banner appears on the first model
+// response of a fresh session without depending on any tool call.
+//
+// Previous design used a pending-flag file that ctx-post-tool.js picked up
+// on the first PostToolUse — but PostToolUse only fires when the model calls
+// a tool, so a conversational first interaction left the banner invisible.
+// The SessionStart hookSpecificOutput.additionalContext pattern is proven
+// (see ctx-session-start.js stale-lock notice).
 
 const fs = require('fs');
 const path = require('path');
@@ -13,17 +18,23 @@ const readline = require('readline');
 const STDIN_TIMEOUT_MS = 5000;
 
 function fire(rawInput) {
-  // Write a flag file that ctx-post-tool.js will pick up
-  const projectDir = process.cwd();
-  const flagPath = path.join(projectDir, '.pipeline', 'forge-banner-pending');
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+  const bannerPath = path.join(pluginRoot, 'forge-banner.txt');
 
   try {
-    // Ensure .pipeline/ exists
-    const pipelineDir = path.join(projectDir, '.pipeline');
-    if (!fs.existsSync(pipelineDir)) {
-      fs.mkdirSync(pipelineDir, { recursive: true });
+    if (!fs.existsSync(bannerPath)) {
+      process.exit(0);
+      return;
     }
-    fs.writeFileSync(flagPath, Date.now().toString(), 'utf8');
+    const banner = fs.readFileSync(bannerPath, 'utf8');
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext:
+          'Display the following FORGE banner to the user exactly as formatted (preserve the box drawing). Do not add commentary:\n\n' +
+          banner,
+      },
+    }) + '\n');
   } catch (_) {
     // Non-fatal — banner just won't appear
   }
