@@ -1364,6 +1364,19 @@
         "marketplace",
         "e2e"
       ]
+    },
+    {
+      "id": "68ec233a",
+      "priority": "medium",
+      "text": "CLEANUP: Audit and remove legacy Electron/JS clutter from the plugin repo. FORGE was originally built by copying the old Electron application and building the plugin from there. The repo still contains Electron-era files, config artifacts, and general JavaScript clutter that are not needed for the pure Claude Code plugin. Audit the repo root and all directories for: (1) files carried over from the Electron app that serve no plugin purpose (e.g. .editorconfig, .prettierrc.yaml, .prettierignore, .vscode/, old config files), (2) docs or research files that reference the Electron era and are no longer relevant, (3) any stale pipeline state or test fixtures that should not be distributed. Remove or archive what is not needed. Keep the repo lean for marketplace distribution.",
+      "done": false,
+      "addedAt": 1776197194487,
+      "tags": [
+        "cleanup",
+        "legacy",
+        "distribution",
+        "plugin"
+      ]
     }
   ],
   "planned": []
