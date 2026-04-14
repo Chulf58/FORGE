@@ -211,6 +211,15 @@ const HTML_PAGE = `<!doctype html>
   .action-msg { font-size: 12px; margin-left: 8px; }
   .action-msg.ok { color: #2e7d32; }
   .action-msg.err { color: #c62828; }
+  #welcome { border-color: #c8e6c9; background: #f1f8f1; }
+  #welcome h2 { font-size: 15px; margin: 0 0 10px; color: #2e7d32; }
+  #welcome .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; margin: 8px 0 12px; }
+  #welcome .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; padding: 3px 0; }
+  #welcome .cmd-name { color: #1565c0; }
+  #welcome .cmd-desc { color: #555; }
+  #welcome .hint { font-size: 12px; color: #444; margin: 4px 0; }
+  #welcome .hint::before { content: "\\2192  "; color: #2e7d32; }
+  #welcome .dash-caps { font-size: 12px; color: #666; margin-top: 10px; border-top: 1px solid #dcedc8; padding-top: 8px; }
 </style>
 </head>
 <body>
@@ -220,6 +229,8 @@ const HTML_PAGE = `<!doctype html>
   <span id="loaded"></span>
   <button onclick="refreshDashboard()">Refresh now</button>
 </div>
+
+<section id="welcome" style="display:none"></section>
 
 <section>
   <h2>Active runs <span class="muted" id="ar-count"></span></h2>
@@ -328,6 +339,40 @@ function renderRecent(arr) {
   ).join("");
 }
 
+function renderWelcome(state) {
+  const el = $("welcome");
+  const ar = state.activeRuns || [];
+  const ga = state.gatesAwaiting || [];
+  // Show the welcome panel when idle (no active runs, no pending gates).
+  const idle = ar.length === 0 && ga.length === 0;
+  if (!idle) { el.style.display = "none"; return; }
+  el.style.display = "";
+  const b = state.boardSummary || {};
+  // Build contextual hints.
+  let hints = "";
+  if (b.todoCount > 0) {
+    hints += '<div class="hint">You have ' + b.todoCount + ' open TODO(s) \\u2014 pick one and run /forge:plan</div>';
+  } else {
+    hints += '<div class="hint">Run /forge:plan to plan a feature, or /forge:todo to add tasks</div>';
+  }
+  el.innerHTML =
+    '<h2>FORGE \\u2014 Quick Start</h2>' +
+    '<div class="cmd-grid">' +
+      '<div class="cmd"><span class="cmd-name">/forge:plan</span> <span class="cmd-desc">Plan a feature</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:status</span> <span class="cmd-desc">Project snapshot</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:implement</span> <span class="cmd-desc">Code from plan</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:dashboard</span> <span class="cmd-desc">This view, in CLI</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:apply</span> <span class="cmd-desc">Apply reviewed code</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:todo</span> <span class="cmd-desc">Manage backlog</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:debug</span> <span class="cmd-desc">Diagnose a bug</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:resume</span> <span class="cmd-desc">Resume paused run</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:refactor</span> <span class="cmd-desc">Restructure code</span></div>' +
+      '<div class="cmd"><span class="cmd-name">/forge:config</span> <span class="cmd-desc">Pipeline settings</span></div>' +
+    '</div>' +
+    hints +
+    '<div class="dash-caps">This dashboard can approve/discard gates and retry merge-blocked runs when they appear.</div>';
+}
+
 function renderBoard(b) {
   if (!b) { renderEmpty($("boardSummary"), "Board unreadable."); return; }
   let html = '<div class="row">' +
@@ -399,6 +444,7 @@ function refreshDashboard() {
     .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
     .then(state => {
       $("loaded").textContent = "Last updated " + new Date().toLocaleTimeString();
+      renderWelcome(state);
       renderActiveRuns(state.activeRuns || []);
       renderGates(state.gatesAwaiting || []);
       renderRecent(state.recentCompleted || []);
