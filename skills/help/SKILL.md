@@ -58,7 +58,7 @@ Derive 1–3 concrete suggestions from the `forge_dashboard_state` response. Che
 
 2. **Merge-blocked runs** — if any `recentCompleted` entry has `mergeBlocked` non-null:
    ```
-   → Merge blocked: open the dashboard (npm run dashboard) to retry
+   → Merge blocked: run /forge:dashboard to retry
    ```
 
 3. **Active runs in progress** — if `activeRuns.length > 0` and `gatesAwaiting.length === 0`:
