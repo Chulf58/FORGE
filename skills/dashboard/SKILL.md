@@ -20,25 +20,13 @@ node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(r => r.ok ? r.j
 
 This returns either `SIDECAR_DOWN` or `SIDECAR_PROJECT=<name>`.
 
-### 0b — Handle project mismatch
+### 0b — Handle result
 
 Compare the sidecar's project name to the current project. You know the current project name from `forge_read_project` (called later in the data source step) or from the project directory basename.
 
 - If `SIDECAR_DOWN`: proceed to launch (step 0c).
 - If `SIDECAR_PROJECT=<name>` and the name **matches** the current project: sidecar is valid, skip to step 0d (open in browser).
-- If `SIDECAR_PROJECT=<name>` and the name **does not match**: the sidecar is serving a different project. Kill it and launch a new one:
-
-```bash
-node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(() => { process.kill(0); }).catch(() => {})" 2>/dev/null; sleep 1
-```
-
-If the above doesn't reliably kill the process, use a port-based kill. On Windows:
-
-```bash
-for /f "tokens=5" %a in ('netstat -ano ^| findstr :7878') do taskkill /PID %a /F 2>nul
-```
-
-After killing, proceed to launch (step 0c). Log: `[forge:dashboard] Replaced sidecar — was serving <old project>, now launching for <current project>.`
+- If `SIDECAR_PROJECT=<name>` and the name **does not match**: the sidecar is serving a different project. **Do not open it.** Log: `[forge:dashboard] Sidecar is serving "<other project>" — not opening. Stop the other sidecar first, or run this project's dashboard manually.` Skip the browser open (step 0d) and continue directly to the text dashboard.
 
 ### 0c — Launch if not running
 
@@ -52,7 +40,7 @@ Wait 1 second for the server to start, then re-check reachability using the prob
 
 ### 0d — Open in browser
 
-If the sidecar is up (either already running, just launched, or just replaced), open it in the default browser via Bash:
+If the sidecar is up and serving the current project (either already running or just launched), open it in the default browser via Bash:
 
 ```bash
 start http://127.0.0.1:7878
