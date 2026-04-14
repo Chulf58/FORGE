@@ -92,8 +92,19 @@ async function main(rawInput) {
 
   console.error('[forge-mcp] Installing MCP server dependencies...');
 
+  // Resolve npm-cli.js from the running Node installation so we don't depend
+  // on bare `npm` being in PATH — which fails on marketplace-installed copies
+  // where the user's PATH doesn't include the Node bin directory.
+  const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (!fs.existsSync(npmCli)) {
+    console.error('[forge-mcp] npm-cli.js not found at ' + npmCli + ' — falling back to bare npm');
+  }
+  const npmCmd = fs.existsSync(npmCli)
+    ? '"' + process.execPath + '" "' + npmCli + '"'
+    : 'npm';
+
   try {
-    execSync('npm install --prefix "' + mcpDir.replace(/\\/g, '/') + '"', {
+    execSync(npmCmd + ' install --prefix "' + mcpDir.replace(/\\/g, '/') + '"', {
       stdio: ['ignore', 'ignore', 'inherit'],
       timeout: 60000
     });
