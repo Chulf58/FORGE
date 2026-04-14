@@ -18,6 +18,19 @@
 ### Docs refresh
 - Regenerated `docs/FORGE-OVERVIEW.md` and `docs/FORGE-REFERENCE.md` (commit `f951e8b`); skills 19→21, MCP tools 22→24, lib modules 4→5, board 45→25 open items; added `/forge:help`, `forge_dashboard_state`, `dashboard-state.js`, skill namespace policy, `mergeBlocked`/`currentUnit` schema fields, `scripts/dashboard-server.mjs`
 
+### Dashboard in-session launch
+- `/forge:dashboard` now probes sidecar reachability, spawns it as background process if down, opens browser, then renders text dashboard (commit `60e8e01`); runtime-validated: sidecar reachable within 1 second (commit `c45b384`)
+- `npm run dashboard` path also auto-opens browser as secondary convenience (commit `b085050`)
+- Stale `npm run dashboard` references in `/forge:help` and `/forge:status` replaced with `/forge:dashboard` (commit `81f9346`)
+
+### Dashboard welcome panel follow-up
+- Welcome panel now surfaces `topPriorityTodos[0].text` as a concrete next-step hint when available; falls back to generic count; falls back to "start fresh" when board is empty (commit `08ff36a`)
+
+### Merge-blocked discard action
+- `forge-worktree.js delete <slug>`: targeted single-worktree deletion without merging (commit `cbc9c07`)
+- Dashboard "Discard" button alongside "Retry merge" for merge-blocked runs (commit `3b1bb1e`); calls `forge-worktree.js delete`, clears `mergeBlocked`, sets run to `discarded`; `POST /api/merge-action` now accepts both `action: "retry"` and `action: "discard"`
+- Regression test updated: discard 200 ok, post-discard state (status=discarded, mergeBlocked=null), re-discard 409, bad action 400
+
 ### Startup banner investigation (no code shipped)
 - Investigated Windows `CON` device as direct-console output path for SessionStart hooks
 - Full isolation test: disabled all three SessionStart hooks one-by-one — native Claude welcome screen remained absent in all cases
