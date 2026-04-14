@@ -1,78 +1,55 @@
-# Handoff: Dashboard phase 2 — auto-refresh, relative times, gate actions
+# Handoff: Merge-blocked state + dashboard rendering
 
 ## Overview
 
-This session delivered three progressive dashboard improvements and their regression coverage, taking the sidecar from a static read-only snapshot to a live, actionable control plane for pending gates.
+This session delivered the first report-only slice of merge-blocked run handling — from schema through persistence through dashboard rendering — completing the feature arc captured on the board as `merge-blocked-run-handling`.
 
 ## Session commits (in order)
 
 | Commit | Subject |
 |---|---|
-| `1c0a312` | feat(dashboard): add live auto-refresh to sidecar dashboard |
-| `ba36f37` | feat(dashboard): render relative times in sidecar dashboard |
-| `fa6f9f5` | feat(dashboard): add approve/discard actions for pending gates |
-| `9dca636` | test(dashboard): cover gate-action approve flow |
+| `e1214ab` | feat(merge): surface merge-blocked runs in registry state |
+| `d3f4565` | feat(dashboard): show merge-blocked runs in sidecar UI |
 
 ## What shipped
 
-### Auto-refresh (`1c0a312`)
-- Extracted the one-shot fetch into a named `refreshDashboard()` function.
-- Called immediately on page load, then every 5 seconds via `setInterval`.
-- "Last updated" indicator shows `toLocaleTimeString()` on each tick.
-- Error self-healing: on fetch failure, one `.error` banner appears; on next successful tick, it's removed automatically. Interval never stops.
-- "Refresh now" button calls `refreshDashboard()` directly (no full page reload).
-- Server-side unchanged — purely client-side polling.
+### Merge-blocked persistence (`e1214ab`)
 
-### Relative-time rendering (`ba36f37`)
-- Added `relTime(iso)` client-side helper: `""` for falsy, escaped raw string for unparseable, `"just now"` (<60s), `"N min ago"` (<1h), `"N hr ago"` (<24h), `"N d ago"` otherwise. Defensive on negative deltas (future timestamps → "just now").
-- Applied to gates section (`g.updatedAt`) and recent completions section (`e.updatedAt`).
-- Re-evaluates on each 5s auto-refresh tick — labels stay fresh without additional timers.
-- Server-side and contract unchanged.
+**Schema:** `packages/forge-core/src/runs/schemas.js` gained `mergeBlocked: z.object({ reason: z.string(), detectedAt: z.string() }).nullable().default(null)` on the `Run` schema. All existing runs default to `null` — non-breaking.
 
-### Gate approve/discard actions (`fa6f9f5`)
-- **Server-side:**
-  - `readBody(req)` — promise wrapper for JSON body parsing.
-  - `handleGateAction(projectDir, run, action)` — approve: stamps gate-pending.json + `updateRun` to `completed` / `<gate>-approved`; discard: deletes gate-pending.json + `updateRun` to `discarded`. Same transitions as `/forge:approve` and `/forge:discard` skills.
-  - `POST /api/gate-action` route: validates `runId` (400), `action` (400); loads run via `getRun` (404 if missing, 409 if not `gate-pending`); calls handler; returns 200 `{ ok, message }` or 500 on internal error.
-  - Route handler refactored from single GET guard to separate GET/POST branches.
-- **Client-side:**
-  - `gateAction(runId, action)` — POSTs to the endpoint, disables all gate buttons during flight, calls `refreshDashboard()` on success so the gate disappears, shows `alert()` on failure.
-  - Each gate row now has `Approve` and `Discard` buttons with green/red styling.
-- **New imports:** `readFileSync`, `writeFileSync`, `unlinkSync` from `node:fs`; `getRun`, `updateRun` from forge-core. Zero new npm dependencies.
+**Persistence:** `bin/forge-worktree.js` merge() failure path now reads `.pipeline/runs/<runId>/run.json`, patches `mergeBlocked: { reason, detectedAt }` + `updatedAt`, and writes back. Best-effort — IO failure falls through to the existing stderr JSON. The patch happens after `git merge --abort` so the working tree is clean. Direct file write (CommonJS boundary — cannot import ESM forge-core).
 
-### Gate-action regression test (`9dca636`)
-- `scripts/dashboard-gate-action-test.mjs` — seeds one gate-pending run, spawns the real sidecar, exercises six assertions:
-  1. Approve: HTTP 200, `ok: true`.
-  2. Post-action state: `gatesAwaiting=0`, `recentCompleted=1`, status `completed`.
-  3. Re-approve: 409 (not gate-pending anymore).
-  4. Unknown run: 404.
-  5. Missing runId: 400.
-  6. Invalid action: 400.
-- Auto-discovered by the runner (uses `scripts/*-test.mjs` convention). Bundle grew from 6 to 7 tests; all passing.
+**Dashboard contract:** `mcp/lib/dashboard-state.js` includes `mergeBlocked` in both `activeRuns` (already hydrated from `getRun`) and `recentCompleted` (now hydrates via `getRun` to extract the field, bounded by `RECENT_COMPLETED_LIMIT = 5`).
+
+### Dashboard rendering (`d3f4565`)
+
+**`renderMergeBlocked(mb)` helper:** returns empty string for null; otherwise renders a `<span class="badge merge-blocked">merge blocked</span>` badge + a `<span class="merge-reason">` with the escaped reason text.
+
+**Applied to both sections:** `renderActiveRuns` and `renderRecent` both call the helper between the status badge and the feature text.
+
+**CSS:** `.badge.merge-blocked` (warm orange `#fff3e0` / dark text `#e65100`, bold) and `.merge-reason` (small `12px`, dark red `#bf360c`).
 
 ## Core contracts (preserve in any future change)
 
-1. **`POST /api/gate-action` requires `{ runId, action }`.** `action` must be `"approve"` or `"discard"`. Run must be `gate-pending`. Returns `{ ok: true, message }` on success.
-2. **State transitions match skill semantics.** Approve → `status: "completed"`, `currentStep: "<gate>-approved"`, gateState updated. Discard → `status: "discarded"`, `currentStep: "discarded"`, gate file deleted.
-3. **Worktree-scoped gate files.** If `run.worktreePath` is set, the gate file is read/written/deleted at `<worktreePath>/.pipeline/gate-pending.json`. Otherwise at project root `.pipeline/gate-pending.json`.
-4. **Auto-refresh interval is 5 seconds.** Not configurable without editing the HTML template. Acceptable for a local sidecar.
-5. **`relTime()` recomputes on each render tick.** No stale-label risk.
-6. **Loopback-only binding.** No remote exposure, no CSRF protection. Acceptable for single-user local tool.
+1. **`mergeBlocked` does NOT change the run's `status`.** The run stays `"completed"`. The pipeline itself succeeded; the merge-back is a post-pipeline step. Consumers that filter by terminal status will include merge-blocked runs in `recentCompleted`, which is correct.
+2. **Field defaults to `null`.** Non-breaking for all existing consumers. Dashboard renders nothing when null.
+3. **`conflictedFiles` deliberately omitted in slice 1.** Extracting the list would require running git commands between the failed merge and `git merge --abort` — risky in a conflicted working tree. Can be added later if there's demand.
+4. **Direct file write in `bin/forge-worktree.js` bypasses `updateRun`.** The script is CommonJS; `updateRun` is ESM. The direct write patches the same JSON and includes `updatedAt` but does NOT sync the index (the index doesn't carry `mergeBlocked`). Acceptable because all consumers that need `mergeBlocked` hydrate from `getRun` (full run.json).
 
 ## Verification summary
 
+- Schema acceptance: seeded run.json with `mergeBlocked` → `getRun()` returned it intact; normal run → `mergeBlocked: null`.
+- Dashboard surfacing: `buildDashboardState()` against fixture returned `recentCompleted[0].mergeBlocked` with the seeded values.
+- HTML template: verified via live server fetch — `renderMergeBlocked`, CSS classes, and call sites all present.
 - `npm test` → `7/7 passed`.
-- Ad-hoc round-trip driver verified the full approve lifecycle: gate appears → approve POST → gate disappears → run in recentCompleted → error paths return correct codes.
-- Live sidecar verified: HTML contains `setInterval`, `relTime`, `gateAction`, `btn-approve`, `btn-discard`. Endpoint contract unchanged (four top-level keys).
 
-## Deferred / known debt
+## Deferred
 
-- **Discard does not clean `docs/PLAN.md`.** The `/forge:discard` skill also removes plan content for gate1 discards. The dashboard action only updates the gate file and run registry. Manual plan cleanup or CLI skill invocation handles this gap.
-- **No CSRF protection.** Loopback-only mitigates but does not eliminate the risk of a malicious page POSTing to localhost. Add origin checks if remote exposure is ever considered.
-- **No confirmation dialog for approve/discard.** One-click, matching CLI behavior. Add `confirm()` if user feedback requests it.
-- **`alert()` for errors.** Crude but functional. A proper toast/notification area would be cleaner if more actions are added.
-- **`PIPELINE_STAGE_LABELS` and `TERMINAL_STATUSES` remain duplicated** across multiple files. Consolidation deferred to a dedicated refactor slice.
-- **No browser/UI automation tests.** All tests exercise HTTP endpoints only. Browser rendering tested by code inspection.
+- **Merge retry action** (`/forge:merge` or dashboard button) — next action slice.
+- **`conflictedFiles` extraction** — requires careful git command ordering.
+- **Automatic conflict resolution** — explicitly out of scope per board task.
+- **Dependency-wave scheduling** — separate board task `dependency-analysis-waves`.
+- **Worktree crash recovery** — separate board task `worktree-crash-recovery`.
 
 ## Test bundle status
 
@@ -87,4 +64,4 @@ This session delivered three progressive dashboard improvements and their regres
 
 ## Next recommended slice
 
-Run the Diesel Priser e2e validation against the sidecar dashboard: start the sidecar alongside a real pipeline run, verify the dashboard displays active runs + pending gates live, approve a gate from the browser, and confirm the post-action state transition renders correctly — proves the dashboard is production-usable before adding any further UI features.
+Close `merge-blocked-run-handling` on the board (the report-only first slice is now complete) and update CHANGELOG — then decide between: (a) a merge-retry action in the dashboard, (b) Diesel Priser e2e validation of the sidecar, or (c) the `TERMINAL_STATUSES` / `PIPELINE_STAGE_LABELS` consolidation refactor.

@@ -1,4 +1,10 @@
-## [2026-04-14] Dashboard Contract + Sidecar + Gate Actions
+## [2026-04-14] Dashboard Contract + Sidecar + Gate Actions + Merge-Blocked State
+
+### Merge-blocked run handling — report-only first slice
+- `Run` schema gained optional nullable `mergeBlocked: { reason, detectedAt }` field (commit `e1214ab`); defaults to `null` on all runs, non-breaking; does NOT change the run's `status` (stays `completed` — the pipeline succeeded; merge-back is a post-pipeline step)
+- `bin/forge-worktree.js` merge() failure path now persists `mergeBlocked` + `updatedAt` on the run.json before exiting (commit `e1214ab`); best-effort direct file write (CommonJS boundary); `conflictedFiles` deliberately omitted in slice 1
+- `mcp/lib/dashboard-state.js` surfaces `mergeBlocked` in both `activeRuns` and `recentCompleted` entries; `recentCompleted` now hydrates from `getRun` to extract the field (bounded by limit, max 5 extra reads per poll) (commit `e1214ab`)
+- Sidecar dashboard HTML renders `mergeBlocked` as an orange `merge blocked` badge + reason text in both active-runs and recent-completions sections (commit `d3f4565`); `renderMergeBlocked(mb)` helper reused in both sections; no-op for `null` (non-blocked runs unchanged)
 
 ### Dashboard phase 2 — auto-refresh, relative times, gate actions
 - Live auto-refresh: client-side `setInterval(refreshDashboard, 5000)` re-fetches and re-renders all four sections; "Last updated" timestamp on each tick; error self-healing (banner appears on failure, clears on recovery); "Refresh now" button calls `refreshDashboard()` directly (commit `1c0a312`)
