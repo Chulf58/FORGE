@@ -1,14 +1,10 @@
-# Handoff: Distribution milestone — self-hosted marketplace validated
+# Handoff: Distribution, sidecar mismatch, and board maintenance
 
 ## Overview
 
-This session completed the self-hosted marketplace distribution path for FORGE. The plugin is live on GitHub, installable via marketplace commands, and fully functional (MCP server included) from the second session onward.
+This session completed self-hosted marketplace distribution (with MCP bootstrap fixes), resolved the sidecar project-mismatch issue, closed landed board tasks, and added new board tasks for legacy cleanup and token usage visibility.
 
-## GitHub
-
-https://github.com/Chulf58/FORGE (public)
-
-## Distribution commits
+## Session commits
 
 | Commit | What |
 |---|---|
@@ -20,65 +16,58 @@ https://github.com/Chulf58/FORGE (public)
 | `7849b71` | Fixed marketplace source schema |
 | `e4ec505` | Fixed source field name |
 | `6a7ae28` | Switched to HTTPS URL source |
-| `65bb7ba` | Fixed npm bootstrap (resolve npm-cli.js from Node) |
+| `65bb7ba` | Fixed npm bootstrap (npm-cli.js from Node) |
 | `6c022db` | Fixed CLAUDE_PLUGIN_ROOT fallback + forge-core deps |
 | `545ab4e` | Tried cwd approach (intermediate) |
-| `da388f5` | Tried bin/ bare command approach (intermediate) |
-| `c147f59` | Final fix: SessionStart writes launcher with resolved Node path |
+| `da388f5` | Tried bin/ bare command (intermediate) |
+| `c147f59` | Final MCP fix: SessionStart writes launcher with resolved Node path |
+| `5c355f8` | Session handoff for distribution milestone |
+| `59035dd` | Closed `marketplace-json` board task |
+| `ef61a14` | Added plugin folder cleanup board task |
+| `39bc92b` | Added project identity to sidecar API/UI |
+| `6ee127c` | Added sidecar mismatch detection (aggressive — superseded) |
+| `64abbe6` | Corrected mismatch to safe non-destructive handling |
+| `dcaef24` | Added dashboard token usage board task |
 
 ## What shipped
 
 ### Self-hosted marketplace distribution
-
-- `marketplace.json` at `.claude-plugin/marketplace.json` with HTTPS URL source
-- `plugin.json` with repository URL
-- `README.md` with install instructions
-- Portable `.mcp.json` using `${CLAUDE_PLUGIN_ROOT}\\bin\\forge-mcp-server.cmd`
+- FORGE live at https://github.com/Chulf58/FORGE (public)
+- Install: `/plugin marketplace add Chulf58/FORGE` → `/plugin install forge@forge-tools` → reopen session for MCP
+- Two-session bootstrap: session 1 installs deps + writes launcher; session 2+ has full MCP
 
 ### MCP bootstrap chain (3 blockers fixed)
+1. `CLAUDE_PLUGIN_ROOT` fallback to `__dirname` parent
+2. Dependency install loop covers both `mcp/` and `packages/forge-core/`
+3. SessionStart hook writes `bin/forge-mcp-server.cmd` with absolute `process.execPath`
 
-1. `CLAUDE_PLUGIN_ROOT` fallback — use `__dirname` parent when env var not set
-2. `packages/forge-core` deps — install loop covers both `mcp/` and `packages/forge-core/`
-3. Node path resolution — SessionStart hook writes `bin/forge-mcp-server.cmd` with absolute `process.execPath` baked in; `.mcp.json` references the wrapper
+### Sidecar project-mismatch fix
+- `/api/dashboard-state` now includes `project: { name, dir }`
+- Sidecar HTML header and browser title show the served project name
+- `/forge:dashboard` detects mismatch: if running sidecar serves a different project, logs a warning and skips the browser open (does not kill the other sidecar)
+- Text dashboard always renders regardless of sidecar state
 
-### Two-session bootstrap (known trade-off)
-
-- Session 1 after install: hook installs deps + writes launcher; MCP fails (launcher written after MCP already tried to start)
-- Session 2+: launcher exists; MCP connects immediately
-
-### Board triage (earlier in session)
-
-42 → 37 open tasks. Closed: `knowledge-compound-refresh`, `ideate-command`, `move-utils-to-bin`, `plugin-knowledge-compound`, `plugin-intent-classification`. Refined: `forge-web-dashboard` scope narrowed.
-
-## Install instructions
-
-```
-/plugin marketplace add Chulf58/FORGE
-/plugin install forge@forge-tools
-# Close and reopen session for MCP to connect
-```
+### Board maintenance
+- Closed `marketplace-json` (landed)
+- Added `68ec233a`: legacy Electron/JS clutter cleanup
+- Added `3b02cb81`: dashboard token usage visibility (per-run, per-session, all-time)
 
 ## Core contracts
 
 1. **`.mcp.json` uses `${CLAUDE_PLUGIN_ROOT}\\bin\\forge-mcp-server.cmd`** — do not change to bare `node`.
 2. **`mcp-deps-install.js` writes the launcher on every SessionStart** — adapts if Node path changes.
-3. **The shipped `.cmd` is a placeholder** — returns exit 1 until overwritten by the hook.
-4. **Two-session bootstrap is expected** on machines without Node in system PATH.
-
-## Known limitations
-
-1. Two-session bootstrap (first session: no MCP; second+: full MCP)
-2. Sidecar project-mismatch gap (sidecar doesn't detect wrong project on fixed port)
-3. Enterprise PATH restriction (user cannot add Node to system PATH)
+3. **Sidecar project identity** via `state.project.name` — used for mismatch detection.
+4. **Mismatch is non-destructive** — warn + skip, do not kill other sidecars.
 
 ## Deferred
 
-- Investigate MCP startup ordering (could fix two-session bootstrap)
-- Sidecar project-mismatch detection
+- Auto-restart sidecar on mismatch (add if manual approach proves too friction-heavy)
+- Legacy Electron/JS cleanup (board task `68ec233a`)
+- Dashboard token usage (board task `3b02cb81`)
 - Official Anthropic marketplace submission
 - npm packaging
-- Close `marketplace-json` board task
+- Two-session bootstrap improvement (investigate MCP startup ordering)
 
 ## Next recommended slice
 
-Close `marketplace-json` on the board, then Diesel Priser e2e re-validation or `add-plugin-settings`.
+Legacy cleanup task (`68ec233a`), dashboard token usage (`3b02cb81`), or `add-plugin-settings`.
