@@ -1,5 +1,5 @@
 ---
-name: config
+name: forge:config
 description: "View or update FORGE project settings. Use when: user wants to change pipeline mode, tester setting, or view project config."
 argument-hint: "[optional: key value]"
 allowed-tools: "Read Write"
