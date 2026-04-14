@@ -1033,8 +1033,9 @@
         "orchestration",
         "one-chat"
       ],
-      "done": false,
-      "addedAt": 0
+      "done": true,
+      "addedAt": 0,
+      "doneAt": 1776173916940
     },
     {
       "id": "plugin-false-positive-block-audit",
