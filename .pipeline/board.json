@@ -206,9 +206,6 @@
     {
       "id": "one-chat-capability-audit-post-launch",
       "priority": "medium",
-      "blockedBy": [
-        "one-chat-vision-ux-redesign"
-      ],
       "text": "DESIGN: Multi-step request chaining — natural language requests that require multiple pipeline steps (e.g. \"mark this done and add a follow-up task\", \"plan this then implement it\"). Decide whether /forge:chat handles chaining or if a separate orchestration layer is needed. Scope TBD after restructure.",
       "done": false,
       "addedAt": 1774895366744,
@@ -959,7 +956,9 @@
         "needs-detail",
         "board",
         "modules"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-todo-enrichment",
@@ -969,7 +968,9 @@
         "needs-detail",
         "board",
         "enrichment"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-project-references",
@@ -979,7 +980,9 @@
         "needs-detail",
         "knowledge",
         "references"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-project-json-versioning",
@@ -989,7 +992,9 @@
         "needs-detail",
         "config",
         "migration"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-one-chat-qa-before-approach",
@@ -999,7 +1004,9 @@
         "needs-detail",
         "orchestration",
         "one-chat"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-knowledge-compound",
@@ -1009,7 +1016,9 @@
         "needs-detail",
         "knowledge",
         "compound"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-intent-classification",
@@ -1019,7 +1028,9 @@
         "needs-detail",
         "orchestration",
         "one-chat"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "plugin-false-positive-block-audit",
@@ -1029,7 +1040,9 @@
         "needs-detail",
         "pipeline",
         "quality"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "pipeline-failure-recovery",
@@ -1050,7 +1063,9 @@
         "needs-detail",
         "pipeline",
         "resilience"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "evaluation-harness-replay",
@@ -1060,7 +1075,9 @@
         "needs-detail",
         "quality",
         "testing"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "pipeline-data-flow-display",
@@ -1070,7 +1087,9 @@
         "needs-detail",
         "pipeline",
         "ux"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "folder-structure-cleanup",
@@ -1080,7 +1099,9 @@
         "needs-detail",
         "cleanup",
         "architecture"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "dynamic-pipeline-construction",
@@ -1091,7 +1112,9 @@
         "pipeline",
         "vision",
         "future"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "distribution-ip-protection",
@@ -1102,7 +1125,9 @@
         "distribution",
         "strategy",
         "future"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "pre-planner-scout",
@@ -1112,7 +1137,9 @@
         "needs-detail",
         "pipeline",
         "agents"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "signal-timeline",
@@ -1122,7 +1149,9 @@
         "needs-detail",
         "dashboard",
         "signals"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "multi-engine-architecture",
@@ -1156,7 +1185,9 @@
       "tags": [
         "needs-detail",
         "cleanup"
-      ]
+      ],
+      "done": false,
+      "addedAt": 0
     },
     {
       "id": "worktree-plugin-integration",
