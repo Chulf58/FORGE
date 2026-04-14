@@ -115,6 +115,18 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>\"']/g, (c) =>
   ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
+function relTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return esc(iso);
+  const sec = Math.round((Date.now() - d.getTime()) / 1000);
+  if (sec < 0)    return "just now";
+  if (sec < 60)   return "just now";
+  if (sec < 3600) return Math.floor(sec / 60) + " min ago";
+  if (sec < 86400) return Math.floor(sec / 3600) + " hr ago";
+  return Math.floor(sec / 86400) + " d ago";
+}
+
 function badge(kind, value) {
   return '<span class="badge ' + kind + '-' + esc(value) + '">' + esc(value) + '</span>';
 }
@@ -153,7 +165,7 @@ function renderGates(arr) {
       badge("status", "gate-pending") +
       '<span>' + esc(gate) + '</span>' +
       '<span>· ' + esc(g.feature) + '</span>' +
-      (g.updatedAt ? ' <span class="muted">· updated ' + esc(g.updatedAt) + '</span>' : '') +
+      (g.updatedAt ? ' <span class="muted">· updated ' + relTime(g.updatedAt) + '</span>' : '') +
       '</div>';
   }).join("") +
     '<div class="row muted">Act with /forge:approve or /forge:discard (resume the run first if needed).</div>';
@@ -168,7 +180,7 @@ function renderRecent(arr) {
       '<span>' + esc(e.pipelineType) + '</span>' +
       badge("status", e.status) +
       '<span>· ' + esc(e.feature) + '</span>' +
-      (e.updatedAt ? ' <span class="muted">· ' + esc(e.updatedAt) + '</span>' : '') +
+      (e.updatedAt ? ' <span class="muted">· ' + relTime(e.updatedAt) + '</span>' : '') +
     '</div>'
   ).join("");
 }
