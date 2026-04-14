@@ -85,9 +85,9 @@ const HTML_PAGE = `<!doctype html>
 <body>
 <h1>FORGE dashboard</h1>
 <div class="meta">
-  Read-only snapshot from <code>forge_dashboard_state</code>.
+  Read-only snapshot from <code>forge_dashboard_state</code> · auto-refreshing every 5 s.
   <span id="loaded"></span>
-  <button onclick="location.reload()">Refresh</button>
+  <button onclick="refreshDashboard()">Refresh now</button>
 </div>
 
 <section>
@@ -192,19 +192,35 @@ function renderBoard(b) {
   $("boardSummary").innerHTML = html;
 }
 
-fetch("/api/dashboard-state")
-  .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-  .then(state => {
-    $("loaded").textContent = "Loaded " + new Date().toLocaleTimeString();
-    renderActiveRuns(state.activeRuns || []);
-    renderGates(state.gatesAwaiting || []);
-    renderRecent(state.recentCompleted || []);
-    renderBoard(state.boardSummary);
-  })
-  .catch(err => {
-    document.body.insertAdjacentHTML("afterbegin",
-      '<div class="error"><strong>Failed to load state:</strong> ' + esc(err.message) + '</div>');
-  });
+function refreshDashboard() {
+  fetch("/api/dashboard-state")
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(state => {
+      $("loaded").textContent = "Last updated " + new Date().toLocaleTimeString();
+      renderActiveRuns(state.activeRuns || []);
+      renderGates(state.gatesAwaiting || []);
+      renderRecent(state.recentCompleted || []);
+      renderBoard(state.boardSummary);
+      // Clear any prior fetch-error banner on successful refresh.
+      const old = document.querySelector(".error");
+      if (old) old.remove();
+    })
+    .catch(err => {
+      $("loaded").textContent = "Fetch failed " + new Date().toLocaleTimeString();
+      // Only insert the error banner once; subsequent failures update the
+      // loaded text but don't stack banners.
+      if (!document.querySelector(".error")) {
+        document.body.insertAdjacentHTML("afterbegin",
+          '<div class="error"><strong>Failed to load state:</strong> ' + esc(err.message) + '</div>');
+      }
+    });
+}
+
+// Initial fetch + fixed-interval polling (5 s). The interval keeps running
+// on errors so the next successful fetch self-heals the UI. No WebSocket,
+// no SSE, no server push — purely client-initiated read-only polling.
+refreshDashboard();
+setInterval(refreshDashboard, 5000);
 </script>
 </body>
 </html>`;
@@ -242,5 +258,5 @@ server.listen(PORT, HOST, () => {
   const projectDir = resolveProjectDir();
   console.log("[forge-dashboard] listening on http://" + HOST + ":" + PORT);
   console.log("[forge-dashboard] project: " + projectDir);
-  console.log("[forge-dashboard] refresh the page to reload state. Ctrl+C to stop.");
+  console.log("[forge-dashboard] auto-refreshes every 5 s. Ctrl+C to stop.");
 });
