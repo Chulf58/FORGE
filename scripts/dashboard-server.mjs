@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Tiny read-only FORGE dashboard sidecar.
+// FORGE dashboard sidecar.
 //
-// One local HTTP server, bound to 127.0.0.1, serving:
-//   GET  /                      → the dashboard HTML page
+// Local HTTP server, bound to 127.0.0.1, serving:
+//   GET  /                      → the dashboard HTML page (auto-refreshes)
 //   GET  /api/dashboard-state   → JSON from buildDashboardState()
+//   POST /api/gate-action       → approve or discard a pending gate
 //
 // Zero new runtime dependencies — Node's built-in `http` only. Reuses the
 // exact same state-builder the MCP tool does (mcp/lib/dashboard-state.js),
@@ -13,14 +14,12 @@
 // Or:    npm run dashboard
 // Port:  7878 default; override with FORGE_DASHBOARD_PORT env var.
 // Project root: process.cwd() by default; override with CLAUDE_PROJECT_DIR.
-//
-// Refresh by page reload only. No WebSocket, no polling, no file watcher,
-// no actions. Explicitly out of scope for this slice.
 
 import { createServer } from "node:http";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { buildDashboardState } from "../mcp/lib/dashboard-state.js";
+import { getRun, updateRun } from "../packages/forge-core/src/runs/index.js";
 
 const PORT = Number(process.env.FORGE_DASHBOARD_PORT) || 7878;
 const HOST = "127.0.0.1";
@@ -52,6 +51,80 @@ function notFound(res) {
   json(res, 404, { error: "not found" });
 }
 
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => { data += chunk; });
+    req.on("end", () => {
+      try { resolve(JSON.parse(data)); }
+      catch (e) { reject(new Error("invalid JSON body")); }
+    });
+    req.on("error", reject);
+  });
+}
+
+// -- Gate action handler ------------------------------------------------------
+// Approve or discard a pending gate by runId. Mirrors the same state
+// transitions the /forge:approve and /forge:discard skills perform, using
+// the same forge-core updateRun() so the registry stays truthful.
+
+function handleGateAction(projectDir, run, action) {
+  const now = new Date().toISOString();
+  const gate = run.gateState && run.gateState.gate;
+  if (!gate) throw new Error("run has no gate to act on");
+
+  // Resolve gate file location — worktree-scoped if the run has a worktreePath.
+  const gateRoot = run.worktreePath || projectDir;
+  const gatePath = join(gateRoot, ".pipeline", "gate-pending.json");
+
+  if (action === "approve") {
+    // Update the gate file on disk (preserve fields, stamp approved).
+    if (existsSync(gatePath)) {
+      try {
+        const raw = readFileSync(gatePath, "utf8");
+        const gateFile = JSON.parse(raw);
+        gateFile.status = "approved";
+        gateFile.approvedAt = now;
+        writeFileSync(gatePath, JSON.stringify(gateFile, null, 2) + "\n", "utf8");
+      } catch (_) {
+        // gate file unreadable — continue, the run update is the authoritative state
+      }
+    }
+    // Update the run registry.
+    const gateCreatedAt = (run.gateState && run.gateState.createdAt) || now;
+    updateRun(projectDir, run.runId, {
+      status: "completed",
+      currentStep: gate + "-approved",
+      gateState: {
+        gate,
+        status: "approved",
+        feature: run.feature,
+        createdAt: gateCreatedAt,
+        approvedAt: now,
+      },
+    });
+    const next = gate === "gate1"
+      ? "Run /forge:implement to start implementation."
+      : "Run /forge:apply to apply the changes.";
+    return { ok: true, message: gate + " approved. " + next };
+  }
+
+  if (action === "discard") {
+    // Delete the gate file.
+    if (existsSync(gatePath)) {
+      try { unlinkSync(gatePath); } catch (_) {}
+    }
+    // Update the run registry.
+    updateRun(projectDir, run.runId, {
+      status: "discarded",
+      currentStep: "discarded",
+    });
+    return { ok: true, message: "Gate discarded." };
+  }
+
+  throw new Error("unknown action: " + action);
+}
+
 const HTML_PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -78,8 +151,16 @@ const HTML_PAGE = `<!doctype html>
   .badge.priority-low          { background: #e8f5e9; color: #2e7d32; }
   .muted { color: #888; }
   .error { background: #ffebee; border-color: #c62828; color: #b71c1c; padding: 12px; border-radius: 6px; }
-  button { font: inherit; padding: 4px 10px; border: 1px solid #ccc; background: #f5f5f5; border-radius: 4px; cursor: pointer; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid #ccc; background: #f5f5f5; border-radius: 4px; cursor: pointer; font-size: 12px; }
   button:hover { background: #eee; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .btn-approve { background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; }
+  .btn-approve:hover { background: #c8e6c9; }
+  .btn-discard { background: #ffebee; border-color: #ef9a9a; color: #c62828; }
+  .btn-discard:hover { background: #ffcdd2; }
+  .action-msg { font-size: 12px; margin-left: 8px; }
+  .action-msg.ok { color: #2e7d32; }
+  .action-msg.err { color: #c62828; }
 </style>
 </head>
 <body>
@@ -160,15 +241,17 @@ function renderGates(arr) {
   if (!arr.length) { renderEmpty($("gatesAwaiting"), "No gates pending."); return; }
   $("gatesAwaiting").innerHTML = arr.map(g => {
     const gate = g.gateState && g.gateState.gate ? g.gateState.gate : "gate?";
+    const rid = esc(g.runId);
     return '<div class="row">' +
-      '<span class="runid">' + esc(g.runId) + '</span>' +
+      '<span class="runid">' + rid + '</span>' +
       badge("status", "gate-pending") +
       '<span>' + esc(gate) + '</span>' +
       '<span>· ' + esc(g.feature) + '</span>' +
       (g.updatedAt ? ' <span class="muted">· updated ' + relTime(g.updatedAt) + '</span>' : '') +
+      ' <button class="btn-approve" onclick="gateAction(\\'' + rid + '\\', \\'approve\\')">Approve</button>' +
+      ' <button class="btn-discard" onclick="gateAction(\\'' + rid + '\\', \\'discard\\')">Discard</button>' +
       '</div>';
-  }).join("") +
-    '<div class="row muted">Act with /forge:approve or /forge:discard (resume the run first if needed).</div>';
+  }).join("");
 }
 
 function renderRecent(arr) {
@@ -204,6 +287,31 @@ function renderBoard(b) {
   $("boardSummary").innerHTML = html;
 }
 
+function gateAction(runId, action) {
+  // Disable all gate buttons while the request is in flight.
+  document.querySelectorAll(".btn-approve, .btn-discard").forEach(b => b.disabled = true);
+  fetch("/api/gate-action", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId, action }),
+  })
+    .then(r => r.json().then(j => ({ status: r.status, body: j })))
+    .then(({ status, body }) => {
+      if (status === 200 && body.ok) {
+        // Success — refresh immediately so the gate disappears from the list.
+        refreshDashboard();
+      } else {
+        const msg = body.error || body.detail || "unknown error";
+        alert(action + " failed: " + msg);
+        document.querySelectorAll(".btn-approve, .btn-discard").forEach(b => b.disabled = false);
+      }
+    })
+    .catch(err => {
+      alert(action + " failed: " + err.message);
+      document.querySelectorAll(".btn-approve, .btn-discard").forEach(b => b.disabled = false);
+    });
+}
+
 function refreshDashboard() {
   fetch("/api/dashboard-state")
     .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
@@ -237,32 +345,59 @@ setInterval(refreshDashboard, 5000);
 </body>
 </html>`;
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const url = req.url || "/";
-  if (req.method !== "GET") {
-    return json(res, 405, { error: "method not allowed" });
-  }
 
-  if (url === "/" || url === "/index.html") {
-    return html(res, 200, HTML_PAGE);
-  }
-
-  if (url === "/api/dashboard-state") {
-    try {
-      const projectDir = resolveProjectDir();
-      if (!existsSync(join(projectDir, ".pipeline"))) {
-        return json(res, 409, {
-          error: "Project not initialized",
-          detail: "No .pipeline/ at " + projectDir + ". Run /forge:init first.",
-        });
+  if (req.method === "GET") {
+    if (url === "/" || url === "/index.html") {
+      return html(res, 200, HTML_PAGE);
+    }
+    if (url === "/api/dashboard-state") {
+      try {
+        const projectDir = resolveProjectDir();
+        if (!existsSync(join(projectDir, ".pipeline"))) {
+          return json(res, 409, {
+            error: "Project not initialized",
+            detail: "No .pipeline/ at " + projectDir + ". Run /forge:init first.",
+          });
+        }
+        const state = buildDashboardState(projectDir);
+        return json(res, 200, state);
+      } catch (err) {
+        return json(res, 500, { error: "state-build failed", detail: String(err && err.message || err) });
       }
-      const state = buildDashboardState(projectDir);
-      return json(res, 200, state);
+    }
+    return notFound(res);
+  }
+
+  if (req.method === "POST" && url === "/api/gate-action") {
+    try {
+      const body = await readBody(req);
+      const { runId, action } = body || {};
+      if (!runId || typeof runId !== "string") {
+        return json(res, 400, { error: "missing or invalid runId" });
+      }
+      if (action !== "approve" && action !== "discard") {
+        return json(res, 400, { error: "action must be 'approve' or 'discard'" });
+      }
+      const projectDir = resolveProjectDir();
+      const run = getRun(projectDir, runId);
+      if (!run) {
+        return json(res, 404, { error: "run " + runId + " not found" });
+      }
+      if (run.status !== "gate-pending") {
+        return json(res, 409, { error: "run " + runId + " is " + run.status + ", not gate-pending" });
+      }
+      const result = handleGateAction(projectDir, run, action);
+      return json(res, 200, result);
     } catch (err) {
-      return json(res, 500, { error: "state-build failed", detail: String(err && err.message || err) });
+      return json(res, 500, { error: "gate-action failed", detail: String(err && err.message || err) });
     }
   }
 
+  if (req.method !== "GET") {
+    return json(res, 405, { error: "method not allowed" });
+  }
   return notFound(res);
 });
 
