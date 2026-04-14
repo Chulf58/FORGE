@@ -249,7 +249,7 @@ const HTML_PAGE = `<!doctype html>
 </style>
 </head>
 <body>
-<h1>FORGE dashboard</h1>
+<h1>FORGE dashboard <span id="project-name" style="font-weight:normal;color:#666;font-size:14px"></span></h1>
 <div class="meta">
   Read-only snapshot from <code>forge_dashboard_state</code> · auto-refreshing every 5 s.
   <span id="loaded"></span>
@@ -476,6 +476,12 @@ function refreshDashboard() {
     .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
     .then(state => {
       $("loaded").textContent = "Last updated " + new Date().toLocaleTimeString();
+      // Show which project this sidecar is serving.
+      if (state.project && state.project.name) {
+        const pn = esc(state.project.name);
+        $("project-name").textContent = pn;
+        document.title = "FORGE \u2014 " + pn;
+      }
       renderWelcome(state);
       renderActiveRuns(state.activeRuns || []);
       renderGates(state.gatesAwaiting || []);
@@ -522,6 +528,13 @@ const server = createServer(async (req, res) => {
           });
         }
         const state = buildDashboardState(projectDir);
+        // Add project identity for UI display and future mismatch detection.
+        let projectName = projectDir;
+        try {
+          const pj = JSON.parse(readFileSync(join(projectDir, ".pipeline", "project.json"), "utf8"));
+          if (pj && pj.name) projectName = pj.name;
+        } catch (_) {}
+        state.project = { name: projectName, dir: projectDir };
         return json(res, 200, state);
       } catch (err) {
         return json(res, 500, { error: "state-build failed", detail: String(err && err.message || err) });
