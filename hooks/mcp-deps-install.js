@@ -111,6 +111,19 @@ async function main(rawInput) {
     }
   }
 
+  // Write the MCP server launcher with the resolved Node path so the MCP
+  // spawner doesn't need bare `node` on the system PATH. The .cmd wrapper
+  // uses the absolute path to the Node binary that is running this hook.
+  const launcherPath = path.join(pluginRoot, 'bin', 'forge-mcp-server.cmd');
+  const serverPath = path.join(pluginRoot, 'mcp', 'server.js');
+  const launcherContent = '@echo off\r\n"' + process.execPath + '" "' + serverPath + '" %*\r\n';
+  try {
+    fs.writeFileSync(launcherPath, launcherContent, 'utf8');
+    console.error('[forge-mcp] Wrote MCP launcher: ' + launcherPath);
+  } catch (err) {
+    console.error('[forge-mcp] Failed to write MCP launcher: ' + err.message);
+  }
+
   // Bootstrap forge-config.json into CLAUDE_PLUGIN_DATA on first session
   bootstrapForgeConfig(pluginRoot);
 
