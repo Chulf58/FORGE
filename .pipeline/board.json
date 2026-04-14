@@ -1295,12 +1295,13 @@
       "id": "marketplace-json",
       "priority": "medium",
       "text": "FEATURE: Create marketplace.json for plugin distribution. Enables team sharing via /plugin marketplace add and future public listing. Include source type (git repo), version, description. Required for the team distribution workflow (git repo + claude plugin install).",
-      "done": false,
+      "done": true,
       "addedAt": 1775851888690,
       "tags": [
         "distribution",
         "plugin"
-      ]
+      ],
+      "doneAt": 1776197032730
     },
     {
       "id": "skills-context-fork",
