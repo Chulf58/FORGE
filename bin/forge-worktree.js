@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-// FORGE Worktree Manager — create, list, merge, and cleanup git worktrees.
+// FORGE Worktree Manager — create, list, merge, delete, and cleanup git worktrees.
 // Called by the orchestrator via Bash.
 //
 // Usage:
 //   node forge-worktree.js create <slug>     → creates .worktrees/<slug> with branch forge/<slug>
 //   node forge-worktree.js list              → lists active worktrees as JSON
 //   node forge-worktree.js merge <slug>      → merges forge/<slug> into current branch, removes worktree
+//   node forge-worktree.js delete <slug>     → removes .worktrees/<slug> and branch forge/<slug> without merging
 //   node forge-worktree.js cleanup           → removes all worktrees and their branches
 
 const { execSync } = require('child_process');
@@ -206,6 +207,26 @@ function merge() {
   }));
 }
 
+function deleteWorktree() {
+  if (!slug) { console.error('Usage: forge-worktree.js delete <slug>'); process.exit(1); }
+
+  ensureGitRepo();
+
+  const wtPath = path.join(WORKTREE_DIR, slug);
+  const branch = `forge/${slug}`;
+
+  if (!fs.existsSync(wtPath)) {
+    console.error(JSON.stringify({ ok: false, error: 'Worktree not found: ' + wtPath }));
+    process.exit(1);
+  }
+
+  run(`git worktree remove "${wtPath}" --force`, { allowFail: true });
+  run(`git branch -D "${branch}"`, { allowFail: true });
+  run('git worktree prune', { allowFail: true });
+
+  console.log(JSON.stringify({ ok: true, deleted: slug, worktreeRemoved: true, branchDeleted: branch }));
+}
+
 function cleanup() {
   ensureGitRepo();
 
@@ -256,8 +277,9 @@ switch (cmd) {
   case 'create': create(); break;
   case 'list': list(); break;
   case 'merge': merge(); break;
+  case 'delete': deleteWorktree(); break;
   case 'cleanup': cleanup(); break;
   default:
-    console.error('Usage: forge-worktree.js <create|list|merge|cleanup> [slug]');
+    console.error('Usage: forge-worktree.js <create|list|merge|delete|cleanup> [slug]');
     process.exit(1);
 }
