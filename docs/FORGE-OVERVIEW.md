@@ -13,7 +13,7 @@
 5. [Why Use FORGE for New Projects](#5-why-use-forge-for-new-projects)
 6. [The Evolution of FORGE's Pipeline — Eras](#6-the-evolution-of-forges-pipeline)
 
-> **Looking for technical reference?** Agent tables (29), signal protocol, pipeline modes, hook system (13 scripts), MCP tools (22), model routing, and key files live in [FORGE-REFERENCE.md](FORGE-REFERENCE.md) — generated on demand from source-of-truth files.
+> **Looking for technical reference?** Agent tables (29), signal protocol, pipeline modes, hook system (13 scripts), MCP tools (24), model routing, and key files live in [FORGE-REFERENCE.md](FORGE-REFERENCE.md) — generated on demand from source-of-truth files.
 
 ---
 
@@ -25,9 +25,9 @@ FORGE is a **tool for developing your projects** — and it dogfoods itself. The
 
 FORGE does not replace Claude Code. It orchestrates it by:
 1. Providing 29 specialist agents loaded via the plugin system
-2. Exposing 19 skills (slash commands) that orchestrate those agents into pipelines
+2. Exposing 21 skills (slash commands) that orchestrate those agents into pipelines
 3. Enforcing workflow rules through 13 hook scripts across 7 lifecycle events
-4. Offering 22 MCP tools for structured access to pipeline state
+4. Offering 24 MCP tools for structured access to pipeline state
 5. Pausing for human approval at defined checkpoints (gates)
 6. Persisting state, todos, and project metadata across sessions
 7. Structurally enforcing gate sequencing at the write boundary (not just prompts)
@@ -88,18 +88,19 @@ The terminal being live and visible does not mean you have to watch it constantl
 |---|---|---|
 | Named, pre-defined pipelines | Yes — 7 pipeline types, 5 modes | No — manual sequencing required |
 | Human approval gates | Yes — Gate #1 (plan→implement), Gate #2 (review→apply) | No |
-| 28 specialist agents | Yes — plan, implement, review, debug, refactor, architect, ideate | Possible via `--agents` but no orchestration |
+| 29 specialist agents | Yes — plan, implement, review, debug, refactor, architect, ideate | Possible via `--agents` but no orchestration |
 | Parallel reviewer waves | Yes — up to 5 reviewers simultaneously | No built-in review step |
 | Wave execution (task parallelism) | Yes — with prerequisite verification | No |
 | Signal protocol (`[suggest]`, `[todo]`, etc.) | Yes — consumed by skills and hooks | No — plain text |
 | Enforcement hooks | Yes — bash-guard, workflow-guard, role-based access | No |
-| 17 MCP tools for pipeline state | Yes — board, config, gates, modules, model routing | No |
+| 24 MCP tools for pipeline state | Yes — board, config, gates, modules, model routing, dashboard state | No |
 | Multi-model routing | Yes — per-agent model selection, external provider support (OpenAI) | Single model per session |
 | Context checkpointing | Yes — reinjection after compaction via PostCompact hook | No |
 | Stack-aware skill guidance | Yes — per-agent, per-stack guidance from SKILLS.md | No |
 | Project state persistence | Yes — todos, modules, health, run lifecycle tracking | No |
 | Subagent lifecycle tracking | Yes — SubagentStart/Stop hooks with duration and verdict extraction | No |
 | Git integration in apply pipeline | Yes — opt-in branch creation, auto-commit, auto-PR | No |
+| Local web dashboard | Yes — optional HTTP sidecar with gate actions, merge-blocked detection, auto-refresh | No |
 
 **Summary:** Claude CLI is a single-session tool. FORGE is a development workflow engine built as a plugin on top of it.
 
@@ -121,7 +122,7 @@ FORGE and GSD share the same philosophical root — structured, agent-based pipe
 | Enforcement model | PreToolUse hooks with exit 2 (hard blocking) | PreToolUse hooks (advisory only, non-blocking) |
 | Pipeline modes | 5 modes (TRIVIAL→FULL) controlling reviewer depth | Single mode |
 | Persistent project state | Yes — board, modules, run lifecycle, usage tracking | Stateless per run |
-| MCP tool layer | Yes — 17 structured tools for pipeline state | No |
+| MCP tool layer | Yes — 24 structured tools for pipeline state | No |
 | Multi-model routing | Yes — per-agent model selection, external providers | No |
 | Stack-aware skill injection | Yes — per-agent, per-stack guidance | No |
 | Knowledge compounding | Yes — docs/solutions/ with YAML frontmatter | No |
@@ -156,7 +157,7 @@ FORGE and Compound Engineering share: plugin-native distribution, multi-agent pi
 | Enforcement hooks | Yes — 3 PreToolUse hooks with exit 2 blocking | No enforcement hooks |
 | Pipeline modes | 5 modes controlling agent depth (TRIVIAL→FULL) | Single mode |
 | Multi-model routing | Yes — MCP-based, per-agent, external provider support | No |
-| MCP tool layer | Yes — 17 tools for structured state access | No |
+| MCP tool layer | Yes — 24 tools for structured state access | No |
 | Subagent lifecycle tracking | Yes — SubagentStart/Stop hooks with timing | No |
 | Distribution | Plugin marketplace | Plugin marketplace + npm (`@every-env/compound-plugin`) + multi-tool conversion |
 | Multi-runtime | Claude Code only | Codex, Windsurf, Gemini CLI via Bun converter |
@@ -713,23 +714,21 @@ The glass wall was cracked: the system could look truthful while silently runnin
 
 ### What's planned next
 
-*Source: `.pipeline/board.json` — 45 open items as of 2026-04-12.*
+*Source: `.pipeline/board.json` — 25 open items as of 2026-04-14.*
 
-**End-to-end worktree pipeline validation:** The full worktree lifecycle (create → bind → isolate → commit → merge → cleanup) is now structurally wired. Remaining: a full end-to-end test of a real feature through implement → approve → apply → merge-back in the Diesel Priser test project. This would validate all enforcement layers working together in production conditions.
+**Parallel sessions with worktree isolation:** Start task B while task A is still running. Each pipeline run gets its own git worktree. Design includes stuck detection, crash recovery, atomic commits per task, cost tracking per session. Sub-tasks: dependency analysis for wave scheduling, stuck loop detection, crash recovery with forensics.
 
-**Parallel sessions with worktree isolation:** Start task B while task A is still running. Each pipeline run gets its own git worktree. Design includes stuck detection, crash recovery, atomic commits per task, cost tracking per session.
-
-**Pipeline failure recovery:** Use Claude Code native `--resume`/`--continue` for session recovery. Lock file tracks current unit in `run-active.json`. On resume, synthesize recovery context from last checkpoint.
+**Web dashboard expansion:** The local HTTP sidecar (`scripts/dashboard-server.mjs`) exists with gate actions and merge-blocked surfacing. Next: WebSocket-based live updates, per-run agent progress detail, cost tracking display.
 
 **External model routing (Codex/OpenAI):** The `forge_call_external` adapter, router, config, and usage tracking are built and tested (auth + request format verified). Blocked on user's OpenAI API billing. When resolved, one test call activates it.
 
-**Knowledge and learning:** Knowledge compounding (capture solutions after each apply), knowledge refresh (prune stale docs/solutions/), session history search (have we seen this error before?).
+**Knowledge and learning:** Knowledge refresh (prune stale `docs/solutions/`), session history search (have we seen this error before?), Context7 MCP integration for live framework docs (parked — rate limit concern).
 
-**Intent classification for /forge:chat:** Detect whether user input is plan/implement/debug/refactor/explore/chat and route automatically.
+**Pipeline resilience:** Pipeline stage restart (restart from a specific failed agent), worktree crash recovery with forensic synthesis from surviving tool calls.
 
-**Distribution:** Marketplace.json for team sharing. Dual distribution (npm + marketplace). Enterprise docs for Azure/Bedrock/Vertex.
+**Distribution:** Plugin settings (`add-plugin-settings`), user config at install time, enterprise docs for Azure/Bedrock/Vertex.
 
-**Optional web dashboard:** Lightweight Node server serving a single HTML page. File-watches `.pipeline/` for changes, WebSocket pushes updates. Read-only viewer — all control stays in CLI.
+**Discoverability and UX:** Agent overview skill (evaluate if native `/agents` is enough), plugin data persistence via `${CLAUDE_PLUGIN_DATA}`, scope guardian check in gotcha-checker.
 
 ### Design decisions — what FORGE deliberately does not do
 
@@ -741,8 +740,8 @@ The glass wall was cracked: the system could look truthful while silently runnin
 
 **No multi-runtime support.** FORGE is Claude Code-only. GSD supports 9 runtimes. Compound Engineering supports 5+ via a Bun converter. FORGE deliberately chose depth over breadth — enforcement hooks, MCP tools, subagent lifecycle tracking, and PostCompact reinjection are Claude Code-specific features that would require significant abstraction to port. The trade-off is accepted.
 
-**Skills replaced commands.** The 17 `commands/forge/*.md` files were migrated to 19 `skills/<name>/SKILL.md` files in v0.2.0 (17 replacements + 2 new: `/forge:overview` and `/forge:refresh-docs`). Skills use `context: fork` for 92% token savings — the skill prompt runs in a forked context rather than loading the full conversation. The old `commands/forge/` directory was removed.
+**Skills replaced commands.** The 17 `commands/forge/*.md` files were migrated to 21 `skills/<name>/SKILL.md` files in v0.2.0+ (17 replacements + 4 new: `/forge:overview`, `/forge:refresh-docs`, `/forge:resume`, `/forge:help`). Skills use `context: fork` for 92% token savings — the skill prompt runs in a forked context rather than loading the full conversation. The old `commands/forge/` directory was removed. All skill `name:` fields carry the `forge:` prefix to prevent command-shadowing collisions with Claude Code's native commands.
 
 ---
 
-*Last updated: 2026-04-11. For complete technical reference, see [FORGE-REFERENCE.md](FORGE-REFERENCE.md). For architecture decisions, see `docs/DECISIONS.md`. For the update recipe, see `docs/FORGE-OVERVIEW-RECIPE.md`.*
+*Last updated: 2026-04-14. For complete technical reference, see [FORGE-REFERENCE.md](FORGE-REFERENCE.md). For architecture decisions, see `docs/DECISIONS.md`. For the update recipe, see `docs/FORGE-OVERVIEW-RECIPE.md`.*

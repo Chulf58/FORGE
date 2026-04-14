@@ -1,8 +1,8 @@
 # FORGE — Technical Reference
 
-> Generated on 2026-04-13 from source-of-truth files. Do not edit manually — regenerate with `/forge:refresh-docs`.
+> Generated on 2026-04-14 from source-of-truth files. Do not edit manually — regenerate with `/forge:refresh-docs`.
 >
-> **Counts at generation time:** 29 agents, 19 skills, 13 hook scripts (7 event types), 22 MCP tools, 4 lib modules, 1 forge-core package.
+> **Counts at generation time:** 29 agents, 21 skills, 13 hook scripts (7 event types), 24 MCP tools, 5 lib modules, 1 forge-core package.
 
 ---
 
@@ -415,7 +415,7 @@ rl.on('close', () => {
 
 ## 8. Skills (User Commands)
 
-19 skills organised by role.
+21 skills organised by role.
 
 **Visibility model:** Pipeline skills (plan, implement, apply, debug, refactor, chat) run in the **main conversation** — no `context: fork`. The user sees agent reasoning, tool calls, and reviewer verdicts live as they happen. Maintenance skills (ideate, refresh, refresh-docs) keep `context: fork` because they produce a single end-of-run report — visibility adds no value there.
 
@@ -454,6 +454,7 @@ rl.on('close', () => {
 | `/forge:todo` | List/add TODOs on the board |
 | `/forge:config` | View/update project settings |
 | `/forge:overview` | Full inventory of agents, skills, hooks, MCP tools |
+| `/forge:help` | Compact quick reference — grouped commands, state-aware "right now" suggestions from `forge_dashboard_state`, "where to look" pointers. Capped at ~40 lines. |
 
 `/forge:resume` restores steering context for a paused or in-progress run — it overwrites `.pipeline/run-active.json` to point at the requested run and prints the next step the user should take. **It does not progress the run autonomously and does not invoke any pipeline skill.** Once steering is restored, the user (or the LLM on the user's next prompt) drives the next action: re-invoke `/forge:<pipelineType>` for `running`/`created` runs, or `/forge:approve` / `/forge:discard` for `gate-pending` runs. Refuses cleanly on unknown runId, terminal status (`completed`/`failed`/`discarded`), wrong project, or missing bound worktree.
 
@@ -467,6 +468,8 @@ rl.on('close', () => {
 | `/forge:refresh-docs` | Regenerate FORGE-OVERVIEW.md and FORGE-REFERENCE.md | forked |
 
 `/forge:init` STEP 1e generates `.claude/forge-status.cmd` (a wrapper using `process.execPath` for absolute Node path) and registers it as the project's `statusLine.command`. This avoids the bare-`node`-on-PATH dependency and the cmd.exe double-quoted-token parsing bug on Windows.
+
+**Skill namespace policy:** All FORGE skill `name:` fields in `SKILL.md` frontmatter must carry the `forge:` prefix (e.g. `name: forge:help`). This prevents command-shadowing collisions with Claude Code's native commands. Confirmed fix: `name: config` (bare) silently resolved to FORGE config instead of Claude Code's native `/config` until the blanket prefix was applied (commit `59039ee`).
 
 ### Statusline visibility rule (intentional idle gaps)
 
@@ -573,7 +576,7 @@ This boundary is a hard product rule. Statusline content additions that move tow
 
 ### Server architecture
 
-- **Entry point:** `mcp/server.js` (ESM)
+- **Entry point:** `mcp/server.js` (ESM, 24 tools)
 - **Dependencies:** `@modelcontextprotocol/sdk`, `zod` (installed via SessionStart hook)
 - **Package:** `mcp/package.json` with `"type": "module"` (separate from root CommonJS)
 - **Declaration:** `.mcp.json` with `${CLAUDE_PLUGIN_ROOT}` path expansion
@@ -589,7 +592,7 @@ Override: CLAUDE_PROJECT_DIR env var
 Resolve at call time via resolveProjectDir() — never cache at module level
 ```
 
-### Tool inventory (22 tools)
+### Tool inventory (24 tools)
 
 #### Board management
 
@@ -628,6 +631,12 @@ Resolve at call time via resolveProjectDir() — never cache at module level
 | `forge_create_worktree` | No | Creates git worktree at .worktrees/<runId>/ |
 | `forge_resume_run` | No | Restores `run-active.json` steering pointer to a non-terminal run; refuses on terminal status, wrong project, or missing bound worktree. Does not mutate the run's own status, currentStep, gateState, or agents. |
 
+#### Dashboard
+
+| Tool | Read-only | Description |
+|------|-----------|-------------|
+| `forge_dashboard_state` | Yes | Zero-input snapshot: `activeRuns[]` (non-terminal, with stageLabel, gateState, worktreePath, currentUnit), `gatesAwaiting[]` (actionable pending gates), `recentCompleted[]` (≤5 terminal tail), `boardSummary` (counts + top-priority open TODOs ≤5). Shared source for both the MCP tool and the HTTP sidecar. |
+
 #### Model routing
 
 | Tool | Read-only | Description |
@@ -659,6 +668,7 @@ Read full file → parse → mutate in-place → write full object back. Never r
 | `mcp/lib/usage-store.js` | Per-provider usage tracking (requests, tokens, quota) |
 | `mcp/lib/router.js` | Pure recommendation function, no I/O |
 | `mcp/lib/openai-adapter.js` | OpenAI Responses API adapter |
+| `mcp/lib/dashboard-state.js` | Dashboard state builder — shared by `forge_dashboard_state` MCP tool and the HTTP sidecar; guarantees identical payloads across both surfaces |
 
 ### Two-track routing
 
@@ -771,7 +781,9 @@ Run {
   createdAt: string       // ISO datetime
   updatedAt: string       // ISO datetime
   currentStep: string | null
+  currentUnit: { agent, startedAt } | null  // set by subagent-start, cleared by subagent-stop
   gateState: { gate, status, feature, createdAt, approvedAt } | null
+  mergeBlocked: { reason: string, detectedAt: string } | null  // null when merge succeeded
   agents: RunAgent[]
   artifacts: { plan, handoff, scout } (nullable strings)
 }
@@ -815,7 +827,7 @@ Run {
 
 `agents/*.md` — each file is a complete agent definition with YAML frontmatter and prompt.
 
-### Skills (19 directories)
+### Skills (21 directories)
 
 `skills/*/SKILL.md` — each directory contains one skill definition.
 
@@ -823,17 +835,18 @@ Run {
 
 `hooks/*.js` — Node.js scripts. `hooks/hooks.json` — event routing declarations.
 
-### MCP server (7 files)
+### MCP server (8 files)
 
 | File | Purpose |
 |------|---------|
-| `mcp/server.js` | MCP server entry point (22 tools) |
+| `mcp/server.js` | MCP server entry point (24 tools) |
 | `mcp/server-minimal.js` | Lightweight fallback |
 | `mcp/package.json` | ESM package config |
 | `mcp/lib/config-store.js` | Config read/write |
 | `mcp/lib/router.js` | Model recommendation |
 | `mcp/lib/usage-store.js` | Usage tracking |
 | `mcp/lib/openai-adapter.js` | OpenAI adapter |
+| `mcp/lib/dashboard-state.js` | Dashboard state builder (shared by MCP tool and HTTP sidecar) |
 
 ### forge-core package (11 files)
 
@@ -854,8 +867,9 @@ Run {
 | File | Purpose |
 |------|---------|
 | `bin/forge-status.js` | Status line — registry-driven derivation, project identity, pipeline stage progress, gate distinction (gate1/gate2), multi-pipeline fanout with overflow. Registry authoritative over run-active.json (completed runs don't render as active). |
-| `bin/forge-worktree.js` | Worktree manager (create, list, merge with auto-commit + conflict safety, cleanup) |
+| `bin/forge-worktree.js` | Worktree manager (create, list, merge with auto-commit + conflict safety, cleanup). On merge conflict: persists `mergeBlocked` on the run, aborts, preserves worktree/branch, exits non-zero. |
 | `forge-banner.txt` | Shared banner text consumed by `ctx-post-tool.js` for first-response rendering |
+| `scripts/dashboard-server.mjs` | Optional local HTTP sidecar (Node built-in `http`, zero deps). `GET /` serves self-contained HTML dashboard. `GET /api/dashboard-state` returns JSON from `buildDashboardState()`. `POST /api/gate-action` handles approve/discard. `POST /api/merge-action` retries a merge-blocked worktree. Loopback-only (127.0.0.1), port 7878. Run via `npm run dashboard`. |
 
 ### Templates (3 template sets)
 
@@ -877,7 +891,7 @@ Templates do not ship `.claude/hooks/` or hook registrations in `.claude/setting
 | `.pipeline/agent-roles.json` | Agent write permissions |
 | `.pipeline/runs/` | Run registry |
 | `.pipeline/gate-pending.json` | Current gate state pointer (transient). Carries `runId` for deterministic targeting. |
-| `.pipeline/run-active.json` | Session-level marker pointing at most recent run. Registry is authoritative — `forge-status.js` cross-checks before treating as active. |
+| `.pipeline/run-active.json` | Session-level marker pointing at most recent run. Includes `currentUnit: { agent, startedAt }` written by `subagent-start.js`, cleared by `subagent-stop.js` — used by `/forge:resume` and SessionStart to detect stale-lock mid-run state. Registry is authoritative — `forge-status.js` cross-checks before treating as active. |
 | `.pipeline/forge-banner-pending` | Flag file written by SessionStart hook, consumed by first PostToolUse to inject banner once per session |
 | `.pipeline/usage.json` | Provider usage tracking |
 | `.claude/forge-status.cmd` | Project-local statusLine wrapper (Windows). Embeds absolute Node path via `process.execPath`, generated by `/forge:init`. Avoids bare-`node` PATH dependency. |
@@ -909,4 +923,4 @@ Other docs: `docs/PLAN.md` (active plan), `docs/CHANGELOG.md` (change log), `doc
 
 ## Source files read during generation
 
-`.claude-plugin/plugin.json`, `CLAUDE.md`, `docs/gotchas/GENERAL.md`, `docs/DECISIONS.md`, `forge-config.default.json`, `.pipeline/board.json`, `.pipeline/modules.json`, `hooks/hooks.json`, `mcp/server.js`, `mcp/lib/config-store.js`, `mcp/lib/router.js`, `mcp/lib/usage-store.js`, `mcp/lib/openai-adapter.js`, `packages/forge-core/src/runs/schemas.js`, all `agents/*.md` (29 files), all `skills/*/SKILL.md` (19 files), all `hooks/*.js` (13 files).
+`.claude-plugin/plugin.json`, `CLAUDE.md`, `docs/gotchas/GENERAL.md`, `docs/CHANGELOG.md`, `forge-config.default.json`, `.pipeline/board.json`, `.pipeline/modules.json`, `hooks/hooks.json`, `mcp/server.js`, `mcp/lib/config-store.js`, `mcp/lib/router.js`, `mcp/lib/usage-store.js`, `mcp/lib/openai-adapter.js`, `mcp/lib/dashboard-state.js`, `packages/forge-core/src/runs/schemas.js`, all `agents/*.md` (29 files), all `skills/*/SKILL.md` (21 files), all `hooks/*.js` (13 files).
