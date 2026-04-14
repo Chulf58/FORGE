@@ -10,7 +10,7 @@ Requires the FORGE repo to be hosted on a public git service (GitHub, GitLab, et
 
 ```bash
 # Add the marketplace
-claude plugin marketplace add <owner>/forge-plugin
+claude plugin marketplace add Chulf58/FORGE
 
 # Install FORGE
 claude plugin install forge@forge-tools
@@ -19,11 +19,11 @@ claude plugin install forge@forge-tools
 Or from inside a Claude Code session:
 
 ```
-/plugin marketplace add <owner>/forge-plugin
+/plugin marketplace add Chulf58/FORGE
 /plugin install forge@forge-tools
 ```
 
-Replace `<owner>/forge-plugin` with the actual repository path once a remote is configured.
+Replace `Chulf58/FORGE` with the actual repository path once a remote is configured.
 
 ### From local directory
 
