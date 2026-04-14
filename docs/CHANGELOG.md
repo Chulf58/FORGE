@@ -1,3 +1,19 @@
+## [2026-04-14] Dashboard Contract + Sidecar + Board Gaps
+
+### Dashboard state MCP contract + sidecar HTTP surface
+- New MCP tool `forge_dashboard_state` (commit `6e2581f`): read-only, zero-input; returns four-group snapshot — `activeRuns[]` (non-terminal, hydrated with `stageLabel`, `gateState`, `worktreePath`, `currentUnit`), `gatesAwaiting[]` (actionable pending gates), `recentCompleted[]` (bounded ≤5 terminal tail), `boardSummary` (counts + top-priority open TODOs bounded ≤5)
+- `/forge:dashboard` skill rewritten to consume the MCP tool as sole data source (commit `2d9d8d3`); explicit `.pipeline/*` direct-read prohibition; truthful wording rules
+- State-builder extracted to `mcp/lib/dashboard-state.js` — shared by both the MCP tool and the HTTP sidecar, guaranteeing identical payloads (commit `8e36703`)
+- Minimal local HTTP sidecar at `scripts/dashboard-server.mjs`: Node built-in `http` only, zero deps; `GET /` serves self-contained HTML, `GET /api/dashboard-state` returns JSON; loopback-only (`127.0.0.1`), default port 7878, `npm run dashboard` invocation (commit `8e36703`)
+- HTML renders four sections with status badges + monospace run IDs + optional `wt=`/`in-flight:` suffixes; refresh by page reload only; no WebSocket, no polling, no actions
+- Regression tests: `mcp/dashboard-state-shape-test.mjs` (MCP path, full shape assertion against five-run fixture, commit `6e2581f`); `scripts/dashboard-server-endpoint-test.mjs` (HTTP path, spawns real server against fixture, asserts HTTP 200 + JSON + four keys + board counts, commit `954c824`)
+- Test runner extended: `scripts/run-tests.mjs` now discovers `scripts/*-test.mjs` alongside hooks and mcp (commit `954c824`); bundle at 6/6 passing
+
+### Board: merge-blocked run handling task
+- New high-priority board task `merge-blocked-run-handling` (commit `448d59c`): captures the gap between current safe-fail behavior (`bin/forge-worktree.js merge()` aborts + preserves + exits non-zero) and the missing first-class user surface
+- First-slice scope defined: report-only, registry-backed — persist `mergeBlocked` on the run, surface through status/resume/dashboard, offer `/forge:merge` for manual retry
+- Explicitly defers auto-resolution, wave scheduling (`dependency-analysis-waves`), and forensics (`worktree-crash-recovery`)
+
 ## [2026-04-13] Visibility, Targeting, Windows Compatibility
 
 ### Failure recovery — report-only first slice
