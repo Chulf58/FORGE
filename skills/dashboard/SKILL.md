@@ -1,10 +1,46 @@
 ---
 name: forge:dashboard
 description: "Show all FORGE runs and board state at a glance. Use when: user asks 'what's running', wants a control-plane overview, checks pending gates, or wants to see recent completions + top TODOs."
-allowed-tools: "Read Glob"
+allowed-tools: "Read Glob Bash"
 ---
 
-Show a compact registry-backed snapshot of the current FORGE state.
+Show a compact registry-backed snapshot of the current FORGE state, and ensure the live web dashboard is reachable.
+
+## Step 0 — Launch the sidecar dashboard
+
+Before rendering the text dashboard, ensure the sidecar web dashboard is running and open it in the browser.
+
+### 0a — Check reachability
+
+Run via Bash:
+
+```bash
+node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(r => { if (r.ok) console.log('SIDECAR_UP'); else console.log('SIDECAR_DOWN'); }).catch(() => console.log('SIDECAR_DOWN'))"
+```
+
+### 0b — Launch if not running
+
+If the output is `SIDECAR_DOWN`, spawn the sidecar as a detached background process via Bash:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-server.mjs" &
+```
+
+Wait 2 seconds for the server to start, then re-check reachability using the same probe from 0a. If it is still down after the retry, log `[forge:dashboard] Sidecar failed to start — showing text dashboard only.` and continue to the text dashboard. Do not block or retry further.
+
+### 0c — Open in browser
+
+If the sidecar is up (either already running or just launched), open it in the default browser via Bash:
+
+```bash
+start http://127.0.0.1:7878
+```
+
+On macOS use `open`, on Linux use `xdg-open`. Detect via: if the Bash environment is Windows (default for this project), use `start`.
+
+### 0d — Continue to text dashboard
+
+After the sidecar launch attempt (whether it succeeded or not), always continue to the text dashboard rendering below. The sidecar is a supplement, not a replacement.
 
 ## Data source
 
