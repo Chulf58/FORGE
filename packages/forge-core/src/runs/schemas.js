@@ -49,6 +49,14 @@ export const Run = z.object({
     handoff: z.string().nullable().default(null),
     scout: z.string().nullable().default(null),
   }).default({}),
+  // Report-only merge-blocked marker. Set by forge-worktree.js merge() on
+  // failure; null on all runs that never attempted or successfully completed
+  // merge-back. Does not change the run's status (which stays "completed" —
+  // the pipeline itself succeeded; the merge-back is a post-pipeline step).
+  mergeBlocked: z.object({
+    reason: z.string(),
+    detectedAt: z.string(),
+  }).nullable().default(null),
 });
 
 // Index entry — lightweight pointer stored in runs/index.json

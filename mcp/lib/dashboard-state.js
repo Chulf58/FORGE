@@ -118,6 +118,7 @@ export function buildDashboardState(projectDir) {
       gateState: src.gateState || null,
       worktreePath: src.worktreePath || null,
       currentUnit: src.runId === activeRunId ? activeUnit : null,
+      mergeBlocked: src.mergeBlocked || null,
       updatedAt: src.updatedAt || entry.updatedAt || null,
     });
   }
@@ -139,13 +140,23 @@ export function buildDashboardState(projectDir) {
     .filter(e => TERMINAL_STATUSES.has(e.status))
     .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
     .slice(0, RECENT_COMPLETED_LIMIT)
-    .map(e => ({
-      runId: e.runId,
-      pipelineType: e.pipelineType,
-      feature: e.feature || "",
-      status: e.status,
-      updatedAt: e.updatedAt || null,
-    }));
+    .map(e => {
+      // Hydrate mergeBlocked from the full run.json — the index entry
+      // doesn't carry it.
+      let mergeBlocked = null;
+      try {
+        const full = getRun(projectDir, e.runId);
+        if (full && full.mergeBlocked) mergeBlocked = full.mergeBlocked;
+      } catch (_) {}
+      return {
+        runId: e.runId,
+        pipelineType: e.pipelineType,
+        feature: e.feature || "",
+        status: e.status,
+        mergeBlocked,
+        updatedAt: e.updatedAt || null,
+      };
+    });
 
   // 6) boardSummary — compact counts + top-priority open TODOs.
   const boardSummary = {

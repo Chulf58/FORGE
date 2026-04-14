@@ -162,6 +162,27 @@ function merge() {
   }
 
   if (!mergeOk) {
+    // Report-only recovery: persist a mergeBlocked marker on the run so
+    // existing read surfaces (dashboard, /forge:status, /forge:resume) can
+    // tell the user this run is blocked on manual merge resolution instead
+    // of leaving it silently stranded. The slug IS the runId (the apply
+    // skill calls `forge-worktree.js merge <runId>`).
+    try {
+      const runJsonPath = path.join('.pipeline', 'runs', slug, 'run.json');
+      if (fs.existsSync(runJsonPath)) {
+        const runData = JSON.parse(fs.readFileSync(runJsonPath, 'utf8'));
+        runData.mergeBlocked = {
+          reason: 'Merge failed — conflicts or diverged branches. Worktree and branch preserved for manual resolution.',
+          detectedAt: new Date().toISOString(),
+        };
+        runData.updatedAt = new Date().toISOString();
+        fs.writeFileSync(runJsonPath, JSON.stringify(runData, null, 2) + '\n', 'utf8');
+      }
+    } catch (_) {
+      // Best-effort — if we can't persist the marker, the stderr JSON below
+      // still informs the current session. The marker just won't survive.
+    }
+
     console.error(JSON.stringify({
       ok: false,
       error: 'Merge failed — conflicts or diverged branches. Worktree and branch preserved for manual resolution.',
