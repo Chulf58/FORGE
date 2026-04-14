@@ -1,3 +1,21 @@
+## [2026-04-14] Self-hosted Marketplace Distribution
+
+### Marketplace distribution validated
+- FORGE live on GitHub at `Chulf58/FORGE` (public); `marketplace.json` at `.claude-plugin/marketplace.json` with HTTPS URL source; `plugin.json` with repository URL; `README.md` with install instructions
+- Install flow: `/plugin marketplace add Chulf58/FORGE` → `/plugin install forge@forge-tools` → close/reopen for MCP
+- All components load: 29 agents, 21 skills, 13 hooks, 24 MCP tools (connected on session 2+)
+
+### MCP bootstrap fixes (3 blockers)
+- `CLAUDE_PLUGIN_ROOT` fallback to `__dirname` parent when env var not set (commit `6c022db`)
+- Dependency install loop covers both `mcp/` and `packages/forge-core/` (commit `6c022db`)
+- SessionStart hook writes `bin/forge-mcp-server.cmd` with absolute `process.execPath` baked in — solves bare `node` ENOENT on machines without Node in system PATH (commit `c147f59`)
+- Two-session bootstrap: session 1 installs deps + writes launcher (MCP fails); session 2+ has full MCP
+
+### Distribution portability
+- `.mcp.json` made portable: `${CLAUDE_PLUGIN_ROOT}\\bin\\forge-mcp-server.cmd` (commit `f313193`, `c147f59`)
+- npm bootstrap made PATH-independent: resolve `npm-cli.js` from Node installation (commit `65bb7ba`)
+- Dev-only double-load warning documented in gotchas (commit `23e64b8`)
+
 ## [2026-04-14] UX and Discoverability
 
 ### Skill namespace migration
