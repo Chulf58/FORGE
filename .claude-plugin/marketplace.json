@@ -11,7 +11,7 @@
     {
       "name": "forge",
       "source": {
-        "type": "github",
+        "source": "github",
         "repo": "Chulf58/FORGE"
       },
       "description": "AI-powered development pipeline manager. Plans, implements, reviews, and applies features through a structured agent pipeline with 29 agents, 21 skills, and 24 MCP tools.",
