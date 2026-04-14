@@ -12,6 +12,12 @@
 ### Dashboard welcome/help panel
 - New welcome panel in sidecar dashboard (commit `b203ce1`): shows when idle (no active runs, no pending gates), hides when busy; 10 core commands in a two-column grid; contextual hint from TODO count; dashboard capability note; toggles on every 5s auto-refresh; no new backend fields
 
+### Board schema normalization
+- One-time backfill on 17 legacy tasks missing `done` and `addedAt` fields (commit `1b06d72`); stamped `done: false` and `addedAt: 0` (epoch = unknown date); cleared dangling `blockedBy` reference on `one-chat-capability-audit-post-launch`; no runtime behavior change
+
+### Docs refresh
+- Regenerated `docs/FORGE-OVERVIEW.md` and `docs/FORGE-REFERENCE.md` (commit `f951e8b`); skills 19→21, MCP tools 22→24, lib modules 4→5, board 45→25 open items; added `/forge:help`, `forge_dashboard_state`, `dashboard-state.js`, skill namespace policy, `mergeBlocked`/`currentUnit` schema fields, `scripts/dashboard-server.mjs`
+
 ### Startup banner investigation (no code shipped)
 - Investigated Windows `CON` device as direct-console output path for SessionStart hooks
 - Full isolation test: disabled all three SessionStart hooks one-by-one — native Claude welcome screen remained absent in all cases

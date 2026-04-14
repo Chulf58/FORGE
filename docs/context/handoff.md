@@ -1,8 +1,8 @@
-# Handoff: UX and discoverability
+# Handoff: UX, discoverability, and board hygiene
 
 ## Overview
 
-This session delivered four UX/discoverability improvements: command-collision deconfliction, a startup-banner investigation, a new `/forge:help` skill, and a dashboard welcome/help panel.
+This session delivered UX/discoverability improvements (command-collision deconfliction, startup-banner investigation, `/forge:help` skill, dashboard welcome panel) plus board schema normalization and a docs refresh.
 
 ## Session commits (in order)
 
@@ -13,6 +13,9 @@ This session delivered four UX/discoverability improvements: command-collision d
 | `f7cdf2c` | feat(help): add /forge:help discoverability surface |
 | `73457a2` | docs(handoff): record banner investigation and help surface work |
 | `b203ce1` | feat(dashboard): add welcome/help panel to sidecar UI |
+| `9d9f24b` | docs(handoff): update session docs with dashboard welcome panel |
+| `1b06d72` | fix(board): normalize legacy open-task fields |
+| `f951e8b` | docs: refresh overview and technical reference |
 
 ## What shipped
 
@@ -43,6 +46,14 @@ Added a compact welcome panel to the sidecar dashboard (`scripts/dashboard-serve
 - Notes that the dashboard can approve/discard gates and retry merge-blocked runs
 - Renders client-side from existing `forge_dashboard_state` — no new backend fields
 - Toggles on every 5s auto-refresh cycle
+
+### Board schema normalization (`1b06d72`)
+
+One-time fix for 17 tasks in `.pipeline/board.json` that were missing `done` and `addedAt` fields (legacy bulk import). Backfilled `done: false` and `addedAt: 0` (epoch = "unknown date"). Cleared one dangling `blockedBy` reference (`one-chat-capability-audit-post-launch` referenced `one-chat-vision-ux-redesign` which did not exist). No runtime behavior change — readers already tolerated missing fields.
+
+### Docs refresh (`f951e8b`)
+
+Regenerated `docs/FORGE-OVERVIEW.md` and `docs/FORGE-REFERENCE.md` from source. Key count updates: skills 19→21, MCP tools 22→24, lib modules 4→5, board open items 45→25. Added `/forge:help` skill, `forge_dashboard_state` tool, `dashboard-state.js` lib module, skill namespace policy, `mergeBlocked`/`currentUnit` run schema fields, and `scripts/dashboard-server.mjs` to reference docs.
 
 ## What was investigated but not shipped
 
