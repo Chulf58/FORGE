@@ -26,7 +26,7 @@ If the output is `SIDECAR_DOWN`, spawn the sidecar as a detached background proc
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-server.mjs" &
 ```
 
-Wait 2 seconds for the server to start, then re-check reachability using the same probe from 0a. If it is still down after the retry, log `[forge:dashboard] Sidecar failed to start — showing text dashboard only.` and continue to the text dashboard. Do not block or retry further.
+Wait 1 second for the server to start, then re-check reachability using the same probe from 0a. If it is still down after the retry, log `[forge:dashboard] Sidecar failed to start — showing text dashboard only.` and continue to the text dashboard. Do not block or retry further.
 
 ### 0c — Open in browser
 
