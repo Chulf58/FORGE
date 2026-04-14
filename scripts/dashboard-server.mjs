@@ -351,7 +351,12 @@ function renderWelcome(state) {
   const b = state.boardSummary || {};
   // Build contextual hints.
   let hints = "";
-  if (b.todoCount > 0) {
+  const top = Array.isArray(b.topPriorityTodos) && b.topPriorityTodos.length
+    ? b.topPriorityTodos[0] : null;
+  if (top) {
+    const text = esc(top.text.length > 80 ? top.text.slice(0, 77) + "..." : top.text);
+    hints += '<div class="hint">Top priority: ' + text + ' \\u2014 run /forge:plan</div>';
+  } else if (b.todoCount > 0) {
     hints += '<div class="hint">You have ' + b.todoCount + ' open TODO(s) \\u2014 pick one and run /forge:plan</div>';
   } else {
     hints += '<div class="hint">Run /forge:plan to plan a feature, or /forge:todo to add tasks</div>';
