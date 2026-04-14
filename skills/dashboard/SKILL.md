@@ -10,27 +10,49 @@ Show a compact registry-backed snapshot of the current FORGE state, and ensure t
 
 Before rendering the text dashboard, ensure the sidecar web dashboard is running and open it in the browser.
 
-### 0a — Check reachability
+### 0a — Check reachability and project identity
 
 Run via Bash:
 
 ```bash
-node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(r => { if (r.ok) console.log('SIDECAR_UP'); else console.log('SIDECAR_DOWN'); }).catch(() => console.log('SIDECAR_DOWN'))"
+node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(r => r.ok ? r.json() : null).then(j => { if (!j) console.log('SIDECAR_DOWN'); else console.log('SIDECAR_PROJECT=' + (j.project && j.project.name || 'unknown')); }).catch(() => console.log('SIDECAR_DOWN'))"
 ```
 
-### 0b — Launch if not running
+This returns either `SIDECAR_DOWN` or `SIDECAR_PROJECT=<name>`.
 
-If the output is `SIDECAR_DOWN`, spawn the sidecar as a detached background process via Bash:
+### 0b — Handle project mismatch
+
+Compare the sidecar's project name to the current project. You know the current project name from `forge_read_project` (called later in the data source step) or from the project directory basename.
+
+- If `SIDECAR_DOWN`: proceed to launch (step 0c).
+- If `SIDECAR_PROJECT=<name>` and the name **matches** the current project: sidecar is valid, skip to step 0d (open in browser).
+- If `SIDECAR_PROJECT=<name>` and the name **does not match**: the sidecar is serving a different project. Kill it and launch a new one:
+
+```bash
+node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(() => { process.kill(0); }).catch(() => {})" 2>/dev/null; sleep 1
+```
+
+If the above doesn't reliably kill the process, use a port-based kill. On Windows:
+
+```bash
+for /f "tokens=5" %a in ('netstat -ano ^| findstr :7878') do taskkill /PID %a /F 2>nul
+```
+
+After killing, proceed to launch (step 0c). Log: `[forge:dashboard] Replaced sidecar — was serving <old project>, now launching for <current project>.`
+
+### 0c — Launch if not running
+
+Spawn the sidecar as a detached background process via Bash:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-server.mjs" &
 ```
 
-Wait 1 second for the server to start, then re-check reachability using the same probe from 0a. If it is still down after the retry, log `[forge:dashboard] Sidecar failed to start — showing text dashboard only.` and continue to the text dashboard. Do not block or retry further.
+Wait 1 second for the server to start, then re-check reachability using the probe from 0a. If it is still down after the retry, log `[forge:dashboard] Sidecar failed to start — showing text dashboard only.` and continue to the text dashboard. Do not block or retry further.
 
-### 0c — Open in browser
+### 0d — Open in browser
 
-If the sidecar is up (either already running or just launched), open it in the default browser via Bash:
+If the sidecar is up (either already running, just launched, or just replaced), open it in the default browser via Bash:
 
 ```bash
 start http://127.0.0.1:7878
