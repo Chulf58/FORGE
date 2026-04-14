@@ -37,6 +37,12 @@ function seed() {
     }, null, 2)
   );
 
+  // Minimal project.json for project identity.
+  writeFileSync(
+    join(projectDir, '.pipeline', 'project.json'),
+    JSON.stringify({ name: 'test-project', techStacks: ['Node.js'], pipelineMode: 'lean' }, null, 2)
+  );
+
   // No runs needed — the test asserts the shape, not specific run content.
   // activeRuns/gatesAwaiting/recentCompleted will be empty arrays, which is valid.
 
@@ -99,12 +105,12 @@ async function main() {
       fail('expected content-type application/json, got ' + ct);
     }
 
-    // Assertion 3: body is valid JSON with exactly the four expected keys
+    // Assertion 3: body is valid JSON with at least the four core keys + project
     const body = await res.json();
-    const expected = ['activeRuns', 'boardSummary', 'gatesAwaiting', 'recentCompleted'];
+    const required = ['activeRuns', 'boardSummary', 'gatesAwaiting', 'project', 'recentCompleted'];
     const actual = Object.keys(body).sort();
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      fail('expected keys ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual));
+    for (const k of required) {
+      if (!actual.includes(k)) fail('missing required key: ' + k);
     }
 
     // Assertion 4: each group has the right type
@@ -123,10 +129,16 @@ async function main() {
       fail('plannedCount should be 1, got ' + body.boardSummary.plannedCount);
     }
 
+    // Assertion 6: project identity is present and correct
+    if (!body.project || typeof body.project !== 'object') fail('project should be a non-null object');
+    if (body.project.name !== 'test-project') fail('project.name should be test-project, got ' + body.project.name);
+    if (!body.project.dir) fail('project.dir should be set');
+
     console.log('[dashboard-server-endpoint] PASS');
     console.log('  HTTP 200, content-type application/json');
     console.log('  keys: ' + actual.join(', '));
     console.log('  boardSummary: todoCount=1, plannedCount=1');
+    console.log('  project: name=test-project, dir set');
 
   } catch (err) {
     fail('test harness error: ' + (err && err.stack || String(err)));
