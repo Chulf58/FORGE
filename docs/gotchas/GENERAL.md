@@ -184,6 +184,8 @@ The plugin bundles an MCP server at `mcp/server.js` (ESM) that provides structur
 
 **JSON read/write pattern:** Always read the full file, parse, mutate in-place, write the full object back. Never reconstruct objects from known fields only — this preserves unknown/extra fields.
 
+**Dev-only `.mcp.json` double-load warning:** When the current working directory IS the plugin repo (i.e. developing the plugin itself), `/doctor` shows a warning (`Missing environment variables: CLAUDE_PLUGIN_ROOT`) and a plugin error (`MCP server "forge-pipeline" skipped — same command/URL as already-configured`). This is cosmetic. Claude Code reads `.mcp.json` twice: once as plugin config (expands `${CLAUDE_PLUGIN_ROOT}`, starts the server correctly) and once as project config (no expansion, fails, skipped as duplicate). The MCP server works — only the `/doctor` output is noisy. This does NOT affect installed target-project use, where only the plugin read fires.
+
 ---
 
 ## Git integration — gitIntegration config
