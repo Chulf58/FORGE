@@ -905,13 +905,14 @@
       "id": "move-utils-to-bin",
       "priority": "low",
       "text": "RESTRUCTURE: Move forge-status.js and forge-worktree.js to bin/ directory. Plugin bin/ executables are automatically added to the Bash tool PATH when plugin is enabled. This means agents and commands can call forge-status and forge-worktree as bare commands instead of node ${CLAUDE_PLUGIN_ROOT}/forge-status.js. Cleaner invocation, proper plugin pattern.",
-      "done": false,
+      "done": true,
       "addedAt": 1775848039903,
       "tags": [
         "restructure",
         "bin",
         "utilities"
-      ]
+      ],
+      "doneAt": 1776173042649
     },
     {
       "id": "add-user-config",
@@ -1019,8 +1020,9 @@
         "knowledge",
         "compound"
       ],
-      "done": false,
-      "addedAt": 0
+      "done": true,
+      "addedAt": 0,
+      "doneAt": 1776173042649
     },
     {
       "id": "plugin-intent-classification",
