@@ -154,6 +154,8 @@ const HTML_PAGE = `<!doctype html>
   button { font: inherit; padding: 4px 10px; border: 1px solid #ccc; background: #f5f5f5; border-radius: 4px; cursor: pointer; font-size: 12px; }
   button:hover { background: #eee; }
   button:disabled { opacity: 0.5; cursor: default; }
+  .badge.merge-blocked { background: #fff3e0; color: #e65100; font-weight: 600; }
+  .merge-reason { font-size: 12px; color: #bf360c; margin-left: 8px; }
   .btn-approve { background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; }
   .btn-approve:hover { background: #c8e6c9; }
   .btn-discard { background: #ffebee; border-color: #ef9a9a; color: #c62828; }
@@ -229,6 +231,7 @@ function renderActiveRuns(arr) {
       '<span class="runid">' + esc(r.runId) + '</span>' +
       '<span>' + esc(r.pipelineType) + '</span>' +
       badge("status", r.status) +
+      renderMergeBlocked(r.mergeBlocked) +
       '<span>at ' + esc(stage) + '</span>' +
       '<span>· ' + esc(r.feature) + '</span>' +
       wt + inflight +
@@ -254,6 +257,12 @@ function renderGates(arr) {
   }).join("");
 }
 
+function renderMergeBlocked(mb) {
+  if (!mb || typeof mb !== "object") return "";
+  return ' <span class="badge merge-blocked">merge blocked</span>' +
+    (mb.reason ? '<span class="merge-reason">' + esc(mb.reason) + '</span>' : '');
+}
+
 function renderRecent(arr) {
   $("rc-count").textContent = "(" + arr.length + ")";
   if (!arr.length) { renderEmpty($("recentCompleted"), "No recent completions."); return; }
@@ -262,6 +271,7 @@ function renderRecent(arr) {
       '<span class="runid">' + esc(e.runId) + '</span>' +
       '<span>' + esc(e.pipelineType) + '</span>' +
       badge("status", e.status) +
+      renderMergeBlocked(e.mergeBlocked) +
       '<span>· ' + esc(e.feature) + '</span>' +
       (e.updatedAt ? ' <span class="muted">· ' + relTime(e.updatedAt) + '</span>' : '') +
     '</div>'
