@@ -1,3 +1,18 @@
+## [2026-04-14] Sidecar Project Identity and Mismatch Detection
+
+### Project identity in sidecar
+- `/api/dashboard-state` response now includes `project: { name, dir }` (commit `39bc92b`); reads from `.pipeline/project.json`, falls back to directory path
+- Sidecar HTML `<h1>` and browser `<title>` show the served project name on every refresh; endpoint test updated with project identity assertions
+
+### Sidecar mismatch detection
+- `/forge:dashboard` now fetches the sidecar's project identity before reusing it (commit `64abbe6`); if mismatched, logs which project the sidecar is serving and skips the browser open — does not kill or restart the other sidecar
+- Three-path logic: down → launch; matched → open; mismatched → warn + skip + text dashboard only
+
+### Board maintenance
+- Closed `marketplace-json` (commit `59035dd`)
+- Added `68ec233a`: legacy Electron/JS clutter cleanup task
+- Added `3b02cb81`: dashboard token usage visibility task (per-run, per-session, all-time per-project)
+
 ## [2026-04-14] Self-hosted Marketplace Distribution
 
 ### Marketplace distribution validated
