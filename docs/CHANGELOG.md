@@ -1,3 +1,19 @@
+## [2026-04-14] UX and Discoverability
+
+### Skill namespace migration
+- Fixed confirmed collision: `/config` resolved to FORGE config instead of Claude Code's native `/config` (commit `fdc0b6c`); root cause was bare `name: config` in `skills/config/SKILL.md`
+- Blanket `forge:` prefix applied to all 20 FORGE skill `name:` fields (commit `59039ee`); eliminates the entire class of silent command-shadowing bugs; zero UX change since the display layer already showed `forge:*` names
+- Audited `commands/ping.md` and `commands/forge/hello.md` — no collision risk; no changes needed
+- Policy established: all future FORGE skills must use `forge:` prefix in the `name:` field
+
+### /forge:help discoverability surface
+- New skill `/forge:help` (commit `f7cdf2c`): compact quick reference — header, grouped core commands, state-aware "right now" suggestions from `forge_dashboard_state`, and "where to look" pointers; no direct `.pipeline/*` reads; output capped at ~40 lines
+
+### Startup banner investigation (no code shipped)
+- Investigated Windows `CON` device as direct-console output path for SessionStart hooks
+- Full isolation test: disabled all three SessionStart hooks one-by-one — native Claude welcome screen remained absent in all cases
+- Conclusion: welcome screen suppression is a Claude Code runtime behavior when `--plugin-dir` is used, not caused by any FORGE hook; startup banner approach parked
+
 ## [2026-04-14] Dashboard Contract + Sidecar + Gate Actions + Merge-Blocked State
 
 ### Merge-blocked run handling — report-only first slice
