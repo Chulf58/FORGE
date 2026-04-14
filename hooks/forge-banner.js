@@ -1,15 +1,18 @@
 'use strict';
 
 // forge-banner.js — SessionStart hook
-// Reads forge-banner.txt and emits it directly via hookSpecificOutput
-// additionalContext on SessionStart. The banner appears on the first model
-// response of a fresh session without depending on any tool call.
+// Prints the FORGE banner directly to stderr so it appears visibly in the
+// user's terminal at session startup. This is the primary user-facing output.
 //
-// Previous design used a pending-flag file that ctx-post-tool.js picked up
-// on the first PostToolUse — but PostToolUse only fires when the model calls
-// a tool, so a conversational first interaction left the banner invisible.
-// The SessionStart hookSpecificOutput.additionalContext pattern is proven
-// (see ctx-session-start.js stale-lock notice).
+// Additionally emits the banner as hookSpecificOutput.additionalContext so the
+// model has awareness of FORGE's presence and available commands — but model
+// context injection is NOT reliable for direct user display (the model may or
+// may not render it), so stderr is the authoritative visible surface.
+//
+// History:
+//   v1: flag-file → PostToolUse pickup (invisible on conversational first turns)
+//   v2: hookSpecificOutput.additionalContext only (model context, not user display)
+//   v3 (current): stderr direct print + additionalContext for model awareness
 
 const fs = require('fs');
 const path = require('path');
@@ -27,12 +30,17 @@ function fire(rawInput) {
       return;
     }
     const banner = fs.readFileSync(bannerPath, 'utf8');
+
+    // Primary: direct terminal output — visible immediately at startup.
+    process.stderr.write(banner + '\n');
+
+    // Secondary: model context injection — gives the model awareness of FORGE
+    // commands for its first response. Not relied upon for user display.
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
         additionalContext:
-          'Display the following FORGE banner to the user exactly as formatted (preserve the box drawing). Do not add commentary:\n\n' +
-          banner,
+          'FORGE plugin is active. Available commands: /forge:plan, /forge:implement, /forge:apply, /forge:debug, /forge:refactor, /forge:status, /forge:dashboard, /forge:resume, /forge:todo, /forge:approve, /forge:discard, /forge:init. The user has already seen the FORGE startup banner in their terminal.',
       },
     }) + '\n');
   } catch (_) {
