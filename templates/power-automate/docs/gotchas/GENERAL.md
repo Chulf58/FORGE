@@ -47,6 +47,6 @@ Always use obvious placeholder strings (e.g. `"<YOUR_SHAREPOINT_SITE_URL>"`) or 
 
 ---
 
-## Tool preference — Glob and Grep over Bash
+## Tool preference — see CLAUDE.md
 
-Always use the Glob tool instead of bash find/ls, and the Grep tool instead of bash grep/rg. Bash should only be used for operations that have no dedicated tool equivalent (e.g. git commands, wc, process operations). Never use bash find, bash ls, or bash grep/rg.
+Authoritative tool-choice guidance lives in the template's root `CLAUDE.md` under `## Tool efficiency`. It covers Read / Glob / Grep / Edit / Write / MCP tools and the common mistakes to avoid (including `node -e` misuse). Do not restate those rules here — one source of truth per template.
