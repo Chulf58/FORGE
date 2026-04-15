@@ -20,6 +20,7 @@
 import { createRequire } from "node:module";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildDashboardState } from "../mcp/lib/dashboard-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = resolve(__dirname, "..");
@@ -74,15 +75,21 @@ const leftPane = blessed.box({
   style: { border: { fg: "grey" } },
 });
 
-// Right pane — static FORGE placeholder.
+// Right pane — live FORGE dashboard, refreshed on a timer by
+// buildDashboardState (same pure function backing forge_dashboard_state).
+// `tags: true` so the renderer can use blessed markup for color; dynamic
+// user content (feature names, TODO text) is escaped before interpolation.
+// `scrollable` so long TODO lists don't silently overflow.
 const rightPane = blessed.box({
   parent: screen,
   top: 0, left: RIGHT_OFFSET, right: 0, height: "100%-1",
   border: { type: "line" },
   label: " FORGE ",
   tags: true,
-  content: "\n  {bold}{yellow-fg}FORGE{/}\n\n  {grey-fg}[dashboard placeholder]{/}\n\n  {grey-fg}wrapper prototype v0{/}",
+  content: "\n  {grey-fg}Loading…{/}",
   style: { border: { fg: "yellow" } },
+  scrollable: true,
+  alwaysScroll: true,
 });
 
 // Status bar — bottom line, quit/resize hints.
@@ -141,6 +148,7 @@ function quit(code) {
   }, 500);
   forceKill.unref();
 
+  if (dashboardTimer) { try { clearInterval(dashboardTimer); } catch (_) {} dashboardTimer = null; }
   try { screen.destroy(); } catch (_) {}
   try { ptyProc.kill(); } catch (_) {}
   try {
@@ -338,6 +346,131 @@ process.stdin.on("data", (buf) => {
   // Everything else: raw passthrough to PTY.
   ptyProc.write(buf);
 });
+
+// ---- Right-pane dashboard rendering --------------------------------------
+//
+// buildDashboardState is a pure read from .pipeline/runs + board.json — no
+// network, no worker, no push. We poll on a timer and repaint the box.
+// 2s feels snappy enough for a prototype without thrashing the registry.
+
+const DASHBOARD_REFRESH_MS = 2000;
+let dashboardTimer = null;
+
+// Blessed treats `{...}` as markup when tags:true. Strip both delimiters
+// from dynamic content so user-authored strings (feature names, TODO text)
+// can't inject `{bold}` or break markup balance.
+function escapeTags(s) {
+  return String(s ?? "").replace(/\{/g, "(").replace(/\}/g, ")");
+}
+
+function fmtRel(iso) {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60) return "just now";
+  if (sec < 3600) return Math.floor(sec / 60) + "m ago";
+  if (sec < 86400) return Math.floor(sec / 3600) + "h ago";
+  return Math.floor(sec / 86400) + "d ago";
+}
+
+function priorityColor(pri) {
+  if (pri === "high") return "red-fg";
+  if (pri === "medium") return "yellow-fg";
+  return "grey-fg";
+}
+
+function renderDashboard(state) {
+  const ar = state.activeRuns || [];
+  const ga = state.gatesAwaiting || [];
+  const rc = state.recentCompleted || [];
+  const bs = state.boardSummary || {};
+  const lines = [];
+
+  lines.push("");
+  lines.push("  {bold}{yellow-fg}FORGE{/}");
+  lines.push("");
+
+  // Active runs
+  lines.push("  {cyan-fg}Active runs{/} {grey-fg}(" + ar.length + "){/}");
+  if (ar.length === 0) {
+    lines.push("    {grey-fg}none{/}");
+  } else {
+    for (const r of ar.slice(0, 5)) {
+      const id = escapeTags(r.runId).slice(0, 10);
+      const stage = escapeTags(r.stageLabel || r.currentStep || "starting");
+      lines.push("    " + id + " {grey-fg}·{/} " + escapeTags(r.pipelineType) + " {grey-fg}·{/} " + stage);
+      const feat = escapeTags((r.feature || "").slice(0, 44));
+      if (feat) lines.push("      {grey-fg}" + feat + "{/}");
+    }
+  }
+  lines.push("");
+
+  // Gates pending
+  if (ga.length > 0) {
+    lines.push("  {yellow-fg}Gates pending{/} {grey-fg}(" + ga.length + "){/}");
+    for (const g of ga.slice(0, 5)) {
+      const id = escapeTags(g.runId).slice(0, 10);
+      const gate = escapeTags((g.gateState && g.gateState.gate) || "gate");
+      lines.push("    " + id + " {grey-fg}·{/} " + gate);
+      const feat = escapeTags((g.feature || "").slice(0, 44));
+      if (feat) lines.push("      {grey-fg}" + feat + "{/}");
+    }
+    lines.push("");
+  }
+
+  // Recent completions
+  if (rc.length > 0) {
+    lines.push("  {grey-fg}Recent{/} {grey-fg}(" + rc.length + "){/}");
+    for (const r of rc.slice(0, 3)) {
+      const id = escapeTags(r.runId).slice(0, 10);
+      const rel = fmtRel(r.updatedAt);
+      const statusColor = r.status === "completed" ? "green-fg"
+        : r.status === "failed" ? "red-fg" : "grey-fg";
+      lines.push("    {" + statusColor + "}" + escapeTags(r.status) + "{/} " + id
+        + (rel ? " {grey-fg}" + rel + "{/}" : ""));
+    }
+    lines.push("");
+  }
+
+  // Board
+  lines.push("  {cyan-fg}Board{/}");
+  const todo = bs.todoCount || 0;
+  const blocked = bs.blockedTodoCount || 0;
+  const planned = bs.plannedCount || 0;
+  lines.push("    " + todo + " open"
+    + (blocked > 0 ? " ({red-fg}" + blocked + " blocked{/})" : "")
+    + ", " + planned + " planned");
+  const tops = Array.isArray(bs.topPriorityTodos) ? bs.topPriorityTodos : [];
+  if (tops.length > 0) {
+    lines.push("  {grey-fg}Top priorities:{/}");
+    for (const t of tops.slice(0, 3)) {
+      const pri = escapeTags(t.priority || "-");
+      const txt = escapeTags((t.text || "").slice(0, 44));
+      lines.push("    {" + priorityColor(t.priority) + "}[" + pri + "]{/} " + txt);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function refreshDashboard() {
+  try {
+    const state = buildDashboardState(process.cwd());
+    rightPane.setContent(renderDashboard(state));
+  } catch (err) {
+    rightPane.setContent("\n  {red-fg}dashboard error{/}\n  {grey-fg}"
+      + escapeTags(err && err.message) + "{/}");
+  }
+  screen.render();
+}
+
+// Paint once immediately so the user doesn't see "Loading…" for 2s, then
+// kick off the poll timer. unref() so the timer can't hold the event loop
+// open during shutdown (the quit path also clearInterval's defensively).
+refreshDashboard();
+dashboardTimer = setInterval(refreshDashboard, DASHBOARD_REFRESH_MS);
+if (typeof dashboardTimer.unref === "function") dashboardTimer.unref();
 
 // Handle terminal resize — update xterm + PTY in lockstep.
 screen.on("resize", () => {
