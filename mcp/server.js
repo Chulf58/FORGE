@@ -1038,18 +1038,108 @@ server.registerTool(
   "forge_list_runs",
   {
     title: "FORGE List Runs",
-    description: "Lists all runs from the index, optionally filtered by status or pipeline type.",
+    description: "Lists runs from the index, optionally filtered and field-projected. Use `filter` for the newer/ergonomic path with array-aware status/pipelineType/mode matching; legacy flat `status`/`pipelineType` fields remain for backward compatibility but are superseded when `filter` is present. Use `fields` to slim each item to a subset of top-level keys; requesting a key not on the lightweight index entry triggers a full hydration via getRun.",
     inputSchema: z.object({
-      status: z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]).optional().describe("Filter by run status"),
-      pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor"]).optional().describe("Filter by pipeline type"),
+      status: z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]).optional().describe("Filter by run status (legacy — prefer `filter.status`, which accepts arrays). Ignored when `filter` is present."),
+      pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor"]).optional().describe("Filter by pipeline type (legacy — prefer `filter.pipelineType`, which accepts arrays). Ignored when `filter` is present."),
+      filter: z.object({
+        status: z.union([
+          z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]),
+          z.array(z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]))
+        ]).optional().describe("Match status — single value or any-of array."),
+        pipelineType: z.union([
+          z.enum(["plan", "implement", "apply", "debug", "refactor"]),
+          z.array(z.enum(["plan", "implement", "apply", "debug", "refactor"]))
+        ]).optional().describe("Match pipeline type — single value or any-of array."),
+        mode: z.union([
+          z.enum(["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"]),
+          z.array(z.enum(["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"]))
+        ]).optional().describe("Match pipeline mode — single value or any-of array. NOTE: mode is not on lightweight index entries, so this filter forces hydration of each candidate via getRun.")
+      }).strict().optional().describe("Structured filter object. Supersedes legacy `status`/`pipelineType` when present. Applies `status` → `pipelineType` → `mode`, AND-combined."),
+      fields: z.array(z.string()).optional().describe("Top-level keys to include per returned run. Omit for full objects (index-entry shape by default; full hydrated shape when `filter.mode` is used or when `fields` requests a non-index key). Keys not present on an item are silently dropped for that item.")
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   },
-  async ({ status, pipelineType }) => {
+  async ({ status, pipelineType, filter, fields }) => {
     try {
       const projectDir = resolveProjectDir();
-      const runs = listRuns(projectDir, { status, pipelineType });
-      return textResult(runs);
+
+      // Index entries carry only these keys (per RunIndexEntry schema in
+      // packages/forge-core/src/runs/schemas.js). Anything else requires a
+      // full hydration via getRun.
+      const INDEX_KEYS = new Set(["runId", "pipelineType", "feature", "status", "createdAt", "updatedAt"]);
+
+      let entries;
+
+      if (filter) {
+        // New path — pull all entries, then apply status → pipelineType → mode in order.
+        // Supersedes legacy flat status/pipelineType so users on the new path get
+        // predictable behaviour with full array-matching support.
+        entries = listRuns(projectDir, {});
+
+        if (filter.status !== undefined) {
+          const allowed = Array.isArray(filter.status) ? filter.status : [filter.status];
+          entries = entries.filter(e => allowed.includes(e.status));
+        }
+        if (filter.pipelineType !== undefined) {
+          const allowed = Array.isArray(filter.pipelineType) ? filter.pipelineType : [filter.pipelineType];
+          entries = entries.filter(e => allowed.includes(e.pipelineType));
+        }
+        if (filter.mode !== undefined) {
+          // Mode lives on the full Run schema, not the lightweight index entry,
+          // so we must hydrate every remaining candidate to evaluate it.
+          // Hydrated runs replace the index-entry shape from this point on.
+          const allowed = Array.isArray(filter.mode) ? filter.mode : [filter.mode];
+          const hydrated = [];
+          for (const e of entries) {
+            try {
+              const full = getRun(projectDir, e.runId);
+              if (full && allowed.includes(full.mode)) {
+                hydrated.push(full);
+              }
+            } catch (_) {
+              // Skip unhydratable runs (corrupt run.json, missing dir, etc.).
+            }
+          }
+          entries = hydrated;
+        }
+      } else {
+        // Legacy path — preserved verbatim for backward compatibility.
+        entries = listRuns(projectDir, { status, pipelineType });
+      }
+
+      // Field projection (orthogonal — runs after whichever filter path applied).
+      // If fields requests any key not on the lightweight index entry, hydrate the
+      // remaining entries so the projection has the requested data to project from.
+      if (fields && fields.length > 0) {
+        const needsHydration = fields.some(k => !INDEX_KEYS.has(k));
+        if (needsHydration) {
+          entries = entries.map(e => {
+            // Already-hydrated entries from filter.mode path will have non-index keys.
+            const alreadyHydrated = Object.keys(e).some(k => !INDEX_KEYS.has(k));
+            if (alreadyHydrated) return e;
+            try {
+              const full = getRun(projectDir, e.runId);
+              return full || e;
+            } catch (_) {
+              return e;
+            }
+          });
+        }
+        // Silent key-drop is intentional: requesting a key an item doesn't have
+        // is not an error, it just gets omitted from that item.
+        entries = entries.map(item => {
+          const projected = {};
+          for (const key of fields) {
+            if (Object.prototype.hasOwnProperty.call(item, key)) {
+              projected[key] = item[key];
+            }
+          }
+          return projected;
+        });
+      }
+
+      return textResult(entries);
     } catch (err) {
       return errorResult("forge_list_runs failed: " + err.message);
     }
