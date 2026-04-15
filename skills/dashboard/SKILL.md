@@ -4,53 +4,19 @@ description: "Show all FORGE runs and board state at a glance. Use when: user as
 allowed-tools: "Read Glob Bash"
 ---
 
-Show a compact registry-backed snapshot of the current FORGE state, and ensure the live web dashboard is reachable.
+Show a compact registry-backed snapshot of the current FORGE state. Launch the in-terminal TUI (read-only live dashboard) inline.
 
-## Step 0 — Launch the sidecar dashboard
+## Step 0 — Launch the TUI
 
-Before rendering the text dashboard, ensure the sidecar web dashboard is running and open it in the browser.
-
-### 0a — Check reachability and project identity
-
-Run via Bash:
+Launch the FORGE terminal UI inline via Bash. The TUI takes over the terminal, refreshes every 5s, and exits on `q` or Ctrl+C.
 
 ```bash
-node -e "fetch('http://127.0.0.1:7878/api/dashboard-state').then(r => r.ok ? r.json() : null).then(j => { if (!j) console.log('SIDECAR_DOWN'); else console.log('SIDECAR_PROJECT=' + (j.project && j.project.name || 'unknown')); }).catch(() => console.log('SIDECAR_DOWN'))"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/forge-tui.mjs"
 ```
 
-This returns either `SIDECAR_DOWN` or `SIDECAR_PROJECT=<name>`.
+The TUI is read-only in this release — no gate or merge actions yet (those are coming in a follow-up). When the user exits, the Claude Code prompt returns. At that point, also produce the text dashboard rendering below as a quick summary for the conversation record.
 
-### 0b — Handle result
-
-Compare the sidecar's project name to the current project. You know the current project name from `forge_read_project` (called later in the data source step) or from the project directory basename.
-
-- If `SIDECAR_DOWN`: proceed to launch (step 0c).
-- If `SIDECAR_PROJECT=<name>` and the name **matches** the current project: sidecar is valid, skip to step 0d (open in browser).
-- If `SIDECAR_PROJECT=<name>` and the name **does not match**: the sidecar is serving a different project. **Do not open it.** Log: `[forge:dashboard] Sidecar is serving "<other project>" — not opening. Stop the other sidecar first, or run this project's dashboard manually.` Skip the browser open (step 0d) and continue directly to the text dashboard.
-
-### 0c — Launch if not running
-
-Spawn the sidecar as a detached background process via Bash:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-server.mjs" &
-```
-
-Wait 1 second for the server to start, then re-check reachability using the probe from 0a. If it is still down after the retry, log `[forge:dashboard] Sidecar failed to start — showing text dashboard only.` and continue to the text dashboard. Do not block or retry further.
-
-### 0d — Open in browser
-
-If the sidecar is up and serving the current project (either already running or just launched), open it in the default browser via Bash:
-
-```bash
-start http://127.0.0.1:7878
-```
-
-On macOS use `open`, on Linux use `xdg-open`. Detect via: if the Bash environment is Windows (default for this project), use `start`.
-
-### 0d — Continue to text dashboard
-
-After the sidecar launch attempt (whether it succeeded or not), always continue to the text dashboard rendering below. The sidecar is a supplement, not a replacement.
+**Fallback:** the browser sidecar at `scripts/dashboard-server.mjs` is still available via `npm run dashboard` for users who prefer a browser view. The TUI is the primary surface.
 
 ## Data source
 
