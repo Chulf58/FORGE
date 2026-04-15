@@ -47,12 +47,16 @@ if (!process.stdout.isTTY) {
 const cmd = process.env.FORGE_WRAP_SPAWN || process.env.FORGE_CLAUDE_CMD || "claude";
 const args = process.argv.slice(2);
 
-// Blessed screen setup.
+// Blessed screen setup. Mouse tracking is disabled for the prototype — when
+// enabled, blessed sends CSI enable-mouse sequences which make the terminal
+// emit mouse-event bytes to stdin. Our raw stdin handler forwards those to
+// the PTY where Claude can't interpret them correctly. Mouse scroll support
+// will be added when we build the dashboard pane with its own handlers.
 const screen = blessed.screen({
   smartCSR: true,
   title: "FORGE wrapper prototype",
   fullUnicode: true,
-  mouse: true,
+  mouse: false,
   terminal: process.env.TERM || "xterm-256color",
 });
 
@@ -124,15 +128,28 @@ try {
   process.exit(1);
 }
 
+// Clean shutdown — restore stdin, kill PTY, destroy blessed, exit.
+// Without explicit stdin restore + pause, raw mode can linger and keep the
+// node process alive after screen.destroy(), producing a "black screen
+// hang" instead of returning to the shell.
+function quit(code) {
+  try {
+    if (typeof process.stdin.setRawMode === "function") process.stdin.setRawMode(false);
+  } catch (_) {}
+  try { process.stdin.pause(); } catch (_) {}
+  try { ptyProc.kill(); } catch (_) {}
+  try { screen.destroy(); } catch (_) {}
+  process.exit(code);
+}
+
 // Feed PTY bytes into the xterm parser.
 ptyProc.onData(data => {
   term.write(data);
 });
 
 ptyProc.onExit(({ exitCode }) => {
-  screen.destroy();
   process.stdout.write("\n[forge-wrapper-proto] child exited with code " + (exitCode ?? 0) + "\n");
-  process.exit(exitCode ?? 0);
+  quit(exitCode ?? 0);
 });
 
 // Paint xterm's active buffer into the left pane.
@@ -196,9 +213,8 @@ process.stdin.on("data", (buf) => {
     const b = buf[0];
     // q or Q or Ctrl+C = quit
     if (b === 0x71 || b === 0x51 || b === 0x03) {
-      try { ptyProc.kill(); } catch (_) {}
-      screen.destroy();
-      process.exit(0);
+      quit(0);
+      return;
     }
     // Any other key after prefix — swallow to avoid leaking to PTY.
     return;
