@@ -1421,6 +1421,33 @@
         "inspiration",
         "codeburn"
       ]
+    },
+    {
+      "id": "24fae760",
+      "priority": "high",
+      "text": "ARCHITECTURE DECISION (BLOCKING — no new TUI features until this lands): Evaluate blessed alternatives before continuing TUI feature work. Current wrapper + observer use blessed, with observable friction: imperative `setContent + screen.render` on every state update (2s timer for dashboard, will compound as we add gate actions, merge retry, drag-drop, sprite rendering, reactive updates); 60-line hand-rolled ANSI-diff cell-paint loop maintained in the wrapper; CommonJS loaded via `createRequire` in ESM wrapper/observer; upstream maintenance status of original `blessed` repo unverified vs `neo-blessed` fork vs Ink. Scope: time-boxed spike (~half a day). Pick ONE candidate — leading candidates are Ink (React-for-terminals, Node-aligned, reactive model) and neo-blessed (drop-in fork, lowest migration cost) but both need real evaluation not speculation. Port the observer (smaller surface than the wrapper) as a proof-of-concept, compare side-by-side for ergonomics of: dashboard state update, future interactive actions, cross-pane sync, bundle size. Produce a `docs/RESEARCH/tui-library-evaluation.md` with verdict. Outcomes: (a) stay on blessed with eyes-open, (b) migrate both wrapper and observer to X, (c) port only new features to X and freeze blessed. No new TUI UI features ship until this decision is on paper.",
+      "done": false,
+      "addedAt": 1776284101067,
+      "tags": [
+        "tui",
+        "architecture",
+        "blocking",
+        "evaluation"
+      ]
+    },
+    {
+      "id": "3438a2be",
+      "priority": "high",
+      "text": "ARCHITECTURE DECISION (BLOCKING — no new wrapper features until this lands): Evaluate 'observer-primary, wrapper-optional' as the winning workflow before continuing wrapper investment. The wrapper carries ~all of the hard complexity we've built this sprint (PTY embedding of Claude via node-pty, double terminal emulation via @xterm/headless, SGR mouse-reporting with wheel scroll + Shift-to-select tradeoff, acrylic opacity fix, Ctrl+B-Q quit path, color-aware cell painting) — all to preserve the 'one command starts both Claude and the dashboard' UX. The observer pattern (user runs native `claude` in one terminal pane, `bin/forge-observer` in a second pane, split via Alt+Shift+Plus in Windows Terminal) avoids every one of those concerns: no PTY, no xterm.js, no mouse capture, no cell painting, no quit-path hardening. Scope: use observer-primary as actual daily workflow for ~1 day of real FORGE usage. Open `claude` in pane 1, `node scripts/forge-observer-proto.mjs` in pane 2. Compare honestly: does the muscle memory of opening a split pane yourself meaningfully worse than the wrapper's one-command UX? Is the ~400 lines of wrapper PTY/xterm/mouse/paint code worth that difference? Outcomes: (a) wrapper stays primary as-is (UX wins over complexity), (b) wrapper demoted to experimental / opt-in, observer becomes primary (most complexity disappears from the maintained surface), (c) deprecate wrapper entirely and hard-delete after grace period. This decision unlocks or blocks: launcher polish, sprite rendering, interactive gate/merge actions, reactive state — all land in whichever surface is primary. Output: short verdict note in `docs/DECISIONS.md` or handoff.",
+      "done": false,
+      "addedAt": 1776284117783,
+      "tags": [
+        "tui",
+        "architecture",
+        "blocking",
+        "wrapper",
+        "observer"
+      ]
     }
   ],
   "planned": []
