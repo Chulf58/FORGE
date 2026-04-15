@@ -171,33 +171,31 @@ term.onWriteParsed(schedulePaint);
 // even if the first onRender arrives before screen is fully ready.
 setTimeout(schedulePaint, 100);
 
-// Key forwarding — bypass blessed's keypress events entirely and read raw
-// bytes from stdin. blessed's keypress fires alongside stdin data which
-// caused each keystroke to be forwarded twice (visible as phantom Enters).
+// Key forwarding — read raw bytes from stdin, forward as-is to the PTY.
+// Previous approach using blessed's keypress event caused double-dispatch on
+// Windows when Enter arrives as CRLF (two separate keypress events → two '\r'
+// to the PTY → visible as phantom Enter presses in Claude's menus).
 //
-// We forward every byte as-is to the PTY, with one intercept: the escape
-// sequence for the quit shortcut (Ctrl+B then Q). Ctrl+B is byte 0x02 (STX).
-//
-// blessed's screen.program has already put stdin in raw mode; we just need
-// to listen to data events. Disable blessed's keypress handling on screen.
-try { screen.program.input.removeAllListeners("keypress"); } catch (_) {}
+// Raw stdin with explicit raw-mode + resume gives us exact-byte control and
+// avoids readline/keypress parsing. Blessed still handles screen rendering;
+// we just own keyboard input. The one byte we intercept is Ctrl+B (0x02) as
+// the tmux-style prefix for the quit shortcut.
+
+if (typeof process.stdin.setRawMode === "function") {
+  process.stdin.setRawMode(true);
+}
+process.stdin.resume();
 
 let prefixArmed = false;
 const CTRL_B = 0x02;
 
 process.stdin.on("data", (buf) => {
-  // Fast path: single byte, check for prefix + quit sequence.
+  // Check for prefix-armed single-byte commands first.
   if (buf.length === 1 && prefixArmed) {
     prefixArmed = false;
     const b = buf[0];
-    // q or Q = quit
-    if (b === 0x71 || b === 0x51) {
-      try { ptyProc.kill(); } catch (_) {}
-      screen.destroy();
-      process.exit(0);
-    }
-    // Ctrl+C after prefix also quits
-    if (b === 0x03) {
+    // q or Q or Ctrl+C = quit
+    if (b === 0x71 || b === 0x51 || b === 0x03) {
       try { ptyProc.kill(); } catch (_) {}
       screen.destroy();
       process.exit(0);
@@ -205,6 +203,7 @@ process.stdin.on("data", (buf) => {
     // Any other key after prefix — swallow to avoid leaking to PTY.
     return;
   }
+  // Arm prefix on bare Ctrl+B byte.
   if (buf.length === 1 && buf[0] === CTRL_B) {
     prefixArmed = true;
     return;
