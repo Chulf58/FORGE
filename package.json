@@ -1,7 +1,10 @@
 {
   "name": "forge-plugin",
   "private": true,
-  "description": "Root package entry for FORGE plugin — only hosts the npm test script for the lightweight regression runner at scripts/run-tests.mjs. Plugin distribution is governed by .claude-plugin/plugin.json; MCP server deps live in mcp/package.json; Node runtime for .js files remains CommonJS (no \"type\" field here, do not add one).",
+  "description": "Root package entry for FORGE plugin — hosts the npm test script for the lightweight regression runner at scripts/run-tests.mjs and declares the `forge` bin entry that launches the wrapper TUI. Plugin distribution is governed by .claude-plugin/plugin.json; MCP server deps live in mcp/package.json; Node runtime for .js files remains CommonJS (no \"type\" field here, do not add one).",
+  "bin": {
+    "forge": "bin/forge.js"
+  },
   "scripts": {
     "test": "node scripts/run-tests.mjs"
   }
