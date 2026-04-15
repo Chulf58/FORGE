@@ -1406,6 +1406,20 @@
         "replace-sidecar",
         "ux"
       ]
+    },
+    {
+      "id": "b87d8026",
+      "priority": "medium",
+      "text": "RESEARCH + INSPIRATION: Study AgentSeal/codeburn (https://github.com/AgentSeal/codeburn) for TUI visual/UX patterns to borrow into the FORGE wrapper's right pane. User called it out as the look-and-feel they want for the dashboard side. Extract specifics: layout, color palette, information density, card design, animation approach, mouse interaction patterns, and how it handles different states. Produce a short findings doc in docs/RESEARCH/ identifying which patterns to adopt and which to skip. Non-goal: don't copy the code itself. Goal: pattern library for the FORGE dashboard pane design slice that follows the xterm-backed left pane validation.",
+      "done": false,
+      "addedAt": 1776251263999,
+      "tags": [
+        "research",
+        "tui",
+        "dashboard",
+        "inspiration",
+        "codeburn"
+      ]
     }
   ],
   "planned": []
