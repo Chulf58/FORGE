@@ -128,17 +128,33 @@ try {
   process.exit(1);
 }
 
-// Clean shutdown — restore stdin, kill PTY, destroy blessed, exit.
-// Without explicit stdin restore + pause, raw mode can linger and keep the
-// node process alive after screen.destroy(), producing a "black screen
-// hang" instead of returning to the shell.
+// Clean shutdown. The ordering matters: destroy the screen FIRST so blessed's
+// alt-screen exit + cursor restore escape codes get written before we touch
+// stdin. Then kill the PTY child, restore stdin cooked mode, force-flush
+// explicit reset sequences, and exit. A setTimeout fallback SIGKILLs the
+// process if process.exit() is somehow blocked (observed on Windows when
+// ptyProc.kill() leaves lingering event-loop refs).
 function quit(code) {
+  // Last-resort hard kill — fires if process.exit doesn't return control.
+  const forceKill = setTimeout(() => {
+    try { process.kill(process.pid, "SIGKILL"); } catch (_) {}
+  }, 500);
+  forceKill.unref();
+
+  try { screen.destroy(); } catch (_) {}
+  try { ptyProc.kill(); } catch (_) {}
   try {
     if (typeof process.stdin.setRawMode === "function") process.stdin.setRawMode(false);
   } catch (_) {}
   try { process.stdin.pause(); } catch (_) {}
-  try { ptyProc.kill(); } catch (_) {}
-  try { screen.destroy(); } catch (_) {}
+  // Belt-and-suspenders: explicit terminal reset sequences in case blessed
+  // didn't fully restore the main screen buffer.
+  try {
+    process.stdout.write("\x1b[?1049l"); // exit alt-screen
+    process.stdout.write("\x1b[?25h");   // show cursor
+    process.stdout.write("\x1b[0m");     // reset attributes
+    process.stdout.write("\r\n");
+  } catch (_) {}
   process.exit(code);
 }
 
