@@ -3,7 +3,6 @@
   "private": true,
   "description": "Root package entry for FORGE plugin — only hosts the npm test script for the lightweight regression runner at scripts/run-tests.mjs. Plugin distribution is governed by .claude-plugin/plugin.json; MCP server deps live in mcp/package.json; Node runtime for .js files remains CommonJS (no \"type\" field here, do not add one).",
   "scripts": {
-    "test": "node scripts/run-tests.mjs",
-    "dashboard": "node scripts/dashboard-server.mjs"
+    "test": "node scripts/run-tests.mjs"
   }
 }

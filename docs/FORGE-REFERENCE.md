@@ -635,7 +635,7 @@ Resolve at call time via resolveProjectDir() — never cache at module level
 
 | Tool | Read-only | Description |
 |------|-----------|-------------|
-| `forge_dashboard_state` | Yes | Zero-input snapshot: `activeRuns[]` (non-terminal, with stageLabel, gateState, worktreePath, currentUnit), `gatesAwaiting[]` (actionable pending gates), `recentCompleted[]` (≤5 terminal tail), `boardSummary` (counts + top-priority open TODOs ≤5). Shared source for both the MCP tool and the HTTP sidecar. |
+| `forge_dashboard_state` | Yes | Zero-input snapshot: `activeRuns[]` (non-terminal, with stageLabel, gateState, worktreePath, currentUnit), `gatesAwaiting[]` (actionable pending gates), `recentCompleted[]` (≤5 terminal tail), `boardSummary` (counts + top-priority open TODOs ≤5). Shared source for the MCP tool, the wrapper/observer TUIs, and the legacy HTTP sidecar. |
 
 #### Model routing
 
@@ -668,7 +668,7 @@ Read full file → parse → mutate in-place → write full object back. Never r
 | `mcp/lib/usage-store.js` | Per-provider usage tracking (requests, tokens, quota) |
 | `mcp/lib/router.js` | Pure recommendation function, no I/O |
 | `mcp/lib/openai-adapter.js` | OpenAI Responses API adapter |
-| `mcp/lib/dashboard-state.js` | Dashboard state builder — shared by `forge_dashboard_state` MCP tool and the HTTP sidecar; guarantees identical payloads across both surfaces |
+| `mcp/lib/dashboard-state.js` | Dashboard state builder — shared by `forge_dashboard_state` MCP tool, the wrapper/observer TUIs, and the legacy HTTP sidecar; guarantees identical payloads across all surfaces |
 
 ### Two-track routing
 
@@ -846,7 +846,7 @@ Run {
 | `mcp/lib/router.js` | Model recommendation |
 | `mcp/lib/usage-store.js` | Usage tracking |
 | `mcp/lib/openai-adapter.js` | OpenAI adapter |
-| `mcp/lib/dashboard-state.js` | Dashboard state builder (shared by MCP tool and HTTP sidecar) |
+| `mcp/lib/dashboard-state.js` | Dashboard state builder (shared by MCP tool, wrapper/observer TUIs, and legacy HTTP sidecar) |
 
 ### forge-core package (11 files)
 
@@ -869,7 +869,9 @@ Run {
 | `bin/forge-status.js` | Status line — registry-driven derivation, project identity, pipeline stage progress, gate distinction (gate1/gate2), multi-pipeline fanout with overflow. Registry authoritative over run-active.json (completed runs don't render as active). |
 | `bin/forge-worktree.js` | Worktree manager (create, list, merge with auto-commit + conflict safety, cleanup). On merge conflict: persists `mergeBlocked` on the run, aborts, preserves worktree/branch, exits non-zero. |
 | `forge-banner.txt` | Shared banner text consumed by `ctx-post-tool.js` for first-response rendering |
-| `scripts/dashboard-server.mjs` | Optional local HTTP sidecar (Node built-in `http`, zero deps). `GET /` serves self-contained HTML dashboard. `GET /api/dashboard-state` returns JSON from `buildDashboardState()`. `POST /api/gate-action` handles approve/discard. `POST /api/merge-action` retries a merge-blocked worktree. Loopback-only (127.0.0.1), port 7878. Run via `npm run dashboard`. |
+| `scripts/forge-wrapper-proto.mjs` | Primary terminal dashboard surface (prototype). Spawns Claude in a node-pty child, renders it via `@xterm/headless` into a blessed left pane, polls `buildDashboardState()` into a right pane every 2s. Mouse wheel scrolls the Claude pane; quit via `Ctrl+B` then `Q`. |
+| `scripts/forge-observer-proto.mjs` | Secondary terminal dashboard surface (prototype). Standalone full-screen blessed dashboard using `buildDashboardState()`; user runs it in a separate terminal pane next to native `claude`. Read-only; quit via `q`/`Q`/`Ctrl+C`. |
+| `scripts/dashboard-server.mjs` | Legacy local HTTP sidecar (Node built-in `http`, zero deps). `GET /` serves self-contained HTML dashboard. `GET /api/dashboard-state` returns JSON from `buildDashboardState()`. `POST /api/gate-action` handles approve/discard. `POST /api/merge-action` retries a merge-blocked worktree. Loopback-only (127.0.0.1), port 7878. Unwired from `package.json` — run directly via `node scripts/dashboard-server.mjs` during the transition phase. Scheduled for removal once the wrapper TUI is fully validated. |
 
 ### Templates (3 template sets)
 

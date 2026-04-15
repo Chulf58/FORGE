@@ -100,7 +100,7 @@ The terminal being live and visible does not mean you have to watch it constantl
 | Project state persistence | Yes — todos, modules, health, run lifecycle tracking | No |
 | Subagent lifecycle tracking | Yes — SubagentStart/Stop hooks with duration and verdict extraction | No |
 | Git integration in apply pipeline | Yes — opt-in branch creation, auto-commit, auto-PR | No |
-| Local web dashboard | Yes — optional HTTP sidecar with gate actions, merge-blocked detection, auto-refresh | No |
+| Local terminal dashboard | Yes — wrapper TUI prototype (`scripts/forge-wrapper-proto.mjs`) embeds Claude + dashboard in a split pane (primary, experimental); standalone observer TUI as a dashboard-only secondary; HTTP sidecar retained as legacy/fallback during transition | No |
 
 **Summary:** Claude CLI is a single-session tool. FORGE is a development workflow engine built as a plugin on top of it.
 
@@ -718,7 +718,7 @@ The glass wall was cracked: the system could look truthful while silently runnin
 
 **Parallel sessions with worktree isolation:** Start task B while task A is still running. Each pipeline run gets its own git worktree. Design includes stuck detection, crash recovery, atomic commits per task, cost tracking per session. Sub-tasks: dependency analysis for wave scheduling, stuck loop detection, crash recovery with forensics.
 
-**Web dashboard expansion:** The local HTTP sidecar (`scripts/dashboard-server.mjs`) exists with gate actions and merge-blocked surfacing. Next: WebSocket-based live updates, per-run agent progress detail, cost tracking display.
+**Terminal dashboard expansion:** The wrapper TUI prototype (`scripts/forge-wrapper-proto.mjs`) is the new primary surface — embeds Claude on the left and the FORGE dashboard on the right in a single terminal process, refreshed on a timer. Standalone observer TUI (`scripts/forge-observer-proto.mjs`) covers the dashboard-only secondary case. Next: promote the wrapper to a finalized launcher, add gate/merge actions into the right pane, cost tracking display. The HTTP sidecar (`scripts/dashboard-server.mjs`) remains on disk as legacy/fallback during the transition and will be removed in a later cleanup.
 
 **External model routing (Codex/OpenAI):** The `forge_call_external` adapter, router, config, and usage tracking are built and tested (auth + request format verified). Blocked on user's OpenAI API billing. When resolved, one test call activates it.
 

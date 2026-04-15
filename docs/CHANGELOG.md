@@ -1,3 +1,21 @@
+## [2026-04-15] Wrapper TUI Primary; Sidecar Legacy
+
+### Direction change
+- Wrapper TUI prototype (`scripts/forge-wrapper-proto.mjs`) is the new primary dashboard surface during the current transition phase — embeds Claude on the left and live FORGE dashboard on the right in a single terminal process
+- Observer prototype (`scripts/forge-observer-proto.mjs`) is the secondary dashboard-only surface for users who want the dashboard in a separate terminal pane next to native `claude`
+- HTTP sidecar (`scripts/dashboard-server.mjs`) is now legacy/fallback. Files and tests remain on disk; will be hard-deleted in a later cleanup slice once the wrapper path is fully validated
+- Shift+click-drag is the accepted selection model for the TUI surfaces (Windows Terminal / standard alt-screen behavior)
+
+### Unwiring
+- Removed `"dashboard": "node scripts/dashboard-server.mjs"` from `package.json` scripts — the sidecar is no longer launched via `npm run dashboard`; it must be invoked directly if needed
+- `/forge:dashboard` skill wording updated: renders the in-chat snapshot for the current session; points users to the wrapper prototype for the live terminal experience; removes the earlier Bash launch of `scripts/forge-tui.mjs` (which failed silently in Claude's tool harness due to no TTY)
+- `docs/FORGE-OVERVIEW.md` and `docs/FORGE-REFERENCE.md` updated: primary terminal dashboard is the wrapper TUI; sidecar explicitly labelled legacy/fallback
+
+### Pushed to origin
+- `ffbe9df` — wrapper right pane now shows live dashboard data
+- `633d465` — terminal observer prototype
+- this commit — direction change
+
 ## [2026-04-14] Sidecar Project Identity and Mismatch Detection
 
 ### Project identity in sidecar

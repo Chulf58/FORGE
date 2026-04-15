@@ -4,19 +4,9 @@ description: "Show all FORGE runs and board state at a glance. Use when: user as
 allowed-tools: "Read Glob Bash"
 ---
 
-Show a compact registry-backed snapshot of the current FORGE state. Launch the in-terminal TUI (read-only live dashboard) inline.
+Show a compact registry-backed snapshot of the current FORGE state.
 
-## Step 0 — Launch the TUI
-
-Launch the FORGE terminal UI inline via Bash. The TUI takes over the terminal, refreshes every 5s, and exits on `q` or Ctrl+C.
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/forge-tui.mjs"
-```
-
-The TUI is read-only in this release — no gate or merge actions yet (those are coming in a follow-up). When the user exits, the Claude Code prompt returns. At that point, also produce the text dashboard rendering below as a quick summary for the conversation record.
-
-**Fallback:** the browser sidecar at `scripts/dashboard-server.mjs` is still available via `npm run dashboard` for users who prefer a browser view. The TUI is the primary surface.
+This skill renders the in-chat snapshot for the current session — no terminal takeover, no background process. For the live terminal dashboard experience alongside Claude, use the wrapper prototype (`scripts/forge-wrapper-proto.mjs`) from your terminal; it is the new primary surface during the current transition phase and is not yet a finalized launcher. The browser sidecar (`scripts/dashboard-server.mjs`) remains on disk as a legacy/fallback during the same transition.
 
 ## Data source
 
