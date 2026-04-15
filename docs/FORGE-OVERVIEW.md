@@ -712,13 +712,43 @@ The glass wall was cracked: the system could look truthful while silently runnin
 
 ---
 
+### Era 21 — The Wrapper TUI: FORGE in the same terminal as Claude (2026-04-15)
+
+Era 20 made the plugin structurally honest. Era 21 made it visible without leaving the work.
+
+**Before:** To watch FORGE run, the user had to leave Claude. The dashboard was an HTTP sidecar — start a separate Node server (`npm run dashboard`), open a browser tab at `localhost:7878`, deal with port conflicts when a second session started, and live with project mismatch when two sessions from two repos fought over the same port. Every gate, every run, every board check was a context switch out of the terminal and back. `/forge:dashboard` existed as a skill but only produced an in-chat text snapshot — for a live view you had to alt-tab to the browser. The glass wall was visible, but through a different window. Transparency without proximity.
+
+**What changed:** A pivot from browser-based sidecar to terminal-native split-pane TUI, delivered as three coherent artefacts plus an unwiring sweep:
+
+1. **Wrapper prototype — the new primary surface.** `scripts/forge-wrapper-proto.mjs` spawns Claude as a `node-pty` child, parses its output through `@xterm/headless` to preserve the cell grid, and paints it into the left pane of a `blessed` split screen. The right pane polls `buildDashboardState` every 2s and renders active runs, pending gates, recent completions, and top-priority TODOs. Color-aware cell rendering preserves Claude's own styling; SGR mouse reporting routes the wheel to the xterm buffer (no more wheel-to-arrow translation); `Ctrl+B` `Q` quits cleanly with explicit alt-screen restoration and a 500ms SIGKILL fallback.
+
+2. **Observer prototype — the dashboard-only secondary.** `scripts/forge-observer-proto.mjs` gives the same four-section dashboard as a standalone full-screen blessed app, for users who want to run native `claude` in one terminal pane and see FORGE state in another. No wrapping, no PTY, no mouse capture — terminal owns text selection natively.
+
+3. **Sidecar unwired, not deleted.** `"dashboard": "node scripts/dashboard-server.mjs"` removed from `package.json`. `/forge:dashboard` skill repointed: renders the in-chat snapshot for the current session and points users at the wrapper prototype for the live experience. `scripts/dashboard-server.mjs` and its three regression tests stay on disk during the transition phase; a later cleanup slice removes them once the wrapper path is fully validated.
+
+4. **Truecolor banner stashed.** The legacy Electron app's Braille-pattern flame + RGB-gradient FORGE wordmark (`scripts/forge-banner-truecolor.js`) was lifted from `C:\Users\cuj\Forge\banner.js` and committed verbatim for use in a future wrapper splash. Zero dependencies, self-contained.
+
+**What this exposed:** Terminals cannot simultaneously do app-captured mouse (buttons, drag-drop) and native click-drag text selection on the same pane — it's protocol-level mutually exclusive, not a library limitation. Every serious TUI with a mouse UI (vim, tmux, htop, lazygit, k9s) accepts `Shift`+click-drag as the selection override, because Windows Terminal and friends treat Shift as the "bypass the app" modifier. FORGE adopted the same convention. The tension motivates the next era's direction: interactive right-pane actions (gate approve/discard, merge retry, drag-drop task reordering) and pixel-art worker cards — now possible without compromising the copy-paste story, because Shift is the release valve.
+
+**Shipped in this era:**
+- Wrapper mouse wheel scroll via SGR mouse reporting (commit `f12f85c`)
+- Wrapper color-aware Claude pane — per-cell reads of xterm's `IBufferCell`, ANSI SGR diff-emission, wide-char continuation handling (commit `bafbd81`)
+- Wrapper right-pane dashboard polling with 2s refresh + blessed color markup + tag-escaped user strings (commit `ffbe9df`)
+- Observer prototype + non-TTY smoke test (commit `633d465`)
+- Direction change: wrapper TUI primary, sidecar legacy; `/forge:dashboard` reframed; npm script removed; docs updated (commit `473721c`)
+- Legacy truecolor banner + flame stashed for future splash (commit `cfb9bab`)
+- Quit-path hardening on the wrapper: alt-screen restoration, mouse-tracking cleanup, 500ms SIGKILL fallback (commit `2b4fd44`, from the prior end of the day)
+- New utility: `scripts/png-to-sprite.mjs` for converting PNG assets to half-block truecolor terminal sprites (reusable for future worker cards)
+
+---
+
 ### What's planned next
 
-*Source: `.pipeline/board.json` — 25 open items as of 2026-04-14.*
+*Source: `.pipeline/board.json` — 41 open items as of 2026-04-15.*
 
 **Parallel sessions with worktree isolation:** Start task B while task A is still running. Each pipeline run gets its own git worktree. Design includes stuck detection, crash recovery, atomic commits per task, cost tracking per session. Sub-tasks: dependency analysis for wave scheduling, stuck loop detection, crash recovery with forensics.
 
-**Terminal dashboard expansion:** The wrapper TUI prototype (`scripts/forge-wrapper-proto.mjs`) is the new primary surface — embeds Claude on the left and the FORGE dashboard on the right in a single terminal process, refreshed on a timer. Standalone observer TUI (`scripts/forge-observer-proto.mjs`) covers the dashboard-only secondary case. Next: promote the wrapper to a finalized launcher, add gate/merge actions into the right pane, cost tracking display. The HTTP sidecar (`scripts/dashboard-server.mjs`) remains on disk as legacy/fallback during the transition and will be removed in a later cleanup.
+**Wrapper TUI maturation:** Era 21 delivered the prototype pivot. Remaining work: promote the wrapper to a finalized `bin/forge` launcher (wrapper script stays; launcher wires `forge` on PATH). Add right-pane mouse interactions — clickable gate approve/discard, merge-blocked retry, drag-drop task reordering — leveraging the Shift-to-select tradeoff. Pixel-art worker cards driven by `scripts/png-to-sprite.mjs` once sprite PNGs are authored. Cost tracking display per run. Hard-delete the legacy HTTP sidecar files and `scripts/forge-tui.mjs` once the wrapper path is fully validated across platforms.
 
 **External model routing (Codex/OpenAI):** The `forge_call_external` adapter, router, config, and usage tracking are built and tested (auth + request format verified). Blocked on user's OpenAI API billing. When resolved, one test call activates it.
 
