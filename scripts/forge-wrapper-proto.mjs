@@ -168,18 +168,69 @@ ptyProc.onExit(({ exitCode }) => {
   quit(exitCode ?? 0);
 });
 
-// Paint xterm's active buffer into the left pane.
-// Strategy: for each row in the viewport, use translateToString to get the
-// raw character content (no ANSI), join with newlines, setContent on the box.
-// This proves the cell-grid round-trip works. Colors/attributes come in a
-// follow-up slice once we confirm no control-code garbage.
+// Paint xterm's active buffer into the left pane with color + attributes.
+// Strategy: walk each cell, diff against the last emitted style, and only
+// push a fresh ANSI SGR sequence when the style actually changes. On change
+// we emit a full reset + new state (simplest correct form — the alternative,
+// differential attribute toggles, is fiddly with no measurable win for a
+// 200x60 grid). Reset at end-of-line so row styling can't bleed across the
+// blessed pane border.
+//
+// Cell API (@xterm/headless): getCell(x, reusableCell) fills the same object
+// each call for performance. Wide-char continuation cells have getWidth()===0
+// and are skipped. Empty glyphs become a literal space to preserve alignment.
 function paintLeftPane() {
   const buf = term.buffer.active;
   const lines = [];
   const start = buf.viewportY;
+  const cell = buf.getNullCell();
   for (let y = 0; y < term.rows; y++) {
     const line = buf.getLine(start + y);
-    lines.push(line ? line.translateToString(false) : "");
+    if (!line) { lines.push(""); continue; }
+    let rowStr = "";
+    let lastStyle = "__init__";
+    for (let x = 0; x < term.cols; x++) {
+      const c = line.getCell(x, cell);
+      if (!c) break;
+      if (c.getWidth() === 0) continue;           // continuation of prev wide char
+      const chars = c.getChars() || " ";
+      // Compact style key for change detection across consecutive cells.
+      const fgMode = c.getFgColorMode();
+      const bgMode = c.getBgColorMode();
+      const fg = c.getFgColor();
+      const bg = c.getBgColor();
+      const attrBits =
+        (c.isBold()      ? 1  : 0) |
+        (c.isItalic()    ? 2  : 0) |
+        (c.isUnderline() ? 4  : 0) |
+        (c.isDim()       ? 8  : 0) |
+        (c.isInverse()   ? 16 : 0);
+      const styleKey = fgMode + ":" + fg + ":" + bgMode + ":" + bg + ":" + attrBits;
+      if (styleKey !== lastStyle) {
+        rowStr += "\x1b[0m";                      // reset then re-assert state
+        if (attrBits & 1)  rowStr += "\x1b[1m";
+        if (attrBits & 2)  rowStr += "\x1b[3m";
+        if (attrBits & 4)  rowStr += "\x1b[4m";
+        if (attrBits & 8)  rowStr += "\x1b[2m";
+        if (attrBits & 16) rowStr += "\x1b[7m";
+        if (c.isFgRGB()) {
+          const r = (fg >> 16) & 0xff, g = (fg >> 8) & 0xff, b = fg & 0xff;
+          rowStr += "\x1b[38;2;" + r + ";" + g + ";" + b + "m";
+        } else if (c.isFgPalette()) {
+          rowStr += "\x1b[38;5;" + fg + "m";
+        }
+        if (c.isBgRGB()) {
+          const r = (bg >> 16) & 0xff, g = (bg >> 8) & 0xff, b = bg & 0xff;
+          rowStr += "\x1b[48;2;" + r + ";" + g + ";" + b + "m";
+        } else if (c.isBgPalette()) {
+          rowStr += "\x1b[48;5;" + bg + "m";
+        }
+        lastStyle = styleKey;
+      }
+      rowStr += chars;
+    }
+    rowStr += "\x1b[0m";                          // reset at EOL — no bleed
+    lines.push(rowStr);
   }
   leftPane.setContent(lines.join("\n"));
   screen.render();
