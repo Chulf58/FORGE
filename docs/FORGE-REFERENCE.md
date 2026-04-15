@@ -1,8 +1,8 @@
 # FORGE — Technical Reference
 
-> Generated on 2026-04-14 from source-of-truth files. Do not edit manually — regenerate with `/forge:refresh-docs`.
+> Last drift-patched 2026-04-15 from source-of-truth files. Do not edit manually — regenerate with `/forge:refresh-docs` or patch specific drifts per `docs/FORGE-OVERVIEW-RECIPE.md` Part 2.
 >
-> **Counts at generation time:** 29 agents, 21 skills, 13 hook scripts (7 event types), 24 MCP tools, 5 lib modules, 1 forge-core package.
+> **Counts at patch time:** 29 agents, 21 skills, 13 hook scripts (7 event types), 24 MCP tools, 5 lib modules, 1 forge-core package.
 
 ---
 
@@ -872,6 +872,8 @@ Run {
 | `scripts/forge-wrapper-proto.mjs` | Primary terminal dashboard surface (prototype). Spawns Claude in a node-pty child, renders it via `@xterm/headless` into a blessed left pane, polls `buildDashboardState()` into a right pane every 2s. Mouse wheel scrolls the Claude pane; quit via `Ctrl+B` then `Q`. |
 | `scripts/forge-observer-proto.mjs` | Secondary terminal dashboard surface (prototype). Standalone full-screen blessed dashboard using `buildDashboardState()`; user runs it in a separate terminal pane next to native `claude`. Read-only; quit via `q`/`Q`/`Ctrl+C`. |
 | `scripts/dashboard-server.mjs` | Legacy local HTTP sidecar (Node built-in `http`, zero deps). `GET /` serves self-contained HTML dashboard. `GET /api/dashboard-state` returns JSON from `buildDashboardState()`. `POST /api/gate-action` handles approve/discard. `POST /api/merge-action` retries a merge-blocked worktree. Loopback-only (127.0.0.1), port 7878. Unwired from `package.json` — run directly via `node scripts/dashboard-server.mjs` during the transition phase. Scheduled for removal once the wrapper TUI is fully validated. |
+| `scripts/png-to-sprite.mjs` | PNG → half-block + truecolor terminal sprite converter. Reads PNG via `pngjs`, renders upper-half-block (U+2580) cells with `\x1b[38;2;…m` / `\x1b[48;2;…m` SGR. Supports `--trim` (crop transparent/white padding) and `--scale N` (integer downscale with per-block averaging). Reusable asset pipeline for future wrapper worker cards. |
+| `scripts/forge-banner-truecolor.js` | Stashed truecolor FORGE banner (Braille-pattern flame + RGB-gradient bitmap text). Verbatim lift from the legacy Electron app's `banner.js`. Not wired to any hook or wrapper yet — kept as a future splash asset. Reads `.forge` in cwd (Electron-era identity path); a port to `.pipeline/project.json` is pending. |
 
 ### Templates (3 template sets)
 
