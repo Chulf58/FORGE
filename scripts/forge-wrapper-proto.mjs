@@ -8,18 +8,10 @@
 // Run:  node scripts/forge-wrapper-proto.mjs
 // Exit: Ctrl+B then Q (tmux-style prefix shortcut)
 //
-// What this proves (when it works):
-//   - node-pty spawns a child process in a real PTY on this platform
-//   - blessed layout survives alongside a noisy ANSI stream
-//   - raw keystrokes forward to the PTY child
-//   - quit/cleanup path works end-to-end
-//
-// What this deliberately does NOT do:
-//   - dashboard data polling
-//   - worker cards or sprites
-//   - any action wiring
-//   - distribution shims (bin/forge.cmd, bin/forge.sh)
-//   - final launcher UX polish
+// Architecture:
+//   node-pty → @xterm/headless Terminal (parses ANSI into cell grid)
+//     → render loop copies cells to blessed left pane
+//   blessed owns layout, right pane, keyboard, mouse, resize
 //
 // Environment overrides:
 //   FORGE_CLAUDE_CMD — path to claude binary (default: 'claude')
@@ -34,10 +26,11 @@ const PLUGIN_ROOT = resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
 
 // Load deps from mcp/node_modules (our single dep location).
-let blessed, pty;
+let blessed, pty, xterm;
 try {
   blessed = require(join(PLUGIN_ROOT, "mcp", "node_modules", "blessed"));
   pty = require(join(PLUGIN_ROOT, "mcp", "node_modules", "node-pty"));
+  xterm = require(join(PLUGIN_ROOT, "mcp", "node_modules", "@xterm", "headless"));
 } catch (err) {
   console.error("[forge-wrapper-proto] Failed to load dependencies: " + err.message);
   console.error("[forge-wrapper-proto] Run `node hooks/mcp-deps-install.js` to install, or start a fresh Claude Code session.");
@@ -66,17 +59,14 @@ const screen = blessed.screen({
 const LEFT_WIDTH = "70%";
 const RIGHT_OFFSET = "70%";
 
-// Left pane — PTY-hosted Claude output.
-const leftPane = blessed.log({
+// Left pane — blessed.box as a plain canvas. @xterm/headless handles the
+// terminal emulation; we paint its cell grid into this box on each tick.
+const leftPane = blessed.box({
   parent: screen,
   top: 0, left: 0, width: LEFT_WIDTH, height: "100%-1",
   border: { type: "line" },
   label: ` ${cmd} `,
-  scrollable: true,
-  alwaysScroll: true,
-  scrollOnInput: true,
-  mouse: true,
-  tags: false,              // keep ANSI bytes literal — don't let blessed parse {tag} markup
+  tags: false,
   style: { border: { fg: "grey" } },
 });
 
@@ -95,26 +85,35 @@ const rightPane = blessed.box({
 const status = blessed.box({
   parent: screen,
   bottom: 0, left: 0, right: 0, height: 1,
-  content: " Ctrl+B then Q to quit · mouse scroll in panes · resize supported",
+  content: " Ctrl+B then Q to quit · xterm-backed claude pane · resize supported",
   style: { bg: "blue", fg: "white" },
 });
 
-// Compute PTY child size from the left pane's inner area.
-function ptySize() {
-  // leftPane.width is computed but may be a string like "70%"; use actual width.
+// Compute PTY child size from the left pane's inner area (minus border).
+function paneSize() {
   const w = Math.max(10, Math.floor(screen.width * 0.7) - 2);  // -2 for border
   const h = Math.max(5, screen.height - 3);                    // -2 border, -1 status
   return { cols: w, rows: h };
 }
 
+// Create the xterm.js headless terminal emulator.
+// allowProposedApi is required to access the buffer cell API we paint from.
+const initialSize = paneSize();
+const term = new xterm.Terminal({
+  cols: initialSize.cols,
+  rows: initialSize.rows,
+  allowProposedApi: true,
+  scrollback: 1000,
+  convertEol: false,
+});
+
 // Spawn the PTY child.
 let ptyProc;
 try {
-  const sz = ptySize();
   ptyProc = pty.spawn(cmd, args, {
     name: "xterm-256color",
-    cols: sz.cols,
-    rows: sz.rows,
+    cols: initialSize.cols,
+    rows: initialSize.rows,
     cwd: process.cwd(),
     env: process.env,
   });
@@ -125,10 +124,9 @@ try {
   process.exit(1);
 }
 
-// Forward PTY output into the left pane. Log() appends and scrolls to bottom.
+// Feed PTY bytes into the xterm parser.
 ptyProc.onData(data => {
-  leftPane.log(data);
-  screen.render();
+  term.write(data);
 });
 
 ptyProc.onExit(({ exitCode }) => {
@@ -137,10 +135,41 @@ ptyProc.onExit(({ exitCode }) => {
   process.exit(exitCode ?? 0);
 });
 
-// Key forwarding. blessed captures keys at the screen level and emits two
-// events: `keypress` (cooked, with modifiers) and raw stdin bytes via
-// screen.program. We forward every byte to the PTY unless the user hits the
-// Ctrl+B prefix. Then we interpret the next key as a wrapper command.
+// Paint xterm's active buffer into the left pane.
+// Strategy: for each row in the viewport, use translateToString to get the
+// raw character content (no ANSI), join with newlines, setContent on the box.
+// This proves the cell-grid round-trip works. Colors/attributes come in a
+// follow-up slice once we confirm no control-code garbage.
+function paintLeftPane() {
+  const buf = term.buffer.active;
+  const lines = [];
+  const start = buf.viewportY;
+  for (let y = 0; y < term.rows; y++) {
+    const line = buf.getLine(start + y);
+    lines.push(line ? line.translateToString(false) : "");
+  }
+  leftPane.setContent(lines.join("\n"));
+  screen.render();
+}
+
+// Debounce paint calls — xterm emits onRender multiple times per PTY chunk.
+let paintScheduled = false;
+function schedulePaint() {
+  if (paintScheduled) return;
+  paintScheduled = true;
+  setImmediate(() => {
+    paintScheduled = false;
+    try { paintLeftPane(); } catch (_) { /* best-effort render */ }
+  });
+}
+
+term.onRender(schedulePaint);
+// Also paint once after a short delay so the first PTY output renders
+// even if the first onRender arrives before screen is fully ready.
+setTimeout(schedulePaint, 100);
+
+// Key forwarding. blessed captures keys at the screen level; we forward
+// every byte to the PTY unless the user hits Ctrl+B prefix.
 let prefixArmed = false;
 
 screen.on("keypress", (ch, key) => {
@@ -159,9 +188,7 @@ screen.on("keypress", (ch, key) => {
     prefixArmed = true;
     return;
   }
-  // Forward raw character/byte to the PTY.
-  // blessed's `ch` is the literal character for printable keys.
-  // For special keys (arrows, function), we need the sequence blessed saw.
+  // Forward raw character/sequence to the PTY.
   if (key.sequence) {
     ptyProc.write(key.sequence);
   } else if (ch) {
@@ -169,11 +196,13 @@ screen.on("keypress", (ch, key) => {
   }
 });
 
-// Handle terminal resize — update PTY child cols/rows.
+// Handle terminal resize — update xterm + PTY in lockstep.
 screen.on("resize", () => {
   try {
-    const sz = ptySize();
+    const sz = paneSize();
+    term.resize(sz.cols, sz.rows);
     ptyProc.resize(sz.cols, sz.rows);
+    schedulePaint();
   } catch (_) { /* best effort */ }
 });
 
