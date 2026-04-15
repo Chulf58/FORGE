@@ -70,7 +70,7 @@ const pane = blessed.box({
   label: " FORGE observer — " + PROJECT_DIR + " ",
   tags: true,
   content: "\n  {grey-fg}Loading…{/}",
-  style: { border: { fg: "yellow" } },
+  style: { bg: "black", border: { fg: "yellow" } },
   scrollable: true,
   alwaysScroll: true,
   keys: true,

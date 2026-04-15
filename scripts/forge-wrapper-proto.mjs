@@ -72,7 +72,7 @@ const leftPane = blessed.box({
   border: { type: "line" },
   label: ` ${cmd} `,
   tags: false,
-  style: { border: { fg: "grey" } },
+  style: { bg: "black", border: { fg: "grey" } },
 });
 
 // Right pane — live FORGE dashboard, refreshed on a timer by
@@ -87,7 +87,7 @@ const rightPane = blessed.box({
   label: " FORGE ",
   tags: true,
   content: "\n  {grey-fg}Loading…{/}",
-  style: { border: { fg: "yellow" } },
+  style: { bg: "black", border: { fg: "yellow" } },
   scrollable: true,
   alwaysScroll: true,
 });
@@ -232,6 +232,12 @@ function paintLeftPane() {
           rowStr += "\x1b[48;2;" + r + ";" + g + ";" + b + "m";
         } else if (c.isBgPalette()) {
           rowStr += "\x1b[48;5;" + bg + "m";
+        } else {
+          // Default bg — emit explicit black so the terminal's acrylic/opacity
+          // effect can't bleed through empty cells. Without this, cells whose
+          // bg is "default" render with the terminal's background, which on
+          // Windows Terminal with acrylic on == the desktop showing through.
+          rowStr += "\x1b[48;2;0;0;0m";
         }
         lastStyle = styleKey;
       }
