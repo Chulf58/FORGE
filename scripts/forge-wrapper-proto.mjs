@@ -20,11 +20,59 @@
 import { createRequire } from "node:module";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { buildDashboardState } from "../mcp/lib/dashboard-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
+
+// Locate the Claude binary the wrapper should spawn as its PTY child.
+// Order of resolution:
+//   1. FORGE_WRAP_SPAWN  — testing override (e.g. 'cmd' on Windows).
+//   2. FORGE_CLAUDE_CMD  — explicit override for this session.
+//   3. `where claude` / `which claude` — PATH resolution via the system tool.
+//   4. Common Windows install locations (.local\bin, LOCALAPPDATA\Programs\claude, APPDATA\npm).
+//   5. Bare "claude" — last-resort fallback; pty.spawn will error with ENOENT if PATH fails.
+//
+// Covers the common failure mode where `claude` isn't on PATH for a cmd
+// environment (File Explorer launch, portable installs). Keeps the two
+// existing env-var overrides as the top priority so tests and power
+// users aren't affected.
+function findClaude() {
+  if (process.env.FORGE_WRAP_SPAWN) return process.env.FORGE_WRAP_SPAWN;
+  if (process.env.FORGE_CLAUDE_CMD) return process.env.FORGE_CLAUDE_CMD;
+
+  // Step 3 — ask the shell. execFileSync swallows stdout on non-zero exit.
+  const pathTool = process.platform === "win32" ? "where" : "which";
+  try {
+    const out = execFileSync(pathTool, ["claude"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const first = (out || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0];
+    if (first) return first;
+  } catch (_) { /* not on PATH — fall through to hardcoded candidates */ }
+
+  // Step 4 — Windows common locations. Kept narrow on purpose; adding more
+  // paths increases the false-match surface.
+  if (process.platform === "win32") {
+    const candidates = [
+      process.env.USERPROFILE && join(process.env.USERPROFILE, ".local", "bin", "claude.exe"),
+      process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs", "claude", "claude.exe"),
+      process.env.APPDATA && join(process.env.APPDATA, "npm", "claude.cmd"),
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      try {
+        if (existsSync(candidate)) return candidate;
+      } catch (_) { /* unreadable path — skip */ }
+    }
+  }
+
+  // Step 5 — last resort; pty.spawn will report ENOENT if this also fails.
+  return "claude";
+}
 
 // Load deps from mcp/node_modules (our single dep location).
 let blessed, pty, xterm;
@@ -44,8 +92,9 @@ if (!process.stdout.isTTY) {
   process.exit(0);
 }
 
-// Spawn target — default to Claude Code, but allow override for testing.
-const cmd = process.env.FORGE_WRAP_SPAWN || process.env.FORGE_CLAUDE_CMD || "claude";
+// Spawn target — resolved via findClaude() which honours env overrides,
+// then PATH, then common Windows install locations, then falls back to bare.
+const cmd = findClaude();
 const args = process.argv.slice(2);
 
 // Blessed screen setup. Mouse tracking is disabled for the prototype — when
