@@ -171,32 +171,46 @@ term.onWriteParsed(schedulePaint);
 // even if the first onRender arrives before screen is fully ready.
 setTimeout(schedulePaint, 100);
 
-// Key forwarding. blessed captures keys at the screen level; we forward
-// every byte to the PTY unless the user hits Ctrl+B prefix.
-let prefixArmed = false;
+// Key forwarding — bypass blessed's keypress events entirely and read raw
+// bytes from stdin. blessed's keypress fires alongside stdin data which
+// caused each keystroke to be forwarded twice (visible as phantom Enters).
+//
+// We forward every byte as-is to the PTY, with one intercept: the escape
+// sequence for the quit shortcut (Ctrl+B then Q). Ctrl+B is byte 0x02 (STX).
+//
+// blessed's screen.program has already put stdin in raw mode; we just need
+// to listen to data events. Disable blessed's keypress handling on screen.
+try { screen.program.input.removeAllListeners("keypress"); } catch (_) {}
 
-screen.on("keypress", (ch, key) => {
-  if (!key) return;
-  if (prefixArmed) {
+let prefixArmed = false;
+const CTRL_B = 0x02;
+
+process.stdin.on("data", (buf) => {
+  // Fast path: single byte, check for prefix + quit sequence.
+  if (buf.length === 1 && prefixArmed) {
     prefixArmed = false;
-    if (key.name === "q" || (key.ctrl && key.name === "c")) {
+    const b = buf[0];
+    // q or Q = quit
+    if (b === 0x71 || b === 0x51) {
       try { ptyProc.kill(); } catch (_) {}
       screen.destroy();
       process.exit(0);
     }
-    // Unknown prefix key — swallow silently so it doesn't reach PTY.
+    // Ctrl+C after prefix also quits
+    if (b === 0x03) {
+      try { ptyProc.kill(); } catch (_) {}
+      screen.destroy();
+      process.exit(0);
+    }
+    // Any other key after prefix — swallow to avoid leaking to PTY.
     return;
   }
-  if (key.ctrl && key.name === "b") {
+  if (buf.length === 1 && buf[0] === CTRL_B) {
     prefixArmed = true;
     return;
   }
-  // Forward raw character/sequence to the PTY.
-  if (key.sequence) {
-    ptyProc.write(key.sequence);
-  } else if (ch) {
-    ptyProc.write(ch);
-  }
+  // Everything else: raw passthrough to PTY.
+  ptyProc.write(buf);
 });
 
 // Handle terminal resize — update xterm + PTY in lockstep.
