@@ -4,6 +4,33 @@ Non-obvious technical decisions made during development. Reference this when a s
 
 ---
 
+## [2026-04-15] Observer-primary over wrapper; wt.exe SessionStart hook for auto-split-pane
+
+**Context:** This sprint delivered two parallel TUI surfaces for the FORGE dashboard: a **wrapper** (`scripts/forge-wrapper-proto.mjs`) that embeds Claude as a `node-pty` child, renders it via `@xterm/headless` into a blessed split-pane with the dashboard on the right, and carries all the complex PTY/render/mouse/quit code; and an **observer** (`scripts/forge-observer-proto.mjs`), a standalone full-screen blessed dashboard intended to run in a separate terminal pane next to native `claude`. Board tasks `24fae760` (TUI library evaluation) and `3438a2be` (wrapper-primary vs observer-primary) were both flagged as blocking. This entry settles `3438a2be`; `24fae760` consequentially simplifies.
+
+**Decision:** The **observer** becomes the primary terminal-native FORGE surface. The **wrapper** is demoted to experimental/opt-in. Files remain on disk — no hard-delete in this slice. A SessionStart hook that calls `wt.exe -w 0 sp -V --size 0.35 -- <observer-launcher>` restores the wrapper's "one command starts both" UX without the wrapper's complexity.
+
+**Reason:** The wrapper carries ~500 lines of hard complexity built this sprint: PTY management, `@xterm/headless` double terminal emulation, a hand-rolled ~60-line SGR cell-diff paint loop, raw stdin forwarding, SGR mouse reporting with the Shift+click-drag selection tradeoff, the opacity fix, a 500ms-SIGKILL quit path, and the `findClaude()` discovery chain. Every one of those exists to preserve a single user-facing UX: "one command starts Claude and the dashboard in one terminal window." Verified external evidence (`alex-radaev/claude-panel`, file `hooks/scripts/session-start.sh`) shows this same UX can be achieved via a ~15-line SessionStart hook that calls `wt.exe -w 0 sp -V --size 0.35 -- <command>` on Windows Terminal, with an `osascript` branch for iTerm2. ~500 lines of wrapper vs a 15-line hook plus a native-terminal split that has strictly better properties: native text selection (no `Shift` needed in Claude's pane), terminal-native pane resize, crash isolation between Claude and the dashboard.
+
+**Consequences:**
+- Next TUI feature work (clickable gate approve/discard, merge retry, drag-drop task reorder, pixel-art worker cards, token usage display) lands in the observer pane, not the wrapper.
+- Task `24fae760` (TUI library) simplifies: without the wrapper's PTY embedding constraint, Ink becomes viable for the whole TUI surface. blessed/neo-blessed no longer mandatory.
+- Shift+click-drag tradeoff is contained to the FORGE dashboard pane (where mouse UI lives anyway). Claude's own pane is owned by the terminal and keeps fully native selection regardless of any future mouse capture we add in the observer.
+- `scripts/forge-wrapper-proto.mjs`, `bin/forge.js`, `bin/forge.cmd`, `scripts/forge-launcher-smoke-test.mjs`, and the wrapper-launcher generation inside `hooks/mcp-deps-install.js` all stay on disk during the transition phase. Hard-delete is a later cleanup slice once observer-primary is fully validated in daily use.
+
+**Alternatives considered:**
+- **Wrapper stays primary as-is** — rejected. The complexity cost is not justified by the UX delta vs a `wt.exe`-based hook.
+- **Hard-delete wrapper now** — rejected. Observer+hook path not validated in daily use yet; wrapper stays as an escape hatch through the transition.
+- **On-demand dashboard** (codeburn-style: user runs when curious) — rejected because worker sessions will live in the side panel and need to be visible during pipeline execution.
+
+**Reference:** `alex-radaev/claude-panel` demonstrates the pattern in production. Their exact `wt.exe` invocation from `hooks/scripts/session-start.sh`:
+```
+wt.exe -w 0 sp -V --size 0.35 -- wsl.exe -d "$WSL_DISTRO_NAME" -- bash -lc "$CMD"
+```
+FORGE (native Windows, not WSL) drops the `wsl.exe` hop. Implementation follow-up is tracked on the board as a new high-priority task.
+
+---
+
 ## [2026-04-10] Plugin as the distribution model (not Electron)
 
 **Context:** FORGE started as an Electron desktop app. Distribution required building installers, managing Electron updates, and copying agent/hook/command files into every project. The plugin approach was explored as an alternative.

@@ -1438,8 +1438,8 @@
     {
       "id": "3438a2be",
       "priority": "high",
-      "text": "ARCHITECTURE DECISION (BLOCKING — no new wrapper features until this lands): Evaluate 'observer-primary, wrapper-optional' as the winning workflow before continuing wrapper investment. The wrapper carries ~all of the hard complexity we've built this sprint (PTY embedding of Claude via node-pty, double terminal emulation via @xterm/headless, SGR mouse-reporting with wheel scroll + Shift-to-select tradeoff, acrylic opacity fix, Ctrl+B-Q quit path, color-aware cell painting) — all to preserve the 'one command starts both Claude and the dashboard' UX. The observer pattern (user runs native `claude` in one terminal pane, `bin/forge-observer` in a second pane, split via Alt+Shift+Plus in Windows Terminal) avoids every one of those concerns: no PTY, no xterm.js, no mouse capture, no cell painting, no quit-path hardening. Scope: use observer-primary as actual daily workflow for ~1 day of real FORGE usage. Open `claude` in pane 1, `node scripts/forge-observer-proto.mjs` in pane 2. Compare honestly: does the muscle memory of opening a split pane yourself meaningfully worse than the wrapper's one-command UX? Is the ~400 lines of wrapper PTY/xterm/mouse/paint code worth that difference? Outcomes: (a) wrapper stays primary as-is (UX wins over complexity), (b) wrapper demoted to experimental / opt-in, observer becomes primary (most complexity disappears from the maintained surface), (c) deprecate wrapper entirely and hard-delete after grace period. This decision unlocks or blocks: launcher polish, sprite rendering, interactive gate/merge actions, reactive state — all land in whichever surface is primary. Output: short verdict note in `docs/DECISIONS.md` or handoff.",
-      "done": false,
+      "text": "[RESOLVED 2026-04-15 → observer-primary chosen; wrapper demoted to experimental. See `docs/DECISIONS.md` 2026-04-15 entry. Implementation follow-up tracked as the wt.exe SessionStart hook task.] ORIGINAL: ARCHITECTURE DECISION (BLOCKING — no new wrapper features until this lands): Evaluate 'observer-primary, wrapper-optional' as the winning workflow before continuing wrapper investment. The wrapper carries ~all of the hard complexity we've built this sprint (PTY embedding of Claude via node-pty, double terminal emulation via @xterm/headless, SGR mouse-reporting with wheel scroll + Shift-to-select tradeoff, acrylic opacity fix, Ctrl+B-Q quit path, color-aware cell painting) — all to preserve the 'one command starts both Claude and the dashboard' UX. The observer pattern (user runs native `claude` in one terminal pane, `bin/forge-observer` in a second pane, split via Alt+Shift+Plus in Windows Terminal) avoids every one of those concerns: no PTY, no xterm.js, no mouse capture, no cell painting, no quit-path hardening. Resolution: evaluated via external reference (alex-radaev/claude-panel) — the wrapper's one-command UX is replicable in the observer architecture via a SessionStart hook calling `wt.exe -w 0 sp -V -- <observer>`. ~500 lines of wrapper vs ~15 lines of hook; observer-primary wins on every axis except possible theoretical overlay-on-Claude UI (which we never built).",
+      "done": true,
       "addedAt": 1776284117783,
       "tags": [
         "tui",
@@ -1447,7 +1447,8 @@
         "blocking",
         "wrapper",
         "observer"
-      ]
+      ],
+      "doneAt": 1776286523494
     },
     {
       "id": "0b6959d2",
@@ -1459,6 +1460,20 @@
         "security",
         "audit",
         "red-team"
+      ]
+    },
+    {
+      "id": "95aeb42f",
+      "priority": "high",
+      "text": "FEATURE: SessionStart hook that auto-opens the observer in a Windows Terminal split pane via `wt.exe`. Unblocks the observer-primary UX (decided 2026-04-15, see DECISIONS.md) with the \"one command starts both\" ergonomics we want to preserve.\n\n**Pattern reference (verified):** `alex-radaev/claude-panel`, file `hooks/scripts/session-start.sh`. Their exact invocation:\n`wt.exe -w 0 sp -V --size 0.35 -- wsl.exe -d \"$WSL_DISTRO_NAME\" -- bash -lc \"$CMD\"`\n\n**FORGE adaptation (native Windows, no WSL):**\n`wt.exe -w 0 sp -V --size 0.35 -- cmd /c \"<path-to-forge-observer-launcher>\"`\n\n**Scope for this slice:**\n1. Create `bin/forge-observer.cmd` — Windows shim for launching the observer, same hook-generated absolute-Node-path pattern as `bin/forge.cmd` (hooks/mcp-deps-install.js regenerates with `process.execPath`). Target: `scripts/forge-observer-proto.mjs`.\n2. Extend `hooks/mcp-deps-install.js` (or a new sibling SessionStart hook) to invoke `wt.exe -w 0 sp -V --size 0.35 -- cmd /c <absolute path to bin/forge-observer.cmd>` on session start.\n3. **Guard against subagent sessions.** Follow the claude-panel pattern: skip the split when `CLAUDE_CODE_TEAM_NAME` is set and/or walk the parent-process tree for `--parent-session-id`. Otherwise every spawned subagent would open another pane.\n4. **Platform dispatch:** Windows Terminal first. Detect `wt.exe` presence; if not available, log and skip (do not block session start). macOS (`osascript` for iTerm2) and Linux branches are out of scope — separate slices.\n5. **Failure modes** are non-blocking. If `wt.exe` isn't found, the user isn't in Windows Terminal, or the invocation errors, the hook should log via stderr (`[forge-observer-autosplit]` prefix) and exit 0. Claude Code must start regardless.\n6. **Regression coverage:** unit-level test that the hook (a) skips on subagent indicators, (b) skips cleanly when `wt.exe` is missing, (c) generates the expected command string given a mock environment. The actual split-pane spawn can't be tested in CI — manual verification after the slice lands.\n7. **Do NOT touch the wrapper** or its launcher; they stay on disk as experimental.\n8. Update `bin/forge.cmd` comment (or deprecate it to a doc) to point users at the observer-primary path. Do not delete it yet.\n\nCommit subject: `feat(hooks): auto-split-pane observer launch via wt.exe on SessionStart`\n\n**Follow-up slices after this one:**\n- Validate observer-primary as actual daily workflow (~1 day of real use).\n- Revisit library choice (task `24fae760`) now that blessed/PTY constraint is lifted — Ink becomes viable.\n- Hard-delete wrapper / xterm / node-pty dep path once observer-primary is fully validated.",
+      "done": false,
+      "addedAt": 1776286547387,
+      "tags": [
+        "tui",
+        "observer",
+        "hook",
+        "sessionstart",
+        "unblocks-observer-primary"
       ]
     }
   ],
