@@ -1,5 +1,8 @@
 ## [2026-04-15] Wrapper TUI Primary; Sidecar Legacy
 
+### Wrapper prototype refinements
+- Mouse wheel now scrolls the Claude pane instead of being translated to arrow keys by the terminal (commit `f12f85c`). Enables SGR mouse reporting (`\x1b[?1000h\x1b[?1002h\x1b[?1006h`), parses the CSI mouse sequences, routes wheel up/down to `term.scrollLines()`; non-wheel mouse events are swallowed so they don't leak to the PTY
+
 ### Direction change
 - Wrapper TUI prototype (`scripts/forge-wrapper-proto.mjs`) is the new primary dashboard surface during the current transition phase — embeds Claude on the left and live FORGE dashboard on the right in a single terminal process
 - Observer prototype (`scripts/forge-observer-proto.mjs`) is the secondary dashboard-only surface for users who want the dashboard in a separate terminal pane next to native `claude`
