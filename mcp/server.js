@@ -111,16 +111,25 @@ server.registerTool(
   "forge_read_board",
   {
     title: "FORGE Read Board",
-    description: "Returns tasks from the board's todos array, optionally filtered. Reads todos only (not the planned array).",
+    description: "Returns tasks from the board's todos array, optionally filtered and field-projected. Reads todos only (not the planned array). Use `filter` for the newer/ergonomic path with array-aware priority/tag matching; legacy `status`/`priority`/`tags`/`blocked` fields remain for backward compatibility but are superseded when `filter` is present. Use `fields` to slim each item to a subset of top-level keys.",
     inputSchema: z.object({
-      status: z.enum(["open", "done", "all"]).default("open").describe("Filter by task status"),
-      priority: z.enum(["high", "medium", "low"]).optional().describe("Filter by priority"),
-      tags: z.array(z.string()).optional().describe("Filter by tags (AND logic)"),
-      blocked: z.enum(["blocked", "unblocked", "all"]).default("all").describe("Filter by blocked state")
+      status: z.enum(["open", "done", "all"]).default("open").describe("Filter by task status (legacy — prefer `filter.done`). Ignored when `filter` is present."),
+      priority: z.enum(["high", "medium", "low"]).optional().describe("Filter by priority, single value (legacy — prefer `filter.priority`, which also accepts arrays). Ignored when `filter` is present."),
+      tags: z.array(z.string()).optional().describe("Filter by tags, AND-logic (legacy — prefer `filter.tag`, which uses match-any). Ignored when `filter` is present."),
+      blocked: z.enum(["blocked", "unblocked", "all"]).default("all").describe("Filter by blocked state (legacy). Ignored when `filter` is present."),
+      filter: z.object({
+        done: z.boolean().optional().describe("Exact boolean match on todo.done."),
+        priority: z.union([
+          z.enum(["high", "medium", "low"]),
+          z.array(z.enum(["high", "medium", "low"]))
+        ]).optional().describe("Match priority — single value or any-of array."),
+        tag: z.union([z.string(), z.array(z.string())]).optional().describe("Tag match — single or array, any-of semantics (matches if the todo has at least one of the listed tags).")
+      }).strict().optional().describe("Structured filter object. Supersedes legacy `status`/`priority`/`tags`/`blocked` when present. Applies `done` → `priority` → `tag`, AND-combined."),
+      fields: z.array(z.string()).optional().describe("Top-level keys to include per returned TODO. Omit for full objects. Keys not present on an item are silently dropped for that item.")
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
   },
-  async ({ status, priority, tags, blocked }) => {
+  async ({ status, priority, tags, blocked, filter, fields }) => {
     try {
       const projectDir = resolveProjectDir();
       const check = requirePipeline(projectDir);
@@ -132,37 +141,59 @@ server.registerTool(
 
       let items = read.data.todos || [];
 
-      // Filter by status
-      if (status === "open") {
-        items = items.filter(item => !item.done);
-      } else if (status === "done") {
-        items = items.filter(item => item.done);
+      if (filter) {
+        // New path — apply filter.done → filter.priority → filter.tag, AND-combined.
+        // Supersedes legacy flat fields so users on the new path get predictable
+        // behaviour regardless of the default `status="open"` legacy filter.
+        if (typeof filter.done === "boolean") {
+          items = items.filter(item => Boolean(item.done) === filter.done);
+        }
+        if (filter.priority !== undefined) {
+          const allowed = Array.isArray(filter.priority) ? filter.priority : [filter.priority];
+          items = items.filter(item => allowed.includes(item.priority));
+        }
+        if (filter.tag !== undefined) {
+          const allowed = Array.isArray(filter.tag) ? filter.tag : [filter.tag];
+          items = items.filter(item => {
+            const itemTags = item.tags || [];
+            return allowed.some(t => itemTags.includes(t));
+          });
+        }
+      } else {
+        // Legacy path — preserved verbatim for backward compatibility.
+        if (status === "open") {
+          items = items.filter(item => !item.done);
+        } else if (status === "done") {
+          items = items.filter(item => item.done);
+        }
+        if (priority) {
+          items = items.filter(item => item.priority === priority);
+        }
+        if (tags && tags.length > 0) {
+          items = items.filter(item => {
+            const itemTags = item.tags || [];
+            return tags.every(t => itemTags.includes(t));
+          });
+        }
+        if (blocked === "blocked") {
+          items = items.filter(item => (item.blockedBy || []).length > 0);
+        } else if (blocked === "unblocked") {
+          items = items.filter(item => (item.blockedBy || []).length === 0);
+        }
       }
-      // "all" — no filter
 
-      // Filter by priority
-      if (priority) {
-        items = items.filter(item => item.priority === priority);
-      }
-
-      // Filter by tags (AND logic)
-      if (tags && tags.length > 0) {
-        items = items.filter(item => {
-          const itemTags = item.tags || [];
-          return tags.every(t => itemTags.includes(t));
-        });
-      }
-
-      // Filter by blocked state
-      if (blocked === "blocked") {
-        items = items.filter(item => {
-          const deps = item.blockedBy || [];
-          return deps.length > 0;
-        });
-      } else if (blocked === "unblocked") {
-        items = items.filter(item => {
-          const deps = item.blockedBy || [];
-          return deps.length === 0;
+      // Field projection (orthogonal — runs after whichever filter path applied).
+      // Silent key-drop is intentional: requesting a key an item doesn't have
+      // is not an error, it just gets omitted from that item.
+      if (fields && fields.length > 0) {
+        items = items.map(item => {
+          const projected = {};
+          for (const key of fields) {
+            if (Object.prototype.hasOwnProperty.call(item, key)) {
+              projected[key] = item[key];
+            }
+          }
+          return projected;
         });
       }
 
