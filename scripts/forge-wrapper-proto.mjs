@@ -163,7 +163,10 @@ function schedulePaint() {
   });
 }
 
-term.onRender(schedulePaint);
+// @xterm/headless exposes onWriteParsed (not onRender — that's browser only).
+// Fires after term.write() finishes parsing each chunk, which is when the
+// buffer is in its updated state and ready to paint.
+term.onWriteParsed(schedulePaint);
 // Also paint once after a short delay so the first PTY output renders
 // even if the first onRender arrives before screen is fully ready.
 setTimeout(schedulePaint, 100);
