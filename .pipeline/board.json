@@ -1391,6 +1391,21 @@
         "cost",
         "observability"
       ]
+    },
+    {
+      "id": "f840c146",
+      "priority": "high",
+      "text": "FEATURE: Replace sidecar dashboard with blessed-based TUI. The sidecar HTTP server + browser UI was a quick fix with structural friction (port conflicts, project mismatch, browser context switch, two-session MCP bootstrap). TUI runs in the same Claude Code terminal, supports mouse natively (blessed library — chosen over Ink for mouse support), live-updates, and keeps the full action set (approve/discard gates, retry/discard merge-blocked runs). Replaces scripts/dashboard-server.mjs and the browser-launch flow in /forge:dashboard. Keeps forge_dashboard_state MCP tool as the data source. Needs a decision-only planning slice first: exact package deps (blessed alone or blessed + blessed-contrib), file layout, first-slice scope (read-only view vs full actions), launch mechanism (spawn/bin wrapper), sidecar deprecation strategy, test migration plan. User confirmed mouse-first UX because \"we have a lot of info and using arrow keys will feel heavy.\"",
+      "done": false,
+      "addedAt": 1776240784148,
+      "tags": [
+        "feature",
+        "tui",
+        "dashboard",
+        "blessed",
+        "replace-sidecar",
+        "ux"
+      ]
     }
   ],
   "planned": []
