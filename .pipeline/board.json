@@ -595,13 +595,14 @@
       "id": "forge-web-dashboard",
       "priority": "medium",
       "text": "FEATURE: Dashboard live-update and health signals. The sidecar dashboard (scripts/dashboard-server.mjs) is shipped with: HTML UI, active runs, gates, recent completions, board summary, welcome/help panel, gate approve/discard, merge-blocked retry/discard, auto-refresh via 5s client polling, in-session launch from /forge:dashboard. Remaining scope: (1) WebSocket or SSE push to replace polling — reduces latency and unnecessary network traffic; (2) health signal rendering — surface [health] signals from pipeline runs in the dashboard UI.",
-      "done": false,
+      "done": true,
       "addedAt": 1775749835561,
       "tags": [
         "plugin",
         "ui",
         "dashboard"
-      ]
+      ],
+      "doneAt": 1776267368788
     },
     {
       "id": "mcp-server-scaffold",
@@ -1381,7 +1382,7 @@
     {
       "id": "3b02cb81",
       "priority": "medium",
-      "text": "FEATURE: Token usage visibility in the sidecar dashboard. Show token consumption at three levels: (1) per run — input/output tokens for each pipeline run, broken down by agent invocation, (2) per session — running total for the current Claude Code session, (3) all-time per project — cumulative token usage across all sessions for the project. Requires: token tracking data source (transcript parsing, usage API, or hook-based accumulation), storage in .pipeline/ or ${CLAUDE_PLUGIN_DATA}, dashboard state extension to include usage data, sidecar UI section to render the three levels. The sidecar dashboard already exists with auto-refresh — this adds a new data section alongside active runs, gates, and board summary.",
+      "text": "FEATURE: Token usage visibility in the wrapper TUI right pane. Show token consumption at three levels: (1) per run — input/output tokens for each pipeline run, broken down by agent invocation, (2) per session — running total for the current Claude Code session, (3) all-time per project — cumulative token usage across all sessions for the project. Requires: token tracking data source (transcript parsing, usage API, or hook-based accumulation), storage in .pipeline/ or ${CLAUDE_PLUGIN_DATA}, dashboard state extension to include usage data, wrapper right-pane rendering of the three levels alongside active runs, gates, and board summary. Originally targeted at the legacy HTTP sidecar — retargeted to the wrapper TUI after the 2026-04-15 TUI-primary pivot (Era 21).",
       "done": false,
       "addedAt": 1776198287652,
       "tags": [
