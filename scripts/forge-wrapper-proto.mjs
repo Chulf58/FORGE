@@ -222,6 +222,36 @@ process.stdin.resume();
 let prefixArmed = false;
 const CTRL_B = 0x02;
 
+// Enable SGR mouse reporting so the wheel sends mouse events instead of
+// being translated to arrow keys by the terminal. Without this, Windows
+// Terminal turns wheel scrolls into arrow-up/down and we can't distinguish
+// them from actual keyboard arrow presses.
+//   \x1b[?1000h = basic mouse click/release reporting
+//   \x1b[?1002h = button-event mouse tracking (also captures wheel)
+//   \x1b[?1006h = SGR extended coordinates (unlimited, not limited to 223)
+process.stdout.write("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+
+// SGR mouse sequence format: ESC [ < Cb ; Cx ; Cy {M|m}
+// Cb encodes button + modifier bits. Wheel up = 64, wheel down = 65 (both "press").
+const SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/;
+const WHEEL_SCROLL_LINES = 3;
+
+function handleMouseEvent(btn, x, y, pressed) {
+  // Only process wheel events for now; swallow all other mouse events to
+  // avoid leaking them into the PTY (Claude doesn't run a mouse UI).
+  if (!pressed) return;
+  if (btn === 64) {
+    // Wheel up — scroll xterm buffer backward.
+    try { term.scrollLines(-WHEEL_SCROLL_LINES); } catch (_) {}
+    schedulePaint();
+  } else if (btn === 65) {
+    // Wheel down — scroll xterm buffer forward.
+    try { term.scrollLines(WHEEL_SCROLL_LINES); } catch (_) {}
+    schedulePaint();
+  }
+  // Clicks and drags (other button codes) are swallowed for the prototype.
+}
+
 process.stdin.on("data", (buf) => {
   // Check for prefix-armed single-byte commands first.
   if (buf.length === 1 && prefixArmed) {
@@ -238,6 +268,20 @@ process.stdin.on("data", (buf) => {
   // Arm prefix on bare Ctrl+B byte.
   if (buf.length === 1 && buf[0] === CTRL_B) {
     prefixArmed = true;
+    return;
+  }
+  // Mouse event — parse and consume without forwarding to PTY.
+  // SGR mouse events start with ESC [ < . We only check for the prefix here
+  // to keep the fast path for normal input cheap.
+  if (buf.length >= 6 && buf[0] === 0x1b && buf[1] === 0x5b && buf[2] === 0x3c) {
+    const s = buf.toString("binary");
+    const m = SGR_MOUSE_RE.exec(s);
+    if (m) {
+      handleMouseEvent(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10), m[4] === "M");
+      return;
+    }
+    // Malformed mouse-looking sequence — fall through as regular input rather
+    // than leaking to PTY.
     return;
   }
   // Everything else: raw passthrough to PTY.
