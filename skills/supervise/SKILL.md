@@ -42,7 +42,7 @@ Produce a formal brief per the format in your instructions. If the task is uncle
 
 Call `forge_call_external` with:
 - `providerId`: `"gemini"`
-- `modelId`: `"gemini-2.0-flash"`
+- `modelId`: `"gemini-2.5-flash"`
 - `prompt`: the constructed prompt from Step 3
 - `maxTokens`: `8192`
 

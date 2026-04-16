@@ -22,7 +22,7 @@
       "type": "gemini",
       "envVar": "GEMINI_API_KEY",
       "enabled": true,
-      "notes": "Free tier: 5-15 RPM, 250K tokens/min, 1000 req/day. Get key at https://aistudio.google.com/apikey"
+      "notes": "Free tier; quota is per-model per-day; flash/lite models have generous limits, pro models exhaust quickly. Get key at https://aistudio.google.com/apikey"
     }
   ],
   "models": [
@@ -64,7 +64,47 @@
       "capabilities": ["reasoning", "code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
-      "notes": "Google Gemini 2.0 Flash; free tier; 1M context window; use for supervisor, triage, lightweight external calls"
+      "notes": "DEPRECATED; free tier quota exhausted 2026-04-16; use gemini-2.5-flash instead"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "providerId": "gemini",
+      "capabilities": ["reasoning", "code", "analysis", "fast"],
+      "costTier": "free",
+      "contextWindow": 1000000,
+      "notes": "Sonnet-tier quality; primary Gemini model for supervisor and external calls; verified working 2026-04-16"
+    },
+    {
+      "id": "gemini-2.5-flash-lite",
+      "providerId": "gemini",
+      "capabilities": ["code", "analysis", "fast"],
+      "costTier": "free",
+      "contextWindow": 1000000,
+      "notes": "Haiku-tier quality; fastest/cheapest Gemini model; fallback when 2.5-flash quota runs out; verified working 2026-04-16"
+    },
+    {
+      "id": "gemini-3.1-flash-lite-preview",
+      "providerId": "gemini",
+      "capabilities": ["reasoning", "code", "analysis", "fast"],
+      "costTier": "free",
+      "contextWindow": 1000000,
+      "notes": "Preview; claims frontier-class at fraction of cost; secondary fallback; verified working 2026-04-16 but preview-unstable"
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "providerId": "gemini",
+      "capabilities": ["reasoning", "code", "analysis", "long-context"],
+      "costTier": "free",
+      "contextWindow": 1000000,
+      "notes": "Opus-tier quality; free tier daily quota exhausts quickly; use only if flash models insufficient"
+    },
+    {
+      "id": "gemini-3.1-pro-preview",
+      "providerId": "gemini",
+      "capabilities": ["reasoning", "code", "analysis", "long-context"],
+      "costTier": "free",
+      "contextWindow": 1000000,
+      "notes": "Preview; advanced reasoning; free tier daily quota exhausts quickly; verified exhausted 2026-04-16"
     }
   ],
   "agentModelMap": {
@@ -127,6 +167,11 @@
       "preferred": "claude-sonnet-4-6",
       "fallback": "claude-opus-4-6",
       "requiredCapabilities": ["reasoning"]
+    },
+    "implementation-architect": {
+      "preferred": "claude-sonnet-4-6",
+      "fallback": "claude-opus-4-6",
+      "requiredCapabilities": ["reasoning", "code", "analysis"]
     },
     "implementer": {
       "preferred": "claude-sonnet-4-6",
@@ -207,13 +252,6 @@
       "preferred": "claude-haiku-4-5-20251001",
       "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
-    },
-    "supervisor": {
-      "preferred": "gemini-2.0-flash",
-      "fallback": "claude-sonnet-4-6",
-      "provider": "gemini",
-      "requiresTools": false,
-      "requiredCapabilities": ["reasoning", "analysis"]
     }
   },
   "quotaTracking": true
