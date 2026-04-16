@@ -366,6 +366,40 @@ Natural fit; reactive model.
 
 ---
 
+## Phase 2 — Ink Spike Results (2026-04-16)
+
+**Spike file:** `scripts/forge-observer-ink-spike.mjs` (~200 lines, pure `React.createElement` — no JSX, no build step).
+**Smoke test:** `scripts/forge-observer-ink-spike-smoke-test.mjs` — PASS (non-TTY fallback + dep load verified).
+**Ink version installed:** 5.2.1 (ESM). **React version:** 18.3.1 (CJS via `createRequire`).
+
+### Verdict 1: Reactive model for polling observer
+
+**Cleaner: yes, genuinely.** The blessed observer uses imperative `pane.setContent(renderDashboard(state)) + screen.render()` on a 2s timer with a separate `refreshDashboard()` function wrapping try/catch. The Ink spike uses `useState` + `useEffect` with a timer that calls `setState` — the render is automatic, error state is just another piece of state, and each dashboard section is a self-contained function-component that receives its slice of state as props. Adding a new section (e.g. token usage) in the blessed version means: edit `renderDashboard()`, add markup, rebuild the string, call `setContent`. In the Ink version: add a new component, drop it into the parent's `createElement` children. The component-level encapsulation is real, not syntactic.
+
+This is true even WITHOUT JSX. The `React.createElement` calls are verbose but the reactive model's advantage (state drives render, no manual sync) comes through regardless. With JSX it would be significantly more readable; without JSX it's still structurally better than blessed's imperative loop.
+
+### Verdict 2: Mouse + text selection in alt-screen
+
+**Partially verified — needs live-test confirmation.** The spike enables SGR mouse reporting (`\x1b[?1000h\x1b[?1006h`) and adds a manual stdin listener for click events alongside Ink's `useInput` for keyboard. Whether Ink's stdin management conflicts with the raw mouse bytes, and whether `Shift`+click-drag text selection still works natively in alt-screen mode, can only be confirmed in a real TTY. The smoke test covers dep load and non-TTY fallback only.
+
+**Open question from the spike code itself:** Ink manages stdin for `useInput`. The spike adds a parallel `process.stdin.on('data')` listener for SGR mouse events. If Ink consumes the raw bytes before our listener sees them, mouse clicks won't reach our handler. If both see the bytes, there may be double-processing of keyboard input that the SGR regex doesn't match. This is discoverable by running the spike in a real terminal and clicking — one of three outcomes: (a) clicks are detected and `Shift`+click-drag still selects text → full success, (b) clicks are detected but text selection is broken → mouse capture tradeoff works same as blessed, acceptable, (c) clicks are NOT detected because Ink ate the bytes → Ink's mouse story is insufficient for our needs without a custom fork/wrapper.
+
+**Recommendation:** run `node scripts/forge-observer-ink-spike.mjs` in a real Windows Terminal session, click anywhere, try `Shift`+click-drag. Report which of (a)/(b)/(c) occurs. This is a 2-minute manual test that settles the mouse question.
+
+### Verdict 3: Go / no-go on migrating the real observer
+
+**Go — conditional on live mouse verification.**
+
+The reactive model is clearly better for our use case. The code is ~200 lines with pure createElement vs ~200 lines of blessed imperative — similar size but better structure. ESM-native (no `createRequire` for Ink itself). Active maintenance. The mouse question is the one remaining gate.
+
+If live test shows outcome (a) or (b): **migrate the real observer to Ink.** Blessed observer stays on disk during transition; hard-delete after validation.
+
+If live test shows outcome (c): **Ink's mouse story is insufficient.** Options at that point: (1) investigate Ink's native mouse API (may exist in newer versions), (2) fork/wrap Ink's stdin to coexist with SGR mouse, (3) fall back to blessed. All are tractable but increase cost.
+
+**Implementation note for the real migration (if go):** add JSX support via `esbuild` or `tsx` — the spike proved the model works without JSX, but the real observer should use JSX for readability. Adds one dev dep but no runtime dep. The spike without JSX was intentionally austere to separate "reactive model value" from "JSX syntactic value."
+
+---
+
 ## Open Questions
 
 1. **neo-blessed package accessibility:** The primary GitHub fetch returned 404; is the npm package @blessedjs/neo-blessed or neo-blessed? Which fork is canonical?
