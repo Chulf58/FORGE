@@ -1,3 +1,17 @@
+## [2026-04-16c] Gemini hardening, per-model tracking, Opus 4.7
+
+### Gemini adapter hardening
+- Auto-retry on HTTP 503 with 2s delay in `mcp/lib/gemini-adapter.js` (commit `3ceb720`). Single retry, only on 503. Proven needed by repeated transient 503s during supervisor calls.
+
+### Per-model token tracking
+- `recordUsage()` in `mcp/lib/usage-store.js` now accepts optional `modelId` parameter. Tracks per-model `requestCount`, `tokenCount`, `lastUsed` within each provider entry (commit `6f7a8b6`). `forge_call_external` passes `modelId` to `recordUsage`.
+
+### Claude Opus 4.7
+- New Anthropic flagship (released 2026-04-16). Model ID `claude-opus-4-7`. Step-change in agentic coding, 1M context, Jan 2026 knowledge cutoff. Added to `forge-config.default.json`, all `agentModelMap` fallbacks updated from opus-4-6 to opus-4-7, supervisor prompt updated (commit `cbb84fc`).
+
+### Board
+- Added: `aee130ac` — tier-based model routing (agents declare haiku/sonnet/opus tier, router picks best model at runtime)
+
 ## [2026-04-16b] Multi-model supervisor smoke test and hardening
 
 ### Gemini model inventory
