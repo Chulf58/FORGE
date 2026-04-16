@@ -207,6 +207,13 @@
       "preferred": "claude-haiku-4-5-20251001",
       "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
+    },
+    "supervisor": {
+      "preferred": "gemini-2.0-flash",
+      "fallback": "claude-sonnet-4-6",
+      "provider": "gemini",
+      "requiresTools": false,
+      "requiredCapabilities": ["reasoning", "analysis"]
     }
   },
   "quotaTracking": true
