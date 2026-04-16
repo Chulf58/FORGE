@@ -1,3 +1,39 @@
+## [2026-04-16] Observer-Primary Architecture; Ink Spike; Launcher; Option A+B
+
+### Architecture pivot: observer-primary
+- Observer becomes the primary FORGE TUI surface; wrapper demoted to experimental (decision in `docs/DECISIONS.md` 2026-04-15 entry, commit `abe2664`). Verified pattern from `alex-radaev/claude-panel`: SessionStart hook calls `wt.exe -w 0 sp -V --size 0.35 -- <observer>` to auto-split the terminal. ~15-line hook vs ~500 lines of wrapper PTY/xterm/mouse complexity.
+- New high-priority task `95aeb42f` queued: implement the `wt.exe` SessionStart hook for one-command UX.
+
+### Ink spike (Phase 2 TUI library evaluation)
+- `scripts/forge-observer-ink-spike.mjs`: Ink 5.2.1 + React 18.3.1 port of the observer, pure `React.createElement` (no JSX, no build step). Reactive model genuinely cleaner for polling dashboard — state drives render, no manual `setContent + screen.render`. Mouse experiment wired (SGR + manual stdin listener alongside Ink's `useInput`); live test needed (commit `349a8b9`).
+- `docs/RESEARCH/tui-library-evaluation.md` Phase 2 verdict appended: go conditional on live mouse test.
+- **Paused** — user wants to activate multi-agent pipeline first. Remains highest priority.
+
+### Launcher wiring
+- `bin/forge.js` + `bin/forge.cmd`: stable launcher entry point delegating to wrapper (commit `4b9eee6`).
+- Three PATH-resolution fixes for portable Node installs: absolute Node path baked into `.cmd` (commit `d09fc8c`), SessionStart hook auto-generates `.cmd` per-environment (commit `98a6856`), FORGE_CLAUDE_CMD set for Claude binary discovery (commit `3de7ea9`).
+- `findClaude()` helper: wrapper + hook both discover Claude via `where`/`which` → common Windows install locations → env var → bare fallback (commit `ad2ee2a`).
+
+### Option A: positive tool-choice guidance
+- Root `CLAUDE.md` Tool Decision Table (3-column: Need to… / Use / Common mistake) replacing the old one-line negative rule (commit `0ac7379`).
+- Mirrored to `templates/code/CLAUDE.md`, `templates/instructional/CLAUDE.md` (commit `e73b66f`), and new `templates/power-automate/CLAUDE.md` (commit `ee563aa`).
+- Narrower stale rule in `templates/power-automate/docs/gotchas/GENERAL.md` replaced with pointer to new CLAUDE.md.
+
+### Option B: ergonomic MCP tool extensions
+- `forge_read_board`: new `filter` object (done, priority, tag — array-aware, any-of semantics) + `fields` projection. Legacy flat fields preserved; superseded when `filter` present. 9 regression tests (commit `950b986`).
+- `forge_list_runs`: same pattern (status, pipelineType, mode — with lazy `getRun` hydration when mode or non-index fields requested). 10 regression tests (commit `1d18c4d`).
+
+### Sidecar deprecation
+- Removed 3 sidecar regression tests (commit `841d433`). Sidecar source stays on disk during transition.
+
+### Supervisor instructions
+- `docs/SUPERVISOR-INSTRUCTIONS.md` for ChatGPT web supervisor: upload kit, paste protocol, §5.5 per-turn review format, ceremony reduction rules (commit `102e629`, updated `43e804f`).
+
+### Board changes
+- Closed: `forge-web-dashboard` (#10), `3438a2be` (observer-primary decision).
+- Added: `24fae760` (TUI library eval, blocking), `3438a2be` (wrapper-vs-observer, now closed), `95aeb42f` (wt.exe hook), `0b6959d2` (red-team security audit).
+- Updated: `3b02cb81` retargeted from sidecar to wrapper TUI.
+
 ## [2026-04-15] Wrapper TUI Primary; Sidecar Legacy
 
 ### Wrapper prototype refinements

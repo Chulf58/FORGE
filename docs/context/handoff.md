@@ -1,87 +1,113 @@
-# Handoff: Wrapper TUI primary, sidecar legacy
+# Handoff: TUI architecture decisions, Option B, launcher, Ink spike
 
 ## Overview
 
-Continued the TUI prototype work after context compaction. Finished the wrapper prototype's mouse-wheel support, added a standalone terminal observer prototype, and committed the product-direction pivot: wrapper TUI is now primary; sidecar is legacy/fallback on disk during the transition. Pushed three commits to `origin/main` together so the branch reflects the new direction atomically.
+Long session spanning TUI prototype refinements, tool-choice behaviour work (Options A+B), launcher wiring with PATH-resolution fixes, two blocking architecture decisions (observer-primary, TUI library evaluation), external research (codeburn, claude-panel, TUI library Phase 1), and an Ink spike for Phase 2 library evaluation. Ended with user pausing the Ink evaluation to activate the multi-agent pipeline system.
 
-## Session commits
+## Session commits (chronological, all on `origin/main`)
 
 | Commit | What |
 |---|---|
-| `f12f85c` | `feat(wrapper): mouse wheel scrolls Claude pane via SGR mouse reporting` — enabled `\x1b[?1000h\x1b[?1002h\x1b[?1006h`, parsed CSI mouse events (Cb=64 wheel-up, Cb=65 wheel-down), routed to `term.scrollLines()`. Non-wheel mouse events swallowed so they don't leak to the PTY. |
-| `633d465` | `feat(dashboard): add terminal observer prototype` — new `scripts/forge-observer-proto.mjs` (standalone read-only dashboard using `buildDashboardState`; no PTY wrapping; blessed full-screen; `keys: true, vi: true` for scroll; quit on `q`/`Q`/`Ctrl+C`; mouse reporting OFF so the host terminal keeps ownership of text selection) + `scripts/forge-observer-proto-smoke-test.mjs` (non-TTY fallback + dep-load regression check, mirrors wrapper smoke test). |
-| `473721c` | `feat(dashboard): wrapper TUI is primary; sidecar legacy` — reposition without runtime-logic change. Skill rewritten to frame as in-chat snapshot + pointer to wrapper for live terminal use. `"dashboard"` npm script removed from `package.json`. `FORGE-OVERVIEW.md` + `FORGE-REFERENCE.md` updated across 5 locations. New `[2026-04-15] Wrapper TUI Primary; Sidecar Legacy` CHANGELOG entry. Sidecar files + tests + `scripts/forge-tui.mjs` untouched per "don't hard-delete yet" decision. |
-
-Also pushed (were local at session start, not re-committed): `bafbd81` (color-aware Claude pane) and `ffbe9df` (dashboard data in wrapper's right pane).
-
-After this session `origin/main` is at `473721c`.
+| `f12f85c` | Wrapper mouse wheel scroll via SGR mouse reporting |
+| `633d465` | Terminal observer prototype + smoke test |
+| `473721c` | Direction change: wrapper TUI primary, sidecar legacy |
+| `2fd5845` | End-of-session handoff for the TUI-primary direction slice |
+| `cfb9bab` | Legacy truecolor FORGE banner stashed from Electron app |
+| `d8a58f3` | OVERVIEW Era 21 (wrapper TUI pivot) |
+| `ee28584` | REFERENCE drift patch |
+| `7a7cd00` | TUI panes fully opaque (acrylic bleed fix) |
+| `102e629` | Supervisor instructions for ChatGPT web supervisor |
+| `43e804f` | Supervisor ceremony reduction + per-turn review requirement |
+| `0ac7379` | Option A: positive tool-choice rules in root CLAUDE.md |
+| `e73b66f` | Option A: positive tool-choice rules in code + instructional templates |
+| `ee563aa` | Option A: positive tool-choice rules in power-automate template |
+| `874ef45` | Board housekeeping (close forge-web-dashboard, retarget token usage task) |
+| `950b986` | Option B: filter + field-select on `forge_read_board` |
+| `1d18c4d` | Option B: filter + field-select on `forge_list_runs` |
+| `841d433` | Remove sidecar regression tests (sidecar phasing out) |
+| `4b9eee6` | Launcher entry point: `bin/forge.js` + `bin/forge.cmd` + smoke test |
+| `d09fc8c` | Fix: bake absolute Node path into `bin/forge.cmd` |
+| `98a6856` | Fix: SessionStart hook auto-generates `bin/forge.cmd` with Node path |
+| `3de7ea9` | Fix: set FORGE_CLAUDE_CMD in `bin/forge.cmd` for Claude binary |
+| `ad2ee2a` | Proper fix: `findClaude()` discovery in wrapper + SessionStart hook |
+| `f168aa7` | Board: add 2 blocking TUI architecture decision tasks |
+| `6e78feb` | Board: add red-team security audit task |
+| `e8a8d9e` | Phase 1 TUI library research doc |
+| `abe2664` | DECISIONS.md: observer-primary; close `3438a2be`; queue wt.exe hook |
+| `349a8b9` | Ink spike: observer port for Phase 2 library evaluation |
 
 ## Key decisions this session
 
-### Product direction: TUI is primary, sidecar is out
-User rejected a supervisor-cycle recommendation to abandon TUI and return to sidecar/plain-stdout after a "copyability" blocker was escalated. The actual accepted interaction model is `Shift`+click-drag in Windows Terminal — the standard override for selecting text in alt-screen apps (vim, less, tmux, blessed). Plain click-drag is not a hard requirement, and treating it as one was the wrong framing.
+### Observer-primary over wrapper (docs/DECISIONS.md 2026-04-15)
+The wrapper's ~500 lines of PTY/xterm/mouse/paint complexity exists only to give "one command starts both" UX. External evidence from `alex-radaev/claude-panel` shows a ~15-line SessionStart hook calling `wt.exe -w 0 sp -V --size 0.35 -- <observer>` achieves the same result. Observer-primary wins.
 
-Saved as feedback memory: `memory/feedback_tui_primary.md`.
+### Ink as TUI library candidate (conditional go)
+Phase 1 research evaluated blessed, neo-blessed, Ink, terminal-kit, react-curse. Phase 2 spike (`scripts/forge-observer-ink-spike.mjs`) showed Ink's reactive model is genuinely cleaner for the polling dashboard case even without JSX. Go is conditional on live mouse verification (click + Shift+select in alt-screen). **Paused here — user wants to activate multi-agent pipeline first.**
 
-### Wrapper = primary; observer = secondary
-- Wrapper (`scripts/forge-wrapper-proto.mjs`) embeds Claude + dashboard in one terminal process — matches the "pixel-art workers alongside Claude" vision.
-- Observer (`scripts/forge-observer-proto.mjs`) is the dashboard-only standalone for users who want the dashboard in a separate terminal pane next to native `claude`.
+### Shift+click-drag accepted as industry standard
+No code change. Terminal-protocol-level tradeoff: mouse UI and native selection can't coexist in the same pane. Every TUI with buttons uses Shift for selection. Accepted.
 
-### Sidecar fate
-Not hard-deleted this session. Unwired from primary UX + docs (npm script removed, skill no longer references it, docs re-framed as legacy/fallback). Files + tests + `scripts/forge-tui.mjs` (earlier abandoned TUI) remain on disk. Scheduled for a later cleanup slice once wrapper is fully validated.
+### ChatGPT web as the supervisor platform
+`docs/SUPERVISOR-INSTRUCTIONS.md` defines: one-time file upload kit, paste protocol for runtime state, §5.5 per-turn review (Scope check / Verdict / Solved before each brief), ceremony reduction rules.
 
-## Files changed (summary)
+## Blocking tasks (highest priority, paused)
+
+| Task | Status | Next step |
+|---|---|---|
+| `24fae760` TUI library evaluation | **Paused** — Ink spike committed, Phase 2 verdict written, awaiting live mouse test | Run spike in real terminal, report outcome (a)/(b)/(c), then migrate or fall back |
+| `95aeb42f` wt.exe SessionStart hook | **Queued** — depends on observer-primary being validated | Implement after Ink decision settles |
+| `0b6959d2` Red-team security audit | **Queued** — independent of TUI work | Can run anytime |
+
+## What the user wants next session
+
+**Activate the multi-agent pipeline system.** The full FORGE pipeline (29 agents, 21 skills, 13 hooks, 24 MCP tools, gates, worktrees) should already work. User wants to use it — likely running pipelines against real projects, not more meta-work on the plugin itself.
+
+## Files changed this session (summary)
 
 **New files:**
-- `scripts/forge-observer-proto.mjs` — standalone dashboard TUI
-- `scripts/forge-observer-proto-smoke-test.mjs` — smoke test
+- `scripts/forge-observer-ink-spike.mjs` — Ink observer spike (~200 lines, pure createElement)
+- `scripts/forge-observer-ink-spike-smoke-test.mjs` — non-TTY smoke test
+- `scripts/forge-launcher-smoke-test.mjs` — launcher contract test
+- `scripts/forge-banner-truecolor.js` — stashed legacy truecolor banner
+- `bin/forge.js` — thin launcher delegating to wrapper
+- `bin/forge.cmd` — Windows shim with absolute Node + Claude paths
+- `mcp/forge-read-board-filter-test.mjs` — board filter regression test
+- `mcp/forge-list-runs-filter-test.mjs` — runs filter regression test
+- `docs/SUPERVISOR-INSTRUCTIONS.md` — ChatGPT web supervisor operating instructions
+- `docs/RESEARCH/tui-library-evaluation.md` — Phase 1 + Phase 2 research doc
+- `templates/power-automate/CLAUDE.md` — tool-choice guidance for PA scaffold
 
-**Edited runtime files:**
-- `scripts/forge-wrapper-proto.mjs` — mouse wheel SGR handling
+**Modified files:**
+- `CLAUDE.md` — positive Tool Decision Table replacing negative rule
+- `templates/code/CLAUDE.md` — tool-choice guidance mirrored
+- `templates/instructional/CLAUDE.md` — tool-choice guidance mirrored
+- `templates/power-automate/docs/gotchas/GENERAL.md` — pointer replacing stale tool-preference section
+- `mcp/server.js` — `forge_read_board` + `forge_list_runs` filter/fields extensions
+- `mcp/package.json` — added ink + react deps
+- `hooks/mcp-deps-install.js` — generates `bin/forge.cmd` + Claude discovery
+- `scripts/forge-wrapper-proto.mjs` — `findClaude()` discovery, opaque pane backgrounds, (earlier: color paint, dashboard polling, mouse wheel)
+- `scripts/forge-observer-proto.mjs` — opaque pane background
+- `package.json` — `bin.forge` entry, removed sidecar npm script
+- `docs/FORGE-OVERVIEW.md` — Era 21, updated planned-next
+- `docs/FORGE-REFERENCE.md` — drift patch (date, utility scripts table)
+- `docs/DECISIONS.md` — observer-primary entry
+- `docs/CHANGELOG.md` — wrapper TUI primary entry + mouse wheel
+- `skills/dashboard/SKILL.md` — reframed as in-chat snapshot
+- `.pipeline/board.json` — multiple task changes (closed 2, added 3, updated 2)
 
-**Edited positioning/docs/config (no runtime behaviour change):**
-- `skills/dashboard/SKILL.md` — in-chat snapshot framing; pointer to wrapper; sidecar legacy
-- `package.json` — removed `"dashboard"` script
-- `docs/FORGE-OVERVIEW.md` — comparison-table row + planned-work section
-- `docs/FORGE-REFERENCE.md` — three dashboard-state shared-source references, utility-scripts table
-- `docs/CHANGELOG.md` — new 2026-04-15 entry
+**Deleted files:**
+- `scripts/dashboard-gate-action-test.mjs` — sidecar test removed
+- `scripts/dashboard-merge-action-test.mjs` — sidecar test removed
+- `scripts/dashboard-server-endpoint-test.mjs` — sidecar test removed
 
-## Verification performed this session
+## Verification state
 
-- `node --check` on both new scripts → OK.
-- `node -e "require('./package.json')"` → parses after script removal.
-- `node scripts/run-tests.mjs` → 11/11 PASS including legacy sidecar endpoint + gate/merge action tests, wrapper smoke, observer smoke, forge-tui smoke, dashboard-state-shape. The sidecar safety net is still active while it's legacy-but-on-disk.
-- Live user validation (prior to direction change): wrapper color rendering works, mouse wheel scrolls the Claude pane, Ctrl+B→Q quits cleanly. Observer live-tested: renders, keyboard-scrolls, quits.
-- Grep audit: `npm run dashboard` gone from user-facing docs (only remains in historical CHANGELOG and sidecar self-reference). Current doc references to the sidecar are all framed as legacy/fallback/transition.
+- 12/12 tests pass at session end (new Ink spike smoke test included)
+- `origin/main` at `349a8b9`, in sync with local HEAD
+- Working tree clean
+- Board: 43 open items (2 high blocking paused, 1 high security audit queued, remainder medium/low)
 
-## What is NOT proven
+## Memory updates this session
 
-- Live-TTY behaviour of the *pushed* `origin/main` has not been re-tested end-to-end after the direction-change commit. Docs/config-only slice, so no expected regression.
-- Shift+click-drag copy flow in wrapper + observer panes is accepted based on terminal-standard behaviour but has not been live-captured in a clipboard paste against ChatGPT/Claude in this session.
-- Observer + wrapper have not been validated on Linux/macOS.
-
-## Open threads / next candidate slices
-
-- **Live verification of pushed `origin/main`** — user runs `node scripts/forge-wrapper-proto.mjs` from a fresh terminal to confirm wrapper still works end-to-end; `/forge:dashboard` inside a Claude session to confirm the new skill wording renders cleanly.
-- **Promote wrapper to a real launcher** — add `bin/forge.cmd` shim + `"forge"` `bin` entry in `package.json`; do not rename the prototype file yet.
-- **Cleanup slice (later)** — hard-delete `scripts/dashboard-server.mjs`, its 3 test files, and `scripts/forge-tui.mjs` + smoke test once wrapper is fully validated as primary.
-- **Dashboard right-pane interactivity** — gate approve/discard, merge-blocked retry, from the wrapper's right pane.
-- **Pixel-art worker cards / sprites** — `scripts/png-to-sprite.mjs` pipeline is ready; needs actual sprite PNGs.
-- **Cross-platform validation** — Linux/macOS for wrapper + observer.
-- **Token usage visibility** (board `3b02cb81`).
-- **Legacy Electron/JS cleanup** (board `68ec233a`).
-- **AgentSeal/codeburn TUI patterns research** (board `b87d8026`).
-
-## Supervisor / pipeline notes
-
-User flagged the supervisor cycle made two framing errors this session:
-1. Over-escalating "copyability" as a hard blocker → abandoning TUI direction. Correction saved to memory.
-2. Losing the fixed output format in one brief → user re-issued with correct format. No systemic fix needed; one-off.
-
-## State on disk at session end
-
-- Branch `main` at `473721c`, in sync with `origin/main`. Clean tree.
-- Unpushed commits: none.
-- Wrapper, observer, sidecar all present and functional at their current prototype levels.
-- `/forge:dashboard` renders in-chat only (no longer attempts a Bash TUI launch).
-- `npm run dashboard` no longer exists as a shortcut.
+- `feedback_tui_primary.md` — TUI is primary surface, sidecar out, Shift+click-drag accepted
+- `feedback_no_speculative_tool_comparisons.md` — don't claim "tool X does it this way" without reading their code
