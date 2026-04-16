@@ -37,7 +37,8 @@ FORGE is a **Claude Code plugin** (not a standalone app). It runs inside Claude 
 - The supervisor is special: it runs ON Gemini via `forge_call_external` (called by the `/forge:supervise` skill), not as a Claude subagent.
 
 **Current Anthropic model IDs (use these exactly):**
-- `claude-opus-4-6` — highest capability, expensive
+- `claude-opus-4-7` — latest flagship, best agentic coding, 1M context
+- `claude-opus-4-6` — legacy flagship, 1M context
 - `claude-sonnet-4-6` — balanced workhorse (most agents use this)
 - `claude-haiku-4-5-20251001` — fast/cheap (triage, reviewers)
 
