@@ -1,3 +1,18 @@
+## [2026-04-16b] Multi-model supervisor smoke test and hardening
+
+### Gemini model inventory
+- Tested all text-capable Gemini models on free tier via `forge_call_external`. 3 working (`gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite-preview`), rest quota-exhausted or unavailable. Added full inventory to `forge-config.default.json` (commit `3864c77`).
+- Swapped supervisor preferred model from `gemini-2.0-flash` (deprecated/exhausted) to `gemini-2.5-flash`.
+- Added missing `implementation-architect` to `agentModelMap`; removed `supervisor` (routes via Gemini, not frontmatter).
+
+### Supervisor prompt hardening
+- Added FORGE architecture ground-truth section to `agents/supervisor.md`: file paths, agent model constraints, Anthropic vs external provider tracks. Eliminates hallucinated paths and impossible proposals from earlier briefs.
+- Strengthened per-response review: mandatory adversarial **Challenges** field, checks for unrequested changes, verification validity, silent side effects. Tested — supervisor caught incomplete RESULT reporting on first adversarial pass.
+
+### Supervisor loop validated
+- End-to-end loop working: collect project state → call Gemini via `forge_call_external` → render brief → user approves → dev Claude executes → feed result back for adversarial review.
+- Confirmed 503 errors are transient Google-side overload (not quota) — `gemini-2.5-flash-lite` available as fallback.
+
 ## [2026-04-16] Observer-Primary Architecture; Ink Spike; Launcher; Option A+B
 
 ### Architecture pivot: observer-primary
