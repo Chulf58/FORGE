@@ -31,22 +31,35 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
     },
   };
 
+  const MAX_RETRIES = 1;
+  const RETRY_DELAY_MS = 2000;
   let response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    throw new Error('Gemini request failed (network): ' + err.message);
-  }
-
   let responseText;
-  try {
-    responseText = await response.text();
-  } catch (err) {
-    throw new Error('Gemini response body read failed: ' + err.message);
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error('Gemini request failed (network): ' + err.message);
+    }
+
+    try {
+      responseText = await response.text();
+    } catch (err) {
+      throw new Error('Gemini response body read failed: ' + err.message);
+    }
+
+    // Retry once on 503 (transient Google-side overload)
+    if (response.status === 503 && attempt < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      continue;
+    }
+
+    break;
   }
 
   if (!response.ok) {
