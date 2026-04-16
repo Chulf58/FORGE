@@ -15,6 +15,14 @@
       "envVar": "OPENAI_API_KEY",
       "enabled": false,
       "notes": "Enable by setting OPENAI_API_KEY and flipping enabled to true"
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "type": "gemini",
+      "envVar": "GEMINI_API_KEY",
+      "enabled": true,
+      "notes": "Free tier: 5-15 RPM, 250K tokens/min, 1000 req/day. Get key at https://aistudio.google.com/apikey"
     }
   ],
   "models": [
@@ -49,6 +57,14 @@
       "costTier": "low",
       "contextWindow": 200000,
       "notes": "OpenAI Codex mini via Responses API; external provider — use forge_call_external"
+    },
+    {
+      "id": "gemini-2.0-flash",
+      "providerId": "gemini",
+      "capabilities": ["reasoning", "code", "analysis", "fast"],
+      "costTier": "free",
+      "contextWindow": 1000000,
+      "notes": "Google Gemini 2.0 Flash; free tier; 1M context window; use for supervisor, triage, lightweight external calls"
     }
   ],
   "agentModelMap": {

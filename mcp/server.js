@@ -8,6 +8,7 @@ import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from "./lib/c
 import { readUsage, writeUsage, markQuotaExhausted, recordUsage } from "./lib/usage-store.js";
 import { recommendModel } from "./lib/router.js";
 import { callOpenAI } from "./lib/openai-adapter.js";
+import { callGemini } from "./lib/gemini-adapter.js";
 import { createRun, getRun, listRuns, updateRun, createWorktree } from "../packages/forge-core/src/runs/index.js";
 import { buildDashboardState } from "./lib/dashboard-state.js";
 
@@ -687,14 +688,15 @@ server.registerTool(
         return errorResult("API key env var not set or empty: " + provider.envVar);
       }
 
-      // Only openai type is supported in this adapter
-      if (provider.type !== "openai") {
-        return errorResult("Provider type not supported: " + provider.type);
-      }
-
       let result;
       try {
-        result = await callOpenAI(prompt, modelId, apiKey, { maxTokens });
+        if (provider.type === "openai") {
+          result = await callOpenAI(prompt, modelId, apiKey, { maxTokens });
+        } else if (provider.type === "gemini") {
+          result = await callGemini(prompt, modelId, apiKey, { maxTokens });
+        } else {
+          return errorResult("Provider type not supported: " + provider.type);
+        }
       } catch (callErr) {
         // Mark quota exhausted on 401, 429, or quota errors before surfacing
         const msg = callErr.message || "";
