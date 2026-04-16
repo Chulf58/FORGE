@@ -709,7 +709,7 @@ server.registerTool(
       // Record usage if quota tracking is enabled
       if (config.quotaTracking) {
         try {
-          recordUsage(projectDir, providerId, result.inputTokens + result.outputTokens);
+          recordUsage(projectDir, providerId, result.inputTokens + result.outputTokens, modelId);
         } catch (_) { /* best-effort — do not fail the call on tracking errors */ }
       }
 

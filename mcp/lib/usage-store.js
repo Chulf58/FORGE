@@ -89,19 +89,34 @@ export function markQuotaExhausted(projectDir, providerId) {
 
 /**
  * Increments requestCount and tokenCount for the given provider, sets lastUsed.
- * Creates the provider entry if it does not exist yet.
+ * Also tracks per-model breakdown when modelId is provided.
+ * Creates the provider/model entry if it does not exist yet.
  *
  * @param {string} projectDir
  * @param {string} providerId
  * @param {number} tokens - total tokens used (input + output)
+ * @param {string} [modelId] - optional model ID for per-model tracking
  */
-export function recordUsage(projectDir, providerId, tokens) {
+export function recordUsage(projectDir, providerId, tokens, modelId) {
   const usage = readUsage(projectDir);
   if (!usage.providers) usage.providers = {};
   if (!usage.providers[providerId]) usage.providers[providerId] = emptyProvider();
+  const now = new Date().toISOString();
   usage.providers[providerId].requestCount += 1;
   usage.providers[providerId].tokenCount += tokens;
-  usage.providers[providerId].lastUsed = new Date().toISOString();
-  usage.updatedAt = new Date().toISOString();
+  usage.providers[providerId].lastUsed = now;
+
+  // Per-model breakdown
+  if (modelId) {
+    if (!usage.providers[providerId].models) usage.providers[providerId].models = {};
+    if (!usage.providers[providerId].models[modelId]) {
+      usage.providers[providerId].models[modelId] = { requestCount: 0, tokenCount: 0, lastUsed: null };
+    }
+    usage.providers[providerId].models[modelId].requestCount += 1;
+    usage.providers[providerId].models[modelId].tokenCount += tokens;
+    usage.providers[providerId].models[modelId].lastUsed = now;
+  }
+
+  usage.updatedAt = now;
   writeUsage(projectDir, usage);
 }
