@@ -14,7 +14,7 @@ Immediately call `forge_create_run` with:
 - `mode`: read mode from `.pipeline/project.json` `pipelineMode` field (or `"LEAN"` if unavailable)
 - `feature`: the feature name from `$ARGUMENTS`, or read from `docs/PLAN.md` first heading
 
-Save the returned `runId`. You MUST reference it in later steps.
+Save the returned `runId` and `feature` from the run object. The `feature` field has been mechanically sanitized (shell-unsafe characters stripped) by `forge_create_run`. Use this sanitized `feature` value — not raw `$ARGUMENTS` — in Steps 5, 7, and 8 when constructing git commit messages and PR titles.
 
 Then call `forge_update_run` with that `runId` and `status: "running"`, `currentStep: "setup"`.
 
@@ -93,7 +93,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - On failure (non-zero exit): show full output, emit `[suggest] debug — tests failed after apply`. Do NOT auto-fix or retry.
 
 5. **Auto-commit** (opt-in — only if `gitIntegration.autoCommit`):
-   - Sanitize the feature name for shell safety: strip the characters `"`, `\`, `` ` ``, `$`, newlines, and control characters. Use this sanitized version as `<safe-feature>` in all shell commands below and in Step 7.
+   - Use the sanitized `feature` field returned by `forge_create_run` in Step 1 as `<safe-feature>`. It has been mechanically sanitized at source — do not use raw `$ARGUMENTS` here. (Defense in depth: `"`, `\`, `` ` ``, `$`, newlines, and control characters have already been stripped.)
    - Run `git add -A` then `git commit -m "feat(forge): <safe-feature>"`
    - If nothing to commit (exit code 1 or output contains "nothing to commit"): log "[git-integration] Nothing to commit — skipping" and continue
    - If pre-commit hooks fail: log the error output and continue. Do NOT use `--no-verify`.

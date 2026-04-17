@@ -11,6 +11,7 @@ import { callOpenAI } from "./lib/openai-adapter.js";
 import { callGemini } from "./lib/gemini-adapter.js";
 import { createRun, getRun, listRuns, updateRun, createWorktree } from "../packages/forge-core/src/runs/index.js";
 import { buildDashboardState } from "./lib/dashboard-state.js";
+import { sanitizeFeatureName } from "./lib/sanitize.js";
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -956,7 +957,10 @@ server.registerTool(
   async ({ sessionId, pipelineType, mode, feature }) => {
     try {
       const projectDir = resolveProjectDir();
-      const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, mode, feature });
+      // Sanitize feature name at ingestion — strips shell-injection chars before
+      // the value is stored in run.json or returned to skills for git/PR usage.
+      const safeFeature = sanitizeFeatureName(feature);
+      const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, mode, feature: safeFeature });
       // Immediately mark as running — the model reliably calls forge_create_run
       // but skips the follow-up forge_update_run to set status: "running".
       const started = updateRun(projectDir, run.runId, { status: "running", currentStep: "started" });
@@ -971,7 +975,7 @@ server.registerTool(
         runId: started.runId,
         pipelineType,
         mode,
-        feature,
+        feature: safeFeature,
         agents: [],
       };
 
