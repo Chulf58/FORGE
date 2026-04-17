@@ -131,6 +131,7 @@ Agents emit signals as lines starting with `[signal-name]`. These are consumed b
 | `[reviewer-verdict]` | `[reviewer-verdict] {...JSON}` | Reviewer result (APPROVED/BLOCK/REVISE) |
 | `[task-block]` | `[task-block] taskId blockedBy:id1,id2` | Mark a task as blocked by other tasks |
 | `[solution-hit]` | `[solution-hit] docs/solutions/<file>.md — <one-line summary>` | Emitted by `debug` and `researcher` when a relevant past solution is found in `docs/solutions/`; signals that a known fix pattern was applied |
+| `[promote-gotcha]` | `[promote-gotcha] docs/solutions/<file>.md — <reason>` | Written into a solution file or research doc by any agent when a solution is stable enough to warrant promotion to `docs/gotchas/GENERAL.md`; consumed by `compound-refresh` to surface candidates for manual review |
 | `[CONTEXT-CHECKPOINT]` | literal | Context window low — checkpoint needed |
 
 ---
