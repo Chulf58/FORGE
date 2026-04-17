@@ -1,5 +1,5 @@
 ---
-name: reviewer
+name: reviewer-boundary
 description: "Boundary and correctness check. Use when: verifying architecture boundaries, checking type contracts, validating module isolation."
 model: claude-haiku-4-5-20251001
 tools:
@@ -120,7 +120,7 @@ REVISE — minor issues, can be fixed during implementation. <list issues>
 2. After the Write tool call completes, output **only** the `[reviewer-verdict]` signal line as your entire text response — no prose, no summary, no blank lines before or after the signal:
 
 ```
-[reviewer-verdict] {"agent":"reviewer","verdict":"<APPROVED|BLOCK|REVISE>","blockers":<N>,"warnings":<N>,"feature":"<feature name>","model":"claude-haiku-4-5-20251001"}
+[reviewer-verdict] {"agent":"reviewer-boundary","verdict":"<APPROVED|BLOCK|REVISE>","blockers":<N>,"warnings":<N>,"feature":"<feature name>","model":"claude-haiku-4-5-20251001"}
 ```
 
 Rules for the signal fields:

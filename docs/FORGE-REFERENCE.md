@@ -35,14 +35,14 @@ Set per project in `.pipeline/project.json` (`pipelineMode` field):
 | STANDARD | Multi-file, state or cross-cutting | Core + completeness-checker + reviewer-triage + triage-dispatched reviewers |
 | FULL | High-stakes, nothing skipped | Core + completeness-checker + reviewer-triage + all 5 reviewers |
 
-The 5 reviewers: `reviewer`, `reviewer-safety`, `reviewer-logic`, `reviewer-style`, `reviewer-performance`.
+The 5 reviewers: `reviewer-boundary`, `reviewer-safety`, `reviewer-logic`, `reviewer-style`, `reviewer-performance`.
 
 ### Mandatory agents (every source change)
 
 | Agent | Role |
 |-------|------|
 | `reviewer-safety` | Security check |
-| `reviewer` | Boundary correctness |
+| `reviewer-boundary` | Boundary correctness |
 
 ### Contextual agents (added by orchestrator based on task signals)
 

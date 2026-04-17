@@ -1475,6 +1475,30 @@
         "sessionstart",
         "unblocks-observer-primary"
       ]
+    },
+    {
+      "id": "aee130ac",
+      "priority": "medium",
+      "text": "FEATURE: Tier-based model routing. Agents declare a capability tier (haiku/sonnet/opus) instead of hardcoded model IDs. Router picks the best available model at runtime based on cost, quota remaining, and provider availability. Includes /forge:sync-agent-models command that maps tiers to current best models and updates agent frontmatter. Building blocks exist: recommendModel in router.js, usage tracking in usage-store.js, provider config in forge-config.json. Blocked on Claude Code frontmatter constraint for Anthropic agents — works today for external-track agents via forge_call_external.",
+      "done": false,
+      "addedAt": 1776374870670,
+      "tags": [
+        "feature",
+        "multi-model",
+        "architecture"
+      ]
+    },
+    {
+      "id": "1b92130b",
+      "priority": "medium",
+      "text": "RENAME: The agent named `reviewer` (agents/reviewer.md) has an ambiguous name — it's the boundary correctness reviewer but is indistinguishable from the concept of \"any reviewer\". Rename to `reviewer-boundary` or `reviewer-correctness` to match the naming convention of the other 4 specialist reviewers (reviewer-safety, reviewer-logic, reviewer-style, reviewer-performance). Update all references: agentModelMap, FORGE-REFERENCE.md, FORGE-OVERVIEW.md, README.md, any agent frontmatter that lists it, and pipeline orchestration skills.",
+      "done": false,
+      "addedAt": 1776408148609,
+      "tags": [
+        "agents",
+        "naming",
+        "refactor"
+      ]
     }
   ],
   "planned": []

@@ -70,7 +70,7 @@ If no `[triage-confidence:]` prefix is present, treat as HIGH.
 
 ### Input validation
 
-> Cross-reviewer boundary: This section covers input validation **inside** handlers (type checks, bounds checks, structured error returns). Architectural boundary completeness and contract matching are covered by `reviewer`. Do not BLOCK for missing handler registrations here.
+> Cross-reviewer boundary: This section covers input validation **inside** handlers (type checks, bounds checks, structured error returns). Architectural boundary completeness and contract matching are covered by `reviewer-boundary`. Do not BLOCK for missing handler registrations here.
 
 - [ ] All handler inputs are validated before use (type checks, bounds checks)
 - [ ] Handlers return structured errors (`{ ok: false, error: string }`) rather than throwing raw errors to callers

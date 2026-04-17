@@ -135,7 +135,7 @@ HIGH — plan is complete with all required sections present.
 
 **Write `docs/context/triage-dispatch.json` BEFORE emitting the dispatch block:**
 ```json
-{ "reviewers": ["reviewer", "reviewer-safety"], "confidence": "HIGH" }
+{ "reviewers": ["reviewer-boundary", "reviewer-safety"], "confidence": "HIGH" }
 ```
 Populate the `reviewers` array with every agent name from `### Invoke`, in order, as exact strings. Omit agents in `### Skip`. Set `confidence` to the value from your `### Confidence` block (`HIGH`, `MEDIUM`, or `LOW`). Write the file first — before any formatted output — so the orchestrator has a machine-readable reviewer list even if your output is truncated.
 
@@ -190,7 +190,7 @@ HIGH — handoff is complete with all required sections present.
 
 **Write `docs/context/triage-dispatch.json` BEFORE emitting the dispatch block:**
 ```json
-{ "reviewers": ["reviewer", "reviewer-safety"], "confidence": "HIGH" }
+{ "reviewers": ["reviewer-boundary", "reviewer-safety"], "confidence": "HIGH" }
 ```
 Populate the `reviewers` array with every agent name from `### Invoke`, in order, as exact strings. Omit agents in `### Skip`. Set `confidence` to the value from your `### Confidence` block (`HIGH`, `MEDIUM`, or `LOW`). Write the file first — before any formatted output — so the orchestrator has a machine-readable reviewer list even if your output is truncated.
 

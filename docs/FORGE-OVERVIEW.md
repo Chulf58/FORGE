@@ -206,7 +206,7 @@ Before any code lands on disk, up to 5 specialist reviewers examine the implemen
 - `reviewer-logic` — async correctness, edge cases, race conditions
 - `reviewer-style` — naming conventions, formatting rules, code consistency
 - `reviewer-performance` — blocking I/O, memory leaks, hot path issues
-- `reviewer` — boundary correctness, type contracts, module isolation
+- `reviewer-boundary` — boundary correctness, type contracts, module isolation
 
 The pipeline mode controls how many run: LEAN (2), STANDARD (triage-dispatched), FULL (all 5). If any returns `BLOCK`, Gate #2 is blocked until issues are fixed.
 

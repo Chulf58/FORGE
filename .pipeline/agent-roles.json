@@ -1,6 +1,6 @@
 {
   "_comment": "Agent role manifest for FORGE. Keys are agent names (matching agent_type in hook payload, i.e. filename without .md). Values declare either readonly:true (no writes permitted) or allowedPaths (array of permitted write-target patterns). The PreToolUse hook ctx-pre-tool.js enforces this manifest before each Write/Edit call. The tool-call-auditor agent cross-references the post-run audit log against this manifest.",
-  "reviewer":             { "allowedPaths": ["docs/context/reviewer-output/**"] },
+  "reviewer-boundary":    { "allowedPaths": ["docs/context/reviewer-output/**"] },
   "reviewer-safety":      { "allowedPaths": ["docs/context/reviewer-output/**"] },
   "reviewer-logic":       { "allowedPaths": ["docs/context/reviewer-output/**"] },
   "reviewer-style":       { "allowedPaths": ["docs/context/reviewer-output/**"] },

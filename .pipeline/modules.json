@@ -18,7 +18,7 @@
       "agents/coder.md",
       "agents/implementer.md",
       "agents/documenter.md",
-      "agents/reviewer.md",
+      "agents/reviewer-boundary.md",
       "agents/reviewer-safety.md",
       "agents/reviewer-logic.md",
       "agents/reviewer-triage.md",

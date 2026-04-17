@@ -49,7 +49,7 @@ Write `docs/context/scout.json`:
 
 ```json
 {
-  "files_to_read": ["hooks/ctx-post-tool.js", "agents/reviewer.md"],
+  "files_to_read": ["hooks/ctx-post-tool.js", "agents/reviewer-boundary.md"],
   "functions_to_modify": {
     "hooks/ctx-post-tool.js": ["processToolOutput"]
   },

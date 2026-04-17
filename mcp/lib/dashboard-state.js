@@ -17,13 +17,13 @@ const PIPELINE_STAGE_LABELS = {
   plan: {
     "started": "starting", "brainstormer-decision": "brainstorming",
     "planner": "planner", "researcher": "researcher", "gotcha-checker": "gotcha-check",
-    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate1": "gate1",
+    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate1": "gate1",
   },
   implement: {
     "started": "starting", "setup": "setup",
     "implementation-architect": "scoping slice", "coder-scout": "scout", "coder": "coder",
     "completeness-checker": "completeness",
-    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate2": "gate2",
+    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate2": "gate2",
   },
   apply: {
     "started": "starting", "setup": "setup",
@@ -33,11 +33,11 @@ const PIPELINE_STAGE_LABELS = {
   },
   debug: {
     "started": "starting", "debug": "tracing",
-    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate2": "gate2",
+    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate2": "gate2",
   },
   refactor: {
     "started": "starting", "refactor": "analyzing",
-    "reviewer-triage": "reviewers", "reviewer": "reviewers", "gate2": "gate2",
+    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate2": "gate2",
   },
 };
 
