@@ -105,7 +105,7 @@ function list() {
   }
 
   const entries = fs.readdirSync(wtDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
+    .filter(d => d.isDirectory() && /^[a-zA-Z0-9_-]+$/.test(d.name))
     .map(d => {
       const wtPath = path.join(wtDir, d.name);
       const branch = `forge/${d.name}`;
@@ -241,6 +241,12 @@ function cleanup() {
   let removed = 0;
 
   for (const d of dirs) {
+    // Skip entries with invalid names — filesystem-derived names could contain
+    // leading '--' which git would interpret as flags in execFileSync args
+    if (!/^[a-zA-Z0-9_-]+$/.test(d.name)) {
+      console.error(`[forge-worktree] Skipping invalid worktree entry: "${d.name}"`);
+      continue;
+    }
     const wtPath = path.join(wtDir, d.name);
     const branch = `forge/${d.name}`;
     run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
