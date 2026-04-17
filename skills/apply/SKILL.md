@@ -93,8 +93,8 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - On failure (non-zero exit): show full output, emit `[suggest] debug — tests failed after apply`. Do NOT auto-fix or retry.
 
 5. **Auto-commit** (opt-in — only if `gitIntegration.autoCommit`):
-   - Run `git add -A` then `git commit -m "feat(forge): <feature name>"`
-   - Feature name: the unsanitized `$ARGUMENTS` or plan heading (human-readable, not the slug)
+   - Sanitize the feature name for shell safety: strip the characters `"`, `\`, `` ` ``, `$`, newlines, and control characters. Use this sanitized version as `<safe-feature>` in all shell commands below and in Step 7.
+   - Run `git add -A` then `git commit -m "feat(forge): <safe-feature>"`
    - If nothing to commit (exit code 1 or output contains "nothing to commit"): log "[git-integration] Nothing to commit — skipping" and continue
    - If pre-commit hooks fail: log the error output and continue. Do NOT use `--no-verify`.
    - Never amend, never force, never skip hooks
@@ -106,14 +106,13 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - Check `gh --version` first. If gh is not installed, log "[git-integration] gh CLI not found — skipping PR creation" and continue.
    - Push the branch: `git push -u origin HEAD`
    - If push fails: log the error and skip PR creation. Emit `[suggest] git push failed — push manually and create PR`
-   - Create PR: `gh pr create --title "feat(forge): <feature name>" --body "Applied via FORGE pipeline"`
+   - Create PR: `gh pr create --title "feat(forge): <safe-feature>" --body "Applied via FORGE pipeline"`
    - If PR creation fails: log the full error. Do NOT retry.
 
 8. **Worktree commit** (mandatory when a worktree was resolved in Step 2b — NOT gated by gitIntegration):
    - This commits the implementer's and documenter's changes onto the worktree branch so Step 9 can merge them. This is infrastructure, not a user preference.
    - Run via Bash: `git -C <worktreePath> add -A`
-   - Then: `git -C <worktreePath> commit -m "feat(forge): <feature name>"`
-   - Feature name: the unsanitized `$ARGUMENTS` or plan heading (human-readable)
+   - Then: `git -C <worktreePath> commit -m "feat(forge): <safe-feature>"` (use the same sanitized feature name from Step 5; if Step 5 was skipped, sanitize now: strip `"`, `\`, `` ` ``, `$`, newlines, control characters)
    - If nothing to commit (exit code 1 or output contains "nothing to commit"): log `[worktree] No changes to commit on worktree branch — skipping.` and continue to Step 9.
    - If commit fails for any other reason: log `[worktree] Commit failed: <error>` and continue. Step 9 merge will likely be a no-op but will not crash.
    - Do NOT use `--no-verify`. Do NOT amend. Do NOT force.

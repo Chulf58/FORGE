@@ -142,6 +142,16 @@ User-supplied strings interpolated into YAML frontmatter or markdown can inject 
 
 ---
 
+## Safety: feature names in shell commands
+
+Feature names (from `$ARGUMENTS` or plan headings) are user-controlled and must be sanitized before embedding in any shell command — particularly `git commit -m`, `gh pr create --title`, and branch name derivation.
+
+**Strip these characters before embedding in a quoted shell argument:** `"`, `\`, `` ` ``, `$`, `\n`, `\r`, and other control characters.
+
+The branch-slug sanitization in `skills/apply/SKILL.md` (lowercase, `[a-z0-9-]` only) is the right pattern for branch names. For commit messages and PR titles, use the broader strip above to preserve human-readable text while removing injection vectors. Always use `<safe-feature>` (the sanitized form) in git and gh commands, never the raw `$ARGUMENTS` string.
+
+---
+
 ## Platform differences (Windows)
 
 - Hook scripts run via `node` — ensure `node` is on PATH
