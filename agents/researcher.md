@@ -28,7 +28,7 @@ You run second in the `plan feature:` pipeline, after the Planner.
 For each open question:
 1. **Prior solutions:** Use Glob to check if `docs/solutions/` exists. If so, Grep for 2-3 keywords from the question (API names, library names, error strings, module names) across `docs/solutions/**/*.md`. If a relevant match is found, read the file and emit:
    `[solution-hit] docs/solutions/<filename>.md — <one-line summary of what it solves>`
-   Incorporate the finding into your research output. If no match is found, proceed.
+   Incorporate the finding into your research output. If the solution is universal (applies beyond this project — not tied to a specific config, file path, or local convention), add a `[promote-gotcha] docs/solutions/<filename>.md — <one-line reason>` line to the solution file so compound-refresh can surface it as a gotcha candidate. If no match is found, proceed.
 2. Search the codebase for existing patterns, similar implementations, or clues
 3. Search the web if necessary for API docs, library behaviour, or best practices
 4. Write your findings to `docs/RESEARCH/<feature-slug>.md`

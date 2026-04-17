@@ -46,7 +46,7 @@ Before reading source files, check if this problem has been seen before:
 
 1. **Past solutions:** Use Glob to check if `docs/solutions/` exists. If so, Grep for 2-3 keywords extracted from the bug report (error names, module names, file names) across `docs/solutions/**/*.md`. If a relevant match is found, read the file and emit:
    `[solution-hit] docs/solutions/<filename>.md — <one-line summary of what it solves>`
-   Apply the solution pattern to your fix before continuing. If no match is found, proceed with no history context.
+   Apply the solution pattern to your fix before continuing. If the solution is universal (applies beyond this project — not tied to a specific config, file path, or local convention), add a `[promote-gotcha] docs/solutions/<filename>.md — <one-line reason>` line to the solution file so compound-refresh can surface it as a gotcha candidate. If no match is found, proceed with no history context.
 
 2. **Signal log:** Use Grep to search `.pipeline/signal-log.jsonl` (if it exists) for the affected file names or error keywords. Look at the last 5 matching entries — they may show when the problem started or what run introduced it.
 
