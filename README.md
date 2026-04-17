@@ -40,6 +40,60 @@ No code touches your project until you approve Gate #2.
 
 ---
 
+## Your first feature
+
+After `/forge:init`, here is what a typical feature cycle looks like from start to finish.
+
+**1. Plan it**
+```
+/forge:plan "add password reset flow"
+```
+The planner breaks the feature into tasks. The researcher investigates anything unfamiliar. The gotcha-checker validates the approach against known pitfalls. Reviewers check the plan in parallel. When they finish, Gate #1 appears in the terminal with a summary of the plan and any concerns raised.
+
+**2. Approve or discard the plan**
+```
+/forge:approve    — proceed to implementation
+/forge:discard    — scrap it and start over
+```
+Read the plan. If it looks right, approve. If something is off, discard and re-plan with more context.
+
+**3. Implement it**
+```
+/forge:implement
+```
+The coder writes the implementation to a handoff document. Five specialist reviewers check it — safety, logic, style, performance, and boundary correctness — and emit verdicts. When they finish, Gate #2 appears with the implementation summary and all reviewer verdicts.
+
+**4. Approve or discard the implementation**
+```
+/forge:approve    — apply to source files
+/forge:discard    — reject the handoff and try again
+```
+Read the verdicts. If anything is blocked, the pipeline won't let you approve until it's resolved. If everything looks good, approve.
+
+**5. Apply it**
+```
+/forge:apply
+```
+The implementer writes the changes to your actual source files. The documenter updates the changelog and architecture docs. Done.
+
+Your project files are never touched until step 5.
+
+---
+
+## How it runs
+
+Five things happen when you install FORGE and start a session:
+
+- **29 specialist agents** are loaded from the plugin — each is a Claude instance with a defined role, tool access, and model assignment
+- **13 hook scripts** fire on lifecycle events (session start, tool calls, subagent start/stop) to enforce rules and inject context
+- **An MCP server** starts alongside your session and provides 24 tools for structured access to pipeline state, gates, and model routing
+- **All state lives in `.pipeline/`** in your project directory — board, run history, pending gates, config — nothing is sent anywhere else
+- **Anthropic models route via agent frontmatter**; external models (Gemini, OpenAI) route via the MCP server's `forge_call_external` tool
+
+Nothing runs in the background between sessions. FORGE is stateless until you invoke a command.
+
+---
+
 ## Install
 
 ### Local path

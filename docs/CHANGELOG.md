@@ -1,3 +1,29 @@
+## [2026-04-17b] Multi-vendor model routing complete
+
+### Tier-locked multi-vendor router
+- All 11 models now carry `reasoningTier: "haiku"|"sonnet"|"opus"` and providers carry `priority` (openai:1, gemini:2, anthropic:3).
+- `agentModelMap` entries support `allowedTiers` (ordered whitelist — hard constraint, no silent escalation or degradation) and `allowedVendors` (restricts external routing).
+- Router extended: tier preference beats provider priority; provider priority tiebreaks within same tier; config errors surfaced explicitly when preferred/fallback violates `allowedTiers`; legacy `requiredCapabilities` path preserved.
+- `gpt-5.4` (opus) and `gpt-4.1` (sonnet) added to model catalog.
+- Supervisor entry migrated: `preferred: "gpt-5.4"`, `fallback: "gemini-2.5-flash"`, `allowedTiers: ["opus", "sonnet"]`, `allowedVendors: ["openai", "gemini"]`. OpenAI stays `enabled: false` until API key is set; router falls back to Gemini automatically.
+
+### OpenAI adapter hardened
+- `reasoningEffort` option added; forwarded as `reasoning: { effort }` only when explicitly set — backward-compatible.
+- 429 retry: honors `Retry-After` header; falls back to 10s fixed delay when absent; retries once if delay ≤ 60s.
+- Token field bug fixed: `prompt_tokens`/`completion_tokens` → `input_tokens`/`output_tokens` (Responses API field names).
+- `reasoningTokens` exposed in return value from `output_tokens_details.reasoning_tokens`.
+- `forge_call_external` MCP tool now accepts optional `reasoningEffort` and passes it through to OpenAI.
+
+### Supervise skill de-hardcoded
+- `/forge:supervise` now calls `forge_get_model_recommendation` for the `supervisor` agent and dispatches to whatever provider/model the router returns.
+- Surfaces routing errors explicitly if no valid model is found within `allowedTiers`.
+- Prefix in rendered brief now shows the actual model used (e.g. `Supervisor brief (via gpt-5.4):`).
+- `reasoningEffort: "medium"` passed to all calls; meaningful for OpenAI, ignored by Gemini.
+
+### README updated
+- Added "Your first feature" walkthrough section (full plan→approve→implement→approve→apply cycle).
+- Added "How it runs" section (trust/transparency: agents, hooks, MCP server, local-only state, routing tracks).
+
 ## [2026-04-17] Supervisor fallback concept abandoned
 
 ### Supervisor is flash-only

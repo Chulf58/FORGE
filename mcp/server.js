@@ -667,10 +667,11 @@ server.registerTool(
       modelId: z.string().describe("Model ID to call (e.g. 'codex-mini-latest')"),
       prompt: z.string().describe("Prompt text to send"),
       maxTokens: z.number().optional().describe("Max output tokens (default: 4096)"),
+      reasoningEffort: z.enum(["none", "low", "medium", "high", "xhigh"]).optional().describe("Reasoning effort level for models that support it (e.g. gpt-5.4). Ignored by providers that do not support it."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
-  async ({ providerId, modelId, prompt, maxTokens }) => {
+  async ({ providerId, modelId, prompt, maxTokens, reasoningEffort }) => {
     try {
       const projectDir = resolveProjectDir();
       const pluginDataDir = resolvePluginDataDir();
@@ -691,7 +692,7 @@ server.registerTool(
       let result;
       try {
         if (provider.type === "openai") {
-          result = await callOpenAI(prompt, modelId, apiKey, { maxTokens });
+          result = await callOpenAI(prompt, modelId, apiKey, { maxTokens, reasoningEffort });
         } else if (provider.type === "gemini") {
           result = await callGemini(prompt, modelId, apiKey, { maxTokens });
         } else {

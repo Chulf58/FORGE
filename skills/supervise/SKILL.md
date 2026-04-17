@@ -4,7 +4,7 @@ description: "Generate a supervisor brief for the next implementation slice. Use
 allowed-tools: "Read Grep Glob Bash"
 ---
 
-Generate a supervisor brief by routing the task through the Gemini-backed supervisor agent.
+Generate a supervisor brief by routing the task through the best available supervisor model.
 
 ## Step 1 — Collect project state
 
@@ -21,7 +21,7 @@ Assemble these into a single `[PROJECT STATE]` block.
 
 Read `agents/supervisor.md`. Extract everything AFTER the frontmatter closing `---` line. This is the supervisor's system prompt.
 
-## Step 3 — Construct the Gemini prompt
+## Step 3 — Construct the prompt
 
 Build a single prompt string with this exact structure:
 
@@ -38,25 +38,36 @@ Build a single prompt string with this exact structure:
 Produce a formal brief per the format in your instructions. If the task is unclear, ask one clarifying question instead of guessing.
 ```
 
-## Step 4 — Call Gemini
+## Step 4 — Resolve the supervisor model
+
+Call `forge_get_model_recommendation` with:
+- `agentName`: `"supervisor"`
+- `budgetMode`: `"performance"`
+
+Inspect the result:
+- If `source` is `"error"` or `modelId` is null: surface the `reason` field verbatim prefixed with `[forge:supervise] routing error:` and stop — do not attempt the call.
+- Otherwise: proceed with the returned `providerId` and `modelId`.
+
+## Step 5 — Call the supervisor model
 
 Call `forge_call_external` with:
-- `providerId`: `"gemini"`
-- `modelId`: `"gemini-2.5-flash"`
+- `providerId`: the value returned in Step 4
+- `modelId`: the value returned in Step 4
 - `prompt`: the constructed prompt from Step 3
 - `maxTokens`: `8192`
+- `reasoningEffort`: `"medium"` (only meaningful for OpenAI models; ignored by Gemini)
 
-If the call fails with "API key env var not set," tell the user to set `GEMINI_API_KEY` as a permanent Windows environment variable and restart the Claude Code session.
+If the call fails with "API key env var not set," tell the user to set the relevant API key as a permanent environment variable and restart the Claude Code session.
 
-If the call fails with a Gemini API error, surface the error verbatim with `[forge:supervise]` prefix.
+If the call fails with an API error, surface the error verbatim with `[forge:supervise]` prefix.
 
-## Step 5 — Render the brief
+## Step 6 — Render the brief
 
-Display Gemini's response verbatim in chat. Do NOT edit, summarize, or reinterpret it — the user needs to see the raw supervisor output to approve or adjust.
+Display the model's response verbatim in chat. Do NOT edit, summarize, or reinterpret it — the user needs to see the raw supervisor output to approve or adjust.
 
 Prefix with:
 ```
-**Supervisor brief (via Gemini):**
+**Supervisor brief (via <modelId>):**
 ```
 
 After the brief, add:
@@ -69,4 +80,4 @@ Approve this brief and I'll execute it, or tell me what to adjust.
 - The supervisor agent is defined at `agents/supervisor.md`. Its prompt is the source of truth for how briefs should be formatted.
 - The supervisor does NOT have access to the repo, tools, or MCP — it reasons only from the state injected into its prompt.
 - If the user provides a previous slice's result (RESULT block), include it in the `[TASK]` section so the supervisor can produce the Scope check / Verdict / Solved review fields before the next brief.
-- The `agentModelMap` in `forge-config.default.json` should have a `supervisor` entry with `provider: "gemini"` — but the skill hardcodes the dispatch for now until generic multi-provider routing is built.
+- Model routing is controlled by the `supervisor` entry in `agentModelMap` in `forge-config.default.json`. Currently: prefers `gpt-5.4` (OpenAI, opus-tier) when the OpenAI key is set; falls back to `gemini-2.5-flash` (Gemini, sonnet-tier) otherwise.
