@@ -35,6 +35,7 @@ FORGE is a **Claude Code plugin** (not a standalone app). It runs inside Claude 
 - Agents ARE Claude instances — they do not make separate LLM calls internally. They read files, edit files, call tools, and produce output.
 - **External providers (Gemini, OpenAI) cannot be set via the `model` frontmatter field.** They are reached only via the `forge_call_external` MCP tool, which an agent can call as a tool during execution.
 - The supervisor is special: it runs ON Gemini via `forge_call_external` (called by the `/forge:supervise` skill), not as a Claude subagent.
+- **Gemini auth:** The Gemini adapter sends the API key via the `x-goog-api-key` request header — NOT as a `?key=` URL query parameter. Error messages from the adapter are sanitized and do not include raw response bodies (which previously echoed the key on 401 responses).
 
 **Current Anthropic model IDs (use these exactly):**
 - `claude-opus-4-7` — latest flagship, best agentic coding, 1M context

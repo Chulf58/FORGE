@@ -2,7 +2,8 @@
 // Only for external Gemini calls via forge_call_external.
 // Uses Node.js 18+ built-in fetch — no additional HTTP dependencies.
 //
-// Gemini API sends the API key as a query parameter, not a Bearer token.
+// Auth: API key sent via x-goog-api-key header (NOT as a ?key= query param).
+// Sending the key in a query param would expose it in proxy/CDN/load-balancer logs.
 // Endpoint: generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -27,6 +28,24 @@ function parse429RetryDelay(responseText) {
 }
 
 /**
+ * Returns a sanitized error message that preserves status and failure class
+ * without including raw response body content (which may echo the API key
+ * on 401 responses or contain other sensitive material).
+ */
+function sanitizeErrorMessage(status, responseText) {
+  // Extract only the error code/status string from the body — not the full body
+  try {
+    const data = JSON.parse(responseText);
+    const errorStatus = data?.error?.status;
+    const errorCode = data?.error?.code;
+    if (errorStatus) return `Gemini API error ${status}: ${errorStatus}`;
+    if (errorCode) return `Gemini API error ${status}: code ${errorCode}`;
+  } catch (_) {}
+  // Non-JSON or unparseable — return status only, never raw body
+  return `Gemini API error ${status}`;
+}
+
+/**
  * Sends a prompt to the Gemini generateContent API.
  *
  * @param {string} prompt - the input text to send
@@ -37,7 +56,7 @@ function parse429RetryDelay(responseText) {
  * @throws {Error} on non-2xx status or network failure
  */
 export async function callGemini(prompt, modelId, apiKey, options = {}) {
-  const url = `${GEMINI_BASE}/${modelId}:generateContent?key=${apiKey}`;
+  const url = `${GEMINI_BASE}/${modelId}:generateContent`;
 
   const body = {
     contents: [
@@ -60,7 +79,10 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
         body: JSON.stringify(body),
       });
     } catch (err) {
@@ -95,7 +117,7 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error('Gemini API error ' + response.status + ': ' + responseText);
+    throw new Error(sanitizeErrorMessage(response.status, responseText));
   }
 
   let data;
