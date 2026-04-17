@@ -10,7 +10,7 @@
 //   node forge-worktree.js delete <slug>     → removes .worktrees/<slug> and branch forge/<slug> without merging
 //   node forge-worktree.js cleanup           → removes all worktrees and their branches
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -19,9 +19,17 @@ const slug = process.argv[3];
 
 const WORKTREE_DIR = '.worktrees';
 
-function run(command, opts = {}) {
+// Guard against shell injection via slug — only alphanumeric, hyphens, underscores allowed
+function validateSlug(s) {
+  if (!s || !/^[a-zA-Z0-9_-]+$/.test(s)) {
+    console.error(`[forge-worktree] Invalid slug "${s}": only alphanumeric characters, hyphens, and underscores are allowed.`);
+    process.exit(1);
+  }
+}
+
+function run(binary, args, opts = {}) {
   try {
-    return execSync(command, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...opts }).trim();
+    return execFileSync(binary, args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...opts }).trim();
   } catch (e) {
     if (opts.allowFail) return '';
     console.error(`Error: ${e.message}`);
@@ -31,7 +39,7 @@ function run(command, opts = {}) {
 
 function ensureGitRepo() {
   try {
-    run('git rev-parse --git-dir');
+    run('git', ['rev-parse', '--git-dir']);
   } catch {
     console.error('Not a git repository.');
     process.exit(1);
@@ -40,6 +48,7 @@ function ensureGitRepo() {
 
 function create() {
   if (!slug) { console.error('Usage: forge-worktree.js create <slug>'); process.exit(1); }
+  validateSlug(slug);
 
   ensureGitRepo();
 
@@ -55,7 +64,7 @@ function create() {
   fs.mkdirSync(WORKTREE_DIR, { recursive: true });
 
   // Create worktree with new branch from current HEAD
-  run(`git worktree add "${wtPath}" -b "${branch}"`);
+  run('git', ['worktree', 'add', wtPath, '-b', branch]);
 
   // Copy .pipeline/ to worktree so sessions have board, modules, project.json
   const pipelineSrc = '.pipeline';
@@ -119,6 +128,7 @@ function list() {
 
 function merge() {
   if (!slug) { console.error('Usage: forge-worktree.js merge <slug>'); process.exit(1); }
+  validateSlug(slug);
 
   ensureGitRepo();
 
@@ -130,16 +140,14 @@ function merge() {
     process.exit(1);
   }
 
-  const currentBranch = run('git branch --show-current');
+  const currentBranch = run('git', ['branch', '--show-current']);
 
   // Commit any uncommitted changes in the worktree before merging.
-  // Without this, the worktree branch has no new commits and merge is a no-op.
-  // Only commit when git status shows real changes — no --allow-empty.
-  const wtStatus = run(`git -C "${wtPath}" status --porcelain`, { allowFail: true });
+  const wtStatus = run('git', ['-C', wtPath, 'status', '--porcelain'], { allowFail: true });
   if (wtStatus) {
-    run(`git -C "${wtPath}" add -A`);
+    run('git', ['-C', wtPath, 'add', '-A']);
     try {
-      execSync(`git -C "${wtPath}" commit -m "feat(forge): apply changes"`, {
+      execFileSync('git', ['-C', wtPath, 'commit', '-m', 'feat(forge): apply changes'], {
         encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']
       });
     } catch (e) {
@@ -151,23 +159,18 @@ function merge() {
   // Attempt the merge — do NOT use allowFail here, we need to detect failure
   let mergeOk = false;
   try {
-    execSync(`git merge "${branch}" --no-edit`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execFileSync('git', ['merge', branch, '--no-edit'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     mergeOk = true;
   } catch (e) {
     // Merge failed (conflict or other error) — abort the merge to restore clean state
     try {
-      execSync('git merge --abort', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+      execFileSync('git', ['merge', '--abort'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (_) {
       // --abort can fail if merge wasn't in progress (e.g. fast-forward failure) — ignore
     }
   }
 
   if (!mergeOk) {
-    // Report-only recovery: persist a mergeBlocked marker on the run so
-    // existing read surfaces (dashboard, /forge:status, /forge:resume) can
-    // tell the user this run is blocked on manual merge resolution instead
-    // of leaving it silently stranded. The slug IS the runId (the apply
-    // skill calls `forge-worktree.js merge <runId>`).
     try {
       const runJsonPath = path.join('.pipeline', 'runs', slug, 'run.json');
       if (fs.existsSync(runJsonPath)) {
@@ -179,10 +182,7 @@ function merge() {
         runData.updatedAt = new Date().toISOString();
         fs.writeFileSync(runJsonPath, JSON.stringify(runData, null, 2) + '\n', 'utf8');
       }
-    } catch (_) {
-      // Best-effort — if we can't persist the marker, the stderr JSON below
-      // still informs the current session. The marker just won't survive.
-    }
+    } catch (_) {}
 
     console.error(JSON.stringify({
       ok: false,
@@ -196,8 +196,8 @@ function merge() {
   }
 
   // Merge succeeded — safe to clean up
-  run(`git worktree remove "${wtPath}" --force`, { allowFail: true });
-  run(`git branch -d "${branch}"`, { allowFail: true });
+  run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
+  run('git', ['branch', '-d', branch], { allowFail: true });
 
   console.log(JSON.stringify({
     ok: true,
@@ -209,6 +209,7 @@ function merge() {
 
 function deleteWorktree() {
   if (!slug) { console.error('Usage: forge-worktree.js delete <slug>'); process.exit(1); }
+  validateSlug(slug);
 
   ensureGitRepo();
 
@@ -220,9 +221,9 @@ function deleteWorktree() {
     process.exit(1);
   }
 
-  run(`git worktree remove "${wtPath}" --force`, { allowFail: true });
-  run(`git branch -D "${branch}"`, { allowFail: true });
-  run('git worktree prune', { allowFail: true });
+  run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
+  run('git', ['branch', '-D', branch], { allowFail: true });
+  run('git', ['worktree', 'prune'], { allowFail: true });
 
   console.log(JSON.stringify({ ok: true, deleted: slug, worktreeRemoved: true, branchDeleted: branch }));
 }
@@ -242,8 +243,8 @@ function cleanup() {
   for (const d of dirs) {
     const wtPath = path.join(wtDir, d.name);
     const branch = `forge/${d.name}`;
-    run(`git worktree remove "${wtPath}" --force`, { allowFail: true });
-    run(`git branch -D "${branch}"`, { allowFail: true });
+    run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
+    run('git', ['branch', '-D', branch], { allowFail: true });
     removed++;
   }
 
@@ -253,7 +254,7 @@ function cleanup() {
   } catch {}
 
   // Prune stale worktree references
-  run('git worktree prune', { allowFail: true });
+  run('git', ['worktree', 'prune'], { allowFail: true });
 
   console.log(JSON.stringify({ ok: true, removed }));
 }
