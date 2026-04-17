@@ -124,7 +124,7 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
   try {
     data = JSON.parse(responseText);
   } catch (err) {
-    throw new Error('Gemini response JSON parse failed: ' + responseText.slice(0, 200));
+    throw new Error('Gemini response JSON parse failed (unexpected non-JSON body on successful response)');
   }
 
   // Extract text from the first candidate's first part.

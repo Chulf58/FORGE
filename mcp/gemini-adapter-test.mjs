@@ -124,6 +124,20 @@ console.log('\n── gemini-adapter-test.mjs ───────────�
   assert(result.text === 'Hello from Gemini', '503 retry: success on third attempt');
 }
 
+// 6. JSON parse error on 200 response — no raw body in error message
+{
+  globalThis.fetch = async () => ({
+    ok: true, status: 200,
+    headers: { get: () => null },
+    text: async () => 'not-valid-json ?key=leaked-key',
+  });
+  let errorMsg = '';
+  try { await callGemini('hello', 'gemini-2.5-flash', 'my-secret-key'); } catch (e) { errorMsg = e.message; }
+  assert(errorMsg.includes('JSON parse failed'), 'JSON parse error: descriptive message present');
+  assert(!errorMsg.includes('leaked-key'), 'JSON parse error: raw body not included in message');
+  assert(!errorMsg.includes('not-valid-json'), 'JSON parse error: body slice not included');
+}
+
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
