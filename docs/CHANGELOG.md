@@ -1,3 +1,17 @@
+## [2026-04-17c] Knowledge integration layer complete
+
+### Consumer agents wired to solutions store
+- `agents/debug.md` Step 0.5: emits `[solution-hit] docs/solutions/<file>.md — <summary>` when match found; now also writes `[promote-gotcha]` flag when solution is universal
+- `agents/researcher.md`: new Step 1 per-question checks `docs/solutions/` before any codebase/web search; emits `[solution-hit]`; writes `[promote-gotcha]` when universal
+- `docs/gotchas/GENERAL.md`: `[solution-hit]` and `[promote-gotcha]` signals documented in protocol table
+
+### compound-refresh promotion candidates
+- `agents/compound-refresh.md`: scans `docs/RESEARCH/` and `docs/context/` for `[solution-hit]` frequency (2+ hits = candidate); scans `docs/solutions/` for explicit `[promote-gotcha]` flags; reports `[promote?]` section in every run; never auto-promotes
+- Smoke tested: all three grep paths verified manually with real solution file and mock signals
+
+### First solution doc
+- `docs/solutions/openai-responses-api-token-fields.md`: OpenAI Responses API uses `input_tokens`/`output_tokens` not `prompt_tokens`/`completion_tokens`; includes `[promote-gotcha]` as example
+
 ## [2026-04-17b] Multi-vendor model routing complete
 
 ### Tier-locked multi-vendor router

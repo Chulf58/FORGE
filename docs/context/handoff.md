@@ -1,57 +1,92 @@
-# Handoff: Knowledge layer design + Gemini model hardening (2026-04-17)
+# Handoff: Multi-vendor routing, knowledge integration, README, reviewer rename (2026-04-17)
 
 ## What happened this session
 
-### 1. Knowledge layer discussion (no implementation)
-Discussed how gotchas (`docs/gotchas/GENERAL.md`) and compound knowledge (`docs/solutions/`) should work together. Key distinctions established:
-- Gotchas = preventative, always-on, "never do X"
-- Solutions = reactive, on-demand, "when you see Y, try Z"
-- Promotion from solution → gotcha requires recurrence + pattern stability (human judgment trigger)
-- Supervisor produced a design brief via gemini-2.5-flash-lite — brief was shallow/generic, proved flash-lite is not viable for supervisor work
+### 1. Gemini model hardening
+- Flash-lite fallback concept killed — proven too weak for supervisor (shallow brief, hallucinated module)
+- `reasoningTier` field added to all 11 catalog models
+- `supervisor` entry re-added to `agentModelMap` with `allowedTiers: ["opus", "sonnet"]`, `allowedVendors: ["openai", "gemini"]`
+- Gemini adapter: exponential backoff 503 retry (2s/4s/8s), 429 retry with Retry-After parsing
+- Gemini 2.5-pro confirmed unavailable on free API tier (limit: 0 — requires billing; web UI ≠ API)
 
-### 2. Flash-lite fallback removed
-- Removed "fallback when 2.5-flash quota runs out" from `gemini-2.5-flash-lite` notes
-- Removed "secondary fallback" from `gemini-3.1-flash-lite-preview` notes
-- Both models explicitly marked NOT for supervisor
-- Runtime policy: on 503 from gemini-2.5-flash, surface error and stop — no silent degradation
-- CHANGELOG [2026-04-17] added documenting this
+### 2. Multi-vendor model routing (4 slices)
+Full workstream shipped and pushed:
 
-### 3. `reasoningTier` field added to all models
-All 11 models in `forge-config.default.json` now have `reasoningTier: "haiku"|"sonnet"|"opus"`. Values derived from existing notes ("Sonnet-tier quality", etc.). No router changes yet.
+**Slice 1 — Config + router:**
+- Provider `priority` field added (openai:1, gemini:2, anthropic:3)
+- `gpt-5.4` (opus) and `gpt-4.1` (sonnet) added to model catalog
+- Router extended with `allowedTiers` (hard constraint, no silent escalation) + `allowedVendors` + tier-preference ordering + provider priority tiebreaking
+- Legacy `requiredCapabilities` path preserved
+- 12 router unit tests
 
-Tier assignments:
-- opus: claude-opus-4-7, claude-opus-4-6, gemini-2.5-pro, gemini-3.1-pro-preview
-- sonnet: claude-sonnet-4-6, gemini-2.0-flash, gemini-2.5-flash
-- haiku: claude-haiku-4-5-20251001, codex-mini-latest, gemini-2.5-flash-lite, gemini-3.1-flash-lite-preview
+**Slice 2 — OpenAI adapter:**
+- `reasoningEffort` option added (opt-in, forwarded as `reasoning.effort` only to OpenAI)
+- 429 retry with `Retry-After` header parsing + 10s fallback
+- Token field bug fixed: `prompt_tokens`/`completion_tokens` → `input_tokens`/`output_tokens`
+- `reasoningTokens` exposed in return value
+- 15 adapter unit tests
 
-### 4. `supervisor` entry re-added to agentModelMap
-```json
-"supervisor": {
-  "preferred": "gemini-2.5-flash",
-  "minReasoningTier": "sonnet",
-  "requiredCapabilities": ["reasoning", "analysis"],
-  "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires sonnet-tier reasoning; no fallback — on 503 surface the error and stop. Skill hardcodes dispatch until router learns minReasoningTier."
-}
-```
-- No fallback — sonnet floor enforced via requiredCapabilities until router learns minReasoningTier (TODO aee130ac)
-- `gemini-3.1-flash-lite-preview` also had `reasoning` capability removed as defense-in-depth
+**Slice 3 — Supervise skill de-hardcoded:**
+- `/forge:supervise` now calls `forge_get_model_recommendation` (budgetMode: "performance")
+- Dispatches to returned providerId + modelId — no longer hardcoded to Gemini
+- Brief prefix shows actual model used
+- `forge_call_external` MCP tool gains optional `reasoningEffort` param
+- Supervisor normalization cleanup: commit subject corrected by supervisor review
 
-### 5. Gemini Pro smoke test — confirmed unavailable on free API tier
-- gemini-2.5-pro returned 429 with `limit: 0` — API free tier quota is literally zero, not "exhausted today"
-- Notes updated: "API free tier quota is 0 — requires billing; web UI access does not apply to API calls"
-- Same applied to gemini-3.1-pro-preview
-- Key distinction: AI Studio web chat gives some Pro access; the API key used by forge_call_external does not
+**Activation TODO:** `86198e49` — set `OPENAI_API_KEY` + flip `enabled: true`, smoke test GPT-5.4 routing
 
-### 6. Gemini adapter retry hardening
-`mcp/lib/gemini-adapter.js` updated:
-- 503: exponential backoff — 2s, 4s, 8s across 3 retries (max 14s wait)
-- 429: new `parse429RetryDelay()` helper parses `RetryInfo.retryDelay` from response body; retries once if < 60s (per-minute rate limit); surfaces immediately if ≥ 60s or missing (daily quota / limit=0)
+### 3. reviewer → reviewer-boundary rename
+- `agents/reviewer.md` renamed to `agents/reviewer-boundary.md`
+- All 15 reference sites updated across agents, config, MCP server, pipeline state
+- TODO `1b92130b` on board (done — can be closed)
 
-## Commit
-`a045ee3` — feat(gemini): reasoningTier on models, supervisor agentModelMap entry, exponential backoff retry
+### 4. README rewrite
+- New tagline, glass wall section with open kitchen analogy
+- "Your first feature" walkthrough (plan→approve→implement→approve→apply)
+- "How it runs" trust section (agents, hooks, MCP server, local-only state, routing)
+- Pipeline modes table, gates explained, full commands table
+- Marketplace install marked in-progress; What's coming: TUI + worktree
+
+### 5. Knowledge integration layer (3 slices)
+Full workstream shipped and pushed:
+
+**Slice 1 — Consumer agents:**
+- `agents/debug.md` Step 0.5 now emits `[solution-hit] docs/solutions/<file>.md — <summary>` when match found; continues if no match
+- `agents/researcher.md` adds Step 1 (solutions check) per-question before any codebase/web search
+- `docs/gotchas/GENERAL.md`: `[solution-hit]` signal documented
+
+**Slice 2 — compound-refresh promotion:**
+- `agents/compound-refresh.md` extended: scans `docs/RESEARCH/` and `docs/context/` for `[solution-hit]` frequency (threshold: 2 hits = candidate); scans `docs/solutions/` for `[promote-gotcha]` flags
+- Reports `[promote?]` candidates section in every run (even when empty)
+- `docs/gotchas/GENERAL.md`: `[promote-gotcha]` signal documented
+- Explicit guard: never auto-edits `docs/gotchas/GENERAL.md`
+
+**Slice 3 — Emission guidance:**
+- `debug` and `researcher` now told when to write `[promote-gotcha]`: when a solution is universal (not project-specific)
+
+**Smoke test:** real solution file created (`docs/solutions/openai-responses-api-token-fields.md`), mock RESEARCH file with 2x `[solution-hit]` hits, all 3 grep paths verified working manually
+
+### 6. GPT-5.4 research
+- GPT-5.4: opus-tier, 1M context, $2.50/$15 per 1M input/output, supports `reasoning_effort`
+- GPT-4.1: sonnet-tier, current recommended OpenAI production model, $2/$8
+- OpenAI subscriptions (ChatGPT Plus/Pro) are NOT API access — separate billing at platform.openai.com
+- Cost estimate for supervisor: ~$0.60–1.00/heavy day at 30-40 calls
 
 ## What's next
-- **Slice 3 (TODO aee130ac):** Teach router to honor `minReasoningTier` — ordinal comparison in catalog scan. Then the skill can stop hardcoding `gemini-2.5-flash` and ask the router instead.
-- **Knowledge layer implementation:** No slices cut this session — design only. If picked up: start with solution-lookup wiring in `agents/debug.md` and `agents/researcher.md` before building promotion machinery.
-- **Frontmatter stripping in supervise skill:** Gemini occasionally wraps output in markdown fences. `skills/supervise/SKILL.md` should strip ``` fences and `---` preamble before rendering.
-- **DeepSeek R1:** Identified as viable cheap reasoning model — worth adding to forge-config.default.json as future external provider.
+- **OpenAI activation** (TODO `86198e49`): set `OPENAI_API_KEY`, flip provider to enabled, smoke test GPT-5.4 as supervisor
+- **FORGE-REFERENCE.md refresh** (deferred): stale on reasoningTier, allowedTiers, allowedVendors, reviewer-boundary rename, new signals — update when needed for user-facing milestone
+- **Router slice 3** (TODO `aee130ac`): teach router to honor `minReasoningTier` for catalog scan — closes out tier-based routing board item
+- **Knowledge layer validation**: run a real debug pipeline and verify `[solution-hit]` fires, then run compound-refresh and verify promotion candidate surfaces
+
+## Commits this session
+```
+a0472ad feat(knowledge): add promote-gotcha emission guidance to debug and researcher
+ae11bba feat(knowledge): add first solution doc + smoke test for lookup and promotion
+c381ad9 feat(knowledge): surface gotcha promotion candidates in compound-refresh
+c4406de feat(knowledge): wire debug and researcher to consult solutions first
+61b2f1e feat(supervise): route provider and model via recommendation
+0279e94 feat(openai): add reasoning effort and retry handling
+0c75077 feat(router): add tier-locked multi-vendor recommendation logic
+1032fb9 feat(agents): rename reviewer→reviewer-boundary; rewrite README
+a045ee3 feat(gemini): reasoningTier on models, supervisor agentModelMap entry, exponential backoff retry
+```
