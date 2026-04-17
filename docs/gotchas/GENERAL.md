@@ -130,6 +130,7 @@ Agents emit signals as lines starting with `[signal-name]`. These are consumed b
 | `[questions]` / `[/questions]` | multi-line block | Agent clarification questions |
 | `[reviewer-verdict]` | `[reviewer-verdict] {...JSON}` | Reviewer result (APPROVED/BLOCK/REVISE) |
 | `[task-block]` | `[task-block] taskId blockedBy:id1,id2` | Mark a task as blocked by other tasks |
+| `[solution-hit]` | `[solution-hit] docs/solutions/<file>.md — <one-line summary>` | Emitted by `debug` and `researcher` when a relevant past solution is found in `docs/solutions/`; signals that a known fix pattern was applied |
 | `[CONTEXT-CHECKPOINT]` | literal | Context window low — checkpoint needed |
 
 ---

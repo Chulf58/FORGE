@@ -44,7 +44,9 @@ Only ask what you genuinely cannot infer. Maximum 3 questions. On re-invocation 
 
 Before reading source files, check if this problem has been seen before:
 
-1. **Past solutions:** Use Glob to check if `docs/solutions/` exists. If so, Grep for the file names, module names, or error keywords from the bug report across `docs/solutions/**/*.md`. If a relevant past solution exists, read it — the fix pattern may apply directly.
+1. **Past solutions:** Use Glob to check if `docs/solutions/` exists. If so, Grep for 2-3 keywords extracted from the bug report (error names, module names, file names) across `docs/solutions/**/*.md`. If a relevant match is found, read the file and emit:
+   `[solution-hit] docs/solutions/<filename>.md — <one-line summary of what it solves>`
+   Apply the solution pattern to your fix before continuing. If no match is found, proceed with no history context.
 
 2. **Signal log:** Use Grep to search `.pipeline/signal-log.jsonl` (if it exists) for the affected file names or error keywords. Look at the last 5 matching entries — they may show when the problem started or what run introduced it.
 

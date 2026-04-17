@@ -26,9 +26,12 @@ You run second in the `plan feature:` pipeline, after the Planner.
 **Standard mode:** Read `docs/PLAN.md` and find the `### Research needed` section. If the section is absent, empty, or contains only `None`, emit `[suggest] implement feature: <feature name>` immediately and stop — do not read any files.
 
 For each open question:
-1. Search the codebase for existing patterns, similar implementations, or clues
-2. Search the web if necessary for API docs, library behaviour, or best practices
-3. Write your findings to `docs/RESEARCH/<feature-slug>.md`
+1. **Prior solutions:** Use Glob to check if `docs/solutions/` exists. If so, Grep for 2-3 keywords from the question (API names, library names, error strings, module names) across `docs/solutions/**/*.md`. If a relevant match is found, read the file and emit:
+   `[solution-hit] docs/solutions/<filename>.md — <one-line summary of what it solves>`
+   Incorporate the finding into your research output. If no match is found, proceed.
+2. Search the codebase for existing patterns, similar implementations, or clues
+3. Search the web if necessary for API docs, library behaviour, or best practices
+4. Write your findings to `docs/RESEARCH/<feature-slug>.md`
 
 ## Key files to check before researching
 
