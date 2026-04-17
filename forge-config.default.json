@@ -6,6 +6,7 @@
       "type": "anthropic",
       "envVar": "ANTHROPIC_API_KEY",
       "enabled": true,
+      "priority": 3,
       "notes": "Anthropic models are routed via agent frontmatter — this entry tracks quota state only"
     },
     {
@@ -14,6 +15,7 @@
       "type": "openai",
       "envVar": "OPENAI_API_KEY",
       "enabled": false,
+      "priority": 1,
       "notes": "Enable by setting OPENAI_API_KEY and flipping enabled to true"
     },
     {
@@ -22,6 +24,7 @@
       "type": "gemini",
       "envVar": "GEMINI_API_KEY",
       "enabled": true,
+      "priority": 2,
       "notes": "Free tier; quota is per-model per-day; flash/lite models have generous limits, pro models exhaust quickly. Get key at https://aistudio.google.com/apikey"
     }
   ],
@@ -70,6 +73,24 @@
       "costTier": "low",
       "contextWindow": 200000,
       "notes": "OpenAI Codex mini via Responses API; external provider — use forge_call_external"
+    },
+    {
+      "id": "gpt-4.1",
+      "providerId": "openai",
+      "reasoningTier": "sonnet",
+      "capabilities": ["reasoning", "code", "analysis"],
+      "costTier": "medium",
+      "contextWindow": 128000,
+      "notes": "Current recommended OpenAI production model; $2/$8 per 1M input/output; replaced GPT-4o as default; use forge_call_external"
+    },
+    {
+      "id": "gpt-5.4",
+      "providerId": "openai",
+      "reasoningTier": "opus",
+      "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
+      "costTier": "high",
+      "contextWindow": 1050000,
+      "notes": "OpenAI frontier model for agentic/coding/professional workflows; $2.50/$15 per 1M input/output; supports reasoning_effort (none/low/medium/high/xhigh); 1M context; use forge_call_external"
     },
     {
       "id": "gemini-2.0-flash",
@@ -268,10 +289,11 @@
       "requiredCapabilities": ["code", "analysis"]
     },
     "supervisor": {
-      "preferred": "gemini-2.5-flash",
-      "minReasoningTier": "sonnet",
-      "requiredCapabilities": ["reasoning", "analysis"],
-      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires sonnet-tier reasoning; no fallback — on 503 surface the error and stop. Skill hardcodes dispatch until router learns minReasoningTier."
+      "preferred": "gpt-5.4",
+      "fallback": "gemini-2.5-flash",
+      "allowedTiers": ["opus", "sonnet"],
+      "allowedVendors": ["openai", "gemini"],
+      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Prefers opus-tier (gpt-5.4), falls back to sonnet-tier (gemini-2.5-flash). Never haiku. Skill hardcodes dispatch until forge_get_model_recommendation is wired in (next slice)."
     },
     "tool-call-auditor": {
       "preferred": "claude-haiku-4-5-20251001",

@@ -1,7 +1,16 @@
 // router.js — model recommendation engine (ESM, pure function — no I/O)
 // The router advises which model to use; it does NOT execute calls or write files.
+//
+// Routing priority per agent entry:
+//   1. preferred  — specific model pin; config error if tier violates allowedTiers
+//   2. fallback   — specific model pin; config error if tier violates allowedTiers
+//   3. tier-locked catalog scan — when allowedTiers is set; ordered by tier preference
+//      then provider priority; fails clearly if no candidate found within allowedTiers
+//   4. legacy requiredCapabilities catalog scan — when allowedTiers is absent
+//   5. hardcoded default
 
 const COST_TIER_ORDER = { low: 0, medium: 1, high: 2 };
+const REASONING_TIER_ORDER = { haiku: 0, sonnet: 1, opus: 2 };
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_PROVIDER = 'anthropic';
@@ -13,53 +22,132 @@ const DEFAULT_PROVIDER = 'anthropic';
  * @param {object} config - parsed forge-config.json object
  * @param {object} usage - parsed usage.json object (or emptyUsage())
  * @param {{ budgetMode?: 'economy'|'standard'|'performance' }} options
- * @returns {{ modelId: string, providerId: string, source: 'preferred'|'fallback'|'catalog'|'default', reason: string }}
+ * @returns {{ modelId: string|null, providerId: string|null, source: 'preferred'|'fallback'|'catalog'|'default'|'error', reason: string }}
  */
 export function recommendModel(agentName, config, usage, options = {}) {
   const budgetMode = options.budgetMode || 'standard';
   const agentEntry = config.agentModelMap?.[agentName];
 
-  // Helper: check if a model's provider is enabled and not quota-exhausted.
+  function getModelDef(modelId) {
+    return (config.models || []).find(m => m.id === modelId) ?? null;
+  }
+
   function isAvailable(modelId) {
     if (!modelId) return false;
-
-    const modelDef = (config.models || []).find(m => m.id === modelId);
-    if (!modelDef) return false; // model not in catalog — skip
-
-    const providerId = modelDef.providerId;
-    const providerDef = (config.providers || []).find(p => p.id === providerId);
+    const def = getModelDef(modelId);
+    if (!def) return false;
+    const providerDef = (config.providers || []).find(p => p.id === def.providerId);
     if (!providerDef || !providerDef.enabled) return false;
-
-    // Optional chaining guards against a provider not yet in usage state
-    const exhausted = usage.providers?.[providerId]?.quotaExhausted ?? false;
+    const exhausted = usage.providers?.[def.providerId]?.quotaExhausted ?? false;
     return !exhausted;
   }
 
   function providerIdForModel(modelId) {
-    return (config.models || []).find(m => m.id === modelId)?.providerId ?? null;
+    return getModelDef(modelId)?.providerId ?? null;
   }
 
-  // Priority 1: agent's preferred model
-  if (agentEntry && isAvailable(agentEntry.preferred)) {
+  function providerPriority(providerId) {
+    const def = (config.providers || []).find(p => p.id === providerId);
+    return def?.priority ?? 999;
+  }
+
+  const allowedTiers = agentEntry?.allowedTiers ?? null;
+  const allowedVendors = agentEntry?.allowedVendors ?? null;
+
+  function tierAllowed(modelId) {
+    if (!allowedTiers) return true;
+    const def = getModelDef(modelId);
+    if (!def) return false;
+    return allowedTiers.includes(def.reasoningTier);
+  }
+
+  function vendorAllowed(modelId) {
+    if (!allowedVendors) return true;
+    const def = getModelDef(modelId);
+    if (!def) return false;
+    return allowedVendors.includes(def.providerId);
+  }
+
+  // Priority 1: preferred model
+  if (agentEntry?.preferred) {
+    const prefDef = getModelDef(agentEntry.preferred);
+    if (prefDef && allowedTiers && !allowedTiers.includes(prefDef.reasoningTier)) {
+      // Model exists in catalog but its tier violates the declared constraint — config error
+      return {
+        modelId: null,
+        providerId: null,
+        source: 'error',
+        reason: `Config error: preferred model "${agentEntry.preferred}" has tier "${prefDef.reasoningTier}" which is not in allowedTiers [${allowedTiers.join(', ')}] for agent "${agentName}"`,
+      };
+    }
+    if (isAvailable(agentEntry.preferred)) {
+      return {
+        modelId: agentEntry.preferred,
+        providerId: providerIdForModel(agentEntry.preferred),
+        source: 'preferred',
+        reason: 'Agent preferred model is available',
+      };
+    }
+  }
+
+  // Priority 2: fallback model
+  if (agentEntry?.fallback) {
+    const fbDef = getModelDef(agentEntry.fallback);
+    if (fbDef && allowedTiers && !allowedTiers.includes(fbDef.reasoningTier)) {
+      // Model exists in catalog but its tier violates the declared constraint — config error
+      return {
+        modelId: null,
+        providerId: null,
+        source: 'error',
+        reason: `Config error: fallback model "${agentEntry.fallback}" has tier "${fbDef.reasoningTier}" which is not in allowedTiers [${allowedTiers.join(', ')}] for agent "${agentName}"`,
+      };
+    }
+    if (isAvailable(agentEntry.fallback)) {
+      return {
+        modelId: agentEntry.fallback,
+        providerId: providerIdForModel(agentEntry.fallback),
+        source: 'fallback',
+        reason: 'Preferred model unavailable; using fallback',
+      };
+    }
+  }
+
+  // Priority 3: tier-locked catalog scan (when allowedTiers is declared)
+  if (allowedTiers) {
+    let candidates = (config.models || []).filter(m => {
+      if (!isAvailable(m.id)) return false;
+      if (!allowedTiers.includes(m.reasoningTier)) return false;
+      if (allowedVendors && !allowedVendors.includes(m.providerId)) return false;
+      return true;
+    });
+
+    if (candidates.length > 0) {
+      // Sort: tier preference (index in allowedTiers) first, then provider priority as tiebreaker
+      candidates.sort((a, b) => {
+        const aTierIdx = allowedTiers.indexOf(a.reasoningTier);
+        const bTierIdx = allowedTiers.indexOf(b.reasoningTier);
+        if (aTierIdx !== bTierIdx) return aTierIdx - bTierIdx;
+        return providerPriority(a.providerId) - providerPriority(b.providerId);
+      });
+      const chosen = candidates[0];
+      return {
+        modelId: chosen.id,
+        providerId: chosen.providerId,
+        source: 'catalog',
+        reason: `Selected from tier-locked catalog (allowedTiers: [${allowedTiers.join(', ')}])`,
+      };
+    }
+
+    // No valid candidate within allowedTiers — fail clearly, never escalate or degrade
     return {
-      modelId: agentEntry.preferred,
-      providerId: providerIdForModel(agentEntry.preferred),
-      source: 'preferred',
-      reason: 'Agent preferred model is available',
+      modelId: null,
+      providerId: null,
+      source: 'error',
+      reason: `No available model found within allowedTiers [${allowedTiers.join(', ')}]${allowedVendors ? ` and allowedVendors [${allowedVendors.join(', ')}]` : ''} for agent "${agentName}"`,
     };
   }
 
-  // Priority 2: agent's fallback model (may be undefined — guard with optional chaining)
-  if (agentEntry?.fallback && isAvailable(agentEntry.fallback)) {
-    return {
-      modelId: agentEntry.fallback,
-      providerId: providerIdForModel(agentEntry.fallback),
-      source: 'fallback',
-      reason: 'Preferred model provider exhausted or unavailable; using fallback',
-    };
-  }
-
-  // Priority 3: scan catalog for any model matching required capabilities
+  // Priority 4: legacy requiredCapabilities catalog scan (no allowedTiers declared)
   const requiredCaps = agentEntry?.requiredCapabilities || [];
   let candidates = (config.models || []).filter(m => {
     if (!isAvailable(m.id)) return false;
@@ -69,7 +157,6 @@ export function recommendModel(agentName, config, usage, options = {}) {
   });
 
   if (candidates.length > 0) {
-    // Apply budget mode sorting (soft preference — not a hard filter)
     if (budgetMode === 'economy') {
       candidates = candidates.sort(
         (a, b) => (COST_TIER_ORDER[a.costTier] ?? 1) - (COST_TIER_ORDER[b.costTier] ?? 1),
@@ -79,8 +166,6 @@ export function recommendModel(agentName, config, usage, options = {}) {
         (a, b) => (COST_TIER_ORDER[b.costTier] ?? 1) - (COST_TIER_ORDER[a.costTier] ?? 1),
       );
     }
-    // 'standard' — no sort; use catalog order
-
     const chosen = candidates[0];
     return {
       modelId: chosen.id,
@@ -90,7 +175,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
     };
   }
 
-  // Priority 4: absolute default
+  // Priority 5: absolute default
   return {
     modelId: DEFAULT_MODEL,
     providerId: DEFAULT_PROVIDER,
