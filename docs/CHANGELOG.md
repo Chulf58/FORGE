@@ -1,3 +1,12 @@
+## [2026-04-17] Supervisor fallback concept abandoned
+
+### Supervisor is flash-only
+- `gemini-2.5-flash-lite` quality proven insufficient for supervisor reasoning during a live design brief — output was shallow, generic, and invented a nonexistent `mcp/lib/search_solutions.js` module instead of using plain `Grep`. Confirms prior characterization of flash-lite as Haiku-tier.
+- Removed "fallback when 2.5-flash quota runs out" wording from `gemini-2.5-flash-lite` notes in `forge-config.default.json`; now explicitly marked NOT for supervisor.
+- Removed "secondary fallback" wording from `gemini-3.1-flash-lite-preview` notes; now explicitly marked NOT for supervisor.
+- Both models remain catalogued for other possible uses (classification, smoke tests) — the fallback *semantics* are gone, not the models.
+- Runtime behavior: on 503 from `gemini-2.5-flash`, surface the error and stop. Do not silently degrade to a smaller model.
+
 ## [2026-04-16c] Gemini hardening, per-model tracking, Opus 4.7
 
 ### Gemini adapter hardening

@@ -29,6 +29,7 @@
     {
       "id": "claude-opus-4-7",
       "providerId": "anthropic",
+      "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "long-context", "analysis", "agentic"],
       "costTier": "high",
       "contextWindow": 1000000,
@@ -37,6 +38,7 @@
     {
       "id": "claude-opus-4-6",
       "providerId": "anthropic",
+      "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "long-context", "analysis"],
       "costTier": "high",
       "contextWindow": 1000000,
@@ -45,6 +47,7 @@
     {
       "id": "claude-sonnet-4-6",
       "providerId": "anthropic",
+      "reasoningTier": "sonnet",
       "capabilities": ["reasoning", "code", "analysis"],
       "costTier": "medium",
       "contextWindow": 200000,
@@ -53,6 +56,7 @@
     {
       "id": "claude-haiku-4-5-20251001",
       "providerId": "anthropic",
+      "reasoningTier": "haiku",
       "capabilities": ["code", "analysis", "fast"],
       "costTier": "low",
       "contextWindow": 200000,
@@ -61,6 +65,7 @@
     {
       "id": "codex-mini-latest",
       "providerId": "openai",
+      "reasoningTier": "haiku",
       "capabilities": ["code"],
       "costTier": "low",
       "contextWindow": 200000,
@@ -69,6 +74,7 @@
     {
       "id": "gemini-2.0-flash",
       "providerId": "gemini",
+      "reasoningTier": "sonnet",
       "capabilities": ["reasoning", "code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
@@ -77,6 +83,7 @@
     {
       "id": "gemini-2.5-flash",
       "providerId": "gemini",
+      "reasoningTier": "sonnet",
       "capabilities": ["reasoning", "code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
@@ -85,34 +92,38 @@
     {
       "id": "gemini-2.5-flash-lite",
       "providerId": "gemini",
+      "reasoningTier": "haiku",
       "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
-      "notes": "Haiku-tier quality; fastest/cheapest Gemini model; fallback when 2.5-flash quota runs out; verified working 2026-04-16"
+      "notes": "Haiku-tier quality; fastest/cheapest Gemini model; NOT for supervisor (reasoning too weak); verified working 2026-04-16"
     },
     {
       "id": "gemini-3.1-flash-lite-preview",
       "providerId": "gemini",
-      "capabilities": ["reasoning", "code", "analysis", "fast"],
+      "reasoningTier": "haiku",
+      "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
-      "notes": "Preview; claims frontier-class at fraction of cost; secondary fallback; verified working 2026-04-16 but preview-unstable"
+      "notes": "Preview; claims frontier-class at fraction of cost; NOT for supervisor (preview-unstable); verified working 2026-04-16"
     },
     {
       "id": "gemini-2.5-pro",
       "providerId": "gemini",
+      "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "long-context"],
       "costTier": "free",
       "contextWindow": 1000000,
-      "notes": "Opus-tier quality; free tier daily quota exhausts quickly; use only if flash models insufficient"
+      "notes": "Opus-tier quality; API free tier quota is 0 — requires billing to use via forge_call_external; web UI (aistudio.google.com) has limited free access but that does not apply to API calls"
     },
     {
       "id": "gemini-3.1-pro-preview",
       "providerId": "gemini",
+      "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "long-context"],
       "costTier": "free",
       "contextWindow": 1000000,
-      "notes": "Preview; advanced reasoning; free tier daily quota exhausts quickly; verified exhausted 2026-04-16"
+      "notes": "Preview; advanced reasoning; API free tier quota is 0 — requires billing; web UI access does not apply to API calls; verified 2026-04-17"
     }
   ],
   "agentModelMap": {
@@ -255,6 +266,12 @@
       "preferred": "claude-haiku-4-5-20251001",
       "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
+    },
+    "supervisor": {
+      "preferred": "gemini-2.5-flash",
+      "minReasoningTier": "sonnet",
+      "requiredCapabilities": ["reasoning", "analysis"],
+      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires sonnet-tier reasoning; no fallback — on 503 surface the error and stop. Skill hardcodes dispatch until router learns minReasoningTier."
     },
     "tool-call-auditor": {
       "preferred": "claude-haiku-4-5-20251001",

@@ -8,6 +8,25 @@
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
+ * Extracts the retry delay in seconds from a 429 response body.
+ * Returns null if not present or unparseable.
+ * Gemini encodes it as a string like "40s" in details[].retryDelay.
+ */
+function parse429RetryDelay(responseText) {
+  try {
+    const data = JSON.parse(responseText);
+    const details = data?.error?.details || [];
+    for (const detail of details) {
+      if (detail['@type']?.endsWith('RetryInfo') && detail.retryDelay) {
+        const match = String(detail.retryDelay).match(/^(\d+)/);
+        if (match) return parseInt(match[1], 10);
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
  * Sends a prompt to the Gemini generateContent API.
  *
  * @param {string} prompt - the input text to send
@@ -31,12 +50,13 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
     },
   };
 
-  const MAX_RETRIES = 1;
-  const RETRY_DELAY_MS = 2000;
+  const MAX_503_RETRIES = 3;
   let response;
   let responseText;
+  let attempt503 = 0;
+  let did429Retry = false;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  while (true) {
     try {
       response = await fetch(url, {
         method: 'POST',
@@ -53,10 +73,22 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
       throw new Error('Gemini response body read failed: ' + err.message);
     }
 
-    // Retry once on 503 (transient Google-side overload)
-    if (response.status === 503 && attempt < MAX_RETRIES) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+    // 503 — transient overload: exponential backoff up to 3 retries (2s, 4s, 8s)
+    if (response.status === 503 && attempt503 < MAX_503_RETRIES) {
+      const delayMs = 2000 * Math.pow(2, attempt503);
+      attempt503++;
+      await new Promise(resolve => setTimeout(resolve, delayMs));
       continue;
+    }
+
+    // 429 — rate limited: retry once if Retry-After delay is short (per-minute limit, not quota=0)
+    if (response.status === 429 && !did429Retry) {
+      const retryDelaySec = parse429RetryDelay(responseText);
+      if (retryDelaySec !== null && retryDelaySec < 60) {
+        did429Retry = true;
+        await new Promise(resolve => setTimeout(resolve, retryDelaySec * 1000));
+        continue;
+      }
     }
 
     break;
