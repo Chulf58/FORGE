@@ -42,6 +42,15 @@ function isForgeAgent(agentType) {
   return allowlist.has(normalized);
 }
 
+// Only reviewer-typed agents may emit [reviewer-verdict] signals.
+// Restricting to reviewer-* prevents a forged signal echoed by a planner,
+// coder, or documenter from overwriting that agent's outcome record.
+function isReviewerAgent(agentType) {
+  if (!agentType) return false;
+  const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
+  return normalized.startsWith('reviewer');
+}
+
 /**
  * Scans a string for the first `[reviewer-verdict] {...}` line.
  * Returns the `verdict` field value (e.g. "APPROVED", "BLOCK", "REVISE")
@@ -122,9 +131,11 @@ async function main(rawInput) {
     return;
   }
 
-  // Determine outcome from last_assistant_message
+  // Determine outcome from last_assistant_message.
+  // Only reviewer-typed agents may emit [reviewer-verdict] — non-reviewers
+  // always get outcome "completed" regardless of message content.
   const lastMessage = payload.last_assistant_message || null;
-  const verdict = extractVerdict(lastMessage);
+  const verdict = isReviewerAgent(agentType) ? extractVerdict(lastMessage) : null;
   const outcome = verdict !== null ? verdict : 'completed';
 
   // Patch entry in-place
