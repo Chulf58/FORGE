@@ -10,16 +10,22 @@ const { tmpdir } = require('os');
 const { execSync } = require('child_process');
 const { spawn } = require('child_process');
 
-async function runHook(payload) {
+async function runHook(payload, projectDir) {
+  // Spawn with cwd = projectDir so process.cwd() inside the hook matches
+  // the project root. Claude Code sets each hook's working directory to the
+  // project root — resolveProjectDir() validates this invariant.
+  // Also inject cwd into the payload so the hook's resolveProjectDir() accepts it.
+  const hookCwd = projectDir || join(__dirname, '..');
+  const fullPayload = projectDir ? { ...payload, cwd: projectDir } : payload;
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['hooks/gate-sync.js'], {
-      cwd: join(__dirname, '..'),
+    const child = spawn(process.execPath, [join(__dirname, 'gate-sync.js')], {
+      cwd: hookCwd,
       env: { ...process.env, CLAUDE_PLUGIN_ROOT: join(__dirname, '..') },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stderr = '';
     child.stderr.on('data', d => { stderr += d; });
-    child.stdin.write(JSON.stringify(payload));
+    child.stdin.write(JSON.stringify(fullPayload));
     child.stdin.end();
     child.on('close', (code) => resolve({ code, stderr: stderr.trim() }));
     child.on('error', reject);
@@ -61,7 +67,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
     const run = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test1', 'run.json'), 'utf-8'));
@@ -87,7 +93,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
     const run = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test2', 'run.json'), 'utf-8'));
@@ -107,7 +113,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: join(tmp, 'some-other-file.json').replace(/\\/g, '/') },
       session_id: 'test',
-    });
+    }, tmp);
 
     const run = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test3', 'run.json'), 'utf-8'));
     console.assert(run.status === 'running', 'Should still be running');
@@ -132,7 +138,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test-auto',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
 
@@ -172,7 +178,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test-auto2',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
     const index = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), 'utf-8'));
@@ -205,7 +211,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test-stale',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
 
@@ -249,7 +255,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test-match',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
     const index = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), 'utf-8'));
@@ -309,7 +315,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test-wt',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
 
@@ -379,7 +385,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: gatePath.replace(/\\/g, '/') },
       session_id: 'test-wt-skip',
-    });
+    }, tmp);
 
     console.log('Exit:', code, '| stderr:', stderr);
 

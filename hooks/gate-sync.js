@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { resolveProjectDir } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
@@ -34,9 +35,9 @@ async function main(rawInput) {
   const normalized = filePath.replace(/\\/g, '/');
   if (!normalized.endsWith('.pipeline/gate-pending.json')) { exitOk(); return; }
 
-  // Resolve project root from the file path
-  const pipelineDir = path.dirname(filePath);
-  const projectRoot = path.dirname(pipelineDir);
+  // Resolve project root from validated hook cwd — never from the file path,
+  // which could be attacker-controlled via a crafted tool_input.file_path.
+  const projectRoot = resolveProjectDir(payload);
 
   // Read the gate file that was just written
   let gateData = null;
