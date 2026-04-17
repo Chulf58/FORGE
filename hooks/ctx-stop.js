@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { resolveProjectDir } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 10000;
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
@@ -26,9 +27,7 @@ async function main(rawInput) {
     payload = {};
   }
 
-  const projectDir = (payload.cwd && typeof payload.cwd === 'string' && payload.cwd.trim())
-    ? payload.cwd.trim()
-    : process.cwd();
+  const projectDir = resolveProjectDir(payload);
 
   const pipelineDir = path.join(projectDir, '.pipeline');
   const now = Date.now();

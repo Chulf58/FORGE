@@ -23,10 +23,15 @@ function assert(cond, msg) {
   }
 }
 
-async function runHook(payload) {
+async function runHook(payload, projectDir) {
+  // Spawn with cwd = projectDir (or payload.cwd, or forge-plugin root).
+  // Claude Code sets each hook's working directory to the project root, so
+  // process.cwd() inside the hook equals payload.cwd — the security check
+  // resolveProjectDir() validates exactly this invariant.
+  const hookCwd = projectDir || payload.cwd || join(__dirname, '..');
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['hooks/apply-context-inject.js'], {
-      cwd: join(__dirname, '..'),
+    const child = spawn(process.execPath, [join(__dirname, '..', 'hooks', 'apply-context-inject.js')], {
+      cwd: hookCwd,
       env: { ...process.env, CLAUDE_PLUGIN_ROOT: join(__dirname, '..') },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

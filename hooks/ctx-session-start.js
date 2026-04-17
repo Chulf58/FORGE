@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const { resolveProjectDir } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS   = 10_000;
 const CONTEXT_WINDOW     = 200_000;
@@ -140,9 +141,7 @@ async function main(rawInput) {
 
   // Stale-lock notice is independent of context-window logic and session_id —
   // fire it first so it appears even when we exit early below.
-  const projectDir = (payload.cwd && typeof payload.cwd === 'string' && payload.cwd.trim())
-    ? payload.cwd.trim()
-    : process.cwd();
+  const projectDir = resolveProjectDir(payload);
   emitStaleUnitNoticeIfAny(projectDir);
 
   if (!sessionId) { exitOk(); return; }
