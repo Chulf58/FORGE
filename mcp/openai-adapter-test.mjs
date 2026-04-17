@@ -172,6 +172,44 @@ console.log('\n── openai-adapter-test.mjs ───────────�
   assert(msg.includes('network'), 'network failure: throws with network error message');
 }
 
+// 11. Non-2xx error — raw body NOT in error message, status code IS present
+{
+  const sensitiveBody = JSON.stringify({
+    error: { type: 'invalid_request_error', code: 'model_not_found',
+             message: 'Model not found. Authorization: Bearer sk-secret-key-here' },
+  });
+  globalThis.fetch = async () => makeResponse(400, sensitiveBody);
+  let msg = '';
+  try { await callOpenAI('hello', 'gpt-5.4', 'sk-secret-key'); } catch (e) { msg = e.message; }
+  assert(!msg.includes('sk-secret-key'), 'non-2xx: raw body (with potential key) not in error message');
+  assert(!msg.includes('Authorization'), 'non-2xx: sensitive body content not in error message');
+  assert(msg.includes('400'), 'non-2xx: status code present in message');
+  assert(msg.includes('invalid_request_error'), 'non-2xx: error type extracted from body');
+}
+
+// 12. Non-2xx with non-JSON body — status only, no raw body
+{
+  globalThis.fetch = async () => makeResponse(503, 'Service Unavailable internal-token=abc123');
+  let msg = '';
+  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { msg = e.message; }
+  assert(!msg.includes('internal-token'), 'non-2xx non-JSON: raw body not in error message');
+  assert(msg.includes('503'), 'non-2xx non-JSON: status code present');
+}
+
+// 13. JSON parse error on 200 — fixed string, no raw body
+{
+  globalThis.fetch = async () => ({
+    ok: true, status: 200,
+    headers: { get: () => null },
+    text: async () => 'not-json api_key=sk-leaked',
+  });
+  let msg = '';
+  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { msg = e.message; }
+  assert(!msg.includes('sk-leaked'), 'JSON parse error: raw body not in error message');
+  assert(!msg.includes('not-json'), 'JSON parse error: body slice not in error message');
+  assert(msg.includes('JSON parse failed'), 'JSON parse error: descriptive message present');
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);

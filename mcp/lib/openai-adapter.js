@@ -19,6 +19,22 @@ const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
  * @param {Response} response - fetch Response object
  * @returns {number|null} seconds to wait, or null if not retryable
  */
+/**
+ * Returns a sanitized error message that preserves status and failure class
+ * without including raw response body content (which may contain sensitive
+ * material or API-internal details).
+ */
+function sanitizeErrorMessage(status, responseText) {
+  try {
+    const data = JSON.parse(responseText);
+    const errorType = data?.error?.type;
+    const errorCode = data?.error?.code;
+    if (errorType) return `OpenAI API error ${status}: ${errorType}`;
+    if (errorCode) return `OpenAI API error ${status}: ${errorCode}`;
+  } catch (_) {}
+  return `OpenAI API error ${status}`;
+}
+
 function parse429RetryDelay(response) {
   const header = response.headers?.get?.('Retry-After');
   if (header !== null && header !== undefined) {
@@ -90,14 +106,14 @@ export async function callOpenAI(prompt, modelId, apiKey, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error('OpenAI API error ' + response.status + ': ' + responseText);
+    throw new Error(sanitizeErrorMessage(response.status, responseText));
   }
 
   let data;
   try {
     data = JSON.parse(responseText);
   } catch (err) {
-    throw new Error('OpenAI response JSON parse failed: ' + responseText.slice(0, 200));
+    throw new Error('OpenAI response JSON parse failed (unexpected non-JSON body on successful response)');
   }
 
   // Responses API: output is an array of message objects; text lives in content[0].text
