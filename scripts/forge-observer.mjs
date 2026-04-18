@@ -1,20 +1,18 @@
 #!/usr/bin/env node
-// FORGE observer Ink spike — Phase 2 TUI library evaluation.
+// FORGE terminal observer — primary read-only dashboard (Ink + React).
 //
-// Purpose: port the blessed observer prototype to Ink (React-for-terminals)
-// as a side-by-side comparison. Evaluates: reactive model ergonomics,
-// mouse+selection coexistence in alt-screen, and code size/clarity.
+// Purpose: show FORGE project state in a dedicated terminal process next
+// to a natively-running Claude Code. The user opens a split in their
+// terminal and runs this in the second pane; Claude runs untouched in
+// its own pane with native copy/paste.
 //
-// This is a spike / evaluation artifact, NOT the real observer. The real
-// observer is scripts/forge-observer-proto.mjs (blessed-based, untouched).
-//
-// Run:  node scripts/forge-observer-ink-spike.mjs
+// Run:  node scripts/forge-observer.mjs
 // Quit: q, Q, or Ctrl+C
-// Refresh: r (keyboard)
+// Refresh: r (keyboard), or click anywhere (SGR mouse)
 //
-// Mouse experiment: enables SGR mouse reporting and listens for click on
-// the [Refresh] button row. If Ink's stdin management conflicts with raw
-// mouse bytes, that is itself a finding for the evaluation.
+// Mouse: SGR mouse reporting is enabled and any left-click triggers a
+// refresh. Shift+click-drag remains the user-side selection gesture in
+// Windows Terminal / standard alt-screen terminals.
 
 import { createRequire } from "node:module";
 import { resolve, dirname, join } from "node:path";
@@ -25,7 +23,7 @@ const PLUGIN_ROOT = resolve(__dirname, "..");
 
 // Non-TTY fallback — must come before any Ink import or render.
 if (!process.stdout.isTTY) {
-  console.error("[forge-observer-ink-spike] stdout is not a TTY — observer requires a real terminal.");
+  console.error("[forge-observer] stdout is not a TTY — observer requires a real terminal.");
   process.exit(0);
 }
 
@@ -42,8 +40,8 @@ try {
   const ds = await import(dsUrl);
   buildDashboardState = ds.buildDashboardState;
 } catch (err) {
-  console.error("[forge-observer-ink-spike] Failed to load dependencies: " + err.message);
-  console.error("[forge-observer-ink-spike] Run `node hooks/mcp-deps-install.js` to install, or start a fresh Claude Code session.");
+  console.error("[forge-observer] Failed to load dependencies: " + err.message);
+  console.error("[forge-observer] Run `node hooks/mcp-deps-install.js` to install, or start a fresh Claude Code session.");
   process.exit(1);
 }
 

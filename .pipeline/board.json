@@ -1426,14 +1426,15 @@
       "id": "24fae760",
       "priority": "high",
       "text": "ARCHITECTURE DECISION (BLOCKING — no new TUI features until this lands): Evaluate blessed alternatives before continuing TUI feature work. Current wrapper + observer use blessed, with observable friction: imperative `setContent + screen.render` on every state update (2s timer for dashboard, will compound as we add gate actions, merge retry, drag-drop, sprite rendering, reactive updates); 60-line hand-rolled ANSI-diff cell-paint loop maintained in the wrapper; CommonJS loaded via `createRequire` in ESM wrapper/observer; upstream maintenance status of original `blessed` repo unverified vs `neo-blessed` fork vs Ink. Scope: time-boxed spike (~half a day). Pick ONE candidate — leading candidates are Ink (React-for-terminals, Node-aligned, reactive model) and neo-blessed (drop-in fork, lowest migration cost) but both need real evaluation not speculation. Port the observer (smaller surface than the wrapper) as a proof-of-concept, compare side-by-side for ergonomics of: dashboard state update, future interactive actions, cross-pane sync, bundle size. Produce a `docs/RESEARCH/tui-library-evaluation.md` with verdict. Outcomes: (a) stay on blessed with eyes-open, (b) migrate both wrapper and observer to X, (c) port only new features to X and freeze blessed. No new TUI UI features ship until this decision is on paper.",
-      "done": false,
+      "done": true,
       "addedAt": 1776284101067,
       "tags": [
         "tui",
         "architecture",
         "blocking",
         "evaluation"
-      ]
+      ],
+      "doneAt": 1776500683161
     },
     {
       "id": "3438a2be",
@@ -1491,13 +1492,56 @@
     {
       "id": "1b92130b",
       "priority": "medium",
-      "text": "RENAME: The agent named `reviewer` (agents/reviewer.md) has an ambiguous name — it's the boundary correctness reviewer but is indistinguishable from the concept of \"any reviewer\". Rename to `reviewer-boundary` or `reviewer-correctness` to match the naming convention of the other 4 specialist reviewers (reviewer-safety, reviewer-logic, reviewer-style, reviewer-performance). Update all references: agentModelMap, FORGE-REFERENCE.md, FORGE-OVERVIEW.md, README.md, any agent frontmatter that lists it, and pipeline orchestration skills.",
-      "done": false,
+      "text": "RENAME: The agent named `reviewer` (agents/reviewer.md) has an ambiguous name — it's the boundary correctness reviewer but is indistinguishable from the concept of \"any reviewer\". Rename to `reviewer-boundary` or `reviewer-correctness` to match the naming convention of the other 4 specialist reviewers (reviewer-safety, reviewer-logic, reviewer-style, reviewer-performance). Update all references: agentModelMap, FORGE-REFERENCE.md, FORGE-OVERVIEW.md, README.md, any agent frontmatter that lists it, and pipeline orchestration skills.\n\n**Status (2026-04-18):** Partially complete, reopened. On-disk rename is done: `agents/reviewer-boundary.md` exists with correct frontmatter (`name: reviewer-boundary`), `agents/reviewer.md` is gone, `bin/forge-status.js` step-map keys updated to `'reviewer-boundary'` (aligning with `mcp/lib/dashboard-state.js`). All live skills/hooks/configs grep-clean for bare `reviewer`.\n\n**What's still broken:** Claude Code's live agent registry in active sessions still advertises the old subagent type `forge:reviewer` — NOT `forge:reviewer-boundary`. Spawning `Agent(subagent_type: 'forge:reviewer-boundary', ...)` fails with \"Agent type 'forge:reviewer-boundary' not found. Available agents: ... forge:reviewer ...\". Claude Code loaded the registry at session start from a pre-rename state. Confirmed during a 2026-04-18 catch-up reviewer pass where the boundary reviewer couldn't spawn.\n\n**Next steps to close:**\n1. Restart Claude Code to force a fresh plugin/agent registry read; verify `forge:reviewer-boundary` is available and `forge:reviewer` is gone.\n2. If the registry still shows `forge:reviewer` after restart, investigate: check whether any plugin config file (`.claude-plugin/plugin.json`, `hooks/hooks.json`, or similar) hardcodes the old agent name; check the plugin loader path for cached registrations.\n3. Re-run the catch-up reviewer-safety + reviewer-boundary pass on the Slice A diff (observer-promote-ink-primary) — reviewer-safety paused mid-work in the 2026-04-18 attempt (agentId `afce1431c3ec40477`, 10 tool uses, 39k tokens, partial output).\n4. Update `docs/CHANGELOG.md` 2026-04-18 entry to clarify that the rename was completed in two waves (on-disk in session 1, registry-refresh in session 2).",
+      "done": true,
       "addedAt": 1776408148609,
       "tags": [
         "agents",
         "naming",
         "refactor"
+      ],
+      "doneAt": 1776541884447
+    },
+    {
+      "id": "ed21ae73",
+      "priority": "low",
+      "text": "DESIGN: Agent signal injection via file content — a project file containing a literal [reviewer-verdict] line could be echoed by a reviewer agent and recorded as a forged verdict by hooks/subagent-stop.js. The isReviewerAgent() guard blocks non-reviewer agents but not a reviewer tricked via file content. No hook-layer fix is possible without a protocol change. Options: (1) require a structural marker only the model generates (e.g. a UUID nonce seeded at SubagentStart and expected in the verdict JSON), (2) scan only the final N lines of last_assistant_message where signal emission is expected, (3) validate that the verdict agent field matches the hook's agent_type from the payload. Option 3 is the smallest fix — add a check that parsed.agent === agentType before consuming the verdict.",
+      "done": true,
+      "addedAt": 1776499141403,
+      "tags": [
+        "security",
+        "low",
+        "protocol",
+        "signal-injection"
+      ],
+      "doneAt": 1776499425073
+    },
+    {
+      "id": "6e6dacb2",
+      "priority": "medium",
+      "text": "FEATURE: Add Dataverse MCP to Power Platform project template. When /forge:init is run for a Power Automate/Power Platform project, prompt for the Dataverse org URL and write it into the project's .mcp.json so Dataverse MCP tools are available automatically. Template location: templates/power-automate/. Dataverse MCP remote URL format: https://{org}.crm.dynamics.com/api/mcp. Requires Azure AD auth — document in template CLAUDE.md. Tools exposed: create_record, describe_table, list_tables, read_query, update_record, Search, Fetch and more. Official Microsoft, GA, supports Claude Code natively.",
+      "done": false,
+      "addedAt": 1776500143250,
+      "tags": [
+        "feature",
+        "mcp",
+        "power-platform",
+        "dataverse",
+        "template"
+      ]
+    },
+    {
+      "id": "3835132d",
+      "priority": "medium",
+      "text": "FEATURE: Project specs panel in TUI. Show the active project's configuration in the TUI/observer, including: (1) tech stack from .pipeline/project.json, (2) pipeline mode, (3) connected MCP servers from the project's .mcp.json, (4) test command if set. Design decision needed: persistent panel vs on-demand toggle vs /forge:info command. Specs data is static per session — read once at startup and cached. Avoids token cost of asking the model for project state every time. Complements active runs + gates view with project context.",
+      "done": false,
+      "addedAt": 1776500146056,
+      "tags": [
+        "feature",
+        "tui",
+        "dashboard",
+        "project",
+        "mcp"
       ]
     }
   ],

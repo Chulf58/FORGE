@@ -368,8 +368,8 @@ Natural fit; reactive model.
 
 ## Phase 2 — Ink Spike Results (2026-04-16)
 
-**Spike file:** `scripts/forge-observer-ink-spike.mjs` (~200 lines, pure `React.createElement` — no JSX, no build step).
-**Smoke test:** `scripts/forge-observer-ink-spike-smoke-test.mjs` — PASS (non-TTY fallback + dep load verified).
+**Spike file:** `scripts/forge-observer-ink-spike.mjs` (~200 lines, pure `React.createElement` — no JSX, no build step). *Promoted to `scripts/forge-observer.mjs` on 2026-04-18 after live-test outcome (a).*
+**Smoke test:** `scripts/forge-observer-ink-spike-smoke-test.mjs` — PASS (non-TTY fallback + dep load verified). *Renamed to `scripts/forge-observer-smoke-test.mjs` on 2026-04-18.*
 **Ink version installed:** 5.2.1 (ESM). **React version:** 18.3.1 (CJS via `createRequire`).
 
 ### Verdict 1: Reactive model for polling observer
@@ -393,6 +393,8 @@ This is true even WITHOUT JSX. The `React.createElement` calls are verbose but t
 - Keyboard + mouse coexist without conflict ✅
 
 **FINAL VERDICT: Migrate the real observer to Ink. Blessed observer stays on disk during transition; hard-delete after validation.**
+
+**EXECUTED (2026-04-18):** Ink spike promoted to `scripts/forge-observer.mjs` as the primary observer. Blessed prototype (`scripts/forge-observer-proto.mjs`) and its smoke test hard-deleted. See `docs/CHANGELOG.md` 2026-04-18 entry.
 
 ### Verdict 3: Go / no-go on migrating the real observer
 

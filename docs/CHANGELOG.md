@@ -1,3 +1,14 @@
+## [2026-04-18] Observer promoted to Ink; blessed prototype retired; reviewer rename closed
+
+### Observer: Ink primary, blessed retired
+- Promoted `scripts/forge-observer-ink-spike.mjs` → `scripts/forge-observer.mjs` as the primary terminal dashboard surface. Smoke test follows (`scripts/forge-observer-smoke-test.mjs`). Log prefix `[forge-observer-ink-spike]` collapsed to `[forge-observer]`. Header comment reframed from evaluation spike to primary observer; mouse-experiment language dropped (any left-click refreshes; `Shift`+click-drag remains the user-side selection gesture).
+- Deleted blessed prototype + its smoke test: `scripts/forge-observer-proto.mjs`, `scripts/forge-observer-proto-smoke-test.mjs`. Two-codebase drift tax removed; future TUI feature work (clickable gates, token usage, specs panel, signal timeline) lands in Ink only.
+- Repointed doc references in `docs/FORGE-OVERVIEW.md` (observer section) and `docs/FORGE-REFERENCE.md` (scripts table). `docs/DECISIONS.md` unchanged — the 2026-04-15 observer-primary pivot stands.
+
+### Reviewer rename (1b92130b — closed in two waves)
+- **Wave 1 (session 1, on-disk):** `bin/forge-status.js` — replaced 4 stale `'reviewer'` step-map keys with `'reviewer-boundary'` to match the other specialist reviewers and the existing convention in `mcp/lib/dashboard-state.js`. Agent file `agents/reviewer.md` was already gone; `agents/reviewer-boundary.md` was already present. All live skills, hooks, agents, and configs grep-clean for bare `reviewer` — `bin/forge-status.js` was the last on-disk straggler. The first catch-up reviewer attempt this session failed: Claude Code's live agent registry still advertised `forge:reviewer` because the plugin registry was loaded at session-start before the rename.
+- **Wave 2 (session 2, registry refresh + catch-up review):** Session restart forced a fresh plugin/agent registry read. `forge:reviewer-boundary` now present; `forge:reviewer` gone. Re-dispatched reviewer-safety + reviewer-boundary on the Slice A diff — both APPROVED with zero blockers and zero warnings. Task 1b92130b closed.
+
 ## [2026-04-18] Vendor-agnostic capability-cost routing + model management
 
 ### Router redesign
