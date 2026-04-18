@@ -228,7 +228,51 @@ The apply pipeline supports opt-in git operations via `gitIntegration` in `.pipe
 
 ## Model routing — forge-config.json
 
-The plugin includes an intelligent model routing layer. Key conventions:
+The plugin uses a vendor-agnostic capability-cost router. Key conventions:
+
+**Routing principle:**
+- Default scope = ALL enabled providers. `allowedVendors` is an explicit force-override (e.g. supervisor → OpenAI), not a scope default. The router never assumes Anthropic unless Anthropic is the only enabled provider or `allowedVendors` says so.
+- Router selects cheapest model satisfying ALL `requiredCapabilities` across the scope.
+- Execution path follows the returned `providerId`: `anthropic` → `Agent` subagent (tools work natively); any other provider → `forge_call_external` (skill injects context, captures output).
+
+**Capability taxonomy:**
+- Config capabilities are domain-level only: `reasoning`, `code`, `analysis`, `fast`, `agentic`, `long-context`. These describe what the model can do, not how it is invoked.
+- Execution mechanics (live tool access vs injected context) are NOT routing capabilities. They are a skill-layer concern determined by which adapter handles the call, not by a flag in the config.
+- Agents that need live tool access today run as Anthropic subagents because that is the currently wired adapter path with working tools. Agents that work on injected context (skill assembles the prompt, captures the output) can route to the cheapest capable provider across all enabled vendors — this is how the supervisor already works.
+
+**Skill orchestration routing pattern:**
+1. Call `forge_get_model_recommendation(agentName)`
+2. If `source === "error"`: surface reason, stop
+3. If `providerId === "anthropic"`: `Agent(subagent_type=agent, model=modelId)`
+4. If other provider: assemble injected prompt (see context injection map below), call `forge_call_external(providerId, modelId, prompt, maxTokens=8192)`, apply any file writes from the output yourself
+5. If MCP unavailable: fall back to agent's frontmatter `model:` field
+
+**Context injection map — what to inject per agent for non-Anthropic routing:**
+
+| Agent | System prompt | Inject these files | Output handling |
+|---|---|---|---|
+| `researcher-triage` | `agents/researcher-triage.md` body | `docs/PLAN.md`, `docs/gotchas/GENERAL.md` | Parse `[brief-for: N]` blocks, dispatch researchers |
+| `implementer-triage` | `agents/implementer-triage.md` body | `docs/context/handoff.md`, `docs/PLAN.md`, `docs/gotchas/GENERAL.md` | Parse `[task-brief-for:]` blocks, dispatch implementers |
+| `completeness-checker` | `agents/completeness-checker.md` body | `docs/context/handoff.md`, `docs/PLAN.md` | Read verdict from output |
+| `regression-risk` | `agents/regression-risk.md` body | `.pipeline/modules.json`, `docs/context/handoff.md` | Read risk output |
+| `gotcha-checker` | `agents/gotcha-checker.md` body | `docs/PLAN.md`, `docs/gotchas/GENERAL.md` | Read findings from output |
+| `integrity-checker` | `agents/integrity-checker.md` body | `.pipeline/project.json`, `.pipeline/modules.json`, `docs/PLAN.md` | Read findings |
+| `tool-call-auditor` | `agents/tool-call-auditor.md` body | Tool log content passed in prompt | Read audit output |
+| `reviewer-safety` | `agents/reviewer-safety.md` body | `docs/context/triage-excerpts/reviewer-safety.md`, `docs/gotchas/GENERAL.md` | Parse `[reviewer-verdict]` JSON |
+| `reviewer-boundary` | `agents/reviewer-boundary.md` body | `docs/context/triage-excerpts/reviewer-boundary.md`, `docs/gotchas/GENERAL.md` | Parse `[reviewer-verdict]` JSON |
+| `reviewer-logic` | `agents/reviewer-logic.md` body | `docs/context/triage-excerpts/reviewer-logic.md`, `docs/gotchas/GENERAL.md` | Parse `[reviewer-verdict]` JSON |
+| `reviewer-style` | `agents/reviewer-style.md` body | `docs/context/triage-excerpts/reviewer-style.md`, `docs/gotchas/GENERAL.md` | Parse `[reviewer-verdict]` JSON |
+| `reviewer-performance` | `agents/reviewer-performance.md` body | `docs/context/triage-excerpts/reviewer-performance.md`, `docs/gotchas/GENERAL.md` | Parse `[reviewer-verdict]` JSON |
+
+Prompt structure for injected agents:
+```
+<system prompt from agents/<agent>.md — everything after closing --->\n\n
+[CONTEXT]\n
+<file 1 path>\n<file 1 content>\n\n
+<file 2 path>\n<file 2 content>\n\n
+[TASK]\n
+<any additional task-specific instruction>
+```
 
 **Config file locations:**
 - Primary: `${CLAUDE_PLUGIN_DATA}/forge-config.json` — persistent across plugin updates; bootstrapped from `forge-config.default.json` on first session via SessionStart hook
@@ -244,11 +288,6 @@ The plugin includes an intelligent model routing layer. Key conventions:
 - Never store plaintext API key values in `forge-config.json`
 - MCP tool handlers resolve keys at call time via `process.env[provider.envVar]`
 - Reject both `undefined` and empty string: `if (!apiKey) return errorResult(...)`
-
-**Two-track routing architecture:**
-- Anthropic models are routed via the `model:` field in agent frontmatter — Claude Code handles model selection natively; the router is advisory only for Anthropic
-- External providers (OpenAI, etc.) use the `forge_call_external` MCP tool — not subagent model selection
-- `forge_get_model_recommendation` returns a recommendation object but does not execute any call
 
 **Usage state:**
 - Lives in `.pipeline/usage.json` in the **project** directory (per-project, not global)
