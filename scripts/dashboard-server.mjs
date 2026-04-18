@@ -19,7 +19,7 @@
 import { createServer } from "node:http";
 import { exec } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { buildDashboardState } from "../mcp/lib/dashboard-state.js";
@@ -45,7 +45,7 @@ export function isValidRunId(runId) {
 }
 
 function resolveProjectDir() {
-  return process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  return resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 }
 
 function json(res, status, body) {
@@ -93,8 +93,14 @@ function handleGateAction(projectDir, run, action) {
   const gate = run.gateState && run.gateState.gate;
   if (!gate) throw new Error("run has no gate to act on");
 
-  // Resolve gate file location — worktree-scoped if the run has a worktreePath.
-  const gateRoot = run.worktreePath || projectDir;
+  // Resolve gate file location — worktree-scoped if the run has a valid worktreePath.
+  // Validate worktreePath is absolute and starts with projectDir to prevent
+  // a tampered run.json from redirecting the gate file write.
+  const rawWt = run.worktreePath;
+  const safeWt = (rawWt && typeof rawWt === "string" && isAbsolute(rawWt) && resolve(rawWt).startsWith(resolve(projectDir)))
+    ? rawWt
+    : null;
+  const gateRoot = safeWt || projectDir;
   const gatePath = join(gateRoot, ".pipeline", "gate-pending.json");
 
   if (action === "approve") {

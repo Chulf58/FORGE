@@ -701,6 +701,13 @@ server.registerTool(
         return errorResult("Provider not found or disabled: " + providerId);
       }
 
+      // Validate modelId is in the catalog for this provider — prevents quota waste
+      // and confusing API errors from arbitrary model strings reaching adapters.
+      const modelInCatalog = (config.models || []).find(m => m.id === modelId && m.providerId === providerId);
+      if (!modelInCatalog) {
+        return errorResult("Model \"" + modelId + "\" not found in catalog for provider \"" + providerId + "\"");
+      }
+
       // Resolve API key — reject undefined and empty string
       const apiKey = process.env[provider.envVar];
       if (!apiKey) {

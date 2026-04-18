@@ -26,7 +26,10 @@ function computeRemainingPct(usageObj) {
 }
 
 async function getLastUsage(transcriptPath) {
-  if (!transcriptPath) return null;
+  if (!transcriptPath || typeof transcriptPath !== 'string') return null;
+  // Reject non-absolute paths — a forged payload.transcript_path could otherwise
+  // trigger arbitrary file reads relative to the hook's working directory.
+  if (!path.isAbsolute(transcriptPath)) return null;
   try {
     await fs.promises.access(transcriptPath);
   } catch (_) {
