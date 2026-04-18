@@ -410,6 +410,13 @@ If live test shows outcome (c): **Ink's mouse story is insufficient.** Options a
 
 ---
 
+## Pattern Inspirations (findings index)
+
+- [codeburn-tui-patterns.md](codeburn-tui-patterns.md) — clean minimal Ink/React dashboard; keyboard-first; one-line hook.
+- [k9s-tui-patterns.md](k9s-tui-patterns.md) — colon-command palette, dense tables, contextual actions; tview/Go but patterns generalize.
+
+---
+
 ## Open Questions
 
 1. **neo-blessed package accessibility:** The primary GitHub fetch returned 404; is the npm package @blessedjs/neo-blessed or neo-blessed? Which fork is canonical?
@@ -439,3 +446,6 @@ If live test shows outcome (c): **Ink's mouse story is insufficient.** Options a
 - [Blessed mouse events documentation](https://blessed.readthedocs.io/en/1.23/mouse.html)
 - [Ink mouse events — GitHub issue discussion](https://github.com/vadimdemedes/ink)
 - [Building Terminal Interfaces — LogRocket](https://blog.logrocket.com/building-terminal-interfaces-nodejs/)
+- [k9s — GitHub](https://github.com/derailed/k9s)
+- [k9s documentation](https://k9scli.io/)
+- [tview — GitHub](https://github.com/rivo/tview)
