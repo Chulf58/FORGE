@@ -233,10 +233,9 @@
       "requiredCapabilities": ["code", "analysis"]
     },
     "supervisor": {
-      "preferred": "gpt-5.4",
-      "allowedTiers": ["opus"],
+      "requiredCapabilities": ["reasoning", "agentic"],
       "allowedVendors": ["openai"],
-      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires opus-tier only. No fallback — gemini-2.5-flash downgraded to haiku-tier (live-tested, poor reasoning). Fails clearly when GPT-5.4 unavailable. Enable by setting OPENAI_API_KEY."
+      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires reasoning+agentic from OpenAI — only gpt-5.4 qualifies under current catalog. Fails clearly when no OpenAI model satisfies requirements. Enable by setting OPENAI_API_KEY."
     },
     "tool-call-auditor": {
       "requiredCapabilities": ["analysis"]
