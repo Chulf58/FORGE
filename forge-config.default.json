@@ -104,11 +104,11 @@
     {
       "id": "gemini-2.5-flash",
       "providerId": "gemini",
-      "reasoningTier": "sonnet",
+      "reasoningTier": "haiku",
       "capabilities": ["reasoning", "code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
-      "notes": "Sonnet-tier quality; primary Gemini model for supervisor and external calls; verified working 2026-04-16"
+      "notes": "Haiku-tier quality in practice (live-tested 2026-04-17 as supervisor — shallow output, poor reasoning). Fast/cheap for classification tasks. NOT for supervisor or complex reasoning."
     },
     {
       "id": "gemini-2.5-flash-lite",
@@ -155,12 +155,12 @@
     },
     "architect": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "analysis"]
     },
     "brainstormer": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning"]
     },
     "cleanup": {
@@ -170,7 +170,7 @@
     },
     "coder": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "coder-scout": {
@@ -190,7 +190,7 @@
     },
     "debug": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "documenter": {
@@ -205,17 +205,17 @@
     },
     "ideator": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning"]
     },
     "implementation-architect": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code", "analysis"]
     },
     "implementer": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "implementer-triage": {
@@ -230,12 +230,12 @@
     },
     "planner": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "analysis"]
     },
     "refactor": {
       "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-opus-4-7",
+      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "regression-risk": {
@@ -290,10 +290,9 @@
     },
     "supervisor": {
       "preferred": "gpt-5.4",
-      "fallback": "gemini-2.5-flash",
-      "allowedTiers": ["opus", "sonnet"],
-      "allowedVendors": ["openai", "gemini"],
-      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Prefers opus-tier (gpt-5.4), falls back to sonnet-tier (gemini-2.5-flash). Never haiku. Skill hardcodes dispatch until forge_get_model_recommendation is wired in (next slice)."
+      "allowedTiers": ["opus"],
+      "allowedVendors": ["openai"],
+      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires opus-tier only. No fallback — gemini-2.5-flash downgraded to haiku-tier (live-tested, poor reasoning). Fails clearly when GPT-5.4 unavailable. Enable by setting OPENAI_API_KEY."
     },
     "tool-call-auditor": {
       "preferred": "claude-haiku-4-5-20251001",
