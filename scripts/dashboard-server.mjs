@@ -32,6 +32,18 @@ const MERGE_SCRIPT = resolve(PLUGIN_ROOT, "bin", "forge-worktree.js");
 const PORT = Number(process.env.FORGE_DASHBOARD_PORT) || 7878;
 const HOST = "127.0.0.1";
 
+// Run IDs are generated as "r-" followed by a hex segment (e.g. "r-d1afe1f3").
+// Validating format before any path.join prevents POST body traversal attacks.
+const RUN_ID_RE = /^r-[a-zA-Z0-9]+$/;
+
+/**
+ * Returns true if runId matches the expected run ID format.
+ * Exported for unit testing.
+ */
+export function isValidRunId(runId) {
+  return typeof runId === "string" && RUN_ID_RE.test(runId);
+}
+
 function resolveProjectDir() {
   return process.env.CLAUDE_PROJECT_DIR || process.cwd();
 }
@@ -547,7 +559,7 @@ const server = createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const { runId, action } = body || {};
-      if (!runId || typeof runId !== "string") {
+      if (!isValidRunId(runId)) {
         return json(res, 400, { error: "missing or invalid runId" });
       }
       if (action !== "approve" && action !== "discard") {
@@ -572,7 +584,7 @@ const server = createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const { runId, action } = body || {};
-      if (!runId || typeof runId !== "string") {
+      if (!isValidRunId(runId)) {
         return json(res, 400, { error: "missing or invalid runId" });
       }
       if (action !== "retry" && action !== "discard") {
