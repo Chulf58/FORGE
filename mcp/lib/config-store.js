@@ -88,8 +88,13 @@ export function resolvePluginDataDir() {
   return process.env.CLAUDE_PLUGIN_DATA || null;
 }
 
+// Module-level routing config cache — loaded once per session, invalidated on write.
+// The routing config (models, providers, agentModelMap) changes only when the user
+// explicitly updates it, so re-reading on every recommendation call is wasteful.
+let _cache = null; // { config, configPath, pluginDataDir, projectDir }
+
 /**
- * Reads forge-config.json.
+ * Reads forge-config.json — cached after first load.
  * Tries pluginDataDir/forge-config.json first (when pluginDataDir is non-null),
  * then falls back to projectDir/.pipeline/forge-config.json.
  *
@@ -101,8 +106,13 @@ export function resolvePluginDataDir() {
  * @returns {{ config: object, configPath: string }}
  */
 export function readForgeConfig(pluginDataDir, projectDir) {
-  const candidates = [];
+  if (_cache !== null &&
+      _cache.pluginDataDir === pluginDataDir &&
+      _cache.projectDir === projectDir) {
+    return { config: _cache.config, configPath: _cache.configPath };
+  }
 
+  const candidates = [];
   if (pluginDataDir) {
     candidates.push(join(pluginDataDir, 'forge-config.json'));
   }
@@ -123,6 +133,7 @@ export function readForgeConfig(pluginDataDir, projectDir) {
         throw new Error('forge-config.json parse failed at ' + candidate + ': ' + err.message);
       }
       validateForgeConfig(config, candidate);
+      _cache = { config, configPath: candidate, pluginDataDir, projectDir };
       return { config, configPath: candidate };
     }
   }
@@ -131,6 +142,14 @@ export function readForgeConfig(pluginDataDir, projectDir) {
     'forge-config.json not found. Searched: ' + candidates.join(', ') +
     '. Run /forge:init or copy forge-config.default.json to one of these locations.',
   );
+}
+
+/**
+ * Invalidates the routing config cache.
+ * Call after any operation that modifies forge-config.json.
+ */
+export function invalidateConfigCache() {
+  _cache = null;
 }
 
 /**
@@ -146,4 +165,5 @@ export function writeForgeConfig(configPath, config) {
   } catch (err) {
     throw new Error('forge-config.json write failed at ' + configPath + ': ' + err.message);
   }
+  _cache = null; // invalidate after write so next read picks up the new config
 }
