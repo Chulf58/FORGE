@@ -292,6 +292,72 @@ console.log('\n── router-test.mjs ──────────────
     'single provider: only anthropic enabled → claude-sonnet (cheapest anthropic with reasoning)');
 }
 
+// ── Per-model quota exhaustion ───────────────────────────────────────────────
+
+// 24. Model-level exhaustion: Pro exhausted but Flash still available
+{
+  const proExhausted = { providers: { gemini: { models: { 'gemini-2.5-pro': { quotaExhausted: true } } } } };
+  const r = recommendModel('cap-analysis', BASE_CONFIG, proExhausted);
+  assert(r.providerId === 'gemini' && (r.modelId === 'gemini-2.5-flash' || r.modelId === 'gemini-2.5-flash-lite'),
+    'per-model exhaustion: gemini-2.5-pro exhausted → Flash still reachable (no provider-wide poisoning)');
+}
+
+// 25. Model-level exhaustion on Pro + [reasoning, code]: Flash lacks reasoning → Anthropic
+{
+  const proExhausted = { providers: { gemini: { models: { 'gemini-2.5-pro': { quotaExhausted: true } } } } };
+  const r = recommendModel('cap-reasoning-code', BASE_CONFIG, proExhausted);
+  assert(r.modelId === 'claude-sonnet-4-6',
+    'per-model exhaustion: Pro exhausted + [reasoning, code] → anthropic sonnet (Flash lacks reasoning)');
+}
+
+// 26. Backward compat: old-format usage (provider-level only) still blocks whole provider
+{
+  const oldFormat = { providers: { gemini: { quotaExhausted: true } } };
+  const r = recommendModel('cap-analysis', BASE_CONFIG, oldFormat);
+  assert(r.providerId !== 'gemini',
+    'backward compat: old-format usage (provider-only flag) still blocks all gemini models');
+}
+
+// 27. Combined: provider- AND model-level flags set → provider-wide still wins
+{
+  const both = {
+    providers: {
+      gemini: {
+        quotaExhausted: true,
+        models: { 'gemini-2.5-pro': { quotaExhausted: true } },
+      },
+    },
+  };
+  const r = recommendModel('cap-analysis', BASE_CONFIG, both);
+  assert(r.providerId !== 'gemini',
+    'combined exhaustion: provider-wide takes precedence, all gemini models blocked');
+}
+
+// 28. Empty models map: no model flagged exhausted → gemini Flash still reachable
+{
+  const emptyModels = { providers: { gemini: { models: {} } } };
+  const r = recommendModel('cap-analysis', BASE_CONFIG, emptyModels);
+  assert(r.providerId === 'gemini',
+    'per-model exhaustion: empty models map does not block the provider');
+}
+
+// 29. Multiple model-level flags: Pro + Flash exhausted → Flash-lite still reachable
+{
+  const multiExhausted = {
+    providers: {
+      gemini: {
+        models: {
+          'gemini-2.5-pro':   { quotaExhausted: true },
+          'gemini-2.5-flash': { quotaExhausted: true },
+        },
+      },
+    },
+  };
+  const r = recommendModel('cap-analysis', BASE_CONFIG, multiExhausted);
+  assert(r.modelId === 'gemini-2.5-flash-lite',
+    'per-model exhaustion: Pro + Flash exhausted → Flash-lite still reachable (per-model granularity)');
+}
+
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

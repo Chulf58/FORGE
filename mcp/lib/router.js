@@ -40,8 +40,14 @@ export function recommendModel(agentName, config, usage, options = {}) {
     if (!def) return false;
     const providerDef = (config.providers || []).find(p => p.id === def.providerId);
     if (!providerDef || !providerDef.enabled) return false;
-    const exhausted = usage.providers?.[def.providerId]?.quotaExhausted ?? false;
-    return !exhausted;
+    const providerUsage = usage.providers?.[def.providerId];
+    // Provider-level exhaustion blocks all models from this provider.
+    if (providerUsage?.quotaExhausted) return false;
+    // Model-level exhaustion blocks only this specific model — other models on
+    // the same provider remain reachable. Old-format usage.json has no models
+    // key so this check is naturally a no-op for backward compatibility.
+    if (providerUsage?.models?.[modelId]?.quotaExhausted === true) return false;
+    return true;
   }
 
   // Priority 0: capability-cost routing — primary path for all agents.

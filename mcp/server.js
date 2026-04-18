@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from "./lib/config-store.js";
-import { readUsage, writeUsage, markQuotaExhausted, recordUsage } from "./lib/usage-store.js";
+import { readUsage, writeUsage, markQuotaExhausted, markModelQuotaExhausted, recordUsage } from "./lib/usage-store.js";
 import { recommendModel } from "./lib/router.js";
 import { callOpenAI } from "./lib/openai-adapter.js";
 import { callGemini } from "./lib/gemini-adapter.js";
@@ -738,11 +738,17 @@ server.registerTool(
           // Use structured adapter metadata for reroute decisions — avoids brittle string matching.
           // Adapters set err.transient = true on 503 (service overloaded, bounded retries exhausted).
           const isTransient = callErr.transient === true;
-          const isQuotaError = msg.includes("401") || msg.includes("429") || msg.toLowerCase().includes("quota");
+          // Split quota classification so one exhausted model does not poison every other
+          // model from the same provider:
+          //   401 (auth/billing) — applies to the whole provider (bad key, disabled billing)
+          //   429 / "quota" string — per-model rate or quota failure; mark only this model
+          const isAuthError = msg.includes("401");
+          const isQuotaError = msg.includes("429") || msg.toLowerCase().includes("quota");
 
-          // Mark quota exhausted on hard credential/quota failures
-          if (isQuotaError) {
+          if (isAuthError) {
             try { markQuotaExhausted(projectDir, currentProviderId); } catch (_) { /* best-effort */ }
+          } else if (isQuotaError) {
+            try { markModelQuotaExhausted(projectDir, currentProviderId, currentModelId); } catch (_) { /* best-effort */ }
           }
 
           // On transient 503 after adapter retries exhausted: reroute if agentName provided
@@ -825,6 +831,23 @@ server.registerTool(
 
       const resetAt = new Date().toISOString();
 
+      // Clears provider-level AND any per-model quotaExhausted flags so users
+      // can recover from a per-model exhaustion without having to hand-edit
+      // usage.json.
+      function resetProviderEntry(id) {
+        const entry = usage.providers[id];
+        entry.requestCount = 0;
+        entry.tokenCount = 0;
+        entry.quotaExhausted = false;
+        entry.lastUsed = null;
+        entry.resetAt = resetAt;
+        if (entry.models) {
+          for (const mId of Object.keys(entry.models)) {
+            entry.models[mId].quotaExhausted = false;
+          }
+        }
+      }
+
       if (providerId) {
         // Reset only the specified provider (create zeroed entry if not yet tracked)
         if (!usage.providers[providerId]) {
@@ -836,20 +859,12 @@ server.registerTool(
             resetAt,
           };
         } else {
-          usage.providers[providerId].requestCount = 0;
-          usage.providers[providerId].tokenCount = 0;
-          usage.providers[providerId].quotaExhausted = false;
-          usage.providers[providerId].lastUsed = null;
-          usage.providers[providerId].resetAt = resetAt;
+          resetProviderEntry(providerId);
         }
       } else {
         // Reset all known providers
         for (const id of Object.keys(usage.providers)) {
-          usage.providers[id].requestCount = 0;
-          usage.providers[id].tokenCount = 0;
-          usage.providers[id].quotaExhausted = false;
-          usage.providers[id].lastUsed = null;
-          usage.providers[id].resetAt = resetAt;
+          resetProviderEntry(id);
         }
       }
 
@@ -911,7 +926,7 @@ server.registerTool(
     inputSchema: z.object({
       providerId: z.string().optional().describe("Filter by provider ID"),
       capability: z.string().optional().describe("Filter by required capability tag"),
-      availableOnly: z.boolean().default(false).describe("If true, exclude models whose provider has quotaExhausted: true"),
+      availableOnly: z.boolean().default(false).describe("If true, exclude models whose provider OR the model itself has quotaExhausted: true"),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   },
@@ -934,11 +949,16 @@ server.registerTool(
         models = models.filter(m => (m.capabilities || []).includes(capability));
       }
 
-      // Filter by availability (exclude exhausted-provider models)
+      // Filter by availability — excludes a model if EITHER the provider is
+      // marked exhausted (auth/billing-wide) OR this specific model is marked
+      // exhausted (per-model quota). Backward compatible with old-format
+      // usage.json that only carries provider-level flags.
       if (availableOnly) {
         models = models.filter(m => {
-          const exhausted = usage.providers?.[m.providerId]?.quotaExhausted ?? false;
-          return !exhausted;
+          const providerUsage = usage.providers?.[m.providerId];
+          if (providerUsage?.quotaExhausted) return false;
+          if (providerUsage?.models?.[m.id]?.quotaExhausted === true) return false;
+          return true;
         });
       }
 

@@ -72,8 +72,9 @@ export function writeUsage(projectDir, usage) {
 }
 
 /**
- * Sets quotaExhausted: true for the given provider. Creates the provider entry
- * if it does not exist yet. Reads then writes.
+ * Sets provider-wide quotaExhausted: true. Use for failures that affect ALL
+ * models from this provider (e.g. auth / 401 / billing-disabled). For per-model
+ * rate or quota failures use markModelQuotaExhausted instead.
  *
  * @param {string} projectDir
  * @param {string} providerId
@@ -85,6 +86,49 @@ export function markQuotaExhausted(projectDir, providerId) {
   usage.providers[providerId].quotaExhausted = true;
   usage.updatedAt = new Date().toISOString();
   writeUsage(projectDir, usage);
+}
+
+/**
+ * Sets quotaExhausted: true on a specific model under the given provider.
+ * Used for 429 / per-model quota failures so that one exhausted model does
+ * not poison other models from the same provider. Creates provider and model
+ * entries if they do not yet exist.
+ *
+ * Stored at usage.providers[providerId].models[modelId].quotaExhausted to
+ * align with the existing per-model shape produced by recordUsage.
+ *
+ * @param {string} projectDir
+ * @param {string} providerId
+ * @param {string} modelId
+ */
+export function markModelQuotaExhausted(projectDir, providerId, modelId) {
+  const usage = readUsage(projectDir);
+  if (!usage.providers) usage.providers = {};
+  if (!usage.providers[providerId]) usage.providers[providerId] = emptyProvider();
+  if (!usage.providers[providerId].models) usage.providers[providerId].models = {};
+  if (!usage.providers[providerId].models[modelId]) {
+    usage.providers[providerId].models[modelId] = { requestCount: 0, tokenCount: 0, lastUsed: null, quotaExhausted: false };
+  }
+  usage.providers[providerId].models[modelId].quotaExhausted = true;
+  usage.updatedAt = new Date().toISOString();
+  writeUsage(projectDir, usage);
+}
+
+/**
+ * Pure predicate: is the given model unavailable according to the usage state?
+ * Returns true when either model-level OR provider-level exhaustion is set.
+ * Safe on old-format usage.json (missing models key → falls back to provider-level).
+ *
+ * @param {object} usage
+ * @param {string} providerId
+ * @param {string} modelId
+ * @returns {boolean}
+ */
+export function isModelQuotaExhausted(usage, providerId, modelId) {
+  const providerUsage = usage?.providers?.[providerId];
+  if (!providerUsage) return false;
+  if (providerUsage.quotaExhausted) return true;
+  return providerUsage.models?.[modelId]?.quotaExhausted === true;
 }
 
 /**
@@ -110,7 +154,7 @@ export function recordUsage(projectDir, providerId, tokens, modelId) {
   if (modelId) {
     if (!usage.providers[providerId].models) usage.providers[providerId].models = {};
     if (!usage.providers[providerId].models[modelId]) {
-      usage.providers[providerId].models[modelId] = { requestCount: 0, tokenCount: 0, lastUsed: null };
+      usage.providers[providerId].models[modelId] = { requestCount: 0, tokenCount: 0, lastUsed: null, quotaExhausted: false };
     }
     usage.providers[providerId].models[modelId].requestCount += 1;
     usage.providers[providerId].models[modelId].tokenCount += tokens;
