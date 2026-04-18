@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
@@ -52,7 +52,7 @@ async function main(rawInput) {
   let createRun, getRun, listRuns, updateRun, createWorktree;
   try {
     // Resolve the core package relative to the plugin root
-    const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+    const pluginRoot = resolvePluginRoot();
     const coreIndex = path.join(pluginRoot, 'packages', 'forge-core', 'src', 'runs', 'index.js');
     const coreMod = await import('file:///' + coreIndex.replace(/\\/g, '/'));
     createRun = coreMod.createRun;

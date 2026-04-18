@@ -1,9 +1,9 @@
 'use strict';
-// Regression tests for hooks/hook-utils.js resolveProjectDir()
+// Regression tests for hooks/hook-utils.js resolveProjectDir() and resolvePluginRoot()
 // Run: node hooks/hook-utils-test.js
 
 const path = require('path');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot } = require('./hook-utils');
 
 let passed = 0;
 let failed = 0;
@@ -82,6 +82,49 @@ console.log('\n── hook-utils-test.js ─────────────
   assert(result === actual, 'path traversal attempt: falls back to process.cwd()');
   assert(lastStderr().includes('mismatch'), 'path traversal attempt: stderr warning emitted');
 }
+
+// ── resolvePluginRoot() tests ─────────────────────────────────────────────────
+
+const trustedRoot = path.resolve(__dirname, '..');
+const origEnv = process.env.CLAUDE_PLUGIN_ROOT;
+
+// 8. Env unset → hook-derived root, no warning
+{
+  delete process.env.CLAUDE_PLUGIN_ROOT;
+  const before = stderrLines.length;
+  const result = resolvePluginRoot();
+  assert(result === trustedRoot, 'CLAUDE_PLUGIN_ROOT unset: returns hook-derived root');
+  assert(stderrLines.length === before, 'CLAUDE_PLUGIN_ROOT unset: no stderr warning');
+}
+
+// 9. Env matches hook-derived root → accepted, no warning
+{
+  process.env.CLAUDE_PLUGIN_ROOT = trustedRoot;
+  const before = stderrLines.length;
+  const result = resolvePluginRoot();
+  assert(result === trustedRoot, 'CLAUDE_PLUGIN_ROOT matches: accepted');
+  assert(stderrLines.length === before, 'CLAUDE_PLUGIN_ROOT matches: no stderr warning');
+}
+
+// 10. Env is non-absolute → warned + fallback
+{
+  process.env.CLAUDE_PLUGIN_ROOT = 'relative/path/to/plugin';
+  const result = resolvePluginRoot();
+  assert(result === trustedRoot, 'CLAUDE_PLUGIN_ROOT non-absolute: falls back to hook-derived root');
+  assert(lastStderr().includes('not absolute'), 'CLAUDE_PLUGIN_ROOT non-absolute: warning emitted');
+}
+
+// 11. Env is absolute but mismatched → warned + fallback
+{
+  process.env.CLAUDE_PLUGIN_ROOT = '/tmp/attacker-plugin';
+  const result = resolvePluginRoot();
+  assert(result === trustedRoot, 'CLAUDE_PLUGIN_ROOT mismatched: falls back to hook-derived root');
+  assert(lastStderr().includes('mismatch'), 'CLAUDE_PLUGIN_ROOT mismatched: warning emitted');
+}
+
+// Restore env
+if (origEnv !== undefined) process.env.CLAUDE_PLUGIN_ROOT = origEnv;
+else delete process.env.CLAUDE_PLUGIN_ROOT;
 
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
