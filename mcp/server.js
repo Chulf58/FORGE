@@ -13,6 +13,23 @@ import { createRun, getRun, listRuns, updateRun, createWorktree } from "../packa
 import { buildDashboardState } from "./lib/dashboard-state.js";
 import { sanitizeFeatureName } from "./lib/sanitize.js";
 
+// -- Shared Zod schemas ------------------------------------------------------
+
+// Run IDs are generated as "r-" followed by alphanumeric characters (e.g. r-d1afe1f3).
+// Constraining at the Zod schema level means traversal/injection values are
+// rejected at the MCP boundary before reaching any path.join or run lookup.
+const runIdSchema = z.string().regex(
+  /^r-[a-zA-Z0-9]+$/,
+  'runId must match r-<alnum> format (e.g. r-a1b2c3d4)'
+);
+
+// forge_resume_run accepts bare suffix without the "r-" prefix (auto-added by handler).
+// The constraint still blocks traversal and injection — only relaxes the prefix requirement.
+const runIdOrBareSchema = z.string().regex(
+  /^(r-)?[a-zA-Z0-9]+$/,
+  'runId must be r-<alnum> or bare <alnum> suffix (e.g. r-a1b2c3d4 or a1b2c3d4)'
+);
+
 // -- Helpers -----------------------------------------------------------------
 
 function resolveProjectDir() {
@@ -466,7 +483,7 @@ server.registerTool(
       gate: z.enum(["gate1", "gate2"]).describe("Which gate"),
       feature: z.string().describe("Feature name"),
       status: z.enum(["pending", "approved"]).default("pending").describe("Gate status"),
-      runId: z.string().optional().describe("Run ID this gate belongs to. If omitted, the tool resolves it by status."),
+      runId: runIdSchema.optional().describe("Run ID this gate belongs to. If omitted, the tool resolves it by status."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
   },
@@ -1024,7 +1041,7 @@ server.registerTool(
     title: "FORGE Get Run",
     description: "Returns a single run by ID, or null if not found.",
     inputSchema: z.object({
-      runId: z.string().describe("Run ID (e.g. r-a1b2c3d4)"),
+      runId: runIdSchema.describe("Run ID (e.g. r-a1b2c3d4)"),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   },
@@ -1161,7 +1178,7 @@ server.registerTool(
     title: "FORGE Update Run",
     description: "Patches a run with new field values. Automatically sets updatedAt and syncs the index.",
     inputSchema: z.object({
-      runId: z.string().describe("Run ID to update"),
+      runId: runIdSchema.describe("Run ID to update"),
       status: z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]).optional().describe("New status"),
       currentStep: z.string().optional().describe("Current pipeline step (e.g. 'planner', 'gate1')"),
       worktreePath: z.string().optional().describe("Worktree path if assigned"),
@@ -1212,7 +1229,7 @@ server.registerTool(
     title: "FORGE Create Worktree",
     description: "Creates a FORGE-managed git worktree for an existing run. The worktree is at .worktrees/<runId>/ with branch forge/<runId>. Persists worktreePath and branchName onto the run.",
     inputSchema: z.object({
-      runId: z.string().describe("Run ID to create a worktree for"),
+      runId: runIdSchema.describe("Run ID to create a worktree for"),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
@@ -1243,7 +1260,7 @@ server.registerTool(
     title: "FORGE Resume Run",
     description: "Re-enters a paused or in-progress run by runId. Restores .pipeline/run-active.json steering pointer; does not progress the run autonomously and does not invoke any pipeline skill.",
     inputSchema: z.object({
-      runId: z.string().describe("Run ID to resume (e.g. r-a1b2c3d4). The 'r-' prefix is added if missing."),
+      runId: runIdOrBareSchema.describe("Run ID to resume (e.g. r-a1b2c3d4). The 'r-' prefix is added if missing."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
