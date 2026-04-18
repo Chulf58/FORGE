@@ -3,7 +3,7 @@
 // Run: node hooks/hook-utils-test.js
 
 const path = require('path');
-const { resolveProjectDir, resolvePluginRoot } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
 
 let passed = 0;
 let failed = 0;
@@ -125,6 +125,33 @@ const origEnv = process.env.CLAUDE_PLUGIN_ROOT;
 // Restore env
 if (origEnv !== undefined) process.env.CLAUDE_PLUGIN_ROOT = origEnv;
 else delete process.env.CLAUDE_PLUGIN_ROOT;
+
+// ── stripAnsi() tests ─────────────────────────────────────────────────────────
+
+// 12. Safe text preserved unchanged
+assert(stripAnsi('normal text') === 'normal text', 'stripAnsi: safe text unchanged');
+assert(stripAnsi('r-abc123') === 'r-abc123', 'stripAnsi: run ID unchanged');
+
+// 13. CSI escape sequences stripped (colour, cursor, clear-screen)
+assert(!stripAnsi('\x1b[2J\x1b[0;0H').includes('\x1b'), 'stripAnsi: clear-screen CSI stripped');
+assert(!stripAnsi('\x1b[31mred\x1b[0m').includes('\x1b'), 'stripAnsi: colour CSI stripped');
+assert(stripAnsi('\x1b[31mred\x1b[0m').includes('red'), 'stripAnsi: text inside CSI preserved');
+
+// 14. OSC sequences stripped (title-setting, hyperlinks)
+assert(!stripAnsi('\x1b]0;window title\x07').includes('\x1b'), 'stripAnsi: OSC title sequence stripped');
+
+// 15. Control characters stripped (C0 except \t \n \r)
+assert(!stripAnsi('before\x00after').includes('\x00'), 'stripAnsi: null byte stripped');
+assert(!stripAnsi('before\x08after').includes('\x08'), 'stripAnsi: backspace stripped');
+assert(!stripAnsi('before\x1bafter').includes('\x1b'), 'stripAnsi: bare ESC stripped');
+
+// 16. Tab, newline, carriage return preserved
+assert(stripAnsi('a\tb') === 'a\tb', 'stripAnsi: tab preserved');
+assert(stripAnsi('a\nb') === 'a\nb', 'stripAnsi: newline preserved');
+
+// 17. Non-string coerced to string
+assert(stripAnsi(null) === '', 'stripAnsi: null coerced to empty string');
+assert(stripAnsi(42) === '42', 'stripAnsi: number coerced to string');
 
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);

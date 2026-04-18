@@ -88,4 +88,28 @@ function resolvePluginRoot() {
   return normalized;
 }
 
-module.exports = { resolveProjectDir, resolvePluginRoot };
+/**
+ * Strips ANSI escape sequences and terminal control characters from a string
+ * before it is written to terminal-facing output (console.error/log).
+ *
+ * Removes:
+ *   - CSI sequences (\x1b[...m) — colour, cursor movement, clear-screen
+ *   - OSC sequences (\x1b]...) — title-setting, hyperlinks
+ *   - C0/C1 control characters except tab (\x09), newline (\x0a), carriage
+ *     return (\x0d) — preserves readable whitespace, strips injection vectors
+ *
+ * Use on untrusted strings before including them in log messages:
+ *   console.error('[hook] agentType=' + stripAnsi(agentType));
+ *
+ * @param {*} value - value to sanitize (coerced to string if not already)
+ * @returns {string} printable string with escape sequences removed
+ */
+function stripAnsi(value) {
+  const str = typeof value === 'string' ? value : String(value == null ? '' : value);
+  return str
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')          // CSI sequences
+    .replace(/\x1b\][^\x07\x1b]*[\x07\x1b\\]/g, '') // OSC sequences
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, ''); // C0/C1 (keep \t \n \r)
+}
+
+module.exports = { resolveProjectDir, resolvePluginRoot, stripAnsi };

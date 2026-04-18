@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, stripAnsi } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
@@ -126,7 +126,7 @@ async function main(rawInput) {
   // Find matching entry by agent_id
   const entry = data.agents.find((a) => a.agent_id === agentId);
   if (!entry) {
-    console.error('[forge-subagent] No matching entry for agent_id ' + agentId + ' — skipping stop patch');
+    console.error('[forge-subagent] No matching entry for agent_id ' + stripAnsi(agentId) + ' — skipping stop patch');
     exitOk();
     return;
   }

@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, resolvePluginRoot } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
@@ -109,7 +109,7 @@ async function main(rawInput) {
       },
     }) + '\n');
 
-    console.error('[apply-context] Injected worktree context for ' + agentType + ' → ' + wtPath);
+    console.error('[apply-context] Injected worktree context for ' + stripAnsi(agentType) + ' → ' + stripAnsi(wtPath));
 
   } catch (err) {
     console.error('[apply-context] Failed to resolve worktree: ' + err.message);
