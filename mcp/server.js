@@ -9,6 +9,7 @@ import { readUsage, writeUsage, markQuotaExhausted, markModelQuotaExhausted, rec
 import { recommendModel } from "./lib/router.js";
 import { callOpenAI } from "./lib/openai-adapter.js";
 import { callGemini } from "./lib/gemini-adapter.js";
+import { addModelToConfig, updateModelInConfig } from "./lib/model-validation.js";
 import { createRun, getRun, listRuns, updateRun, createWorktree } from "../packages/forge-core/src/runs/index.js";
 import { buildDashboardState } from "./lib/dashboard-state.js";
 import { sanitizeFeatureName } from "./lib/sanitize.js";
@@ -960,6 +961,90 @@ server.registerTool(
       return textResult(config.agentModelMap[agentName]);
     } catch (err) {
       return errorResult("forge_update_agent_model failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_add_model ---------------------------------------------------
+
+server.registerTool(
+  "forge_add_model",
+  {
+    title: "FORGE Add Model",
+    description: "Adds a new model to the catalog in forge-config.json. Validates capabilities against a fixed allowlist (reasoning, code, analysis, fast, agentic, long-context), rejects duplicate IDs, verifies providerId exists, and enforces numeric pricing shape. Prevents typos and invalid entries from silently breaking routing.",
+    inputSchema: z.object({
+      id: z.string().min(1).describe("Unique model ID (e.g. 'claude-haiku-4-5-20251001')"),
+      providerId: z.string().min(1).describe("Provider ID — must match an existing provider in config.providers"),
+      capabilities: z.array(z.string()).min(1).describe("Capability tags from the allowlist: reasoning, code, analysis, fast, agentic, long-context"),
+      costTier: z.enum(["free", "low", "medium", "high"]).describe("Coarse cost bucket"),
+      pricing: z.object({
+        input: z.number().nonnegative(),
+        output: z.number().nonnegative(),
+        cached: z.number().nonnegative(),
+      }).describe("Per-1M-token pricing in USD"),
+      contextWindow: z.number().int().positive().optional().describe("Max context window in tokens"),
+      reasoningTier: z.enum(["haiku", "sonnet", "opus"]).optional().describe("Descriptive tier label (metadata only)"),
+      notes: z.string().optional().describe("Human-readable notes"),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async (params) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const pluginDataDir = resolvePluginDataDir();
+      const { config, configPath } = readForgeConfig(pluginDataDir, projectDir);
+
+      const result = addModelToConfig(config, params);
+      if (!result.ok) {
+        return errorResult("forge_add_model: " + result.error);
+      }
+
+      writeForgeConfig(configPath, config);
+      return textResult(result.entry);
+    } catch (err) {
+      return errorResult("forge_add_model failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_update_model ------------------------------------------------
+
+server.registerTool(
+  "forge_update_model",
+  {
+    title: "FORGE Update Model",
+    description: "Updates fields on an existing model catalog entry. Only touched fields are revalidated and replaced; untouched fields are preserved. The model id itself cannot be changed. Use forge_add_model for new entries.",
+    inputSchema: z.object({
+      id: z.string().min(1).describe("Model ID to update (must exist in catalog)"),
+      providerId: z.string().min(1).optional().describe("New providerId (must match an existing provider)"),
+      capabilities: z.array(z.string()).min(1).optional().describe("New capability set — replaces previous; must come from the allowlist"),
+      costTier: z.enum(["free", "low", "medium", "high"]).optional(),
+      pricing: z.object({
+        input: z.number().nonnegative(),
+        output: z.number().nonnegative(),
+        cached: z.number().nonnegative(),
+      }).optional().describe("New pricing — replaces previous"),
+      contextWindow: z.number().int().positive().optional(),
+      reasoningTier: z.enum(["haiku", "sonnet", "opus"]).optional(),
+      notes: z.string().optional(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  async (params) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const pluginDataDir = resolvePluginDataDir();
+      const { config, configPath } = readForgeConfig(pluginDataDir, projectDir);
+
+      const result = updateModelInConfig(config, params);
+      if (!result.ok) {
+        return errorResult("forge_update_model: " + result.error);
+      }
+
+      writeForgeConfig(configPath, config);
+      return textResult(result.entry);
+    } catch (err) {
+      return errorResult("forge_update_model failed: " + err.message);
     }
   },
 );
