@@ -212,7 +212,7 @@
       "requiredCapabilities": ["analysis"]
     },
     "reviewer-boundary": {
-      "requiredCapabilities": ["code", "analysis"]
+      "requiredCapabilities": ["reasoning", "code", "analysis"]
     },
     "reviewer-logic": {
       "requiredCapabilities": ["reasoning", "code"]
@@ -221,7 +221,7 @@
       "requiredCapabilities": ["code", "analysis"]
     },
     "reviewer-safety": {
-      "requiredCapabilities": ["code", "analysis"]
+      "requiredCapabilities": ["reasoning", "code", "analysis"]
     },
     "reviewer-style": {
       "requiredCapabilities": ["analysis"]
@@ -235,7 +235,7 @@
     "supervisor": {
       "requiredCapabilities": ["reasoning", "agentic"],
       "allowedVendors": ["openai"],
-      "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires reasoning+agentic from OpenAI — only gpt-5.4 qualifies under current catalog. Fails clearly when no OpenAI model satisfies requirements. Enable by setting OPENAI_API_KEY."
+      "notes": "Runs via forge_call_external — not as a Claude subagent. allowedVendors: [openai] is an intentional force-override: Gemini tested as haiku-quality for this role. Requires OPENAI_API_KEY."
     },
     "tool-call-auditor": {
       "requiredCapabilities": ["analysis"]
