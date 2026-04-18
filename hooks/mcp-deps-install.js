@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const readline = require('readline');
 
 function exitOk() { process.exit(0); }
@@ -98,12 +98,24 @@ async function main(rawInput) {
   // on bare `npm` being in PATH — which fails on marketplace-installed copies
   // where the user's PATH doesn't include the Node bin directory.
   const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  if (!fs.existsSync(npmCli)) {
+  const hasNpmCli = fs.existsSync(npmCli);
+  if (!hasNpmCli) {
     console.error('[forge-mcp] npm-cli.js not found at ' + npmCli + ' — falling back to bare npm');
   }
-  const npmCmd = fs.existsSync(npmCli)
-    ? '"' + process.execPath + '" "' + npmCli + '"'
-    : 'npm';
+
+  // Run npm with an explicit args array (no shell string interpolation).
+  // npm ci does not support --prefix so we pass cwd instead.
+  function runNpm(args, cwd) {
+    if (hasNpmCli) {
+      execFileSync(process.execPath, [npmCli].concat(args), {
+        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: 60000,
+      });
+    } else {
+      execFileSync('npm', args, {
+        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: 60000,
+      });
+    }
+  }
 
   // Install dependencies for each package directory that has a package.json.
   const installTargets = [
@@ -115,6 +127,7 @@ async function main(rawInput) {
     const packageJson = path.join(target.dir, 'package.json');
     const nodeModules = path.join(target.dir, 'node_modules');
     const lockFile = path.join(nodeModules, '.package-lock.json');
+    const packageLockJson = path.join(target.dir, 'package-lock.json');
 
     if (!fs.existsSync(packageJson)) continue;
 
@@ -133,12 +146,16 @@ async function main(rawInput) {
 
     if (!needsInstall) continue;
 
-    console.error('[forge-mcp] Installing ' + target.label + ' dependencies...');
+    // Prefer `npm ci` when package-lock.json is present — deterministic,
+    // reproducible installs that cannot silently drift from the lockfile.
+    // Fall back to `npm install` only when no lockfile exists.
+    const useCI = fs.existsSync(packageLockJson);
+    const installArgs = useCI ? ['ci'] : ['install'];
+    const cmdLabel = useCI ? 'npm ci' : 'npm install (no lockfile)';
+
+    console.error('[forge-mcp] Installing ' + target.label + ' dependencies (' + cmdLabel + ')...');
     try {
-      execSync(npmCmd + ' install --prefix "' + target.dir.replace(/\\/g, '/') + '"', {
-        stdio: ['ignore', 'ignore', 'inherit'],
-        timeout: 60000
-      });
+      runNpm(installArgs, target.dir);
       console.error('[forge-mcp] ' + target.label + ' dependencies installed successfully.');
     } catch (err) {
       console.error('[forge-mcp] Failed to install ' + target.label + ' dependencies: ' + err.message);
