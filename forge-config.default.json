@@ -93,15 +93,6 @@
       "notes": "OpenAI frontier model for agentic/coding/professional workflows; $2.50/$15 per 1M input/output; supports reasoning_effort (none/low/medium/high/xhigh); 1M context; use forge_call_external"
     },
     {
-      "id": "gemini-2.0-flash",
-      "providerId": "gemini",
-      "reasoningTier": "sonnet",
-      "capabilities": ["code", "analysis", "fast"],
-      "costTier": "free",
-      "contextWindow": 1000000,
-      "notes": "DEPRECATED; free tier quota exhausted 2026-04-16; use gemini-2.5-flash instead"
-    },
-    {
       "id": "gemini-2.5-flash",
       "providerId": "gemini",
       "reasoningTier": "haiku",
