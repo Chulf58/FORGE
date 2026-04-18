@@ -56,7 +56,7 @@ function sanitizeErrorMessage(status, responseText) {
  * @throws {Error} on non-2xx status or network failure
  */
 export async function callGemini(prompt, modelId, apiKey, options = {}) {
-  const url = `${GEMINI_BASE}/${modelId}:generateContent`;
+  const url = `${GEMINI_BASE}/${encodeURIComponent(modelId)}:generateContent`;
 
   const body = {
     contents: [

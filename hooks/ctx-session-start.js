@@ -155,7 +155,8 @@ async function main(rawInput) {
   // only acts at ≤35% (warning) and ≤25% (critical), so writing at 80% remaining
   // is wasted I/O and leaves a stale file on disk for 60 seconds.
   if (remaining <= 50) {
-    const bridgePath = path.join(os.tmpdir(), `claude-ctx-${sessionId}.json`);
+    const safeSessionId = String(sessionId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    const bridgePath = path.join(os.tmpdir(), `claude-ctx-${safeSessionId}.json`);
     try {
       await fs.promises.writeFile(bridgePath, JSON.stringify({ remaining, timestamp: Date.now() }), 'utf8');
     } catch (_) {

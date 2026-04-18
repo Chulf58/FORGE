@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, stripAnsi } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
@@ -20,7 +20,7 @@ let _forgeAgents = undefined;
 function getForgeAgentSet() {
   if (_forgeAgents !== undefined) return _forgeAgents;
   try {
-    const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+    const pluginRoot = resolvePluginRoot();
     const agentsDir = path.join(pluginRoot, 'agents');
     const entries = fs.readdirSync(agentsDir);
     const names = entries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));

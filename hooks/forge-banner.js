@@ -17,11 +17,12 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { resolvePluginRoot } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
 function fire(rawInput) {
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+  const pluginRoot = resolvePluginRoot();
   const bannerPath = path.join(pluginRoot, 'forge-banner.txt');
 
   try {

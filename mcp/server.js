@@ -33,7 +33,7 @@ const runIdOrBareSchema = z.string().regex(
 // -- Helpers -----------------------------------------------------------------
 
 function resolveProjectDir() {
-  return process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  return resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 }
 
 function readJsonSafe(filePath) {
