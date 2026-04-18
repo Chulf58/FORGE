@@ -248,6 +248,52 @@ The plugin uses a vendor-agnostic capability-cost router. Key conventions:
 - For free-tier Gemini models, the `pricing` values reflect the paid-tier rate. Effective cost is $0 until daily quota is exhausted. `costTier: "free"` is the current-plan indicator; `pricing` is the real per-token rate that would apply under paid usage.
 - These numbers are reference rates; vendor price sheets are authoritative. Keep them roughly current but do not treat small drift as a bug.
 
+**Managing the catalog — `forge_add_model` and `forge_update_model`:**
+
+Two MCP tools let you (or Claude acting on your behalf) curate `config.models` without hand-editing JSON. Both write through `readForgeConfig` / `writeForgeConfig`, so the routing cache is invalidated automatically and the next `forge_get_model_recommendation` sees the change immediately.
+
+| Tool | Required fields | Optional fields |
+|---|---|---|
+| `forge_add_model` | `id`, `providerId`, `capabilities[]`, `costTier`, `pricing{input,output,cached}` | `contextWindow`, `reasoningTier`, `notes` |
+| `forge_update_model` | `id` (must exist) | any of: `providerId`, `capabilities`, `costTier`, `pricing`, `contextWindow`, `reasoningTier`, `notes` — only touched fields are revalidated and replaced; the model id itself cannot be changed |
+
+Validation is strict at the MCP boundary. Rejections:
+- capability not in allowlist: `reasoning`, `code`, `analysis`, `fast`, `agentic`, `long-context` (extending requires a code change — intentional friction to prevent silent routing drift from typos like `reasonng`)
+- `costTier` not in `free | low | medium | high`
+- `reasoningTier` (optional, metadata only — not consulted by the router) not in `haiku | sonnet | opus`
+- `pricing` missing any of the three fields, or any field non-numeric / negative / Infinity
+- `contextWindow` not a positive integer
+- `providerId` not referenced in `config.providers`
+- `forge_add_model`: duplicate `id` (use `forge_update_model` to modify)
+- `forge_update_model`: unknown `id` (use `forge_add_model` to create)
+
+Typical operator flow via natural language:
+
+> "I got a Perplexity API key. Add `sonar-large`, reasoning + analysis, input $1 / output $3 / cached $0.10, medium tier, 128k context."
+
+Claude invokes:
+```
+forge_add_model(
+  id="sonar-large", providerId="perplexity",
+  capabilities=["reasoning", "analysis"], costTier="medium",
+  pricing={input: 1.0, output: 3.0, cached: 0.10},
+  contextWindow=128000
+)
+```
+
+Or to bump an existing model's pricing:
+
+> "Update `gemini-2.5-flash` pricing to input $0.50 / output $3.00 / cached $0.10."
+
+```
+forge_update_model(
+  id="gemini-2.5-flash",
+  pricing={input: 0.50, output: 3.00, cached: 0.10}
+)
+```
+
+Deletion is not yet exposed as an MCP tool. To remove a model, hand-edit `config.models` for now.
+
 **Skill orchestration routing pattern:**
 1. Call `forge_get_model_recommendation(agentName)`
 2. If `source === "error"`: surface reason, stop
