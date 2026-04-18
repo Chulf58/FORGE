@@ -1,3 +1,19 @@
+## [2026-04-18] Session-scoped quota state: stale quotaExhausted flags no longer poison routing
+
+### Root cause
+- Router's `isModelQuotaExhausted` checked provider-level `quotaExhausted` flag even when per-model flags were false. One 429 error in any session marked the provider exhausted; `resetAt` was written as `null` and never consulted. Quota state never auto-cleared, permanently disabling the provider across every future session.
+
+### Fix
+- New SessionStart hook `hooks/usage-clear-quota-flags.js` clears every `providers[*].quotaExhausted` and `providers[*].models[*].quotaExhausted` flag in `.pipeline/usage.json` at each session start. Session-scopes quota exhaustion state.
+- `hooks/hooks.json` updated to register the new hook (now 5 SessionStart hooks total).
+- Write is conditional on at least one flag actually changing, so `updatedAt` timestamp doesn't drift on no-op sessions.
+- Counters (`requestCount`, `tokenCount`, `lastUsed`, `resetAt`) are fully preserved — no data loss.
+
+### Verification
+- Hook tested locally; Gemini provider-level `quotaExhausted` flag flipped from `true` to `false` on session start, unblocking free-tier Gemini Flash routing.
+- Usage history counters remain intact; only exhaustion state cleared.
+- Bug discovered live when routing fell back to Anthropic haiku for a research task where free-tier Gemini was actually available.
+
 ## [2026-04-18] Observer promoted to Ink; blessed prototype retired; reviewer rename closed
 
 ### Observer: Ink primary, blessed retired
