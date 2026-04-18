@@ -1,3 +1,21 @@
+## [2026-04-18] Observer launcher: bin/forge-observer.cmd shim
+
+### Launcher shim for observer invocation
+- `hooks/mcp-deps-install.js` SessionStart hook now generates `bin/forge-observer.cmd` on every session, with the absolute Node path baked in. Mirrors the existing pattern used for the MCP server launcher.
+- `bin/forge-observer.cmd` seed file added to the repository so the shim works on a fresh clone before the hook fires. Falls back to bare `node` if the hook hasn't run yet (pre-generation).
+- Windows batch shim accepts no arguments (observer runs with local `.pipeline/` state, no CLI args).
+- User can now invoke the observer with one stable path: `bin/forge-observer.cmd` or bare `node scripts/forge-observer.mjs`. Manual: `cd` to the target project first so the observer reads the correct `.pipeline/` state.
+
+### Documentation updates
+- `docs/FORGE-REFERENCE.md` bin scripts table updated with new `bin/forge-observer.cmd` row.
+- `scripts/forge-observer.mjs` entry extended with "How to launch" note: use `bin/forge-observer.cmd` (Windows) or `node scripts/forge-observer.mjs` directly (cross-platform).
+- Observer is still the primary TUI dashboard surface; no changes to observer functionality or UI.
+
+### Not in this slice
+- `wt.exe` auto-split terminal window (separate task `95aeb42f`, future slice).
+- PATH modification or shell alias generation (out of scope for this phase).
+- Deprecation of existing `bin/forge.cmd` launcher (unchanged, backwards-compatible).
+
 ## [2026-04-18] Session-scoped quota state: stale quotaExhausted flags no longer poison routing
 
 ### Root cause
