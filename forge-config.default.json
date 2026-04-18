@@ -149,143 +149,87 @@
   ],
   "agentModelMap": {
     "agent-optimizer": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "architect": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "analysis"]
     },
     "brainstormer": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning"]
     },
     "cleanup": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code"]
     },
     "coder": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "coder-scout": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "completeness-checker": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "compound-refresh": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "debug": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "documenter": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "gotcha-checker": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "ideator": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning"]
     },
     "implementation-architect": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code", "analysis"]
     },
     "implementer": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "implementer-triage": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "integrity-checker": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "planner": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "analysis"]
     },
     "refactor": {
-      "preferred": "claude-sonnet-4-6",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "regression-risk": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "researcher": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
-      "requiredCapabilities": ["analysis"]
+      "requiredCapabilities": ["reasoning", "analysis"]
     },
     "researcher-triage": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "reviewer-boundary": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "reviewer-logic": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["reasoning", "code"]
     },
     "reviewer-performance": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "reviewer-safety": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "reviewer-style": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "reviewer-triage": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     },
     "skills-generator": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["code", "analysis"]
     },
     "supervisor": {
@@ -295,8 +239,6 @@
       "notes": "Routed via /forge:supervise skill (not as a Claude subagent). Requires opus-tier only. No fallback — gemini-2.5-flash downgraded to haiku-tier (live-tested, poor reasoning). Fails clearly when GPT-5.4 unavailable. Enable by setting OPENAI_API_KEY."
     },
     "tool-call-auditor": {
-      "preferred": "claude-haiku-4-5-20251001",
-      "fallback": "claude-sonnet-4-6",
       "requiredCapabilities": ["analysis"]
     }
   },

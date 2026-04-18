@@ -56,6 +56,8 @@ export function recommendModel(agentName, config, usage, options = {}) {
 
   const allowedTiers = agentEntry?.allowedTiers ?? null;
   const allowedVendors = agentEntry?.allowedVendors ?? null;
+  // Hoisted: accessed by Priority 0 (capability-cost) and Priority 4 (legacy scan)
+  const requiredCaps = agentEntry?.requiredCapabilities || [];
 
   function tierAllowed(modelId) {
     if (!allowedTiers) return true;
@@ -69,6 +71,46 @@ export function recommendModel(agentName, config, usage, options = {}) {
     const def = getModelDef(modelId);
     if (!def) return false;
     return allowedVendors.includes(def.providerId);
+  }
+
+  // Priority 0: capability-cost routing — primary path for Claude agents.
+  // Activates when agent declares requiredCapabilities AND has no allowedTiers.
+  // Returns the cheapest available model satisfying all required capabilities
+  // within the provider scope (Anthropic by default; allowedVendors if declared).
+  if (requiredCaps.length > 0 && !allowedTiers) {
+    const providerScope = allowedVendors ? allowedVendors : ['anthropic'];
+    let capCandidates = (config.models || []).filter(m => {
+      if (excludeModels.includes(m.id)) return false;
+      if (!providerScope.includes(m.providerId)) return false;
+      if (!isAvailable(m.id)) return false;
+      const modelCaps = m.capabilities || [];
+      return requiredCaps.every(cap => modelCaps.includes(cap));
+    });
+
+    if (capCandidates.length > 0) {
+      // Sort cheapest first; break cost-tier ties alphabetically for determinism
+      capCandidates.sort((a, b) => {
+        const aOrd = COST_TIER_ORDER[a.costTier] ?? 1;
+        const bOrd = COST_TIER_ORDER[b.costTier] ?? 1;
+        if (aOrd !== bOrd) return aOrd - bOrd;
+        return a.id.localeCompare(b.id);
+      });
+      const chosen = capCandidates[0];
+      return {
+        modelId: chosen.id,
+        providerId: chosen.providerId,
+        source: 'capability-cost',
+        reason: `Cheapest available model in [${providerScope.join(', ')}] matching [${requiredCaps.join(', ')}]`,
+      };
+    }
+
+    // No match — fail explicitly; capability requirements are hard constraints
+    return {
+      modelId: null,
+      providerId: null,
+      source: 'error',
+      reason: `No available model found with capabilities [${requiredCaps.join(', ')}] in scope [${providerScope.join(', ')}] for agent "${agentName}"`,
+    };
   }
 
   // Priority 1: preferred model
@@ -152,7 +194,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
   }
 
   // Priority 4: legacy requiredCapabilities catalog scan (no allowedTiers declared)
-  const requiredCaps = agentEntry?.requiredCapabilities || [];
+  // Note: requiredCaps hoisted to top of function; reused here
   let candidates = (config.models || []).filter(m => {
     if (excludeModels.includes(m.id)) return false;
     if (!isAvailable(m.id)) return false;

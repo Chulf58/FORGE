@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regression tests for mcp/lib/router.js multi-vendor tier-locked routing.
+// Regression tests for mcp/lib/router.js — capability-cost primary path + tier-locked fallback.
 //
 // Pure unit tests — no I/O, no MCP server required.
 // Run: node mcp/router-test.mjs
@@ -20,6 +20,8 @@ function assert(condition, label) {
 }
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
+// Models include 'analysis' to match the real capability taxonomy.
+// Anthropic haiku has ['code','analysis']; sonnet adds 'reasoning'; opus adds 'agentic'.
 
 const BASE_CONFIG = {
   providers: [
@@ -28,39 +30,36 @@ const BASE_CONFIG = {
     { id: 'anthropic',  type: 'anthropic',  envVar: 'ANTHROPIC_API_KEY', enabled: true,  priority: 3 },
   ],
   models: [
-    { id: 'gpt-5.4',                  providerId: 'openai',    reasoningTier: 'opus',   capabilities: ['reasoning', 'code'], costTier: 'high'   },
-    { id: 'gpt-4.1',                  providerId: 'openai',    reasoningTier: 'sonnet', capabilities: ['reasoning', 'code'], costTier: 'medium' },
-    { id: 'gemini-2.5-pro',           providerId: 'gemini',    reasoningTier: 'opus',   capabilities: ['reasoning', 'code'], costTier: 'free'   },
-    { id: 'gemini-2.5-flash',         providerId: 'gemini',    reasoningTier: 'sonnet', capabilities: ['reasoning', 'code'], costTier: 'free'   },
-    { id: 'gemini-2.5-flash-lite',    providerId: 'gemini',    reasoningTier: 'haiku',  capabilities: ['code'],              costTier: 'free'   },
-    { id: 'claude-opus-4-7',          providerId: 'anthropic', reasoningTier: 'opus',   capabilities: ['reasoning', 'code'], costTier: 'high'   },
-    { id: 'claude-sonnet-4-6',        providerId: 'anthropic', reasoningTier: 'sonnet', capabilities: ['reasoning', 'code'], costTier: 'medium' },
-    { id: 'claude-haiku-4-5-20251001',providerId: 'anthropic', reasoningTier: 'haiku',  capabilities: ['code'],              costTier: 'low'    },
+    { id: 'gpt-5.4',                  providerId: 'openai',    reasoningTier: 'opus',   capabilities: ['reasoning', 'code', 'analysis', 'agentic'], costTier: 'high'   },
+    { id: 'gpt-4.1',                  providerId: 'openai',    reasoningTier: 'sonnet', capabilities: ['reasoning', 'code', 'analysis'],             costTier: 'medium' },
+    { id: 'gemini-2.5-pro',           providerId: 'gemini',    reasoningTier: 'opus',   capabilities: ['reasoning', 'code', 'analysis', 'agentic'], costTier: 'free'   },
+    { id: 'gemini-2.5-flash',         providerId: 'gemini',    reasoningTier: 'haiku',  capabilities: ['code', 'analysis', 'fast'],                 costTier: 'free'   },
+    { id: 'gemini-2.5-flash-lite',    providerId: 'gemini',    reasoningTier: 'haiku',  capabilities: ['code', 'analysis', 'fast'],                 costTier: 'free'   },
+    { id: 'claude-opus-4-7',          providerId: 'anthropic', reasoningTier: 'opus',   capabilities: ['reasoning', 'code', 'analysis', 'agentic'], costTier: 'high'   },
+    { id: 'claude-sonnet-4-6',        providerId: 'anthropic', reasoningTier: 'sonnet', capabilities: ['reasoning', 'code', 'analysis'],             costTier: 'medium' },
+    { id: 'claude-haiku-4-5-20251001',providerId: 'anthropic', reasoningTier: 'haiku',  capabilities: ['code', 'analysis', 'fast'],                 costTier: 'low'    },
   ],
   agentModelMap: {
+    // Supervisor: tier-locked external dispatch (unchanged)
     'supervisor': {
       preferred: 'gpt-5.4',
       allowedTiers: ['opus'],
       allowedVendors: ['openai'],
     },
+    // Legacy tier-based agents (backward compat tests)
     'haiku-reviewer': {
       preferred: 'claude-haiku-4-5-20251001',
       allowedTiers: ['haiku'],
       allowedVendors: ['anthropic'],
     },
-    'legacy-coder': {
-      preferred: 'claude-sonnet-4-6',
-      fallback: 'claude-opus-4-7',
-      requiredCapabilities: ['reasoning', 'code'],
-    },
     'bad-preferred': {
-      preferred: 'claude-haiku-4-5-20251001',  // haiku tier, but allowedTiers is opus/sonnet
+      preferred: 'claude-haiku-4-5-20251001',
       allowedTiers: ['opus', 'sonnet'],
       allowedVendors: ['anthropic'],
     },
     'bad-fallback': {
       preferred: 'gpt-5.4',
-      fallback: 'gemini-2.5-flash-lite',        // haiku tier, but allowedTiers is opus/sonnet
+      fallback: 'gemini-2.5-flash-lite',
       allowedTiers: ['opus', 'sonnet'],
       allowedVendors: ['openai', 'gemini'],
     },
@@ -76,7 +75,27 @@ const BASE_CONFIG = {
     },
     'no-candidates': {
       allowedTiers: ['haiku'],
-      allowedVendors: ['openai'],               // openai has no haiku model
+      allowedVendors: ['openai'],
+    },
+    // Capability-cost agents (new primary path — no allowedTiers)
+    'cap-analysis': {
+      requiredCapabilities: ['analysis'],
+    },
+    'cap-code-analysis': {
+      requiredCapabilities: ['code', 'analysis'],
+    },
+    'cap-reasoning': {
+      requiredCapabilities: ['reasoning', 'analysis'],
+    },
+    'cap-reasoning-code': {
+      requiredCapabilities: ['reasoning', 'code'],
+    },
+    'cap-external': {
+      requiredCapabilities: ['reasoning', 'agentic'],
+      allowedVendors: ['openai'],
+    },
+    'cap-no-match': {
+      requiredCapabilities: ['nonexistent-capability'],
     },
   },
 };
@@ -172,28 +191,70 @@ console.log('\n── router-test.mjs ──────────────
     'haiku reviewer: fails clearly when haiku unavailable, never promoted to sonnet/opus');
 }
 
-// 10. Legacy requiredCapabilities path still works for unmigrated entries
+// ── Capability-cost primary path tests ───────────────────────────────────────
+
+// 10. ['analysis'] → haiku (cheapest Anthropic with analysis); Gemini NOT returned (Anthropic scope)
 {
-  const r = recommendModel('legacy-coder', BASE_CONFIG, EMPTY_USAGE);
-  assert(r.source === 'preferred' && r.modelId === 'claude-sonnet-4-6',
-    'legacy entry: preferred returned without allowedTiers');
+  const r = recommendModel('cap-analysis', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-haiku-4-5-20251001',
+    'capability-cost: [analysis] → haiku (cheapest Anthropic)');
+  assert(r.providerId === 'anthropic',
+    'capability-cost: Anthropic-only scope by default (Gemini free models not returned)');
 }
 
-// 11. Legacy catalog scan still functions when preferred + fallback exhausted
+// 11. ['code', 'analysis'] → haiku (cheapest Anthropic with both)
 {
-  const r = recommendModel('legacy-coder', BASE_CONFIG, ANTHROPIC_EXHAUSTED);
-  // All anthropic exhausted → falls to non-anthropic catalog or default
-  // legacy-coder has no allowedVendors, so catalog scans all providers
-  // openai is enabled and has reasoning+code models
-  assert(r.modelId !== null && r.source !== 'error',
-    'legacy entry: catalog scan or default used when preferred+fallback provider exhausted');
+  const r = recommendModel('cap-code-analysis', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-haiku-4-5-20251001',
+    'capability-cost: [code, analysis] → haiku');
 }
 
-// ── Summary ───────────────────────────────────────────────────────────────────
-console.log('');
+// 12. ['reasoning', 'analysis'] → sonnet (cheapest Anthropic with reasoning)
+//     This is the researcher fix: was haiku (no reasoning), now correctly sonnet
+{
+  const r = recommendModel('cap-reasoning', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-sonnet-4-6',
+    'capability-cost: [reasoning, analysis] → sonnet (researcher fix — no longer haiku)');
+}
+
+// 13. ['reasoning', 'code'] → sonnet (reviewer-logic fix: no haiku pin, routing picks cheapest)
+{
+  const r = recommendModel('cap-reasoning-code', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-sonnet-4-6',
+    'capability-cost: [reasoning, code] → sonnet (reviewer-logic fix — no longer haiku)');
+}
+
+// 14. External agent with allowedVendors → correct provider scope
+{
+  const r = recommendModel('cap-external', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'capability-cost' && r.modelId === 'gpt-5.4',
+    'capability-cost: [reasoning, agentic] with openai allowedVendors → gpt-5.4');
+}
+
+// 15. No model satisfies required capabilities → explicit error
+{
+  const r = recommendModel('cap-no-match', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'error' && r.modelId === null,
+    'capability-cost: no model satisfies [nonexistent-capability] → explicit error');
+}
+
+// 16. Capability-cost with haiku exhausted → sonnet (next cheapest satisfying caps)
+{
+  const r = recommendModel('cap-analysis', BASE_CONFIG, ANTHROPIC_EXHAUSTED);
+  assert(r.source === 'error',
+    'capability-cost: all Anthropic exhausted → explicit error (no provider scope fallback)');
+}
+
+// 17. allowedTiers path still works as backward-compat fallback (supervisor)
+{
+  const r = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE);
+  assert(r.source === 'preferred' && r.modelId === 'gpt-5.4',
+    'backward compat: supervisor with allowedTiers → preferred gpt-5.4 (tier path)');
+}
+
 // ── excludeModels tests ───────────────────────────────────────────────────────
 
-// 12. excludeModels removes preferred from consideration
+// 18. excludeModels removes preferred from consideration
 {
   // supervisor has preferred: gpt-5.4 — exclude it, expect error (no other opus+allowedVendors candidates)
   const r = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE, { excludeModels: ['gpt-5.4'] });
@@ -201,7 +262,7 @@ console.log('');
     'excludeModels: preferred model excluded → falls through to error (no remaining candidates)');
 }
 
-// 13. excludeModels removes a fallback from consideration
+// 19. excludeModels removes a fallback from consideration
 {
   // Add a test agent with preferred + fallback both excluded
   const c = cfg();
@@ -220,7 +281,7 @@ console.log('');
     'excludeModels: preferred+fallback excluded → catalog finds next cheapest valid candidate (opus tier wins)');
 }
 
-// 14. excludeModels is per-call — subsequent call without exclusion returns original model
+// 20. excludeModels is per-call — subsequent call without exclusion returns original model
 {
   const r1 = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE, { excludeModels: ['gpt-5.4'] });
   const r2 = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE); // no exclusion
@@ -229,7 +290,7 @@ console.log('');
     'excludeModels per-call: second call without exclusion returns preferred model normally');
 }
 
-// 15. excludeModels in catalog scan removes model from tier-locked candidates
+// 21. excludeModels in catalog scan removes model from tier-locked candidates
 {
   const c = cfgWithoutModels('gpt-5.4'); // only gpt-4.1 remains for openai sonnet
   const r = recommendModel('tier-beats-priority', c, EMPTY_USAGE, { excludeModels: ['gpt-4.1'] });
@@ -239,7 +300,7 @@ console.log('');
     'excludeModels in catalog: excluded sonnet model, opus gemini selected next');
 }
 
-// 16. excludeModels does not relax capability requirements (error if no remaining candidate satisfies caps)
+// 22. excludeModels does not relax capability requirements (error if no remaining candidate satisfies caps)
 {
   const c = cfg();
   c.agentModelMap['test-caps-exclude'] = {
