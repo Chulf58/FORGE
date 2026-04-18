@@ -1,3 +1,9 @@
+# ⚠ Anti-speculation rule (read first, every turn)
+
+Before claiming anything about this codebase's state, history, what exists, or what happened — cite a file:line from a Read/Grep done THIS turn, or say "I don't know, checking" and call the tool. No "appears to", "likely", "probably", "I assume", "seems to have been". If you lack tool-call evidence this turn, you don't know — verify or disclaim. This rule overrides conversational fluency.
+
+---
+
 # FORGE Plugin — Project Instructions
 
 FORGE is a Claude Code plugin that manages AI-powered development pipelines. It provides agents, slash commands, and hooks that are injected into any project where the plugin is installed. This repo (`forge-plugin/`) is the plugin source — all files here become available to Claude Code sessions across projects.
