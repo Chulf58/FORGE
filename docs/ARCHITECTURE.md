@@ -12,7 +12,7 @@ FORGE is a Claude Code plugin that provides AI-powered development pipelines. It
 |--------|-------------|-----------|
 | Pipeline Agents | 28 agent definitions that form the pipeline stages | `agents/*.md` |
 | Skills | 20 user-facing skills (pipeline + gate + status + setup) | `skills/*/SKILL.md` |
-| MCP Server | 22 forge_* tools backing skills and hooks; persists pipeline state | `mcp/server.js`, `mcp/lib/` |
+| MCP Server | 26 forge_* tools backing skills and hooks; persists pipeline state and model catalog | `mcp/server.js`, `mcp/lib/` |
 | Run Registry | Durable run identity + lifecycle (Zod schemas, on-disk index) | `packages/forge-core/src/runs/` |
 | Hooks | Session tracking, workflow guard, context monitoring | `hooks/*.js`, `hooks/hooks.json` |
 | Parallel Runs | Git worktree isolation for concurrent pipelines | `bin/forge-worktree.js` |
