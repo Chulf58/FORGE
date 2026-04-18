@@ -386,6 +386,14 @@ This is true even WITHOUT JSX. The `React.createElement` calls are verbose but t
 
 **Recommendation:** run `node scripts/forge-observer-ink-spike.mjs` in a real Windows Terminal session, click anywhere, try `Shift`+click-drag. Report which of (a)/(b)/(c) occurs. This is a 2-minute manual test that settles the mouse question.
 
+**LIVE TEST RESULT (2026-04-17): Outcome (a) — full success.**
+- Mouse clicks detected ✅
+- Shift+click-drag text selection works natively ✅
+- q key exits cleanly ✅
+- Keyboard + mouse coexist without conflict ✅
+
+**FINAL VERDICT: Migrate the real observer to Ink. Blessed observer stays on disk during transition; hard-delete after validation.**
+
 ### Verdict 3: Go / no-go on migrating the real observer
 
 **Go — conditional on live mouse verification.**
