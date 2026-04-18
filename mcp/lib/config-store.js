@@ -4,6 +4,82 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+// Known provider types supported by forge_call_external adapters.
+// Any type not in this set cannot dispatch to an adapter and must be rejected.
+const KNOWN_PROVIDER_TYPES = new Set(['anthropic', 'openai', 'gemini']);
+
+// Environment variable names must be uppercase alphanumeric + underscores.
+// This blocks malicious strings like "$(...)", "../../etc", or injection attempts.
+const ENV_VAR_RE = /^[A-Z][A-Z0-9_]{0,99}$/;
+
+/**
+ * Validates a parsed forge-config.json object.
+ * Throws with a descriptive message on any violation so invalid config never
+ * reaches router or adapter resolution.
+ *
+ * Validates:
+ *   - providers: array of objects with known type and safe envVar
+ *   - models: array of objects with id and providerId
+ *   - agentModelMap: object whose values are objects
+ *
+ * @param {object} config - parsed config object
+ * @param {string} configPath - source path (for error messages)
+ */
+export function validateForgeConfig(config, configPath) {
+  const loc = configPath || 'forge-config.json';
+
+  // providers — required array
+  if (!Array.isArray(config.providers)) {
+    throw new Error(`forge-config validation failed at ${loc}: "providers" must be an array`);
+  }
+  for (const p of config.providers) {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) {
+      throw new Error(`forge-config validation failed at ${loc}: provider entry must be an object`);
+    }
+    if (typeof p.id !== 'string' || !p.id) {
+      throw new Error(`forge-config validation failed at ${loc}: provider entry missing "id"`);
+    }
+    if (!KNOWN_PROVIDER_TYPES.has(p.type)) {
+      throw new Error(
+        `forge-config validation failed at ${loc}: provider "${p.id}" has unknown type "${p.type}" — allowed: ${[...KNOWN_PROVIDER_TYPES].join(', ')}`
+      );
+    }
+    if (typeof p.envVar !== 'string' || !ENV_VAR_RE.test(p.envVar)) {
+      throw new Error(
+        `forge-config validation failed at ${loc}: provider "${p.id}" has invalid envVar "${p.envVar}" — must be uppercase alphanumeric + underscores`
+      );
+    }
+  }
+
+  // models — optional array; each entry needs id + providerId
+  if (config.models !== undefined && !Array.isArray(config.models)) {
+    throw new Error(`forge-config validation failed at ${loc}: "models" must be an array`);
+  }
+  for (const m of (config.models || [])) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      throw new Error(`forge-config validation failed at ${loc}: model entry must be an object`);
+    }
+    if (typeof m.id !== 'string' || !m.id) {
+      throw new Error(`forge-config validation failed at ${loc}: model entry missing "id"`);
+    }
+    if (typeof m.providerId !== 'string' || !m.providerId) {
+      throw new Error(`forge-config validation failed at ${loc}: model "${m.id}" missing "providerId"`);
+    }
+  }
+
+  // agentModelMap — optional object; each value must be an object
+  if (config.agentModelMap !== undefined) {
+    if (typeof config.agentModelMap !== 'object' || Array.isArray(config.agentModelMap) || config.agentModelMap === null) {
+      throw new Error(`forge-config validation failed at ${loc}: "agentModelMap" must be an object`);
+    }
+    for (const [agentName, entry] of Object.entries(config.agentModelMap)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error(`forge-config validation failed at ${loc}: agentModelMap["${agentName}"] must be an object`);
+      }
+    }
+  }
+}
+
 /**
  * Returns the CLAUDE_PLUGIN_DATA directory, or null if the env var is not set.
  * Callers fall back to the project .pipeline/ directory when this returns null.
@@ -46,6 +122,7 @@ export function readForgeConfig(pluginDataDir, projectDir) {
       } catch (err) {
         throw new Error('forge-config.json parse failed at ' + candidate + ': ' + err.message);
       }
+      validateForgeConfig(config, candidate);
       return { config, configPath: candidate };
     }
   }
