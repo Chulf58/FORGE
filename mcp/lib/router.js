@@ -1,16 +1,17 @@
 // router.js — model recommendation engine (ESM, pure function — no I/O)
 // The router advises which model to use; it does NOT execute calls or write files.
 //
-// Routing priority per agent entry:
-//   1. preferred  — specific model pin; config error if tier violates allowedTiers
-//   2. fallback   — specific model pin; config error if tier violates allowedTiers
-//   3. tier-locked catalog scan — when allowedTiers is set; ordered by tier preference
-//      then provider priority; fails clearly if no candidate found within allowedTiers
-//   4. legacy requiredCapabilities catalog scan — when allowedTiers is absent
-//   5. hardcoded default
+// Current routing priority stack:
+//   0. capability-cost (PRIMARY) — agents with requiredCapabilities and no allowedTiers.
+//      Finds cheapest available model in provider scope satisfying all required capabilities.
+//      Anthropic-only by default; allowedVendors overrides scope. Fails explicitly if no match.
+//   1. preferred pin — specific model override (supervisor uses this for gpt-5.4).
+//      Config error if pinned model's tier violates allowedTiers.
+//   2. allowedTiers scan — tier-locked catalog search (supervisor fallback when gpt-5.4 unavailable).
+//      Fails explicitly if no candidate in tier/vendor constraints.
+//   3. hardcoded default — safety net for fully unconstrained agents.
 
-const COST_TIER_ORDER = { low: 0, medium: 1, high: 2 };
-const REASONING_TIER_ORDER = { haiku: 0, sonnet: 1, opus: 2 };
+const COST_TIER_ORDER = { free: 0, low: 1, medium: 2, high: 3 };
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_PROVIDER = 'anthropic';
@@ -21,13 +22,11 @@ const DEFAULT_PROVIDER = 'anthropic';
  * @param {string} agentName - agent filename without extension (e.g. 'coder')
  * @param {object} config - parsed forge-config.json object
  * @param {object} usage - parsed usage.json object (or emptyUsage())
- * @param {{ budgetMode?: 'economy'|'standard'|'performance', excludeModels?: string[] }} options
+ * @param {{ budgetMode?: string, excludeModels?: string[] }} options
  *   excludeModels: model IDs to skip for this call only (runtime-only, not persisted).
- *   Used for temporary exclusion after transient failures — does not relax capability requirements.
- * @returns {{ modelId: string|null, providerId: string|null, source: 'preferred'|'fallback'|'catalog'|'default'|'error', reason: string }}
+ * @returns {{ modelId: string|null, providerId: string|null, source: string, reason: string }}
  */
 export function recommendModel(agentName, config, usage, options = {}) {
-  const budgetMode = options.budgetMode || 'standard';
   const excludeModels = Array.isArray(options.excludeModels) ? options.excludeModels : [];
   const agentEntry = config.agentModelMap?.[agentName];
 
@@ -56,22 +55,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
 
   const allowedTiers = agentEntry?.allowedTiers ?? null;
   const allowedVendors = agentEntry?.allowedVendors ?? null;
-  // Hoisted: accessed by Priority 0 (capability-cost) and Priority 4 (legacy scan)
   const requiredCaps = agentEntry?.requiredCapabilities || [];
-
-  function tierAllowed(modelId) {
-    if (!allowedTiers) return true;
-    const def = getModelDef(modelId);
-    if (!def) return false;
-    return allowedTiers.includes(def.reasoningTier);
-  }
-
-  function vendorAllowed(modelId) {
-    if (!allowedVendors) return true;
-    const def = getModelDef(modelId);
-    if (!def) return false;
-    return allowedVendors.includes(def.providerId);
-  }
 
   // Priority 0: capability-cost routing — primary path for Claude agents.
   // Activates when agent declares requiredCapabilities AND has no allowedTiers.
@@ -113,11 +97,11 @@ export function recommendModel(agentName, config, usage, options = {}) {
     };
   }
 
-  // Priority 1: preferred model
+  // Priority 1: preferred model pin (supervisor uses this for gpt-5.4).
+  // Config error if the pinned model's tier violates allowedTiers.
   if (agentEntry?.preferred && !excludeModels.includes(agentEntry.preferred)) {
     const prefDef = getModelDef(agentEntry.preferred);
     if (prefDef && allowedTiers && !allowedTiers.includes(prefDef.reasoningTier)) {
-      // Model exists in catalog but its tier violates the declared constraint — config error
       return {
         modelId: null,
         providerId: null,
@@ -135,29 +119,8 @@ export function recommendModel(agentName, config, usage, options = {}) {
     }
   }
 
-  // Priority 2: fallback model
-  if (agentEntry?.fallback && !excludeModels.includes(agentEntry.fallback)) {
-    const fbDef = getModelDef(agentEntry.fallback);
-    if (fbDef && allowedTiers && !allowedTiers.includes(fbDef.reasoningTier)) {
-      // Model exists in catalog but its tier violates the declared constraint — config error
-      return {
-        modelId: null,
-        providerId: null,
-        source: 'error',
-        reason: `Config error: fallback model "${agentEntry.fallback}" has tier "${fbDef.reasoningTier}" which is not in allowedTiers [${allowedTiers.join(', ')}] for agent "${agentName}"`,
-      };
-    }
-    if (isAvailable(agentEntry.fallback)) {
-      return {
-        modelId: agentEntry.fallback,
-        providerId: providerIdForModel(agentEntry.fallback),
-        source: 'fallback',
-        reason: 'Preferred model unavailable; using fallback',
-      };
-    }
-  }
-
-  // Priority 3: tier-locked catalog scan (when allowedTiers is declared)
+  // Priority 2: allowedTiers catalog scan (supervisor fallback when preferred is unavailable).
+  // Fails explicitly if no valid candidate within tier/vendor constraints.
   if (allowedTiers) {
     let candidates = (config.models || []).filter(m => {
       if (excludeModels.includes(m.id)) return false;
@@ -184,7 +147,6 @@ export function recommendModel(agentName, config, usage, options = {}) {
       };
     }
 
-    // No valid candidate within allowedTiers — fail clearly, never escalate or degrade
     return {
       modelId: null,
       providerId: null,
@@ -193,40 +155,11 @@ export function recommendModel(agentName, config, usage, options = {}) {
     };
   }
 
-  // Priority 4: legacy requiredCapabilities catalog scan (no allowedTiers declared)
-  // Note: requiredCaps hoisted to top of function; reused here
-  let candidates = (config.models || []).filter(m => {
-    if (excludeModels.includes(m.id)) return false;
-    if (!isAvailable(m.id)) return false;
-    if (requiredCaps.length === 0) return true;
-    const modelCaps = m.capabilities || [];
-    return requiredCaps.every(cap => modelCaps.includes(cap));
-  });
-
-  if (candidates.length > 0) {
-    if (budgetMode === 'economy') {
-      candidates = candidates.sort(
-        (a, b) => (COST_TIER_ORDER[a.costTier] ?? 1) - (COST_TIER_ORDER[b.costTier] ?? 1),
-      );
-    } else if (budgetMode === 'performance') {
-      candidates = candidates.sort(
-        (a, b) => (COST_TIER_ORDER[b.costTier] ?? 1) - (COST_TIER_ORDER[a.costTier] ?? 1),
-      );
-    }
-    const chosen = candidates[0];
-    return {
-      modelId: chosen.id,
-      providerId: chosen.providerId,
-      source: 'catalog',
-      reason: 'Selected from model catalog matching required capabilities (budget mode: ' + budgetMode + ')',
-    };
-  }
-
-  // Priority 5: absolute default
+  // Priority 3: hardcoded default — safety net for agents with no constraints.
   return {
     modelId: DEFAULT_MODEL,
     providerId: DEFAULT_PROVIDER,
     source: 'default',
-    reason: 'All preferred providers exhausted or unavailable; using hardcoded default',
+    reason: 'No routing constraints declared; using hardcoded default',
   };
 }

@@ -57,12 +57,6 @@ const BASE_CONFIG = {
       allowedTiers: ['opus', 'sonnet'],
       allowedVendors: ['anthropic'],
     },
-    'bad-fallback': {
-      preferred: 'gpt-5.4',
-      fallback: 'gemini-2.5-flash-lite',
-      allowedTiers: ['opus', 'sonnet'],
-      allowedVendors: ['openai', 'gemini'],
-    },
     'tier-beats-priority': {
       preferred: 'nonexistent-model',
       fallback: 'also-nonexistent',
@@ -139,11 +133,11 @@ console.log('\n── router-test.mjs ──────────────
     'supervisor: preferred provider exhausted, no fallback → explicit error (use excludeModels rerouting instead)');
 }
 
-// 4. Fallback rejected with config error when its tier violates allowedTiers
+// 4. allowedTiers catalog scan: supervisor with gpt-5.4 exhausted falls to scan → error (no other openai+opus)
 {
-  const r = recommendModel('bad-fallback', BASE_CONFIG, OPENAI_EXHAUSTED);
-  assert(r.source === 'error' && r.reason.includes('Config error') && r.reason.includes('bad-fallback'),
-    'fallback outside allowedTiers returns config error');
+  const r = recommendModel('supervisor', BASE_CONFIG, OPENAI_EXHAUSTED);
+  assert(r.source === 'error',
+    'supervisor: preferred exhausted → allowedTiers scan finds no other openai+opus → error');
 }
 
 // 5. Catalog scan: tier preference beats provider priority
@@ -265,20 +259,20 @@ console.log('\n── router-test.mjs ──────────────
 // 19. excludeModels removes a fallback from consideration
 {
   // Add a test agent with preferred + fallback both excluded
+  // Agent with allowedTiers+allowedVendors and preferred excluded — tier scan selects next best
   const c = cfg();
   c.agentModelMap['test-exclude'] = {
     preferred: 'gpt-5.4',
-    fallback: 'gemini-2.5-flash',
     allowedTiers: ['opus', 'sonnet'],
     allowedVendors: ['openai', 'gemini'],
   };
   const r = recommendModel('test-exclude', c, EMPTY_USAGE, {
-    excludeModels: ['gpt-5.4', 'gemini-2.5-flash'],
+    excludeModels: ['gpt-5.4'],
   });
-  // Remaining: gpt-4.1 (sonnet+openai, tier index 1) and gemini-2.5-pro (opus+gemini, tier index 0)
-  // Tier preference wins over provider priority → gemini-2.5-pro (opus, index 0) selected
+  // Remaining opus/sonnet in openai+gemini: gpt-4.1 (sonnet, openai), gemini-2.5-pro (opus, gemini)
+  // Tier preference: opus (index 0) beats sonnet (index 1) → gemini-2.5-pro
   assert(r.source === 'catalog' && r.modelId === 'gemini-2.5-pro',
-    'excludeModels: preferred+fallback excluded → catalog finds next cheapest valid candidate (opus tier wins)');
+    'excludeModels: preferred excluded → allowedTiers scan selects next best (opus gemini)');
 }
 
 // 20. excludeModels is per-call — subsequent call without exclusion returns original model
