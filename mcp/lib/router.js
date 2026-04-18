@@ -46,9 +46,10 @@ export function recommendModel(agentName, config, usage, options = {}) {
 
   // Priority 0: capability-cost routing — primary path for all agents.
   // Finds cheapest available model satisfying all required capabilities in provider scope.
-  // Anthropic-only by default; allowedVendors overrides scope (e.g. supervisor → openai).
+  // Default scope = all enabled providers; allowedVendors forces a specific scope override.
   if (requiredCaps.length > 0) {
-    const providerScope = allowedVendors ? allowedVendors : ['anthropic'];
+    const enabledProviderIds = (config.providers || []).filter(p => p.enabled).map(p => p.id);
+    const providerScope = allowedVendors ? allowedVendors : enabledProviderIds;
     let capCandidates = (config.models || []).filter(m => {
       if (excludeModels.includes(m.id)) return false;
       if (!providerScope.includes(m.providerId)) return false;
