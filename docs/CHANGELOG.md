@@ -1,3 +1,31 @@
+## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
+
+### Motivation
+On 2026-04-18, the main conversational Claude collapsed Gate #2 on two live slices
+(observer-launcher, forge-config-migration) — reviewer verdicts and implementer dispatch
+happened in the same turn with no human-in-loop pause. Memory entry `feedback_gate_approval.md`
+was updated with stronger framing, but the user requested mechanical enforcement.
+
+### Mechanism
+- New `hooks/gate-enforcement.js` (PreToolUse, matches "Agent") blocks Agent dispatches for
+  `coder` (requires gate1 approved) and `implementer` (requires gate2 approved).
+- Reads `.pipeline/gate-pending.json`; blocks on missing file, wrong gate stage, or non-approved status.
+- Bypasses enforcement for `pipelineMode: TRIVIAL` and `SPRINT` (no gates in those modes).
+- Fails open on stdin parse errors; fails open on malformed project.json (unknown mode → enforce).
+- All other subagent types pass through unconditionally.
+- Registered in `hooks/hooks.json` as a second "Agent" PreToolUse matcher alongside `routing-enforcement.js`.
+
+### Files changed
+- `hooks/gate-enforcement.js` — new file (~130 lines)
+- `hooks/hooks.json` — added gate-enforcement entry under PreToolUse → Agent
+- `docs/gotchas/GENERAL.md` — added "Gate enforcement (mechanical, PreToolUse)" section
+
+### Known limitation
+The hook enforces existence of the approval record, not the discipline of presenting-and-waiting.
+That behavioral guarantee remains in memory + agent prompts.
+
+---
+
 ## [2026-04-18] forge-config-migration: diff-aware auto-migration on SessionStart (Part A + Part B)
 
 ### Root cause (Part A — one-shot fix, already applied)

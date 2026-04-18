@@ -180,6 +180,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/routing-enforcement.js\""
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gate-enforcement.js\""
+          }
+        ]
       }
     ]
   }

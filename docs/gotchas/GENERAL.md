@@ -60,6 +60,20 @@ rl.on('close', () => { main(input).catch(() => process.exit(0)); });
 
 ---
 
+## Gate enforcement (mechanical, PreToolUse)
+
+`hooks/gate-enforcement.js` blocks Agent-tool dispatches for `coder` and `implementer` unless the corresponding gate is approved on disk:
+
+- **`coder`** requires `gate1` approved before dispatch.
+- **`implementer`** requires `gate2` approved before dispatch.
+- All other subagent types pass through unconditionally.
+- `pipelineMode: TRIVIAL` or `SPRINT` bypasses gate checks (these modes have no reviewer gates by design) — a stderr note is logged.
+- **To satisfy the hook:** write `.pipeline/gate-pending.json` with `{ "gate": "gate1"|"gate2", "status": "approved", "feature": "..." }` — use `/forge:approve` or the `forge_set_gate` MCP tool.
+- Missing gate file, wrong gate stage, or non-approved status all produce an exit-2 deny with a descriptive block message.
+- This hook enforces the *existence* of an approval record, not the discipline of presenting-and-waiting — that remains a behavioral constraint enforced by memory and agent prompts.
+
+---
+
 ## PostCompact hook — do not use for context reinjection
 
 Proven against the current Claude Code runtime (2026-04). All four output shapes were tested live:

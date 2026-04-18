@@ -1601,6 +1601,20 @@
         "migration",
         "bootstrap"
       ]
+    },
+    {
+      "id": "608ce66c",
+      "priority": "high",
+      "text": "FEATURE: PreToolUse hook `hooks/gate-enforcement.js` that mechanically enforces Gate #1 and Gate #2 approvals on Agent-tool dispatches. Prevents the \"collapse Gate into status line\" failure mode that happened live on 2026-04-18 (observer-launcher slice and forge-config-migration slice — reviewer verdicts reported and implementer dispatched in the same turn with no user pause).\n\n**Mechanism:**\n- Matches `Agent` tool on PreToolUse. Parses `tool_input.subagent_type`.\n- If `subagent_type === 'forge:implementer'`: read `.pipeline/gate-pending.json` (or worktree-local variant when set), require `status === \"approved\"` for the current feature. If absent or pending → exit 2 with stderr blocker message.\n- If `subagent_type === 'forge:coder'`: same check against Gate #1 approved status.\n- If `subagent_type` is anything else (researcher, reviewers, documenter, etc.): exit 0 (pass through).\n- Mode-aware carve-out: read `.pipeline/project.json` for `pipelineMode`. If mode is `TRIVIAL` or `SPRINT`: exit 0 regardless (those modes bypass gates by design).\n- Feature-name binding (optional but valuable): require the implementer prompt's feature name matches the gate-pending.json feature field; prevents \"approved gate for feature A, dispatched implementer for feature B\" mistakes.\n- Fail-open on I/O errors (missing gate-pending.json is treated as \"not approved\" — that's fail-SAFE, not fail-open; the block is the correct outcome).\n\n**Precedent:**\n- `hooks/routing-enforcement.js` already uses this pattern to block Agent spawns without a prior `forge_get_model_recommendation` call. Same structure: PreToolUse matcher `Agent`, exit 2 on block.\n- `hooks/bash-guard.js` enforces tool-efficiency rules by blocking specific Bash patterns.\n\n**Scope — 4 file operations:**\n1. NEW `hooks/gate-enforcement.js` — the hook script.\n2. EDIT `hooks/hooks.json` — add PreToolUse Agent matcher pointing at the new script (alongside existing routing-enforcement.js entry).\n3. EDIT `docs/gotchas/GENERAL.md` — document the enforcement policy so agents know about the contract.\n4. EDIT `docs/CHANGELOG.md` — entry.\n\n**Agent team:** `coder` → `reviewer-safety` (mandatory — hook reads project state, writes to stderr, controls a blocking exit path; safety check critical) → `reviewer-boundary` (mandatory — gate-state shape must match `skills/approve/SKILL.md` writer contract) → `implementer` → `documenter`.\n\n**Pipeline:** LEAN.\n\n**Not in this slice:**\n- Time-based or turn-based proof of pause (out of scope — hook can't see NL timing).\n- Enforcement for refactor/debug pipelines beyond the Gate #2 blocker (they already use gate-pending.json via the same skills).\n- Blocking Agent dispatches for `documenter` or `tester` (apply-stage but post-implementer — re-checking gate here is redundant).\n\n**Known limitation flagged:** the hook enforces the EXISTENCE of a recorded approval, not the discipline of presenting-and-waiting. If I invoke `/forge:approve` in the same turn as dispatching the implementer, the hook still passes. True pause-before-apply remains a behavioral rule in `feedback_gate_approval.md`; the hook is the mechanical backstop.",
+      "done": false,
+      "addedAt": 1776550522095,
+      "tags": [
+        "hooks",
+        "gate",
+        "enforcement",
+        "pretooluse",
+        "quality"
+      ]
     }
   ],
   "planned": []
