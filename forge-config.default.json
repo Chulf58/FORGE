@@ -42,7 +42,7 @@
       "id": "claude-opus-4-6",
       "providerId": "anthropic",
       "reasoningTier": "opus",
-      "capabilities": ["reasoning", "code", "long-context", "analysis"],
+      "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "high",
       "contextWindow": 1000000,
       "notes": "Legacy flagship; 1M context; knowledge cutoff May 2025"
@@ -69,7 +69,7 @@
       "id": "codex-mini-latest",
       "providerId": "openai",
       "reasoningTier": "haiku",
-      "capabilities": ["code"],
+      "capabilities": ["code", "fast"],
       "costTier": "low",
       "contextWindow": 200000,
       "notes": "OpenAI Codex mini via Responses API; external provider — use forge_call_external"
@@ -96,7 +96,7 @@
       "id": "gemini-2.0-flash",
       "providerId": "gemini",
       "reasoningTier": "sonnet",
-      "capabilities": ["reasoning", "code", "analysis", "fast"],
+      "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
       "notes": "DEPRECATED; free tier quota exhausted 2026-04-16; use gemini-2.5-flash instead"
@@ -105,7 +105,7 @@
       "id": "gemini-2.5-flash",
       "providerId": "gemini",
       "reasoningTier": "haiku",
-      "capabilities": ["reasoning", "code", "analysis", "fast"],
+      "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
       "contextWindow": 1000000,
       "notes": "Haiku-tier quality in practice (live-tested 2026-04-17 as supervisor — shallow output, poor reasoning). Fast/cheap for classification tasks. NOT for supervisor or complex reasoning."
@@ -132,7 +132,7 @@
       "id": "gemini-2.5-pro",
       "providerId": "gemini",
       "reasoningTier": "opus",
-      "capabilities": ["reasoning", "code", "analysis", "long-context"],
+      "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "free",
       "contextWindow": 1000000,
       "notes": "Opus-tier quality; API free tier quota is 0 — requires billing to use via forge_call_external; web UI (aistudio.google.com) has limited free access but that does not apply to API calls"
@@ -141,7 +141,7 @@
       "id": "gemini-3.1-pro-preview",
       "providerId": "gemini",
       "reasoningTier": "opus",
-      "capabilities": ["reasoning", "code", "analysis", "long-context"],
+      "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "free",
       "contextWindow": 1000000,
       "notes": "Preview; advanced reasoning; API free tier quota is 0 — requires billing; web UI access does not apply to API calls; verified 2026-04-17"
