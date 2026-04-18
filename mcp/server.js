@@ -666,12 +666,60 @@ server.registerTool(
       const { config } = readForgeConfig(pluginDataDir, projectDir);
       const usage = readUsage(projectDir);
       const recommendation = recommendModel(agentName, config, usage, { budgetMode });
+
+      // Record this recommendation in the session dispatch log so the
+      // routing-enforcement PreToolUse hook can authorize a matching Agent
+      // spawn. Only record successful recommendations — errors do not grant
+      // any downstream authorization. Best-effort: log write failures must
+      // not break the tool call itself.
+      if (recommendation.source !== "error" && recommendation.modelId) {
+        try { appendDispatchLogEntry(projectDir, agentName, recommendation); } catch (_) { /* best-effort */ }
+      }
+
       return textResult(recommendation);
     } catch (err) {
       return errorResult("forge_get_model_recommendation failed: " + err.message);
     }
   },
 );
+
+// Session dispatch log — consumed by hooks/routing-enforcement.js.
+// Shape: { entries: [{ agentName, ts, modelId, providerId }] }
+// Capped at 200 entries; entries older than 30 minutes are pruned on write.
+const DISPATCH_LOG_RELATIVE = ".pipeline/session-dispatch-log.json";
+const DISPATCH_LOG_MAX_ENTRIES = 200;
+const DISPATCH_LOG_PRUNE_MS = 30 * 60 * 1000;
+
+function appendDispatchLogEntry(projectDir, agentName, recommendation) {
+  const logPath = join(projectDir, DISPATCH_LOG_RELATIVE);
+  let data = { entries: [] };
+  try {
+    if (existsSync(logPath)) {
+      const raw = readFileSync(logPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.entries)) data = parsed;
+    }
+  } catch (_) {
+    data = { entries: [] };
+  }
+
+  const now = Date.now();
+  // Prune stale entries before appending — keep the log bounded.
+  const fresh = data.entries.filter(e =>
+    e && typeof e.ts === "number" && now - e.ts <= DISPATCH_LOG_PRUNE_MS && e.ts <= now
+  );
+  fresh.push({
+    agentName,
+    ts: now,
+    modelId: recommendation.modelId,
+    providerId: recommendation.providerId,
+  });
+
+  // Cap total size to prevent unbounded growth if recommendations are called
+  // very rapidly; the newest entries are the ones that matter.
+  const capped = fresh.slice(-DISPATCH_LOG_MAX_ENTRIES);
+  writeFileSync(logPath, JSON.stringify({ entries: capped }, null, 2) + "\n", "utf-8");
+}
 
 // -- Tool: forge_call_external -----------------------------------------------
 
