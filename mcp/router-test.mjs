@@ -137,18 +137,20 @@ console.log('\n── router-test.mjs ──────────────
     'vendor-agnostic: [code, analysis] → gemini (free tier)');
 }
 
-// 6. [reasoning, analysis] → Gemini 2.5 Pro (free, only free-tier model with reasoning)
+// 6. [reasoning, analysis] → Claude Sonnet (3 caps, medium) beats Gemini Pro (5 caps, free)
+//    because capability specificity outranks cost — over-capable models are only
+//    picked when no narrower match exists.
 {
   const r = recommendModel('cap-reasoning', BASE_CONFIG, EMPTY_USAGE);
-  assert(r.source === 'capability-cost' && r.modelId === 'gemini-2.5-pro',
-    'vendor-agnostic: [reasoning, analysis] → gemini-2.5-pro (free + has reasoning)');
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-sonnet-4-6',
+    'capability-specificity: [reasoning, analysis] → claude-sonnet-4-6 (3 caps) over gemini-2.5-pro (5 caps, free)');
 }
 
-// 7. [reasoning, code] → Gemini 2.5 Pro
+// 7. [reasoning, code] → Claude Sonnet (3 caps) beats Gemini Pro (5 caps) by specificity
 {
   const r = recommendModel('cap-reasoning-code', BASE_CONFIG, EMPTY_USAGE);
-  assert(r.source === 'capability-cost' && r.modelId === 'gemini-2.5-pro',
-    'vendor-agnostic: [reasoning, code] → gemini-2.5-pro');
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-sonnet-4-6',
+    'capability-specificity: [reasoning, code] → claude-sonnet-4-6 (3 caps) over gemini-2.5-pro (5 caps, free)');
 }
 
 // 8. [fast] → Gemini flash/flash-lite (free + has fast)
@@ -201,13 +203,16 @@ console.log('\n── router-test.mjs ──────────────
 
 // ── excludeModels (per-call) ─────────────────────────────────────────────────
 
-// 14. Exclude cheapest flash models → next cheapest free (gemini-2.5-pro has analysis)
+// 14. Exclude flash variants → claude-haiku (3 caps, low), NOT gemini-2.5-pro (5 caps, free).
+//     This is the load-bearing test for the user's rule: a simple [analysis] task
+//     must never escalate to an over-capable free-tier model just because flash
+//     variants are unavailable. Haiku is the right cheapest-fewest-caps match.
 {
   const r = recommendModel('cap-analysis', BASE_CONFIG, EMPTY_USAGE, {
     excludeModels: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
   });
-  assert(r.source === 'capability-cost' && r.modelId === 'gemini-2.5-pro',
-    'excludeModels: flash excluded → gemini-2.5-pro (still free tier, has analysis)');
+  assert(r.source === 'capability-cost' && r.modelId === 'claude-haiku-4-5-20251001',
+    'capability-specificity: flash excluded + [analysis] → claude-haiku (3 caps) over gemini-2.5-pro (5 caps, free)');
 }
 
 // 15. Exclude all Gemini → Anthropic haiku (next cheapest)
@@ -356,6 +361,32 @@ console.log('\n── router-test.mjs ──────────────
   const r = recommendModel('cap-analysis', BASE_CONFIG, multiExhausted);
   assert(r.modelId === 'gemini-2.5-flash-lite',
     'per-model exhaustion: Pro + Flash exhausted → Flash-lite still reachable (per-model granularity)');
+}
+
+// ── Capability-specificity escalation: over-capable only as last resort ──────
+
+// 30. All 3-cap models with [analysis] excluded → gemini-2.5-pro (5 caps) picked as
+//     last resort. Demonstrates the rule's boundary: over-capable models are
+//     reachable only when NO narrower match exists.
+{
+  const r = recommendModel('cap-analysis', BASE_CONFIG, EMPTY_USAGE, {
+    excludeModels: [
+      'gemini-2.5-flash', 'gemini-2.5-flash-lite',
+      'claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'gpt-4.1',
+    ],
+  });
+  assert(r.source === 'capability-cost' && r.modelId === 'gemini-2.5-pro',
+    'capability-specificity last-resort: all 3-cap models excluded → gemini-2.5-pro (5 caps, free) as fallback');
+}
+
+// 31. Simple [analysis] task with Pro available but cheaper narrower models present
+//     → always picks narrower match, never Pro. This is the "no tier promotion"
+//     guarantee stated purely in capability terms.
+{
+  const r = recommendModel('cap-analysis', BASE_CONFIG, EMPTY_USAGE);
+  const picked = r.modelId;
+  assert(picked !== 'gemini-2.5-pro' && picked !== 'claude-opus-4-7' && picked !== 'gpt-5.4',
+    'no-promotion guarantee: [analysis] never lands on a 5-cap model while 3-cap candidates are available');
 }
 
 console.log('');

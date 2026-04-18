@@ -232,7 +232,7 @@ The plugin uses a vendor-agnostic capability-cost router. Key conventions:
 
 **Routing principle:**
 - Default scope = ALL enabled providers. `allowedVendors` is an explicit force-override (e.g. supervisor → OpenAI), not a scope default. The router never assumes Anthropic unless Anthropic is the only enabled provider or `allowedVendors` says so.
-- Router selects cheapest model satisfying ALL `requiredCapabilities` across the scope.
+- Router selects the most-minimal model satisfying ALL `requiredCapabilities` across the scope — ordered by (1) fewest total capabilities, (2) cheapest cost tier, (3) alphabetical id. A task requiring `[analysis]` must not land on a model that also carries reasoning + agentic just because they share a cost tier; over-capable models are picked only when no narrower match is available.
 - Execution path follows the returned `providerId`: `anthropic` → `Agent` subagent (tools work natively); any other provider → `forge_call_external` (skill injects context, captures output).
 
 **Capability taxonomy:**

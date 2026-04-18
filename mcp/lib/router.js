@@ -1,11 +1,16 @@
 // router.js — model recommendation engine (ESM, pure function — no I/O)
 // The router advises which model to use; it does NOT execute calls or write files.
 //
-// Current routing priority stack:
+// Routing priority stack:
 //   0. capability-cost (PRIMARY) — all agents.
 //      Agent declares requiredCapabilities (hard job requirements).
-//      Router returns cheapest available model satisfying all required capabilities
-//      in the provider scope (Anthropic by default; allowedVendors overrides).
+//      Router returns the model with the FEWEST total capabilities that
+//      satisfies all requirements (most-minimal match — a task that needs
+//      only [analysis] should not land on a model that also has reasoning +
+//      agentic just because they share a cost tier). Ties on capability
+//      count are broken by cost, then alphabetical id for determinism.
+//      Default scope = all enabled providers; allowedVendors forces an
+//      explicit override.
 //      Explicit error if no model satisfies requirements.
 //   1. hardcoded default — safety net for agents with no requirements declared.
 
@@ -65,11 +70,22 @@ export function recommendModel(agentName, config, usage, options = {}) {
     });
 
     if (capCandidates.length > 0) {
-      // Sort cheapest first; break cost-tier ties alphabetically for determinism
+      // Sort order (most-minimal match wins):
+      //   1. FEWEST total capabilities — prefer the model whose capability set is
+      //      closest to what was actually requested. A task requiring [analysis]
+      //      should not consume a model that also carries reasoning + agentic +
+      //      long-context just because they share a cost tier. This keeps scarce
+      //      capacity of over-capable models available for tasks that genuinely
+      //      need those capabilities.
+      //   2. Cheapest cost tier — break capability-count ties by price.
+      //   3. Alphabetical model id — final deterministic tiebreak.
       capCandidates.sort((a, b) => {
-        const aOrd = COST_TIER_ORDER[a.costTier] ?? 1;
-        const bOrd = COST_TIER_ORDER[b.costTier] ?? 1;
-        if (aOrd !== bOrd) return aOrd - bOrd;
+        const aCaps = (a.capabilities || []).length;
+        const bCaps = (b.capabilities || []).length;
+        if (aCaps !== bCaps) return aCaps - bCaps;
+        const aCost = COST_TIER_ORDER[a.costTier] ?? 1;
+        const bCost = COST_TIER_ORDER[b.costTier] ?? 1;
+        if (aCost !== bCost) return aCost - bCost;
         return a.id.localeCompare(b.id);
       });
       const chosen = capCandidates[0];
@@ -77,7 +93,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
         modelId: chosen.id,
         providerId: chosen.providerId,
         source: 'capability-cost',
-        reason: `Cheapest available model in [${providerScope.join(', ')}] matching [${requiredCaps.join(', ')}]`,
+        reason: `Most-minimal-match available model in [${providerScope.join(', ')}] satisfying [${requiredCaps.join(', ')}]`,
       };
     }
 
