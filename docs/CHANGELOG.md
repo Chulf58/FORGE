@@ -1,3 +1,34 @@
+## [2026-04-18] forge-config-migration: diff-aware auto-migration on SessionStart (Part A + Part B)
+
+### Root cause (Part A — one-shot fix, already applied)
+- `bootstrapForgeConfig()` in `hooks/mcp-deps-install.js` had `if (existsSync(targetPath)) return;` which blocked all updates after first session.
+- Live config had retired `gemini-2.0-flash`, was missing 5 newer Gemini models, and had legacy `preferred`/`fallback` entries in `agentModelMap` instead of the current `requiredCapabilities`-only shape.
+- Router silently routed to stale/suboptimal models because the live catalog was out of date.
+- Part A: one-shot manual overwrite of the live config with the current default to unblock routing immediately.
+
+### Mechanism (Part B — this slice)
+- Added `"schemaVersion": 1` as the first top-level key in `forge-config.default.json`.
+- Added `migrateForgeConfig(pluginRoot)` to `hooks/mcp-deps-install.js`; called from `main()` immediately after `bootstrapForgeConfig()`.
+- On every SessionStart: reads both configs, compares `schemaVersion`, and if they differ performs a diff-merge:
+  - **Providers**: updates `name`/`type`/`notes`/`priority` from default; preserves `enabled`/`envVar` from live; preserves user-added providers.
+  - **Models**: replaces all fields from default for known models; preserves user-added models.
+  - **agentModelMap**: replaces entries entirely from default (drops legacy `preferred`/`fallback` shape, adopts `requiredCapabilities`/`allowedVendors` shape); preserves user-added agents.
+  - **quotaTracking**: preserved from live if present, else taken from default.
+  - **schemaVersion**: updated to default's value after merge.
+- Writes a timestamped `.bak` file before overwriting the live config.
+- Logs one-line `[forge-mcp-migration]` summary to stderr with add/remove/update counts per section.
+- Fully fail-open: any error (I/O, JSON parse, backup failure) leaves the live config untouched.
+- Idempotent: if `schemaVersion` already matches default's, exits silently with no I/O.
+
+### Files changed
+- `forge-config.default.json` — added `"schemaVersion": 1` as first key
+- `hooks/mcp-deps-install.js` — added `migrateForgeConfig()` function (~130 lines) + one-line call in `main()`
+
+### Not in this slice
+- `mcp/lib/config-store.js` — migration is a hook-layer concern; config-store cache semantics unchanged
+- `forge config migrate` CLI command — explicitly out of scope
+- Tests — hooks are not unit-tested in this repo
+
 ## [2026-04-18] Anti-speculation Stage 1: UserPromptSubmit injection
 
 ### Files shipped

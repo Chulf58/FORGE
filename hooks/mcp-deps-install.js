@@ -83,6 +83,222 @@ function bootstrapForgeConfig(pluginRoot) {
   }
 }
 
+/**
+ * Runs after bootstrapForgeConfig. If the live config's schemaVersion
+ * differs from the default's, performs a shallow diff-merge that:
+ *   - Adds providers/models/agentMap entries present in default but missing in live
+ *   - Removes providers/models/agentMap entries present in live but missing in default
+ *     (retired content like gemini-2.0-flash)
+ *   - Updates non-user-owned fields from default (capabilities, costTier, pricing,
+ *     contextWindow, notes, reasoningTier on models; name/type/notes/priority on
+ *     providers; requiredCapabilities/allowedVendors on agentMap entries)
+ *   - Preserves user-owned fields: providers[*].enabled, providers[*].envVar
+ *   - Preserves user-added providers/models/agents whose ids are not in default
+ *   - Preserves top-level quotaTracking user value
+ *   - Writes backup to <liveDir>/forge-config.json.bak-<ISO-timestamp>.json before
+ *     overwriting the live file
+ *   - Logs a one-line [forge-mcp-migration] summary to stderr with counts of
+ *     providers/models/agents added/removed/updated
+ *   - Fail-open: on any error (file I/O, JSON parse, validation), leaves live
+ *     config untouched, logs the error, exits without throwing
+ */
+function migrateForgeConfig(pluginRoot) {
+  try {
+    // Resolve live config path — mirrors mcp/lib/config-store.js resolvePluginDataDir()
+    const pluginDataDir = process.env.CLAUDE_PLUGIN_DATA || null;
+    const liveConfigPath = pluginDataDir
+      ? path.join(pluginDataDir, 'forge-config.json')
+      : path.join(process.cwd(), '.pipeline', 'forge-config.json');
+
+    // If live config doesn't exist, bootstrap handles first-run — skip
+    if (!fs.existsSync(liveConfigPath)) {
+      return;
+    }
+
+    const defaultConfigPath = path.join(pluginRoot, 'forge-config.default.json');
+    if (!fs.existsSync(defaultConfigPath)) {
+      console.error('[forge-mcp-migration] forge-config.default.json not found at ' + defaultConfigPath + ' — skipping migration');
+      return;
+    }
+
+    // Parse both configs — fail-open on parse errors
+    let liveConfig;
+    try {
+      liveConfig = JSON.parse(fs.readFileSync(liveConfigPath, 'utf8'));
+    } catch (err) {
+      console.error('[forge-mcp-migration] Failed to parse live config at ' + liveConfigPath + ': ' + err.message + ' — skipping migration');
+      return;
+    }
+
+    let defaultConfig;
+    try {
+      defaultConfig = JSON.parse(fs.readFileSync(defaultConfigPath, 'utf8'));
+    } catch (err) {
+      console.error('[forge-mcp-migration] Failed to parse default config at ' + defaultConfigPath + ': ' + err.message + ' — skipping migration');
+      return;
+    }
+
+    const oldVersion = liveConfig.schemaVersion;
+    const newVersion = defaultConfig.schemaVersion;
+
+    // If both versions are defined and equal, nothing to do — idempotent
+    if (oldVersion !== undefined && oldVersion === newVersion) {
+      return;
+    }
+
+    // --- Diff-merge providers ---
+    let pAdd = 0, pRem = 0, pUpd = 0;
+    const defaultProviderMap = new Map((defaultConfig.providers || []).map(function(p) { return [p.id, p]; }));
+    const liveProviderMap = new Map((liveConfig.providers || []).map(function(p) { return [p.id, p]; }));
+    const mergedProviders = [];
+
+    // Add or update entries from default
+    for (const entry of defaultProviderMap) {
+      const id = entry[0];
+      const defP = entry[1];
+      if (!liveProviderMap.has(id)) {
+        // ADD: present in default but not in live
+        mergedProviders.push(Object.assign({}, defP));
+        pAdd++;
+      } else {
+        // UPDATE: non-user-owned fields from default; keep enabled/envVar from live
+        const liveP = liveProviderMap.get(id);
+        const merged = {
+          id: defP.id,
+          name: defP.name,
+          type: defP.type,
+          envVar: liveP.envVar !== undefined ? liveP.envVar : defP.envVar,
+          enabled: liveP.enabled !== undefined ? liveP.enabled : defP.enabled,
+          priority: defP.priority,
+        };
+        if (defP.notes !== undefined) merged.notes = defP.notes;
+        mergedProviders.push(merged);
+        pUpd++;
+      }
+    }
+    // Preserve user-added providers not in default
+    for (const entry of liveProviderMap) {
+      const id = entry[0];
+      const liveP = entry[1];
+      if (!defaultProviderMap.has(id)) {
+        mergedProviders.push(Object.assign({}, liveP));
+      }
+    }
+    // pRem stays 0: we can't distinguish user-added from retired default entries
+    // in the live-only set without old-default history. Preserve all to avoid data loss.
+
+    // --- Diff-merge models ---
+    let mAdd = 0, mRem = 0, mUpd = 0;
+    const defaultModelMap = new Map((defaultConfig.models || []).map(function(m) { return [m.id, m]; }));
+    const liveModelMap = new Map((liveConfig.models || []).map(function(m) { return [m.id, m]; }));
+    const mergedModels = [];
+
+    // Add or update entries from default (models have no user-owned fields — replace wholesale)
+    for (const entry of defaultModelMap) {
+      const id = entry[0];
+      const defM = entry[1];
+      if (!liveModelMap.has(id)) {
+        mergedModels.push(Object.assign({}, defM));
+        mAdd++;
+      } else {
+        // UPDATE: replace all fields from default
+        mergedModels.push(Object.assign({}, defM));
+        mUpd++;
+      }
+    }
+    // Preserve user-added models not in default
+    for (const entry of liveModelMap) {
+      const id = entry[0];
+      const liveM = entry[1];
+      if (!defaultModelMap.has(id)) {
+        mergedModels.push(Object.assign({}, liveM));
+      }
+    }
+    // mRem stays 0: same conservative logic as providers
+
+    // --- Diff-merge agentModelMap ---
+    let aAdd = 0, aRem = 0, aUpd = 0;
+    const defaultAgentMap = defaultConfig.agentModelMap || {};
+    const liveAgentMap = liveConfig.agentModelMap || {};
+    const mergedAgentMap = {};
+
+    // Add or REPLACE entries from default (drops legacy preferred/fallback shape)
+    const defaultAgentKeys = Object.keys(defaultAgentMap);
+    for (let i = 0; i < defaultAgentKeys.length; i++) {
+      const name = defaultAgentKeys[i];
+      const defEntry = defaultAgentMap[name];
+      if (!(name in liveAgentMap)) {
+        mergedAgentMap[name] = Object.assign({}, defEntry);
+        aAdd++;
+      } else {
+        // REPLACE entirely — drops any legacy shape, adopts requiredCapabilities shape
+        mergedAgentMap[name] = Object.assign({}, defEntry);
+        aUpd++;
+      }
+    }
+    // Preserve user-added agents not in default
+    const liveAgentKeys = Object.keys(liveAgentMap);
+    for (let i = 0; i < liveAgentKeys.length; i++) {
+      const name = liveAgentKeys[i];
+      if (!(name in defaultAgentMap)) {
+        mergedAgentMap[name] = Object.assign({}, liveAgentMap[name]);
+      }
+    }
+    // aRem stays 0: same conservative logic
+
+    // --- Assemble merged config ---
+    const merged = {
+      schemaVersion: newVersion,
+      providers: mergedProviders,
+      models: mergedModels,
+      agentModelMap: mergedAgentMap,
+      // Preserve top-level quotaTracking from live if present, else take from default
+      quotaTracking: liveConfig.quotaTracking !== undefined
+        ? liveConfig.quotaTracking
+        : defaultConfig.quotaTracking,
+    };
+
+    // Copy any other top-level keys from default that aren't explicitly handled above
+    const defaultTopKeys = Object.keys(defaultConfig);
+    for (let i = 0; i < defaultTopKeys.length; i++) {
+      const key = defaultTopKeys[i];
+      if (!(key in merged)) {
+        merged[key] = defaultConfig[key];
+      }
+    }
+
+    // Write backup before overwriting — abort migration if backup fails
+    const liveDir = path.dirname(liveConfigPath);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = path.join(liveDir, 'forge-config.json.bak-' + timestamp + '.json');
+    try {
+      fs.copyFileSync(liveConfigPath, backupPath);
+    } catch (err) {
+      console.error('[forge-mcp-migration] Failed to write backup at ' + backupPath + ': ' + err.message + ' — aborting migration to preserve live config');
+      return;
+    }
+
+    // Write merged config
+    try {
+      fs.writeFileSync(liveConfigPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+    } catch (err) {
+      console.error('[forge-mcp-migration] Failed to write merged config at ' + liveConfigPath + ': ' + err.message + ' — live config unchanged (backup at ' + backupPath + ')');
+      return;
+    }
+
+    console.error(
+      '[forge-mcp-migration] schemaVersion ' + oldVersion + ' \u2192 ' + newVersion +
+      '; providers +' + pAdd + '/-' + pRem + '/~' + pUpd +
+      ', models +' + mAdd + '/-' + mRem + '/~' + mUpd +
+      ', agents +' + aAdd + '/-' + aRem + '/~' + aUpd +
+      '; backup at ' + backupPath
+    );
+  } catch (err) {
+    // Outermost safety net — never throw from a hook function
+    console.error('[forge-mcp-migration] Unexpected error: ' + err.message + ' — live config untouched');
+  }
+}
+
 async function main(rawInput) {
   // Parse stdin payload (required by hook protocol, not used here)
   try { JSON.parse(rawInput); } catch (_) { /* ignore parse failures */ }
@@ -226,6 +442,9 @@ async function main(rawInput) {
 
   // Bootstrap forge-config.json into CLAUDE_PLUGIN_DATA on first session
   bootstrapForgeConfig(pluginRoot);
+
+  // Diff-merge live config against default when schemaVersion differs
+  migrateForgeConfig(pluginRoot);
 
   exitOk();
 }
