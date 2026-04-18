@@ -55,9 +55,16 @@ Present: "Pipeline: plan feature | Mode: <MODE> | <agent list>"
 
 If the user already approved in a prior message, proceed. Otherwise wait for approval.
 
-## Model routing (optional)
+## Model routing
 
-Before spawning each agent, you may call `forge_get_model_recommendation` with the agent name and budget mode to check the optimal model. If the recommendation differs from the agent's frontmatter `model:` field, pass the recommended model via the Agent tool's `model` parameter. This is advisory — if the MCP tool is unavailable, use the frontmatter default.
+Before each agent invocation, resolve which model and execution path to use:
+
+1. Call `forge_get_model_recommendation` with the agent name.
+2. If `source === "error"` or `modelId === null`: surface the `reason` prefixed with `[routing error]` and stop — do not proceed to the agent.
+3. Dispatch based on `providerId`:
+   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
+   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
+4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
 
 ## STEP 4 — Update run with final mode
 

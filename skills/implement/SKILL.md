@@ -39,9 +39,16 @@ Read `<worktreePath>/docs/PLAN.md` for the approved plan. Use the worktree path,
 
 Check if the target task has a non-empty `blockedBy` array (via `forge_read_board` or reading `.pipeline/board.json` in the main project). If the task is blocked, warn the user: "This task is blocked by: [blocker IDs]. Resolve blockers first or confirm you want to proceed anyway." Wait for confirmation before continuing.
 
-## Model routing (optional)
+## Model routing
 
-Before spawning each agent, you may call `forge_get_model_recommendation` with the agent name and budget mode to check the optimal model. If the recommendation differs from the agent's frontmatter `model:` field, pass the recommended model via the Agent tool's `model` parameter. This is advisory — if the MCP tool is unavailable, use the frontmatter default.
+Before each agent invocation, resolve which model and execution path to use:
+
+1. Call `forge_get_model_recommendation` with the agent name.
+2. If `source === "error"` or `modelId === null`: surface the `reason` prefixed with `[routing error]` and stop — do not proceed to the agent.
+3. Dispatch based on `providerId`:
+   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
+   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
+4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
 
 ## STEP 2b — Scoping check (conditional implementation-architect)
 
