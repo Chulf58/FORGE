@@ -1615,6 +1615,20 @@
         "pretooluse",
         "quality"
       ]
+    },
+    {
+      "id": "826c7e85",
+      "priority": "high",
+      "text": "BUG FIX: Stale `run-active.json` pointer pollutes agent logs across sessions.\n\n**Root cause (verified 2026-04-18):**\n- `.pipeline/run-active.json` is the \"pointer to the currently-executing formal pipeline run.\" It's written by `forge_create_run` / `forge_resume_run`, updated by `hooks/subagent-start.js` on every SubagentStart event.\n- When a pipeline ends without explicit teardown (crash, abandonment, session close mid-run, manual discard without clearing the pointer), `run-active.json` keeps pointing at the terminal run indefinitely.\n- `hooks/subagent-start.js` lines 104-110 appends EVERY dispatched FORGE subagent to whatever run the pointer names, with no freshness / status / lifecycle check. It trusts the pointer unconditionally.\n- Result: today's 30+ subagent dispatches across 6 unrelated slices got logged to a 3-day-old `r-d1afe1f3` \"red-team security audit\" plan run. Pollutes `forge_get_active_run`, `forge_dashboard_state`, the statusline, `/forge:resume`, and any analysis that reads `run-active.json.agents[]`.\n- `hooks/ctx-session-start.js` DOES clear stale `currentUnit` when the referenced run is terminal — but it doesn't apply the same guard to the run-level pointer. Asymmetric defensive coverage.\n\n**Two design gaps to fix:**\n\n**Gap 1 — SubagentStart hook has no lifecycle guard.**\n- `hooks/subagent-start.js` should read the pointed-at run's status from the registry (`.pipeline/runs/<runId>/run.json`) before appending.\n- If the run is terminal (completed / failed / discarded) → skip the append; optionally log a one-line stderr note (`[forge-subagent] skipping append to terminal run <runId>`).\n- If the run is running / gate-pending / created → proceed with append as today.\n- If the registry entry is missing → fail-open (treat as running), same as today.\n\n**Gap 2 — no SessionStart cleanup for stale run-active pointer.**\n- Add logic to `hooks/ctx-session-start.js` (or a new sibling SessionStart hook) that extends the existing `emitStaleUnitNoticeIfAny()` pattern: if `run-active.json`'s referenced run is terminal, NEUTRALIZE the pointer by deleting the file (or writing an empty `{}` shell). Same defensive check as currentUnit, applied to the whole run pointer.\n\n**Scope — LEAN slice, 3 files:**\n1. EDIT `hooks/subagent-start.js` — add status lookup + terminal guard before pushing to agents array.\n2. EDIT `hooks/ctx-session-start.js` — extend stale-check to neutralize run-active.json when the referenced run is terminal.\n3. EDIT `docs/gotchas/GENERAL.md` — document the pointer-lifecycle contract.\n4. EDIT `docs/CHANGELOG.md` — entry.\n\n**Agent team:** coder → reviewer-safety (mandatory — filesystem writes, potential for breaking run lifecycle) → reviewer-boundary (mandatory — must not break `forge_create_run` / `forge_resume_run` / `currentUnit` contract from `packages/forge-core/src/runs/index.js`) → implementer → documenter.\n\n**Pipeline:** LEAN.\n\n**Known limitation to flag in slice:** subagents dispatched OUTSIDE formal pipelines (e.g. from conversational Claude manually calling `Agent(subagent_type: \"forge:...\")` without a `forge_create_run` wrapper) will still have nowhere to log. That's actually desirable — conversational dispatches shouldn't pollute formal-run agent arrays. Current behavior writes them anyway because the pointer exists; the fix drops them on the floor when the pointer is terminal. A followup might add a \"conversational run\" concept for these, but that's a separate feature not a bug fix.\n\n**Reference:** 2026-04-18 session-cleanup incident; see existing patterns in `hooks/ctx-session-start.js` `emitStaleUnitNoticeIfAny()` (the terminal-check template) and `hooks/usage-clear-quota-flags.js` (the session-scoped-clear template).",
+      "done": false,
+      "addedAt": 1776551758462,
+      "tags": [
+        "hooks",
+        "runs",
+        "lifecycle",
+        "bug",
+        "staleness"
+      ]
     }
   ],
   "planned": []
