@@ -117,7 +117,11 @@ export async function callGemini(prompt, modelId, apiKey, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(sanitizeErrorMessage(response.status, responseText));
+    const err = new Error(sanitizeErrorMessage(response.status, responseText));
+    // Structured transient-failure signal — used by forge_call_external for rerouting.
+    // 503 = service overloaded after bounded adapter retries; eligible for model exclusion.
+    if (response.status === 503) err.transient = true;
+    throw err;
   }
 
   let data;

@@ -210,6 +210,32 @@ console.log('\n── openai-adapter-test.mjs ───────────�
   assert(msg.includes('JSON parse failed'), 'JSON parse error: descriptive message present');
 }
 
+// 14. 503 response → err.transient === true (structured reroute signal)
+{
+  globalThis.fetch = async () => ({
+    ok: false, status: 503,
+    headers: { get: () => null },
+    text: async () => '{"error":{"type":"service_unavailable"}}',
+  });
+  let caughtErr = null;
+  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { caughtErr = e; }
+  assert(caughtErr !== null, 'OpenAI 503: error thrown');
+  assert(caughtErr.transient === true, 'OpenAI 503: err.transient is true (structured reroute signal)');
+}
+
+// 15. Non-503 error → err.transient not set
+{
+  globalThis.fetch = async () => ({
+    ok: false, status: 400,
+    headers: { get: () => null },
+    text: async () => '{"error":{"type":"invalid_request_error"}}',
+  });
+  let caughtErr = null;
+  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { caughtErr = e; }
+  assert(caughtErr !== null, 'OpenAI non-503: error thrown');
+  assert(caughtErr.transient !== true, 'OpenAI non-503: err.transient not set (not reroute candidate)');
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);

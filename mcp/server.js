@@ -735,7 +735,9 @@ server.registerTool(
           }
         } catch (callErr) {
           const msg = callErr.message || "";
-          const isTransient = msg.includes("503");
+          // Use structured adapter metadata for reroute decisions — avoids brittle string matching.
+          // Adapters set err.transient = true on 503 (service overloaded, bounded retries exhausted).
+          const isTransient = callErr.transient === true;
           const isQuotaError = msg.includes("401") || msg.includes("429") || msg.toLowerCase().includes("quota");
 
           // Mark quota exhausted on hard credential/quota failures

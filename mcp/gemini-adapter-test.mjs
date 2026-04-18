@@ -139,5 +139,36 @@ console.log('\n── gemini-adapter-test.mjs ───────────�
 }
 
 console.log('');
+// 15. 503 after retry exhaustion → err.transient === true (structured reroute signal)
+{
+  let callCount = 0;
+  globalThis.fetch = async () => {
+    callCount++;
+    return {
+      ok: false, status: 503,
+      headers: { get: () => null },
+      text: async () => '{"error":{"status":"UNAVAILABLE"}}',
+    };
+  };
+  let caughtErr = null;
+  try { await callGemini('hello', 'gemini-2.5-flash', 'test-key'); } catch (e) { caughtErr = e; }
+  assert(caughtErr !== null, '503 retries exhausted: error thrown');
+  assert(caughtErr.transient === true, '503 retries exhausted: err.transient is true (structured reroute signal)');
+  assert(callCount === 4, '503 retries exhausted: adapter made 4 total attempts (1 + 3 retries)');
+}
+
+// 16. Non-503 error → err.transient not set (not a reroute candidate)
+{
+  globalThis.fetch = async () => ({
+    ok: false, status: 400,
+    headers: { get: () => null },
+    text: async () => '{"error":{"status":"INVALID_ARGUMENT"}}',
+  });
+  let caughtErr = null;
+  try { await callGemini('hello', 'gemini-2.5-flash', 'test-key'); } catch (e) { caughtErr = e; }
+  assert(caughtErr !== null, 'non-503 error: thrown');
+  assert(caughtErr.transient !== true, 'non-503 error: err.transient not set (not reroute candidate)');
+}
+
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

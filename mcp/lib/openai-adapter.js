@@ -106,7 +106,11 @@ export async function callOpenAI(prompt, modelId, apiKey, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(sanitizeErrorMessage(response.status, responseText));
+    const err = new Error(sanitizeErrorMessage(response.status, responseText));
+    // Structured transient-failure signal — used by forge_call_external for rerouting.
+    // 503 = service overloaded; eligible for model exclusion and reroute.
+    if (response.status === 503) err.transient = true;
+    throw err;
   }
 
   let data;
