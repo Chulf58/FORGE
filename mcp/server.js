@@ -686,64 +686,96 @@ server.registerTool(
       prompt: z.string().describe("Prompt text to send"),
       maxTokens: z.number().optional().describe("Max output tokens (default: 4096)"),
       reasoningEffort: z.enum(["none", "low", "medium", "high", "xhigh"]).optional().describe("Reasoning effort level for models that support it (e.g. gpt-5.4). Ignored by providers that do not support it."),
+      agentName: z.string().optional().describe("Agent name for automatic rerouting on transient failure (e.g. 'supervisor'). When provided, a 503-exhausted call re-runs model selection with the failed model excluded and retries the next cheapest valid model."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
-  async ({ providerId, modelId, prompt, maxTokens, reasoningEffort }) => {
+  async ({ providerId, modelId, prompt, maxTokens, reasoningEffort, agentName }) => {
+    // Maximum number of model reroutes on transient 503 — prevents infinite loops
+    const MAX_REROUTES = 3;
+
     try {
       const projectDir = resolveProjectDir();
       const pluginDataDir = resolvePluginDataDir();
       const { config } = readForgeConfig(pluginDataDir, projectDir);
+      const usage = readUsage(projectDir);
 
-      // Find and validate provider
-      const provider = (config.providers || []).find(p => p.id === providerId);
-      if (!provider || !provider.enabled) {
-        return errorResult("Provider not found or disabled: " + providerId);
-      }
+      // Mutable call state — updated on reroute (runtime-only, never persisted)
+      let currentProviderId = providerId;
+      let currentModelId = modelId;
+      const excludeModels = [];
 
-      // Validate modelId is in the catalog for this provider — prevents quota waste
-      // and confusing API errors from arbitrary model strings reaching adapters.
-      const modelInCatalog = (config.models || []).find(m => m.id === modelId && m.providerId === providerId);
-      if (!modelInCatalog) {
-        return errorResult("Model \"" + modelId + "\" not found in catalog for provider \"" + providerId + "\"");
-      }
-
-      // Resolve API key — reject undefined and empty string
-      const apiKey = process.env[provider.envVar];
-      if (!apiKey) {
-        return errorResult("API key env var not set or empty: " + provider.envVar);
-      }
-
-      let result;
-      try {
-        if (provider.type === "openai") {
-          result = await callOpenAI(prompt, modelId, apiKey, { maxTokens, reasoningEffort });
-        } else if (provider.type === "gemini") {
-          result = await callGemini(prompt, modelId, apiKey, { maxTokens });
-        } else {
-          return errorResult("Provider type not supported: " + provider.type);
+      for (let attempt = 0; attempt <= MAX_REROUTES; attempt++) {
+        // Find and validate provider
+        const provider = (config.providers || []).find(p => p.id === currentProviderId);
+        if (!provider || !provider.enabled) {
+          return errorResult("Provider not found or disabled: " + currentProviderId);
         }
-      } catch (callErr) {
-        // Mark quota exhausted on 401, 429, or quota errors before surfacing
-        const msg = callErr.message || "";
-        if (msg.includes("401") || msg.includes("429") || msg.toLowerCase().includes("quota")) {
-          try { markQuotaExhausted(projectDir, providerId); } catch (_) { /* best-effort */ }
-        }
-        return errorResult("External call failed: " + callErr.message);
-      }
 
-      // Record usage if quota tracking is enabled
-      if (config.quotaTracking) {
+        // Validate modelId is in the catalog for this provider
+        const modelInCatalog = (config.models || []).find(m => m.id === currentModelId && m.providerId === currentProviderId);
+        if (!modelInCatalog) {
+          return errorResult("Model \"" + currentModelId + "\" not found in catalog for provider \"" + currentProviderId + "\"");
+        }
+
+        // Resolve API key — reject undefined and empty string
+        const apiKey = process.env[provider.envVar];
+        if (!apiKey) {
+          return errorResult("API key env var not set or empty: " + provider.envVar);
+        }
+
+        let result;
         try {
-          recordUsage(projectDir, providerId, result.inputTokens + result.outputTokens, modelId);
-        } catch (_) { /* best-effort — do not fail the call on tracking errors */ }
+          if (provider.type === "openai") {
+            result = await callOpenAI(prompt, currentModelId, apiKey, { maxTokens, reasoningEffort });
+          } else if (provider.type === "gemini") {
+            result = await callGemini(prompt, currentModelId, apiKey, { maxTokens });
+          } else {
+            return errorResult("Provider type not supported: " + provider.type);
+          }
+        } catch (callErr) {
+          const msg = callErr.message || "";
+          const isTransient = msg.includes("503");
+          const isQuotaError = msg.includes("401") || msg.includes("429") || msg.toLowerCase().includes("quota");
+
+          // Mark quota exhausted on hard credential/quota failures
+          if (isQuotaError) {
+            try { markQuotaExhausted(projectDir, currentProviderId); } catch (_) { /* best-effort */ }
+          }
+
+          // On transient 503 after adapter retries exhausted: reroute if agentName provided
+          if (isTransient && agentName && attempt < MAX_REROUTES) {
+            excludeModels.push(currentModelId);
+            const next = recommendModel(agentName, config, usage, { excludeModels });
+            if (next.source === "error" || !next.modelId) {
+              return errorResult(
+                "External call failed (all candidates exhausted after transient failures): " + msg
+              );
+            }
+            currentProviderId = next.providerId;
+            currentModelId = next.modelId;
+            continue; // retry with next cheapest valid model
+          }
+
+          return errorResult("External call failed: " + msg);
+        }
+
+        // Success — record usage and return
+        if (config.quotaTracking) {
+          try {
+            recordUsage(projectDir, currentProviderId, result.inputTokens + result.outputTokens, currentModelId);
+          } catch (_) { /* best-effort */ }
+        }
+
+        return textResult({
+          text: result.text,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        });
       }
 
-      return textResult({
-        text: result.text,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-      });
+      // Unreachable — loop always returns or continues, but satisfies linters
+      return errorResult("forge_call_external: reroute limit exceeded");
     } catch (err) {
       return errorResult("forge_call_external failed: " + err.message);
     }

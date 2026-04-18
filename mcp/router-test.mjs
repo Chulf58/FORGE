@@ -40,9 +40,8 @@ const BASE_CONFIG = {
   agentModelMap: {
     'supervisor': {
       preferred: 'gpt-5.4',
-      fallback: 'gemini-2.5-flash',
-      allowedTiers: ['opus', 'sonnet'],
-      allowedVendors: ['openai', 'gemini'],
+      allowedTiers: ['opus'],
+      allowedVendors: ['openai'],
     },
     'haiku-reviewer': {
       preferred: 'claude-haiku-4-5-20251001',
@@ -114,11 +113,11 @@ console.log('\n── router-test.mjs ──────────────
     'preferred outside allowedTiers returns config error');
 }
 
-// 3. Fallback chosen when preferred is quota-exhausted and fallback tier is allowed
+// 3. Supervisor: preferred exhausted and no fallback → error (openai+opus only, no other candidates)
 {
   const r = recommendModel('supervisor', BASE_CONFIG, OPENAI_EXHAUSTED);
-  assert(r.source === 'fallback' && r.modelId === 'gemini-2.5-flash',
-    'fallback chosen when preferred provider exhausted');
+  assert(r.source === 'error',
+    'supervisor: preferred provider exhausted, no fallback → explicit error (use excludeModels rerouting instead)');
 }
 
 // 4. Fallback rejected with config error when its tier violates allowedTiers
@@ -192,5 +191,68 @@ console.log('\n── router-test.mjs ──────────────
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log('');
+// ── excludeModels tests ───────────────────────────────────────────────────────
+
+// 12. excludeModels removes preferred from consideration
+{
+  // supervisor has preferred: gpt-5.4 — exclude it, expect error (no other opus+allowedVendors candidates)
+  const r = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE, { excludeModels: ['gpt-5.4'] });
+  assert(r.source === 'error',
+    'excludeModels: preferred model excluded → falls through to error (no remaining candidates)');
+}
+
+// 13. excludeModels removes a fallback from consideration
+{
+  // Add a test agent with preferred + fallback both excluded
+  const c = cfg();
+  c.agentModelMap['test-exclude'] = {
+    preferred: 'gpt-5.4',
+    fallback: 'gemini-2.5-flash',
+    allowedTiers: ['opus', 'sonnet'],
+    allowedVendors: ['openai', 'gemini'],
+  };
+  const r = recommendModel('test-exclude', c, EMPTY_USAGE, {
+    excludeModels: ['gpt-5.4', 'gemini-2.5-flash'],
+  });
+  // Remaining: gpt-4.1 (sonnet+openai, tier index 1) and gemini-2.5-pro (opus+gemini, tier index 0)
+  // Tier preference wins over provider priority → gemini-2.5-pro (opus, index 0) selected
+  assert(r.source === 'catalog' && r.modelId === 'gemini-2.5-pro',
+    'excludeModels: preferred+fallback excluded → catalog finds next cheapest valid candidate (opus tier wins)');
+}
+
+// 14. excludeModels is per-call — subsequent call without exclusion returns original model
+{
+  const r1 = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE, { excludeModels: ['gpt-5.4'] });
+  const r2 = recommendModel('supervisor', BASE_CONFIG, EMPTY_USAGE); // no exclusion
+  assert(r1.source === 'error', 'excludeModels per-call: first call with exclusion returns error');
+  assert(r2.source === 'preferred' && r2.modelId === 'gpt-5.4',
+    'excludeModels per-call: second call without exclusion returns preferred model normally');
+}
+
+// 15. excludeModels in catalog scan removes model from tier-locked candidates
+{
+  const c = cfgWithoutModels('gpt-5.4'); // only gpt-4.1 remains for openai sonnet
+  const r = recommendModel('tier-beats-priority', c, EMPTY_USAGE, { excludeModels: ['gpt-4.1'] });
+  // gpt-4.1 excluded, gemini-2.5-flash is haiku so allowedTiers ['opus','sonnet'] skips it
+  // gemini-2.5-pro is opus → first match after exclusion
+  assert(r.modelId === 'gemini-2.5-pro',
+    'excludeModels in catalog: excluded sonnet model, opus gemini selected next');
+}
+
+// 16. excludeModels does not relax capability requirements (error if no remaining candidate satisfies caps)
+{
+  const c = cfg();
+  c.agentModelMap['test-caps-exclude'] = {
+    allowedTiers: ['haiku'],
+    allowedVendors: ['anthropic'],
+  };
+  // All haiku anthropic models excluded
+  const r = recommendModel('test-caps-exclude', c, EMPTY_USAGE, {
+    excludeModels: ['claude-haiku-4-5-20251001'],
+  });
+  assert(r.source === 'error',
+    'excludeModels: no candidates remaining after exclusion → explicit error, no capability relaxation');
+}
+
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

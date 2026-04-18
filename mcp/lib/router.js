@@ -21,11 +21,14 @@ const DEFAULT_PROVIDER = 'anthropic';
  * @param {string} agentName - agent filename without extension (e.g. 'coder')
  * @param {object} config - parsed forge-config.json object
  * @param {object} usage - parsed usage.json object (or emptyUsage())
- * @param {{ budgetMode?: 'economy'|'standard'|'performance' }} options
+ * @param {{ budgetMode?: 'economy'|'standard'|'performance', excludeModels?: string[] }} options
+ *   excludeModels: model IDs to skip for this call only (runtime-only, not persisted).
+ *   Used for temporary exclusion after transient failures — does not relax capability requirements.
  * @returns {{ modelId: string|null, providerId: string|null, source: 'preferred'|'fallback'|'catalog'|'default'|'error', reason: string }}
  */
 export function recommendModel(agentName, config, usage, options = {}) {
   const budgetMode = options.budgetMode || 'standard';
+  const excludeModels = Array.isArray(options.excludeModels) ? options.excludeModels : [];
   const agentEntry = config.agentModelMap?.[agentName];
 
   function getModelDef(modelId) {
@@ -69,7 +72,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
   }
 
   // Priority 1: preferred model
-  if (agentEntry?.preferred) {
+  if (agentEntry?.preferred && !excludeModels.includes(agentEntry.preferred)) {
     const prefDef = getModelDef(agentEntry.preferred);
     if (prefDef && allowedTiers && !allowedTiers.includes(prefDef.reasoningTier)) {
       // Model exists in catalog but its tier violates the declared constraint — config error
@@ -91,7 +94,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
   }
 
   // Priority 2: fallback model
-  if (agentEntry?.fallback) {
+  if (agentEntry?.fallback && !excludeModels.includes(agentEntry.fallback)) {
     const fbDef = getModelDef(agentEntry.fallback);
     if (fbDef && allowedTiers && !allowedTiers.includes(fbDef.reasoningTier)) {
       // Model exists in catalog but its tier violates the declared constraint — config error
@@ -115,6 +118,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
   // Priority 3: tier-locked catalog scan (when allowedTiers is declared)
   if (allowedTiers) {
     let candidates = (config.models || []).filter(m => {
+      if (excludeModels.includes(m.id)) return false;
       if (!isAvailable(m.id)) return false;
       if (!allowedTiers.includes(m.reasoningTier)) return false;
       if (allowedVendors && !allowedVendors.includes(m.providerId)) return false;
@@ -150,6 +154,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
   // Priority 4: legacy requiredCapabilities catalog scan (no allowedTiers declared)
   const requiredCaps = agentEntry?.requiredCapabilities || [];
   let candidates = (config.models || []).filter(m => {
+    if (excludeModels.includes(m.id)) return false;
     if (!isAvailable(m.id)) return false;
     if (requiredCaps.length === 0) return true;
     const modelCaps = m.capabilities || [];
