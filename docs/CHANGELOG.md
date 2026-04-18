@@ -4,7 +4,7 @@
 - `hooks/anti-speculation-inject.js` — NEW hook script (Node.js). Fires on UserPromptSubmit; injects a fixed ~100-token rule via `hookSpecificOutput.additionalContext` without dynamic data interpolation. Fully defensive error handling; exits 0 on all paths.
 - `hooks/hooks.json` — EDIT. Registered new UserPromptSubmit section between SessionStart and PostToolUse. Now 7 hook event sections total.
 - `CLAUDE.md` — EDIT. Prepended a new H1 anti-speculation block (5 lines) at file start, pushing existing `# FORGE Plugin — Project Instructions` down. Defensive placement: long CLAUDE.md files cause rules to be lost; top-of-file placement reinforces compliance.
-- `docs/memory/feedback_no_speculative_tool_comparisons.md` — EDIT. Appended `## Incidents (2026-04-18)` section with two concrete live incidents as teaching examples: "parallel sessions fabrication" and "unverified cross-agent claim".
+- `~/.claude/projects/C--Users-cuj-forge-plugin/memory/feedback_no_speculative_tool_comparisons.md` — EDIT. Appended `## Incidents (2026-04-18)` section with two concrete live incidents as teaching examples: "parallel sessions fabrication" and "unverified cross-agent claim". (User-scope memory, not a repo file — path kept for traceability.)
 
 ### Context: mitigation not prevention
 - Research confirmed no mechanical output filter exists in the Claude Code harness to prevent unsubstantiated claims. This is Stage 1 mitigation: continuous rule reinforcement via hook injection.
