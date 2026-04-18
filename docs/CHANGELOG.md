@@ -1,3 +1,38 @@
+## [2026-04-18] Vendor-agnostic capability-cost routing + model management
+
+### Router redesign
+- `d401a12` Removed the invented `tool-use` capability — it was a fake routing flag used as a proxy for Anthropic-only. Execution mechanics belong in the skill layer, not the routing config.
+- `5442635` Default provider scope switched from `['anthropic']` to all enabled providers. `allowedVendors` is now an explicit force-override (e.g. supervisor → openai) rather than an "override-the-Anthropic-default" mechanism.
+- `e5ae8c9` Sort rule: fewest total capabilities primary, cheapest cost tier secondary, alphabetical id tertiary. A task requiring `[analysis]` can never land on a model that also carries reasoning + agentic just because they share a cost tier. Over-capable free-tier models are reached only as a last resort.
+- `9498b2f` Module-level config cache in `mcp/lib/config-store.js`. Routing config loads once per session; `writeForgeConfig` invalidates automatically. New `invalidateConfigCache()` export.
+- `aca711b` Per-model quota tracking in `usage-store.js`. `markModelQuotaExhausted(projectDir, providerId, modelId)` + `isModelQuotaExhausted(usage, providerId, modelId)`. One exhausted model no longer poisons sibling models on the same provider (e.g. `gemini-2.5-pro` 429 no longer blocks `gemini-2.5-flash`). Old-format usage.json still respected for backward compat.
+- `fe4c822` Removed deprecated `gemini-2.0-flash` from the catalog — its quota was 0 and alphabetical tiebreak was silently selecting it first.
+- `f4aa3d2` Added `pricing: { input, output, cached }` (USD per 1M tokens) to every model in the catalog. Metadata-only for now; router still sorts by `costTier` bucket.
+
+### Enforcement + skill alignment
+- `11a2cf3` All 5 pipeline skills (`plan`, `implement`, `debug`, `refactor`, `apply`) switched from optional to mandatory routing: call `forge_get_model_recommendation`, branch on `providerId`, use `Agent` for Anthropic or `forge_call_external` for non-Anthropic. Mirrors the supervisor skill's already-committed pattern.
+- `35c1cf0` New PreToolUse hook `hooks/routing-enforcement.js` blocks Agent spawns for the 29 FORGE pipeline agents unless `forge_get_model_recommendation` was called in the current session. New `hooks/routing-log-clear.js` SessionStart hook clears the dispatch log so prior-session entries cannot authorize new-session spawns. MCP writes entries to `.pipeline/session-dispatch-log.json` on successful recommendations.
+- `5549d10` Corrected the stale supervisor routing footnote in `skills/supervise/SKILL.md` — now accurately describes `allowedVendors: ["openai"]` as an intentional force-override with no silent Gemini fallback.
+
+### Docs + verification
+- `a7496c7` GENERAL.md aligned with vendor-agnostic routing model.
+- `89eb80e` New credential-gated smoke test `mcp/dispatch-smoke-test.mjs`: exercises `researcher-triage` → Gemini Flash end-to-end with a real HTTP call. First proof of the non-Anthropic dispatch chain. Verified green today.
+
+### Model management (operator-facing)
+- `39e74c0` Two new MCP tools: `forge_add_model` and `forge_update_model`. Strict validation of capability allowlist, pricing shape, provider existence, id uniqueness. New `mcp/lib/model-validation.js` holds the pure validators and composite add/update helpers. 90 new assertions in `mcp/model-mgmt-test.mjs`.
+- `29873ea` GENERAL.md documentation for the two tools: required vs optional fields, rejection list, worked examples for natural-language invocation.
+
+### Test suite
+- 156 → 246 tests. Zero failing. New suites: `mcp/usage-store-test.mjs` (23), `hooks/routing-enforcement-test.js` (14), `mcp/model-mgmt-test.mjs` (90). Existing router/adapter/hook tests unchanged.
+
+### Live verification
+- `mcp/dispatch-smoke-test.mjs` executed today against real Gemini endpoint: router picked `gemini-2.5-flash`, real HTTP call succeeded (1252 input / 135 output tokens), response contained parseable `[brief-for: N]` markers for both fixture questions. Mechanical dispatch chain is proven.
+
+### Not done (flagged for future slices)
+- `forge_remove_model` — deferred; deletion still requires hand-editing `config.models`.
+- Live `/forge:plan` pipeline run — tests the skill-layer dispatch discipline, not just the mechanical chain. Ready when needed.
+- Per-token pricing as router cost signal — currently `pricing` is metadata only; router still uses `costTier` bucket. Would let `gpt-4.1` ($10 blended) beat `claude-sonnet-4-6` ($18) in the same medium tier. Low-priority polish.
+
 ## [2026-04-17c] Knowledge integration layer complete
 
 ### Consumer agents wired to solutions store
