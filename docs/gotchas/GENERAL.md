@@ -240,6 +240,14 @@ The plugin uses a vendor-agnostic capability-cost router. Key conventions:
 - Execution mechanics (live tool access vs injected context) are NOT routing capabilities. They are a skill-layer concern determined by which adapter handles the call, not by a flag in the config.
 - Agents that need live tool access today run as Anthropic subagents because that is the currently wired adapter path with working tools. Agents that work on injected context (skill assembles the prompt, captures the output) can route to the cheapest capable provider across all enabled vendors — this is how the supervisor already works.
 
+**Model `pricing` field:**
+- Each model in the catalog carries `pricing: { input, output, cached }` with numbers in USD per 1M tokens.
+- `input` = base price per 1M prompt tokens.
+- `output` = base price per 1M completion tokens.
+- `cached` = price per 1M cached-input-read tokens. Cache-write is typically ~1.25x input for Anthropic and varies for other vendors; it is not currently tracked as a separate field.
+- For free-tier Gemini models, the `pricing` values reflect the paid-tier rate. Effective cost is $0 until daily quota is exhausted. `costTier: "free"` is the current-plan indicator; `pricing` is the real per-token rate that would apply under paid usage.
+- These numbers are reference rates; vendor price sheets are authoritative. Keep them roughly current but do not treat small drift as a bug.
+
 **Skill orchestration routing pattern:**
 1. Call `forge_get_model_recommendation(agentName)`
 2. If `source === "error"`: surface reason, stop

@@ -35,8 +35,9 @@
       "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "long-context", "analysis", "agentic"],
       "costTier": "high",
+      "pricing": { "input": 15.0, "output": 75.0, "cached": 1.5 },
       "contextWindow": 1000000,
-      "notes": "Latest Anthropic flagship; step-change in agentic coding over 4.6; 1M context; knowledge cutoff Jan 2026"
+      "notes": "Latest Anthropic flagship; step-change in agentic coding over 4.6; 1M context; knowledge cutoff Jan 2026. Pricing USD per 1M tokens; cached = cache-read (Anthropic 10% of input); cache-write is ~1.25x input and not tracked here."
     },
     {
       "id": "claude-opus-4-6",
@@ -44,6 +45,7 @@
       "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "high",
+      "pricing": { "input": 15.0, "output": 75.0, "cached": 1.5 },
       "contextWindow": 1000000,
       "notes": "Legacy flagship; 1M context; knowledge cutoff May 2025"
     },
@@ -53,6 +55,7 @@
       "reasoningTier": "sonnet",
       "capabilities": ["reasoning", "code", "analysis"],
       "costTier": "medium",
+      "pricing": { "input": 3.0, "output": 15.0, "cached": 0.3 },
       "contextWindow": 200000,
       "notes": "Default balanced model; good throughput for most pipeline agents"
     },
@@ -62,6 +65,7 @@
       "reasoningTier": "haiku",
       "capabilities": ["code", "analysis", "fast"],
       "costTier": "low",
+      "pricing": { "input": 1.0, "output": 5.0, "cached": 0.1 },
       "contextWindow": 200000,
       "notes": "Fastest and cheapest Anthropic model; good for triage, lightweight review"
     },
@@ -71,8 +75,9 @@
       "reasoningTier": "haiku",
       "capabilities": ["code", "fast"],
       "costTier": "low",
+      "pricing": { "input": 1.5, "output": 6.0, "cached": 0.75 },
       "contextWindow": 200000,
-      "notes": "OpenAI Codex mini via Responses API; external provider — use forge_call_external"
+      "notes": "OpenAI Codex mini via Responses API; external provider — use forge_call_external. Pricing approximate; cached = cache-read (OpenAI ~50% of input)."
     },
     {
       "id": "gpt-4.1",
@@ -80,6 +85,7 @@
       "reasoningTier": "sonnet",
       "capabilities": ["reasoning", "code", "analysis"],
       "costTier": "medium",
+      "pricing": { "input": 2.0, "output": 8.0, "cached": 1.0 },
       "contextWindow": 128000,
       "notes": "Current recommended OpenAI production model; $2/$8 per 1M input/output; replaced GPT-4o as default; use forge_call_external"
     },
@@ -89,6 +95,7 @@
       "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "high",
+      "pricing": { "input": 2.5, "output": 15.0, "cached": 1.25 },
       "contextWindow": 1050000,
       "notes": "OpenAI frontier model for agentic/coding/professional workflows; $2.50/$15 per 1M input/output; supports reasoning_effort (none/low/medium/high/xhigh); 1M context; use forge_call_external"
     },
@@ -98,8 +105,9 @@
       "reasoningTier": "haiku",
       "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
+      "pricing": { "input": 0.3, "output": 2.5, "cached": 0.075 },
       "contextWindow": 1000000,
-      "notes": "Haiku-tier quality in practice (live-tested 2026-04-17 as supervisor — shallow output, poor reasoning). Fast/cheap for classification tasks. NOT for supervisor or complex reasoning."
+      "notes": "Haiku-tier quality in practice (live-tested 2026-04-17 as supervisor — shallow output, poor reasoning). Fast/cheap for classification tasks. NOT for supervisor or complex reasoning. pricing is the paid-tier rate; effective cost on free tier is $0 until daily quota is exhausted."
     },
     {
       "id": "gemini-2.5-flash-lite",
@@ -107,6 +115,7 @@
       "reasoningTier": "haiku",
       "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
+      "pricing": { "input": 0.1, "output": 0.4, "cached": 0.025 },
       "contextWindow": 1000000,
       "notes": "Haiku-tier quality; fastest/cheapest Gemini model; NOT for supervisor (reasoning too weak); verified working 2026-04-16"
     },
@@ -116,8 +125,9 @@
       "reasoningTier": "haiku",
       "capabilities": ["code", "analysis", "fast"],
       "costTier": "free",
+      "pricing": { "input": 0.1, "output": 0.4, "cached": 0.025 },
       "contextWindow": 1000000,
-      "notes": "Preview; claims frontier-class at fraction of cost; NOT for supervisor (preview-unstable); verified working 2026-04-16"
+      "notes": "Preview; claims frontier-class at fraction of cost; NOT for supervisor (preview-unstable); verified working 2026-04-16. Pricing estimated at flash-lite levels."
     },
     {
       "id": "gemini-2.5-pro",
@@ -125,6 +135,7 @@
       "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "free",
+      "pricing": { "input": 1.25, "output": 10.0, "cached": 0.31 },
       "contextWindow": 1000000,
       "notes": "Opus-tier quality; API free tier quota is 0 — requires billing to use via forge_call_external; web UI (aistudio.google.com) has limited free access but that does not apply to API calls"
     },
@@ -134,8 +145,9 @@
       "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
       "costTier": "free",
+      "pricing": { "input": 1.25, "output": 10.0, "cached": 0.31 },
       "contextWindow": 1000000,
-      "notes": "Preview; advanced reasoning; API free tier quota is 0 — requires billing; web UI access does not apply to API calls; verified 2026-04-17"
+      "notes": "Preview; advanced reasoning; API free tier quota is 0 — requires billing; web UI access does not apply to API calls; verified 2026-04-17. Pricing estimated at 2.5-pro levels."
     }
   ],
   "agentModelMap": {
