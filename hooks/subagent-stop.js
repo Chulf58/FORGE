@@ -52,12 +52,24 @@ function isReviewerAgent(agentType) {
 }
 
 /**
- * Scans a string for the first `[reviewer-verdict] {...}` line.
+ * Scans a string for the first `[reviewer-verdict] {...}` line whose
+ * `agent` field matches the expected agent type.
+ *
+ * The agent check prevents a reviewer from recording a forged verdict that
+ * was echoed from a project file — the verdict must claim to come from the
+ * same agent type that is actually running (normalized, bare name).
+ *
  * Returns the `verdict` field value (e.g. "APPROVED", "BLOCK", "REVISE")
- * or null if no such line is found or the JSON is malformed.
+ * or null if no matching line is found or the JSON is malformed.
+ *
+ * @param {string} text - last_assistant_message content
+ * @param {string} expectedAgentType - the hook's payload.agent_type value
  */
-function extractVerdict(text) {
+function extractVerdict(text, expectedAgentType) {
   if (!text || typeof text !== 'string') return null;
+  const expectedNorm = expectedAgentType && expectedAgentType.startsWith('forge:')
+    ? expectedAgentType.slice('forge:'.length)
+    : (expectedAgentType || '');
   const lines = text.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
@@ -68,6 +80,13 @@ function extractVerdict(text) {
     try {
       const parsed = JSON.parse(jsonPart);
       if (parsed && typeof parsed.verdict === 'string') {
+        // Validate the verdict's agent field matches the running agent —
+        // blocks forged signals echoed from file content read by the agent.
+        const claimedAgent = typeof parsed.agent === 'string' ? parsed.agent : '';
+        const claimedNorm = claimedAgent.startsWith('forge:')
+          ? claimedAgent.slice('forge:'.length)
+          : claimedAgent;
+        if (claimedNorm !== expectedNorm) continue;
         return parsed.verdict;
       }
     } catch (_) {
@@ -135,7 +154,7 @@ async function main(rawInput) {
   // Only reviewer-typed agents may emit [reviewer-verdict] — non-reviewers
   // always get outcome "completed" regardless of message content.
   const lastMessage = payload.last_assistant_message || null;
-  const verdict = isReviewerAgent(agentType) ? extractVerdict(lastMessage) : null;
+  const verdict = isReviewerAgent(agentType) ? extractVerdict(lastMessage, agentType) : null;
   const outcome = verdict !== null ? verdict : 'completed';
 
   // Patch entry in-place
