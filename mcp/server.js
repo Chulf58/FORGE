@@ -70,6 +70,20 @@ function requirePipeline(projectDir) {
   return { ok: true, pipelineDir };
 }
 
+function hasGateApprovalToken(projectDir) {
+  try {
+    const tokenPath = join(projectDir, ".pipeline", "action-approved.json");
+    const raw = readFileSync(tokenPath, "utf-8");
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.actions) || !data.expiresAt) return false;
+    const expiresAt = new Date(data.expiresAt);
+    if (isNaN(expiresAt.getTime()) || expiresAt < new Date()) return false;
+    return data.actions.includes("gate-approve");
+  } catch (_) {
+    return false;
+  }
+}
+
 // Case-insensitive on Windows; absolute-path equality after slash normalization.
 // Used by forge_resume_run to verify the run's projectRoot matches the current project.
 function pathsEqual(a, b) {
@@ -493,6 +507,20 @@ server.registerTool(
       const projectDir = resolveProjectDir();
       const check = requirePipeline(projectDir);
       if (!check.ok) return check.result;
+
+      // Gate self-approval guard: "approved" requires a valid approval token
+      // from the user's current turn (written by approval-token.js when the
+      // user says "approve" or invokes /forge:approve).
+      if (status === "approved") {
+        if (!hasGateApprovalToken(projectDir)) {
+          return errorResult(
+            "FORGE: Gate approval requires explicit user authorization. " +
+            "The user must invoke /forge:approve or include 'approve' in their message " +
+            "before gate status can be set to 'approved'. " +
+            "This prevents model self-approval of pipeline gates."
+          );
+        }
+      }
 
       const now = new Date().toISOString();
       const gatePath = join(check.pipelineDir, "gate-pending.json");

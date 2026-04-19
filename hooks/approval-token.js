@@ -23,6 +23,7 @@ const TOKEN_TTL_MS = 120_000; // 2 minutes
 const ACTION_KEYWORDS = {
   commit: 'commit',
   push: 'push',
+  'gate-approve': 'approve',
 };
 
 /**

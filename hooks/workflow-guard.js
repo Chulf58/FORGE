@@ -90,6 +90,22 @@ function isSourceFile(filePath, { includeAgents = true } = {}) {
   return true;
 }
 
+// -- Gate self-approval token check ------------------------------------------
+// Mirrors bash-guard's hasValidApprovalToken but checks for 'gate-approve' action.
+function hasValidGateApprovalToken() {
+  try {
+    const tokenPath = path.join(process.cwd(), '.pipeline', 'action-approved.json');
+    const raw = fs.readFileSync(tokenPath, 'utf8');
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.actions) || !data.expiresAt) return false;
+    const expiresAt = new Date(data.expiresAt);
+    if (isNaN(expiresAt.getTime()) || expiresAt < new Date()) return false;
+    return data.actions.includes('gate-approve');
+  } catch (_) {
+    return false;
+  }
+}
+
 // -- Gate #2 enforcement for apply runs --------------------------------------
 // Unconditional: if the active pipeline is "apply" and the write targets a
 // source file, gate-pending.json must show gate2 approved AND the handoff
@@ -241,6 +257,45 @@ async function main(rawInput) {
             hookEventName: 'PreToolUse',
             permissionDecision: 'deny',
             permissionDecisionReason: denyReason,
+          },
+        }) + '\n'
+      );
+      process.exit(2);
+      return;
+    }
+  }
+
+  // --- Gate self-approval guard for gate-pending.json writes ---
+  // Prevents the model from writing status "approved" to gate-pending.json
+  // without explicit user authorization (approval-token with gate-approve action).
+  const normalisedPath = filePath.replace(/\\/g, '/');
+  if (normalisedPath.endsWith('.pipeline/gate-pending.json')) {
+    let isApprovalWrite = false;
+
+    if (toolName === 'Write') {
+      const content = toolInput.content || '';
+      try {
+        const parsed = JSON.parse(content);
+        isApprovalWrite = parsed && parsed.status === 'approved';
+      } catch (_) {
+        isApprovalWrite = /"status"\s*:\s*"approved"/.test(content);
+      }
+    } else if (toolName === 'Edit') {
+      const newString = toolInput.new_string || '';
+      isApprovalWrite = /approved/.test(newString);
+    }
+
+    if (isApprovalWrite && !hasValidGateApprovalToken()) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              'FORGE: Gate approval requires explicit user authorization. ' +
+              'The user must invoke /forge:approve or include "approve" in their message ' +
+              'before gate-pending.json can be written with status "approved". ' +
+              'This prevents model self-approval of pipeline gates.',
           },
         }) + '\n'
       );
