@@ -84,6 +84,42 @@ function hasGateApprovalToken(projectDir) {
   }
 }
 
+// -- Mode-hardening validation ------------------------------------------------
+// Prevents under-scoped modes (TRIVIAL, SPRINT) from being used on tasks whose
+// pipeline type or feature description implies risk-surface work that needs
+// reviewer coverage. Enforced at the forge_create_run boundary — the single
+// entry point where mode enters the run state.
+
+const RISK_KEYWORDS = /\b(hook|hooks|mcp|security|auth|crypto|secret|credential|token|spawn|child_process|migration|schema|contract|network|fetch|http|inject|xss|csrf|permission|guard|enforcement|worktree|merge)\b/i;
+
+function validateModeForRisk(pipelineType, mode, feature) {
+  if (mode !== 'TRIVIAL' && mode !== 'SPRINT') return null;
+
+  // TRIVIAL: only allowed for plan and apply — these don't produce source mutations
+  // that need review. implement/debug/refactor always modify source code.
+  if (mode === 'TRIVIAL' && pipelineType !== 'plan' && pipelineType !== 'apply') {
+    return (
+      'FORGE: Mode TRIVIAL is not allowed for "' + pipelineType + '" pipelines. ' +
+      'TRIVIAL bypasses the pipeline entirely and is only valid for plan and apply. ' +
+      'Use LEAN or higher for ' + pipelineType + ' runs.'
+    );
+  }
+
+  // SPRINT: blocked for source-mutating pipelines when feature description
+  // contains risk-surface keywords. plan/apply don't produce unreviewed mutations.
+  const SOURCE_MUTATING = new Set(['implement', 'debug', 'refactor']);
+  if (mode === 'SPRINT' && SOURCE_MUTATING.has(pipelineType) && feature && RISK_KEYWORDS.test(feature)) {
+    const match = feature.match(RISK_KEYWORDS);
+    return (
+      'FORGE: Mode SPRINT is not allowed when the feature description indicates ' +
+      'risk-surface work (matched: "' + (match ? match[0] : '') + '"). ' +
+      'SPRINT skips all reviewers. Use LEAN or higher for this task.'
+    );
+  }
+
+  return null;
+}
+
 // Case-insensitive on Windows; absolute-path equality after slash normalization.
 // Used by forge_resume_run to verify the run's projectRoot matches the current project.
 function pathsEqual(a, b) {
@@ -1210,6 +1246,11 @@ server.registerTool(
       // Sanitize feature name at ingestion — strips shell-injection chars before
       // the value is stored in run.json or returned to skills for git/PR usage.
       const safeFeature = sanitizeFeatureName(feature);
+
+      // Mode-hardening: block under-scoped modes for risky work
+      const modeError = validateModeForRisk(pipelineType, mode, safeFeature);
+      if (modeError) return errorResult(modeError);
+
       const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, mode, feature: safeFeature });
       // Immediately mark as running — the model reliably calls forge_create_run
       // but skips the follow-up forge_update_run to set status: "running".
