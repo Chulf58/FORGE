@@ -87,8 +87,8 @@ function hasGateApprovalToken(projectDir) {
 // -- Mode-hardening validation ------------------------------------------------
 // Prevents under-scoped modes (TRIVIAL, SPRINT) from being used on tasks whose
 // pipeline type or feature description implies risk-surface work that needs
-// reviewer coverage. Enforced at the forge_create_run boundary — the single
-// entry point where mode enters the run state.
+// reviewer coverage. Enforced at both forge_create_run and forge_resume_run —
+// the two entry points where mode enters or re-enters the run state.
 
 const RISK_KEYWORDS = /\b(hook|hooks|mcp|security|auth|crypto|secret|credential|token|spawn|child_process|migration|schema|contract|network|fetch|http|inject|xss|csrf|permission|guard|enforcement|worktree|merge)\b/i;
 
@@ -1574,6 +1574,16 @@ server.registerTool(
         return errorResult(
           "Run " + normalizedId + "'s worktree at " + run.worktreePath +
           " no longer exists. Restore the worktree directory or discard the run."
+        );
+      }
+
+      // Precondition 5: mode floor — reject resume if the run's mode would be
+      // blocked by validateModeForRisk (same check as forge_create_run).
+      const modeError = validateModeForRisk(run.pipelineType, run.mode, run.feature);
+      if (modeError) {
+        return errorResult(
+          modeError + " Run " + normalizedId + " was created with mode " + run.mode +
+          " which is now below the enforcement floor. Discard this run and create a new one with LEAN or higher."
         );
       }
 
