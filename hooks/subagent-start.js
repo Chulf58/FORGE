@@ -52,6 +52,26 @@ function isForgeAgent(agentType) {
   return allowlist.has(normalized);
 }
 
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
+
+/**
+ * Read the status of a run from the local registry at
+ * .pipeline/runs/<runId>/run.json. Returns the status string or null when
+ * the run file is absent, unreadable, unparseable, or missing a status.
+ * Defensive — never throws.
+ */
+function readRunStatus(projectDir, runId) {
+  if (!runId || typeof runId !== 'string') return null;
+  try {
+    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+    const raw = fs.readFileSync(runPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function main(rawInput) {
   let payload;
   try {
@@ -97,6 +117,17 @@ async function main(rawInput) {
   // subagents (general-purpose, Explore, Plan, claude-code-guide, etc.).
   // If allowlist resolution failed, isForgeAgent returns true (fail open).
   if (!isForgeAgent(agentType)) {
+    exitOk();
+    return;
+  }
+
+  // Terminal-run guard: if the run referenced by run-active.json is already
+  // done (completed / failed / discarded), do not append to it — that would
+  // re-animate a finished run and set a stale currentUnit. Fail-open: if
+  // the registry is unreadable or the runId is absent, proceed as today.
+  const runStatus = readRunStatus(projectDir, data.runId || null);
+  if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
+    process.stderr.write('[forge-subagent] skipping append to terminal run ' + (data.runId || '(unknown)') + '\n');
     exitOk();
     return;
   }

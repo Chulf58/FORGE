@@ -1,382 +1,228 @@
-# Handoff: gate-enforcement
+# Handoff: Fix stale run-active.json pointer pollution
 
 ## Overview
 
-This implements `hooks/gate-enforcement.js`, a PreToolUse hook that mechanically blocks Agent-tool dispatches for the `coder` and `implementer` subagents unless the corresponding gate (`gate1` or `gate2` respectively) is recorded as approved in `.pipeline/gate-pending.json`. It backstops the `feedback_gate_approval.md` memory rule with mechanical enforcement after a live failure on 2026-04-18 where Gate #2 was collapsed into a status line with no human pause. The hook mirrors the structure of `hooks/routing-enforcement.js` exactly (CommonJS, readline+timeout, exitOk/exitBlock helpers, deny envelope).
-
----
+When a FORGE pipeline run finishes (status `completed`, `failed`, or `discarded`), two races cause `run-active.json` to remain on disk with stale content: (1) a new agent dispatch against the old `runId` still appends to the terminal run's `agents` array and refreshes `currentUnit`, and (2) `ctx-session-start.js` nulls out `currentUnit` rather than deleting the file, leaving a zero-identity stub that poisons `forge_get_active_run`. This fix adds a terminal-run guard in `subagent-start.js` (fail-open) and upgrades the cleanup in `ctx-session-start.js` from null-write to file deletion.
 
 ## Files to create
 
-### `hooks/gate-enforcement.js`
+_(none)_
 
-```javascript
-'use strict';
+## Files to modify
 
-// PreToolUse hook: enforce FORGE gate approvals before dispatching coder/implementer.
-//
-// WHY THIS EXISTS — 2026-04-18 live failure:
-//   On two slices (observer-launcher, forge-config-migration), the main conversational
-//   Claude reported reviewer verdicts and dispatched the implementer in the SAME turn,
-//   collapsing Gate #2 into a status line with no human-in-loop pause.
-//   The memory entry feedback_gate_approval.md was strengthened after the incident,
-//   but the user explicitly requested mechanical enforcement — not just behavioral.
-//
-// WHAT THIS DOES:
-//   Intercepts every Agent tool call. If the subagent_type is 'coder' (requires gate1
-//   approved) or 'implementer' (requires gate2 approved), it reads
-//   .pipeline/gate-pending.json and blocks the dispatch unless that gate is recorded
-//   with status "approved".
-//
-// KNOWN LIMITATION:
-//   This hook enforces that an approval *record exists on disk*, not that the orchestrator
-//   actually presented the gate summary to the user and waited. The discipline of
-//   presenting-and-waiting remains a behavioral constraint (memory + agent prompts).
-//   A future improvement could cross-check gate.presentedAt against a session timestamp,
-//   but that is out of scope here.
-//
-// TRIVIAL / SPRINT mode:
-//   Both modes bypass gates by design (no reviewers, no approval steps). When
-//   pipelineMode is 'TRIVIAL' or 'SPRINT', the hook exits cleanly with a stderr note.
-//   Missing or malformed project.json: enforcement proceeds (safer default — do not
-//   assume bypass when mode is unknown).
+### `hooks/subagent-start.js`
 
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
+**Change:** Add `TERMINAL_STATUSES` constant and `readRunStatus` helper (copied verbatim from `ctx-session-start.js`) after `isForgeAgent` and before `main`. Then insert the terminal-run guard between the `isForgeAgent` check and the agents-push.
 
-const STDIN_TIMEOUT_MS = 10_000;
-
-const GATE_AGENTS = {
-  'coder': 'gate1',
-  'implementer': 'gate2',
-};
-
-// Modes that bypass gates by design.
-const BYPASS_MODES = new Set(['TRIVIAL', 'SPRINT']);
-
-function exitOk() { process.exit(0); }
-
-function exitBlock(msg) {
-  // PreToolUse deny envelope — honored by the Claude Code validator.
-  // stderr + exit 2 as belt-and-suspenders fallback.
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: msg,
-      },
-    }) + '\n'
-  );
-  console.error(msg);
-  process.exit(2);
+**Find (insertion point for helper — after `isForgeAgent` function, before `async function main`):**
+```js
+  return allowlist.has(normalized);
 }
 
-function readJsonFile(filePath) {
-  let raw;
+async function main(rawInput) {
+```
+
+**Replace with:**
+```js
+  return allowlist.has(normalized);
+}
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
+
+/**
+ * Read the status of a run from the local registry at
+ * .pipeline/runs/<runId>/run.json. Returns the status string or null when
+ * the run file is absent, unreadable, unparseable, or missing a status.
+ * Defensive — never throws.
+ */
+function readRunStatus(projectDir, runId) {
+  if (!runId || typeof runId !== 'string') return null;
   try {
-    raw = fs.readFileSync(filePath, 'utf8');
+    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+    const raw = fs.readFileSync(runPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
   } catch (_) {
-    return { ok: false, missing: true, data: null };
-  }
-  try {
-    return { ok: true, missing: false, data: JSON.parse(raw) };
-  } catch (_) {
-    return { ok: false, missing: false, data: null };
+    return null;
   }
 }
 
 async function main(rawInput) {
-  // Step 1: parse payload — fail-open on parse error.
-  let payload;
-  try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
-
-  // Step 2: only interested in Agent tool calls.
-  if (payload.tool_name !== 'Agent') { exitOk(); return; }
-
-  // Step 3: extract subagent_type.
-  const rawType = payload.tool_input && payload.tool_input.subagent_type;
-  if (!rawType || typeof rawType !== 'string') { exitOk(); return; }
-
-  // Step 4: normalize — strip 'forge:' prefix if present (defensive).
-  const subagentType = rawType.startsWith('forge:') ? rawType.slice(6) : rawType;
-
-  // Step 5: only coder and implementer cross gates.
-  const requiredGate = GATE_AGENTS[subagentType];
-  if (!requiredGate) { exitOk(); return; }
-
-  const projectDir = process.cwd();
-
-  // Step 7: check pipelineMode — bypass for TRIVIAL and SPRINT.
-  const projectJsonPath = path.join(projectDir, '.pipeline', 'project.json');
-  const projectResult = readJsonFile(projectJsonPath);
-  if (projectResult.ok && projectResult.data) {
-    const mode = projectResult.data.pipelineMode;
-    if (mode && BYPASS_MODES.has(mode)) {
-      console.error('[gate-enforcement] pipelineMode ' + mode + ': gates bypassed by design');
-      exitOk();
-      return;
-    }
-  }
-  // Missing or malformed project.json: proceed with normal enforcement.
-
-  // Step 8: read gate-pending.json.
-  const gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');
-  const gateResult = readJsonFile(gatePath);
-
-  if (!gateResult.ok) {
-    exitBlock(
-      'FORGE: Gate ' + requiredGate + ' has not been recorded for subagent "' + subagentType + '". ' +
-      'Write .pipeline/gate-pending.json with status:"approved" (via /forge:approve or the ' +
-      'forge_set_gate MCP tool) before dispatching this agent.'
-    );
-    return;
-  }
-
-  const gate = gateResult.data;
-
-  // Require gate field to match expected gate stage.
-  if (gate.gate !== requiredGate) {
-    exitBlock(
-      'FORGE: .pipeline/gate-pending.json is for ' + gate.gate + ' but subagent "' + subagentType +
-      '" requires ' + requiredGate + ' approved. Mismatched gate pending.'
-    );
-    return;
-  }
-
-  // Require approved status.
-  if (gate.status !== 'approved') {
-    exitBlock(
-      'FORGE: Gate ' + requiredGate + ' is pending (not approved) for feature "' +
-      (gate.feature || 'unknown') + '". Present the gate summary to the user and await ' +
-      'explicit approval before dispatching the ' + subagentType + '.'
-    );
-    return;
-  }
-
-  // Step 9: gate is present, correct stage, and approved — allow.
-  exitOk();
-}
-
-let inputData = '';
-const timer = setTimeout(() => {
-  main(inputData || '{}').catch(() => process.exit(0));
-}, STDIN_TIMEOUT_MS);
-
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on('line', (line) => { inputData += line + '\n'; });
-rl.on('close', () => {
-  clearTimeout(timer);
-  main(inputData || '{}').catch(() => process.exit(0));
-});
 ```
 
 ---
 
-## Files to modify
-
-### `hooks/hooks.json`
-
-**Change:** Add a new PreToolUse entry for `gate-enforcement.js`, placed immediately after the existing `routing-enforcement.js` entry (which also matches "Agent"). Both hooks fire; that is correct — Claude Code runs all matching hooks.
+**Change:** Insert terminal-run guard between the `isForgeAgent` check and the agents-push in `main`.
 
 **Find:**
-```json
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/routing-enforcement.js\""
-          }
-        ]
-      }
-    ]
+```js
+  if (!isForgeAgent(agentType)) {
+    exitOk();
+    return;
   }
-}
+
+  // Push new entry into agents array (mutate in-place)
+  const nowTs = Date.now();
 ```
 
 **Replace with:**
-```json
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/routing-enforcement.js\""
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gate-enforcement.js\""
-          }
-        ]
-      }
-    ]
+```js
+  if (!isForgeAgent(agentType)) {
+    exitOk();
+    return;
   }
-}
+
+  // Terminal-run guard: if the run referenced by run-active.json is already
+  // done (completed / failed / discarded), do not append to it — that would
+  // re-animate a finished run and set a stale currentUnit. Fail-open: if
+  // the registry is unreadable or the runId is absent, proceed as today.
+  const runStatus = readRunStatus(projectDir, data.runId || null);
+  if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
+    process.stderr.write('[forge-subagent] skipping append to terminal run ' + (data.runId || '(unknown)') + '\n');
+    exitOk();
+    return;
+  }
+
+  // Push new entry into agents array (mutate in-place)
+  const nowTs = Date.now();
+```
+
+---
+
+### `hooks/ctx-session-start.js`
+
+**Change:** In the terminal-run branch of `emitStaleUnitNoticeIfAny`, replace the `writeFileSync` null-write with `fs.unlinkSync` so the stale file is removed rather than left as a zero-identity stub.
+
+**Find:**
+```js
+    if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
+      try {
+        data.currentUnit = null;
+        fs.writeFileSync(runActivePath, JSON.stringify(data, null, 2), 'utf8');
+      } catch (_) {
+        // Cleanup failed — fall through silently. We deliberately do NOT
+        // emit the misleading notice in this case either; the marker just
+        // stays on disk until the next cleanup attempt or a successful
+        // start/stop cycle.
+      }
+      return false;
+    }
+```
+
+**Replace with:**
+```js
+    if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
+      try {
+        fs.unlinkSync(runActivePath);
+      } catch (_) {
+        // Cleanup failed — fall through silently. We deliberately do NOT
+        // emit the misleading notice in this case either; the marker just
+        // stays on disk until the next cleanup attempt or a successful
+        // start/stop cycle.
+      }
+      return false;
+    }
 ```
 
 ---
 
 ### `docs/gotchas/GENERAL.md`
 
-**Change:** Add a new section documenting the gate enforcement contract. Insert it immediately after the `## Hook scripts — stdin/stdout protocol` section (after the closing `---` of that section) and before the `## PostCompact hook` section.
+**Change:** Add `## run-active.json lifecycle contract` section after the existing `## Pipeline state files` section (before `## Signal protocol`).
 
 **Find:**
 ```markdown
-Always read stdin completely before processing. Use a readline + timeout pattern:
-
-```js
-const rl = readline.createInterface({ input: process.stdin });
-let input = '';
-rl.on('line', (line) => { input += line + '\n'; });
-rl.on('close', () => { main(input).catch(() => process.exit(0)); });
-```
-
 ---
 
-## PostCompact hook — do not use for context reinjection
+## Signal protocol — bracket-prefix lines from agents
 ```
 
 **Replace with:**
 ```markdown
-Always read stdin completely before processing. Use a readline + timeout pattern:
+---
 
-```js
-const rl = readline.createInterface({ input: process.stdin });
-let input = '';
-rl.on('line', (line) => { input += line + '\n'; });
-rl.on('close', () => { main(input).catch(() => process.exit(0)); });
-```
+## run-active.json lifecycle contract
+
+`.pipeline/run-active.json` is a temporary pointer file tracking the in-progress pipeline run.
+
+| Role | Owner |
+|------|-------|
+| Create / initialise | `forge_create_run` and `forge_resume_run` MCP tools |
+| Append agent entries | `hooks/subagent-start.js` (SubagentStart event) |
+| Delete on terminal run | `hooks/ctx-session-start.js` → `emitStaleUnitNoticeIfAny` |
+| Clear `currentUnit` on agent stop | `hooks/subagent-stop.js` (SubagentStop event) |
+
+**Terminal statuses:** `completed`, `failed`, `discarded`. Any run whose `run.json` carries one of these statuses is terminal.
+
+**Fail-open rule:** if `run.json` is absent, unreadable, or unparseable, both hooks treat the run as non-terminal and proceed normally.
+
+**Why delete, not null-write:** writing `{ currentUnit: null }` back to disk preserves the `runId` identity field, allowing `subagent-start.js` to read and re-append to a finished run on the next agent dispatch. Deletion is the cleanest teardown — `subagent-start.js` already exits silently when the file is absent (lines 74-81).
 
 ---
 
-## Gate enforcement (mechanical, PreToolUse)
-
-`hooks/gate-enforcement.js` blocks Agent-tool dispatches for `coder` and `implementer` unless the corresponding gate is approved on disk:
-
-- **`coder`** requires `gate1` approved before dispatch.
-- **`implementer`** requires `gate2` approved before dispatch.
-- All other subagent types pass through unconditionally.
-- `pipelineMode: TRIVIAL` or `SPRINT` bypasses gate checks (these modes have no reviewer gates by design) — a stderr note is logged.
-- **To satisfy the hook:** write `.pipeline/gate-pending.json` with `{ "gate": "gate1"|"gate2", "status": "approved", "feature": "..." }` — use `/forge:approve` or the `forge_set_gate` MCP tool.
-- Missing gate file, wrong gate stage, or non-approved status all produce an exit-2 deny with a descriptive block message.
-- This hook enforces the *existence* of an approval record, not the discipline of presenting-and-waiting — that remains a behavioral constraint enforced by memory and agent prompts.
-
----
-
-## PostCompact hook — do not use for context reinjection
+## Signal protocol — bracket-prefix lines from agents
 ```
 
 ---
 
 ### `docs/CHANGELOG.md`
 
-**Change:** Prepend a new entry at the very top of the file (before the existing `## [2026-04-18] forge-config-migration` entry).
+**Change:** Prepend a new dated entry at the top of the file for the stale run-active.json fix.
 
-**Find:**
+**Find (first line of file):**
 ```markdown
-## [2026-04-18] forge-config-migration: diff-aware auto-migration on SessionStart (Part A + Part B)
+## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
 ```
 
 **Replace with:**
 ```markdown
-## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
+## [2026-04-19] fix(hooks): stale run-active.json pointer pollution
 
 ### Motivation
-On 2026-04-18, the main conversational Claude collapsed Gate #2 on two live slices
-(observer-launcher, forge-config-migration) — reviewer verdicts and implementer dispatch
-happened in the same turn with no human-in-loop pause. Memory entry `feedback_gate_approval.md`
-was updated with stronger framing, but the user requested mechanical enforcement.
+Two gaps caused `run-active.json` to persist stale content after a pipeline run finished:
+1. `hooks/subagent-start.js` would append to the `agents` array of a terminal run (status `completed`/`failed`/`discarded`), re-animating it and setting a fresh `currentUnit`.
+2. `hooks/ctx-session-start.js` cleared `currentUnit` by null-writing back to disk rather than deleting the file, leaving a zero-identity stub that passes the missing-file guard in `subagent-start.js`.
 
-### Mechanism
-- New `hooks/gate-enforcement.js` (PreToolUse, matches "Agent") blocks Agent dispatches for
-  `coder` (requires gate1 approved) and `implementer` (requires gate2 approved).
-- Reads `.pipeline/gate-pending.json`; blocks on missing file, wrong gate stage, or non-approved status.
-- Bypasses enforcement for `pipelineMode: TRIVIAL` and `SPRINT` (no gates in those modes).
-- Fails open on stdin parse errors; fails open on malformed project.json (unknown mode → enforce).
-- All other subagent types pass through unconditionally.
-- Registered in `hooks/hooks.json` as a second "Agent" PreToolUse matcher alongside `routing-enforcement.js`.
+### Fix
+- **`hooks/subagent-start.js`** — added `TERMINAL_STATUSES` and `readRunStatus` helper (identical logic to the existing copy in `ctx-session-start.js`). Inserted a terminal-run guard between the `isForgeAgent` check and the agents-push: if the run referenced by `run-active.json` is terminal, the hook logs a stderr note and exits without writing. Fail-open: unreadable or missing registry → proceed as before.
+- **`hooks/ctx-session-start.js`** — in `emitStaleUnitNoticeIfAny`, replaced the `writeFileSync` (null-write) in the terminal branch with `fs.unlinkSync(runActivePath)`. The surrounding try/catch is kept; failure falls through silently.
+
+### Rationale: deletion over null-write
+Deleting the file is the correct teardown: (a) `subagent-start.js` already exits silently when the file is absent (lines 74-81), so absence is a safe terminal state; (b) null-writing preserves the `runId` identity field, allowing `subagent-start.js` to read and re-append to a finished run on the next agent dispatch.
 
 ### Files changed
-- `hooks/gate-enforcement.js` — new file (~130 lines)
-- `hooks/hooks.json` — added gate-enforcement entry under PreToolUse → Agent
-- `docs/gotchas/GENERAL.md` — added "Gate enforcement (mechanical, PreToolUse)" section
-
-### Known limitation
-The hook enforces existence of the approval record, not the discipline of presenting-and-waiting.
-That behavioral guarantee remains in memory + agent prompts.
+- `hooks/subagent-start.js` — added helper + terminal-run guard
+- `hooks/ctx-session-start.js` — delete-on-terminal in `emitStaleUnitNoticeIfAny`
+- `docs/gotchas/GENERAL.md` — added `## run-active.json lifecycle contract` section
 
 ---
 
-## [2026-04-18] forge-config-migration: diff-aware auto-migration on SessionStart (Part A + Part B)
+## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
 ```
-
----
-
-## Edge cases handled
-
-- **Missing gate file** (`gate-pending.json` absent): `exitBlock` with message explaining the gate must be written and approved before dispatch.
-- **Malformed gate file** (invalid JSON): treated as missing — same `exitBlock` (the `readJsonFile` helper returns `ok: false` for both cases).
-- **Wrong gate stage** (gate1 pending but dispatching `implementer` which needs gate2, or vice versa): `exitBlock` naming both the pending gate and the required gate.
-- **Pending status** (`status !== "approved"`): `exitBlock` naming the feature and the agent, instructing to present and await explicit approval.
-- **TRIVIAL mode**: `exitOk()` with stderr log `[gate-enforcement] pipelineMode TRIVIAL: gates bypassed by design`.
-- **SPRINT mode**: same bypass as TRIVIAL.
-- **Unknown pipelineMode** (e.g. a custom or future mode not in the bypass set): enforcement proceeds — safer default is to require a gate.
-- **Missing project.json**: `readJsonFile` returns `ok: false, missing: true`; the `if (projectResult.ok && ...)` guard skips the bypass check; enforcement proceeds.
-- **Malformed project.json**: same as missing — enforcement proceeds.
-- **Non-pipeline subagent_type** (e.g. `researcher`, `reviewer-safety`, `documenter`, `planner`): `GATE_AGENTS[subagentType]` is `undefined`; hook calls `exitOk()` immediately.
-- **Generic Agent use with no subagent_type or null**: guard `if (!rawType || typeof rawType !== 'string')` catches this; `exitOk()`.
-- **`forge:` prefix on subagent_type** (defensive normalization): stripped before lookup so `forge:coder` and `coder` both enforce gate1.
-- **stdin parse failure**: try/catch around `JSON.parse(rawInput)` calls `exitOk()` — fail-open.
-- **`main()` unhandled throw**: `.catch(() => process.exit(0))` at both call sites — fail-open.
-
----
-
-## Manual verification checklist
-
-1. **No gate file → coder blocked:**
-   Delete `.pipeline/gate-pending.json`. Dispatch `coder` subagent. Hook should block with "Gate gate1 has not been recorded" message.
-
-2. **gate1 approved → coder passes:**
-   Write `.pipeline/gate-pending.json` as `{"gate":"gate1","status":"approved","feature":"test"}`. Dispatch `coder`. Hook should allow (exit 0).
-
-3. **gate1 approved, dispatch implementer → wrong gate stage blocked:**
-   With gate1+approved still written, dispatch `implementer`. Hook should block with ".pipeline/gate-pending.json is for gate1 but subagent 'implementer' requires gate2" message.
-
-4. **gate2 approved → implementer passes:**
-   Write `.pipeline/gate-pending.json` as `{"gate":"gate2","status":"approved","feature":"test"}`. Dispatch `implementer`. Hook should allow.
-
-5. **SPRINT mode bypass:**
-   Write `.pipeline/project.json` with `{"pipelineMode":"SPRINT"}`. Delete or leave gate-pending.json absent. Dispatch `coder`. Hook should allow with stderr: `[gate-enforcement] pipelineMode SPRINT: gates bypassed by design`.
 
 ---
 
 ## Notes for Implementer
 
-- The new `hooks/gate-enforcement.js` is standalone — no imports from other hooks, no new npm dependencies; only Node.js built-ins (`fs`, `path`, `readline`).
-- The hooks.json edit adds a second "Agent" PreToolUse entry. Two hooks firing on the same matcher is valid and intentional — `routing-enforcement.js` runs first (listed first), then `gate-enforcement.js`. Both must exit 0 for the Agent call to proceed.
-- Apply in this order: (1) create `hooks/gate-enforcement.js`, (2) edit `hooks/hooks.json`, (3) edit `docs/gotchas/GENERAL.md`, (4) edit `docs/CHANGELOG.md`.
-- Hook changes require a Claude Code session restart to take effect.
-
----
+- Apply the two `hooks/subagent-start.js` edits in order: helper first, then the guard inside `main`. The second replacement is independent of line numbers but depends on the helper being present in the file.
+- The `runActivePath` variable in `ctx-session-start.js` is already a local `const` inside `emitStaleUnitNoticeIfAny` (line 96). The `unlinkSync` call uses it directly — no new variable needed.
+- The `readRunStatus` function uses synchronous `fs.readFileSync` to match the existing copy in `ctx-session-start.js`. The surrounding `main` in `subagent-start.js` is async, but synchronous reads are fine here — the helper is called once per hook invocation on a small JSON file.
+- The CHANGELOG prepend: the entire block from `## [2026-04-19]` through the closing `---` is inserted before the existing first line. The rest of the file is untouched.
 
 ## Self-review
 
-- **Async:** `main()` is declared `async` to match the pattern from `routing-enforcement.js` but contains no `await` calls — all I/O uses synchronous `fs.readFileSync`. No async race conditions possible. Both call sites have `.catch(() => process.exit(0))` for any unhandled throws.
-- **Error handling:** `readJsonFile` wraps `readFileSync` and `JSON.parse` in separate try/catch blocks, returning a structured `{ok, missing, data}` result. `main()` wraps the payload parse in try/catch. All unexpected error paths call `exitOk()` (fail-open). Intentional block paths call `exitBlock()`.
-- **Edge cases:** Documented exhaustively in the section above — missing file, malformed JSON, wrong gate stage, pending status, TRIVIAL/SPRINT bypass, unknown mode, missing project.json, non-gated subagent types, `forge:` prefix normalization, null/empty subagent_type.
-- **Return checks:** `readJsonFile` result checked via `if (!gateResult.ok)` before accessing `.data`. `gate.feature` uses `|| 'unknown'` fallback. `gate.gate` and `gate.status` are accessed only after the `gateResult.ok` guard.
-- **No console.log:** Only `console.error()` for bypass-mode log and block message. `process.stdout.write` used only for the deny envelope JSON.
-- **Scout gaps:** None — new standalone file, no cross-file dependencies to trace.
-
----
+- **Async:** No new async calls. `readRunStatus` uses synchronous `fs.readFileSync` — intentional and safe (matches source pattern, called once per hook invocation). `fs.unlinkSync` is sync — `emitStaleUnitNoticeIfAny` is a sync function. No await/catch gaps introduced.
+- **State mutations:** In `subagent-start.js` guard path: `data` is read but not mutated before early exit — clean. In `ctx-session-start.js` terminal branch: the previous `data.currentUnit = null` mutation is removed entirely; `unlinkSync` operates on the path string only.
+- **Edge cases:**
+  - `data.runId` absent or null: `readRunStatus` returns `null` immediately (guard: `if (!runId || typeof runId !== 'string') return null`). Guard condition `runStatus && ...` is false → fall through. Correct.
+  - `run.json` missing: `readFileSync` throws, caught by try/catch, returns `null` → fall through. Correct.
+  - `run.json` present but `status` field absent or non-string: returns `null` → fall through. Correct.
+  - `unlinkSync` fails (file already deleted by concurrent cleanup, permissions): caught by try/catch, falls through silently. Correct.
+  - Non-terminal run with stale `currentUnit`: unlink path not taken; existing stale-notice logic unchanged. Correct.
+- **Return checks:** `readRunStatus` return is guarded with `if (runStatus && TERMINAL_STATUSES.has(runStatus))` — handles both `null` and non-terminal strings. Correct.
+- **No `console.log`** — stderr only via `process.stderr.write`. Correct per GENERAL.md hook protocol.
+- **No `.pipeline/` files in handoff** — confirmed. No board.json, features.json, or other pipeline config files referenced.
 
 ## Doc hints
 arch-update: false
-decision: false
+decision: true

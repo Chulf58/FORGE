@@ -1,3 +1,24 @@
+## [2026-04-19] fix(hooks): stale run-active.json pointer pollution
+
+### Motivation
+Two gaps caused `run-active.json` to persist stale content after a pipeline run finished:
+1. `hooks/subagent-start.js` would append to the `agents` array of a terminal run (status `completed`/`failed`/`discarded`), re-animating it and setting a fresh `currentUnit`.
+2. `hooks/ctx-session-start.js` cleared `currentUnit` by null-writing back to disk rather than deleting the file, leaving a zero-identity stub that passes the missing-file guard in `subagent-start.js`.
+
+### Fix
+- **`hooks/subagent-start.js`** — added `TERMINAL_STATUSES` and `readRunStatus` helper (identical logic to the existing copy in `ctx-session-start.js`). Inserted a terminal-run guard between the `isForgeAgent` check and the agents-push: if the run referenced by `run-active.json` is terminal, the hook logs a stderr note and exits without writing. Fail-open: unreadable or missing registry → proceed as before.
+- **`hooks/ctx-session-start.js`** — in `emitStaleUnitNoticeIfAny`, replaced the `writeFileSync` (null-write) in the terminal branch with `fs.unlinkSync(runActivePath)`. The surrounding try/catch is kept; failure falls through silently.
+
+### Rationale: deletion over null-write
+Deleting the file is the correct teardown: (a) `subagent-start.js` already exits silently when the file is absent (lines 74-81), so absence is a safe terminal state; (b) null-writing preserves the `runId` identity field, allowing `subagent-start.js` to read and re-append to a finished run on the next agent dispatch.
+
+### Files changed
+- `hooks/subagent-start.js` — added helper + terminal-run guard
+- `hooks/ctx-session-start.js` — delete-on-terminal in `emitStaleUnitNoticeIfAny`
+- `docs/gotchas/GENERAL.md` — added `## run-active.json lifecycle contract` section
+
+---
+
 ## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
 
 ### Motivation
