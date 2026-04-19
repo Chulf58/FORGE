@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "providers": [
     {
       "id": "anthropic",
@@ -216,22 +216,28 @@
       "requiredCapabilities": ["analysis"]
     },
     "reviewer-boundary": {
-      "requiredCapabilities": ["reasoning", "code", "analysis"]
+      "requiredCapabilities": ["code", "analysis"],
+      "allowedVendors": ["anthropic"]
     },
     "reviewer-logic": {
-      "requiredCapabilities": ["reasoning", "code"]
+      "requiredCapabilities": ["code", "analysis"],
+      "allowedVendors": ["anthropic"]
     },
     "reviewer-performance": {
-      "requiredCapabilities": ["code", "analysis"]
+      "requiredCapabilities": ["code", "analysis"],
+      "allowedVendors": ["anthropic"]
     },
     "reviewer-safety": {
-      "requiredCapabilities": ["reasoning", "code", "analysis"]
+      "requiredCapabilities": ["code", "analysis"],
+      "allowedVendors": ["anthropic"]
     },
     "reviewer-style": {
-      "requiredCapabilities": ["analysis"]
+      "requiredCapabilities": ["analysis"],
+      "allowedVendors": ["anthropic"]
     },
     "reviewer-triage": {
-      "requiredCapabilities": ["analysis"]
+      "requiredCapabilities": ["analysis"],
+      "allowedVendors": ["anthropic"]
     },
     "skills-generator": {
       "requiredCapabilities": ["code", "analysis"]
