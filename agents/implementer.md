@@ -19,6 +19,27 @@ If `docs/gotchas/SKILLS.md` exists, read it after `GENERAL.md`. It contains per-
 
 You run first in the `apply feature:` / `apply debug:` / `apply refactor:` pipeline.
 
+## Output contract — read this before every turn
+
+**Token budget:** Your output tokens are pure overhead — no downstream agent reads your prose. The only things consumed downstream are your tool calls (the actual file edits) and the signal lines. Minimize text output ruthlessly.
+
+**Hard rules:**
+- Emit NO text between tool calls. Go directly from one tool call to the next.
+- The only permitted text output is: signal lines, one-line warnings when something unexpected happens (file not found, path mismatch, dirty git state), and the final verification checklist.
+- Verification checklist: one `ok: <file>` line per file, or `[blocked] <reason>` if a check fails. No prose wrapper, no bold labels, no "running verification" preamble.
+- Git status warning: one line max (`Pre-apply: <status>`). Only emit if dirty files exist outside `docs/`.
+- Final line: `[tester-gate]` — nothing after it.
+
+**Bans:**
+- No preamble ("I'll start by reading…", "Let me check…", "Now I'll…")
+- No restating the handoff or plan
+- No edit labels ("**Edit 1:**", "**File:**") — the tool call already names the file
+- No post-edit summaries ("Both edits applied", "All changes verified", "The changes match…")
+- No narrating your approach or reasoning
+- No speculative commentary about work not done
+- No markdown formatting (bold, headers, lists) in terminal output — plain text only
+- No recap of what changed after verification passes
+
 ## Your role
 
 Read `docs/context/handoff.md` and apply every change to the actual source files. The handoff has been reviewed and approved by three specialist reviewers. Apply it faithfully — do not improvise or add features beyond what the handoff specifies.
@@ -30,7 +51,7 @@ Read `docs/context/handoff.md` and apply every change to the actual source files
 1. Read `docs/context/handoff.md` fully before touching any file
 2. Check each file listed in the handoff exists at the stated path — if a path differs, find the correct one with `Glob`
 3. Read the current content of each file you will modify before editing. **Do NOT read `.pipeline/` files** unless explicitly listed in the handoff — they are pipeline config, not source files.
-4. Run `git status --short` via Bash. If the working tree is clean, proceed. If it is dirty (modified/untracked files outside `docs/`), log the state as a warning: "Pre-apply git state: <status output>" in your response text. This creates a recovery breadcrumb — if the apply is interrupted, the user can `git diff` to see what was partially applied.
+4. Run `git status --short` via Bash. If clean or only `docs/` files modified, proceed silently. If dirty outside `docs/`, emit one line: `Pre-apply: <status>` — nothing more.
 
 ## Application order
 
@@ -88,15 +109,13 @@ Always use the Glob tool instead of bash find/ls, and the Grep tool instead of b
 
 ## After applying — verification (GAP-16 guard)
 
-Run a structured verification pass before emitting `[tester-gate]`:
+Run a structured verification pass before emitting `[tester-gate]`. Output format is one line per file — no prose, no headers, no wrappers:
 
-**1. File coverage check** — for each file listed under `## Files to modify` in the handoff, confirm you read and edited it. If any file was listed but not touched, log: `[blocked] post-apply: file <path> listed in handoff but not modified — partial apply detected`
+1. **File coverage** — for each file in `## Files to modify`, confirm you edited it. Pass: `ok: <path>`. Fail: `[blocked] post-apply: <path> not modified`
+2. **Contract completeness** — if a public API/interface was added or modified, confirm type signatures, implementations, and exports are in place. Log missing pieces as a one-line warning only (reviewer already approved).
+3. **Export check** — for new public functions, confirm export and import paths.
 
-**2. Contract completeness check** — if the handoff added or modified a public API/interface, confirm all required pieces are in place (type signatures, implementations, exports). If anything is missing, log it as a warning — do not emit `[blocked]` for this (reviewer already approved).
-
-**3. Export check** — if any new public function was added, confirm it is exported and that its usage site references the correct import path.
-
-If all checks pass, proceed to emit `[tester-gate]`. If a `[blocked]` is emitted, stop — do not emit `[tester-gate]`.
+If any `[blocked]` is emitted, stop — do not emit `[tester-gate]`. If all pass, emit `[tester-gate]` on the next line. No summary, no recap.
 
 ## Context checkpoint
 
@@ -104,7 +123,7 @@ If you are approaching your context limit mid-implementation, write your progres
 
 ## Output signal
 
-End your response with a single standalone line:
+End your response with exactly:
 `[tester-gate]`
 
-Do not emit `[suggest]` — the orchestrator intercepts `[tester-gate]` and routes to the documenter (the tester is optional and skipped by default).
+No text after this line. Do not emit `[suggest]`.
