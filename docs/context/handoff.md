@@ -1,12 +1,20 @@
-# Handoff: Hello World slash command
+# Handoff: Add gitIntegration to ALLOWED_CONFIG_KEYS
 
 ## Summary
-Adds `/forge:hello` slash command that responds with the literal string "Hello, World!".
+Add `"gitIntegration"` to the `ALLOWED_CONFIG_KEYS` array in `mcp/server.js` so `forge_update_config` accepts the git integration config key.
 
-## Files to create
-### `commands/forge/hello.md`
-```markdown
-Respond with exactly: Hello, World!
+## Files to modify
+### `mcp/server.js`
+**Change:** Add `"gitIntegration"` to the allowed config keys array.
+
+**Find:**
+```js
+const ALLOWED_CONFIG_KEYS = ["pipelineMode", "techStacks", "techStackLabels", "description", "testCommand"];
+```
+
+**Replace with:**
+```js
+const ALLOWED_CONFIG_KEYS = ["pipelineMode", "techStacks", "techStackLabels", "description", "testCommand", "gitIntegration"];
 ```
 
 ## Verification

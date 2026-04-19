@@ -1,3 +1,10 @@
+## [2026-04-19] Add gitIntegration to ALLOWED_CONFIG_KEYS
+
+- Expanded `forge_update_config` to accept `gitIntegration` configuration objects
+- Added `"gitIntegration"` to `ALLOWED_CONFIG_KEYS` array in `mcp/server.js`
+
+---
+
 ## [2026-04-19] Hello World slash command
 
 - Added `/forge:hello` slash command that responds with "Hello, World!"

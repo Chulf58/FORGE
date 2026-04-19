@@ -410,7 +410,7 @@ server.registerTool(
 
 // -- Tool: forge_update_config -----------------------------------------------
 
-const ALLOWED_CONFIG_KEYS = ["pipelineMode", "techStacks", "techStackLabels", "description", "testCommand"];
+const ALLOWED_CONFIG_KEYS = ["pipelineMode", "techStacks", "techStackLabels", "description", "testCommand", "gitIntegration"];
 
 server.registerTool(
   "forge_update_config",

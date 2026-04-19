@@ -1,5 +1,5 @@
 {
   "skipReviewers": false,
   "reasons": ["risk-surface-match"],
-  "triggeredRules": ["command:commands/forge/hello.md"]
+  "triggeredRules": ["mcp-tool:mcp/server.js"]
 }
