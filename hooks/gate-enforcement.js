@@ -96,17 +96,25 @@ async function main(rawInput) {
   const projectDir = process.cwd();
 
   // Step 7: check pipelineMode — bypass for TRIVIAL and SPRINT.
-  const projectJsonPath = path.join(projectDir, '.pipeline', 'project.json');
-  const projectResult = readJsonFile(projectJsonPath);
-  if (projectResult.ok && projectResult.data) {
-    const mode = projectResult.data.pipelineMode;
-    if (mode && BYPASS_MODES.has(mode)) {
-      console.error('[gate-enforcement] pipelineMode ' + mode + ': gates bypassed by design');
-      exitOk();
-      return;
+  // Prefer the per-run mode from run-active.json; fall back to project.json.
+  let resolvedMode = null;
+  const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
+  const runActiveResult = readJsonFile(runActivePath);
+  if (runActiveResult.ok && runActiveResult.data && runActiveResult.data.mode) {
+    resolvedMode = runActiveResult.data.mode;
+  } else {
+    const projectJsonPath = path.join(projectDir, '.pipeline', 'project.json');
+    const projectResult = readJsonFile(projectJsonPath);
+    if (projectResult.ok && projectResult.data) {
+      resolvedMode = projectResult.data.pipelineMode || null;
     }
   }
-  // Missing or malformed project.json: proceed with normal enforcement.
+  if (resolvedMode && BYPASS_MODES.has(resolvedMode)) {
+    console.error('[gate-enforcement] pipelineMode ' + resolvedMode + ': gates bypassed by design');
+    exitOk();
+    return;
+  }
+  // Missing or malformed files: proceed with normal enforcement.
 
   // Step 8: read gate-pending.json.
   const gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');

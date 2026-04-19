@@ -72,9 +72,14 @@ function detectActions(message) {
   const lower = message.toLowerCase();
   const detected = [];
   for (const [action, keyword] of Object.entries(ACTION_KEYWORDS)) {
-    const idx = lower.indexOf(keyword);
-    if (idx !== -1 && !isNegated(lower, idx)) {
-      detected.push(action);
+    const safeKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('\\b' + safeKeyword + '\\b', 'gi');
+    let m;
+    while ((m = re.exec(lower)) !== null) {
+      if (!isNegated(lower, m.index)) {
+        detected.push(action);
+        break; // one non-negated match per action is sufficient
+      }
     }
   }
   return detected;

@@ -1,3 +1,15 @@
+## [2026-04-19] Enforcement hardening — 8 hook & MCP findings fixed
+
+- **workflow-guard.js:** `isPipelineActive()` now checks run registry terminal status instead of wall-clock age; advisory path (`includeAgents: false`) separates from apply-gate enforcement path (agents are now gated on apply)
+- **routing-enforcement.js:** Replaced hardcoded `PIPELINE_AGENTS` Set with dynamic agent scan from `agents/*.md`; enforces on all agents when scan fails (fail-open direction)
+- **approval-token.js:** Keyword detection now uses word-boundary regex (`\b...\b`) instead of substring indexOf; eliminates false positives from "pushback", "recommit", "commitment"
+- **gate-enforcement.js:** TRIVIAL/SPRINT bypass now reads `mode` from `run-active.json` first, falls back to project.json `pipelineMode`
+- **lean-risk-classify.mjs:** `extractFilePaths()` extended with 3 supplementary patterns (level-4 headings, bold paths, list items); results deduplicated with Set
+- **config-store.js:** Cache now validates mtime on each hit; external edits (hand-editing, bootstrap hook) are detected and trigger re-read; `statSync` per cache hit is cheap
+- **mcp/server.js:** 401/403 auth errors no longer call `markQuotaExhausted`; only 429/quota marks provider exhausted; auth errors return immediately with descriptive message
+
+---
+
 ## [2026-04-19] Git guard and approval-token for bash-guard
 
 - Added hard-block for destructive git operations (`--force`, `--no-verify`, `--amend`, `reset --hard`, etc.) — no override possible

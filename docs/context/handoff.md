@@ -1,228 +1,557 @@
-# Handoff: Fix stale run-active.json pointer pollution
+# Handoff: 8 enforcement findings fix
 
 ## Overview
 
-When a FORGE pipeline run finishes (status `completed`, `failed`, or `discarded`), two races cause `run-active.json` to remain on disk with stale content: (1) a new agent dispatch against the old `runId` still appends to the terminal run's `agents` array and refreshes `currentUnit`, and (2) `ctx-session-start.js` nulls out `currentUnit` rather than deleting the file, leaving a zero-identity stub that poisons `forge_get_active_run`. This fix adds a terminal-run guard in `subagent-start.js` (fail-open) and upgrades the cleanup in `ctx-session-start.js` from null-write to file deletion.
+Eight surgical fixes across hooks and the MCP server. Each fix is minimal — no surrounding refactors.
 
-## Files to create
-
-_(none)_
+---
 
 ## Files to modify
 
-### `hooks/subagent-start.js`
+### Finding 1 — `hooks/workflow-guard.js`
 
-**Change:** Add `TERMINAL_STATUSES` constant and `readRunStatus` helper (copied verbatim from `ctx-session-start.js`) after `isForgeAgent` and before `main`. Then insert the terminal-run guard between the `isForgeAgent` check and the agents-push.
+**Bug:** `isPipelineActive()` expires the advisory guard after 5 minutes via wall-clock age. Long coder runs silently lose advisory protection.
 
-**Find (insertion point for helper — after `isForgeAgent` function, before `async function main`):**
+**Root cause:** Line 55 — `if (Date.now() - data.startedAt > MARKER_MAX_AGE_MS || data.startedAt > Date.now()) return false;` — a hard 5-minute wall-clock cut-off, regardless of whether the run is still live.
+
+**Change:** Replace the wall-clock age check with a run-registry lookup. If `run-active.json` has a non-empty `runId` and that run's `run.json` does not carry a terminal status (`completed`, `failed`, `discarded`), the pipeline is active. Fail-open: if `run.json` is absent/unreadable, treat as non-terminal.
+
+Also remove the now-unused `MARKER_MAX_AGE_MS` constant.
+
 ```js
-  return allowlist.has(normalized);
+// BEFORE (lines 9, 45-60):
+const MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
+async function isPipelineActive() {
+  const markerPath = path.join(process.cwd(), '.pipeline', 'run-active.json');
+  try {
+    await fs.promises.access(markerPath);
+    const raw = await fs.promises.readFile(markerPath, 'utf8');
+    const data = JSON.parse(raw);
+    if (!data || typeof data.startedAt !== 'number') return false;
+    if (Date.now() - data.startedAt > MARKER_MAX_AGE_MS || data.startedAt > Date.now()) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
-async function main(rawInput) {
-```
-
-**Replace with:**
-```js
-  return allowlist.has(normalized);
-}
-
+// AFTER:
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
 
-/**
- * Read the status of a run from the local registry at
- * .pipeline/runs/<runId>/run.json. Returns the status string or null when
- * the run file is absent, unreadable, unparseable, or missing a status.
- * Defensive — never throws.
- */
-function readRunStatus(projectDir, runId) {
-  if (!runId || typeof runId !== 'string') return null;
+async function isPipelineActive() {
+  const projectDir = process.cwd();
+  const markerPath = path.join(projectDir, '.pipeline', 'run-active.json');
+  let runId;
+  try {
+    const raw = await fs.promises.readFile(markerPath, 'utf8');
+    const data = JSON.parse(raw);
+    if (!data || !data.runId) return false;
+    runId = data.runId;
+  } catch (_) {
+    return false;
+  }
+  // Cross-reference the run registry for terminal status.
+  // Fail-open: if run.json is absent or unreadable, treat as non-terminal.
   try {
     const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
-    const raw = fs.readFileSync(runPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
+    const raw = await fs.promises.readFile(runPath, 'utf8');
+    const run = JSON.parse(raw);
+    if (run && run.status && TERMINAL_STATUSES.has(run.status)) return false;
   } catch (_) {
-    return null;
+    // run.json absent or unreadable — fail open (non-terminal assumed)
+  }
+  return true;
+}
+```
+
+---
+
+### Finding 8 — `hooks/workflow-guard.js` (same file, second change)
+
+**Bug:** `isSourceFile()` excludes `/agents/` unconditionally. This means both the advisory path AND the apply-gate enforcement path skip agent files. Agent files are behavior-critical and must be gated on apply.
+
+**Root cause:** Lines 66-70 — `'/agents/'` appears in the `excluded` array used by a single `isSourceFile` function called from both paths.
+
+**Change:** Add an `includeAgents` parameter (default `true`). Callers of the advisory path pass `{ includeAgents: false }` to preserve existing behavior. The apply-gate caller (`checkApplyGateAndHandoff`) uses the default (`true`), so agents/ is included there.
+
+```js
+// BEFORE (lines 62-78):
+function isSourceFile(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const normalised = filePath.replace(/\\/g, '/');
+  // Exclude pipeline, docs, config, and agent directories — everything else is source
+  const excluded = [
+    '/.pipeline/', '/docs/', '/.claude/', '/templates/',
+    '/node_modules/', '/.git/', '/mcp/', '/hooks/', '/agents/',
+    '/skills/', '/bin/',
+  ];
+  for (const ex of excluded) {
+    if (normalised.includes(ex)) return false;
+  }
+  // Exclude standalone config/doc files at project root
+  if (normalised.endsWith('.md')) return false;
+  if (normalised.endsWith('.json') && !normalised.includes('/src/')) return false;
+  return true;
+}
+
+// AFTER:
+function isSourceFile(filePath, { includeAgents = true } = {}) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const normalised = filePath.replace(/\\/g, '/');
+  // Exclude pipeline, docs, config directories — everything else is source.
+  // agents/ is excluded only for the advisory path (includeAgents: false).
+  const excluded = [
+    '/.pipeline/', '/docs/', '/.claude/', '/templates/',
+    '/node_modules/', '/.git/', '/mcp/', '/hooks/',
+    '/skills/', '/bin/',
+  ];
+  if (!includeAgents) excluded.push('/agents/');
+  for (const ex of excluded) {
+    if (normalised.includes(ex)) return false;
+  }
+  // Exclude standalone config/doc files at project root
+  if (normalised.endsWith('.md')) return false;
+  if (normalised.endsWith('.json') && !normalised.includes('/src/')) return false;
+  return true;
+}
+```
+
+Then update the two call sites in `main()`:
+
+```js
+// Line 222 — apply-gate enforcement call (keep default includeAgents: true):
+if (isSourceFile(filePath)) {   // no change needed — default is true
+
+// Line 248 — advisory call (add { includeAgents: false }):
+// BEFORE:
+  if (!isSourceFile(filePath)) { exitOk(); return; }
+// AFTER:
+  if (!isSourceFile(filePath, { includeAgents: false })) { exitOk(); return; }
+```
+
+---
+
+### Finding 2 — `hooks/routing-enforcement.js`
+
+**Bug:** `PIPELINE_AGENTS` is a hardcoded `Set` (lines 30-39). New agents added to `agents/*.md` are silently missed.
+
+**Root cause:** Static constant — never re-scanned.
+
+**Change:** Replace the hardcoded Set with a dynamic scan function, mirroring the pattern in `subagent-start.js`. Cache the result in a module-level variable (per-process lifetime is correct — the hook is short-lived). Require `hook-utils.js` for `resolvePluginRoot`.
+
+```js
+// BEFORE (lines 18-39):
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+// ...
+const PIPELINE_AGENTS = new Set([
+  'agent-optimizer', 'architect', 'brainstormer', 'cleanup', 'coder',
+  // ... (28 entries) ...
+  'tool-call-auditor',
+]);
+
+// AFTER:
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const { resolvePluginRoot } = require('./hook-utils');
+
+// Dynamically derived from agents/*.md on first call.
+// undefined = not yet probed; null = failed (fail-open); Set = ok
+let _pipelineAgents = undefined;
+
+function getPipelineAgentSet() {
+  if (_pipelineAgents !== undefined) return _pipelineAgents;
+  try {
+    const agentsDir = path.join(resolvePluginRoot(), 'agents');
+    const entries = fs.readdirSync(agentsDir);
+    const names = entries
+      .filter(n => n.endsWith('.md'))
+      .map(n => n.slice(0, -3)); // strip .md
+    if (names.length === 0) {
+      _pipelineAgents = null; // empty dir — fail open
+      return _pipelineAgents;
+    }
+    _pipelineAgents = new Set(names);
+    return _pipelineAgents;
+  } catch (_) {
+    _pipelineAgents = null;
+    return _pipelineAgents;
   }
 }
 
-async function main(rawInput) {
+function isPipelineAgent(name) {
+  const set = getPipelineAgentSet();
+  if (!set) return true; // allowlist unavailable → fail open (enforce on all)
+  return set.has(name);
+}
 ```
+
+Then replace the `PIPELINE_AGENTS.has(subagentType)` call on line 96:
+
+```js
+// BEFORE:
+  if (!PIPELINE_AGENTS.has(subagentType)) { exitOk(); return; }
+
+// AFTER:
+  if (!isPipelineAgent(subagentType)) { exitOk(); return; }
+```
+
+Note: the fail-open direction differs between subagent-start.js (record all when allowlist unavailable) and routing-enforcement.js (enforce on all when allowlist unavailable). For enforcement the fail-open in the direction of *enforcing* is safer — it prevents silently bypassing routing checks.
 
 ---
 
-**Change:** Insert terminal-run guard between the `isForgeAgent` check and the agents-push in `main`.
+### Finding 3 — `hooks/approval-token.js`
 
-**Find:**
+**Bug:** `detectActions()` uses `indexOf` which matches substrings: "pushback" triggers push, "recommit" and "commitment" trigger commit.
+
+**Root cause:** Lines 74-79 — `lower.indexOf(keyword)` has no word-boundary constraint.
+
+**Change:** Replace `indexOf` with `RegExp.exec()` using `\b` word-boundary anchors. The `isNegated` function needs a character index, which `exec()` provides via `match.index`.
+
 ```js
-  if (!isForgeAgent(agentType)) {
-    exitOk();
-    return;
-  }
-
-  // Push new entry into agents array (mutate in-place)
-  const nowTs = Date.now();
-```
-
-**Replace with:**
-```js
-  if (!isForgeAgent(agentType)) {
-    exitOk();
-    return;
-  }
-
-  // Terminal-run guard: if the run referenced by run-active.json is already
-  // done (completed / failed / discarded), do not append to it — that would
-  // re-animate a finished run and set a stale currentUnit. Fail-open: if
-  // the registry is unreadable or the runId is absent, proceed as today.
-  const runStatus = readRunStatus(projectDir, data.runId || null);
-  if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
-    process.stderr.write('[forge-subagent] skipping append to terminal run ' + (data.runId || '(unknown)') + '\n');
-    exitOk();
-    return;
-  }
-
-  // Push new entry into agents array (mutate in-place)
-  const nowTs = Date.now();
-```
-
----
-
-### `hooks/ctx-session-start.js`
-
-**Change:** In the terminal-run branch of `emitStaleUnitNoticeIfAny`, replace the `writeFileSync` null-write with `fs.unlinkSync` so the stale file is removed rather than left as a zero-identity stub.
-
-**Find:**
-```js
-    if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
-      try {
-        data.currentUnit = null;
-        fs.writeFileSync(runActivePath, JSON.stringify(data, null, 2), 'utf8');
-      } catch (_) {
-        // Cleanup failed — fall through silently. We deliberately do NOT
-        // emit the misleading notice in this case either; the marker just
-        // stays on disk until the next cleanup attempt or a successful
-        // start/stop cycle.
-      }
-      return false;
+// BEFORE (lines 71-81):
+function detectActions(message) {
+  const lower = message.toLowerCase();
+  const detected = [];
+  for (const [action, keyword] of Object.entries(ACTION_KEYWORDS)) {
+    const idx = lower.indexOf(keyword);
+    if (idx !== -1 && !isNegated(lower, idx)) {
+      detected.push(action);
     }
-```
+  }
+  return detected;
+}
 
-**Replace with:**
-```js
-    if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
-      try {
-        fs.unlinkSync(runActivePath);
-      } catch (_) {
-        // Cleanup failed — fall through silently. We deliberately do NOT
-        // emit the misleading notice in this case either; the marker just
-        // stays on disk until the next cleanup attempt or a successful
-        // start/stop cycle.
+// AFTER:
+function detectActions(message) {
+  const lower = message.toLowerCase();
+  const detected = [];
+  for (const [action, keyword] of Object.entries(ACTION_KEYWORDS)) {
+    const re = new RegExp('\\b' + keyword + '\\b', 'gi');
+    let m;
+    while ((m = re.exec(lower)) !== null) {
+      if (!isNegated(lower, m.index)) {
+        detected.push(action);
+        break; // one non-negated match per action is sufficient
       }
-      return false;
     }
+  }
+  return detected;
+}
 ```
 
 ---
 
-### `docs/gotchas/GENERAL.md`
+### Finding 4 — `hooks/gate-enforcement.js`
 
-**Change:** Add `## run-active.json lifecycle contract` section after the existing `## Pipeline state files` section (before `## Signal protocol`).
+**Bug:** The TRIVIAL/SPRINT bypass reads `pipelineMode` from `.pipeline/project.json` (project-level default). A SPRINT run on a LEAN project still enforces gates; a LEAN run on a SPRINT project bypasses them.
 
-**Find:**
-```markdown
----
+**Root cause:** Lines 99-108 — only `project.json` is consulted. The per-run mode in `run-active.json` is never read.
 
-## Signal protocol — bracket-prefix lines from agents
-```
+**Change:** Read `run-active.json` first for its `mode` field. Fall back to `project.json` `pipelineMode` only when `run-active.json` is absent or has no `mode` field.
 
-**Replace with:**
-```markdown
----
+```js
+// BEFORE (lines 96-109):
+  const projectDir = process.cwd();
 
-## run-active.json lifecycle contract
+  // Step 7: check pipelineMode — bypass for TRIVIAL and SPRINT.
+  const projectJsonPath = path.join(projectDir, '.pipeline', 'project.json');
+  const projectResult = readJsonFile(projectJsonPath);
+  if (projectResult.ok && projectResult.data) {
+    const mode = projectResult.data.pipelineMode;
+    if (mode && BYPASS_MODES.has(mode)) {
+      console.error('[gate-enforcement] pipelineMode ' + mode + ': gates bypassed by design');
+      exitOk();
+      return;
+    }
+  }
+  // Missing or malformed project.json: proceed with normal enforcement.
 
-`.pipeline/run-active.json` is a temporary pointer file tracking the in-progress pipeline run.
+// AFTER:
+  const projectDir = process.cwd();
 
-| Role | Owner |
-|------|-------|
-| Create / initialise | `forge_create_run` and `forge_resume_run` MCP tools |
-| Append agent entries | `hooks/subagent-start.js` (SubagentStart event) |
-| Delete on terminal run | `hooks/ctx-session-start.js` → `emitStaleUnitNoticeIfAny` |
-| Clear `currentUnit` on agent stop | `hooks/subagent-stop.js` (SubagentStop event) |
-
-**Terminal statuses:** `completed`, `failed`, `discarded`. Any run whose `run.json` carries one of these statuses is terminal.
-
-**Fail-open rule:** if `run.json` is absent, unreadable, or unparseable, both hooks treat the run as non-terminal and proceed normally.
-
-**Why delete, not null-write:** writing `{ currentUnit: null }` back to disk preserves the `runId` identity field, allowing `subagent-start.js` to read and re-append to a finished run on the next agent dispatch. Deletion is the cleanest teardown — `subagent-start.js` already exits silently when the file is absent (lines 74-81).
-
----
-
-## Signal protocol — bracket-prefix lines from agents
-```
-
----
-
-### `docs/CHANGELOG.md`
-
-**Change:** Prepend a new dated entry at the top of the file for the stale run-active.json fix.
-
-**Find (first line of file):**
-```markdown
-## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
-```
-
-**Replace with:**
-```markdown
-## [2026-04-19] fix(hooks): stale run-active.json pointer pollution
-
-### Motivation
-Two gaps caused `run-active.json` to persist stale content after a pipeline run finished:
-1. `hooks/subagent-start.js` would append to the `agents` array of a terminal run (status `completed`/`failed`/`discarded`), re-animating it and setting a fresh `currentUnit`.
-2. `hooks/ctx-session-start.js` cleared `currentUnit` by null-writing back to disk rather than deleting the file, leaving a zero-identity stub that passes the missing-file guard in `subagent-start.js`.
-
-### Fix
-- **`hooks/subagent-start.js`** — added `TERMINAL_STATUSES` and `readRunStatus` helper (identical logic to the existing copy in `ctx-session-start.js`). Inserted a terminal-run guard between the `isForgeAgent` check and the agents-push: if the run referenced by `run-active.json` is terminal, the hook logs a stderr note and exits without writing. Fail-open: unreadable or missing registry → proceed as before.
-- **`hooks/ctx-session-start.js`** — in `emitStaleUnitNoticeIfAny`, replaced the `writeFileSync` (null-write) in the terminal branch with `fs.unlinkSync(runActivePath)`. The surrounding try/catch is kept; failure falls through silently.
-
-### Rationale: deletion over null-write
-Deleting the file is the correct teardown: (a) `subagent-start.js` already exits silently when the file is absent (lines 74-81), so absence is a safe terminal state; (b) null-writing preserves the `runId` identity field, allowing `subagent-start.js` to read and re-append to a finished run on the next agent dispatch.
-
-### Files changed
-- `hooks/subagent-start.js` — added helper + terminal-run guard
-- `hooks/ctx-session-start.js` — delete-on-terminal in `emitStaleUnitNoticeIfAny`
-- `docs/gotchas/GENERAL.md` — added `## run-active.json lifecycle contract` section
-
----
-
-## [2026-04-18] gate-enforcement: mechanical gate backstop for coder/implementer dispatch
+  // Step 7: check pipelineMode — bypass for TRIVIAL and SPRINT.
+  // Prefer the per-run mode from run-active.json; fall back to project.json.
+  let resolvedMode = null;
+  const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
+  const runActiveResult = readJsonFile(runActivePath);
+  if (runActiveResult.ok && runActiveResult.data && runActiveResult.data.mode) {
+    resolvedMode = runActiveResult.data.mode;
+  } else {
+    const projectJsonPath = path.join(projectDir, '.pipeline', 'project.json');
+    const projectResult = readJsonFile(projectJsonPath);
+    if (projectResult.ok && projectResult.data) {
+      resolvedMode = projectResult.data.pipelineMode || null;
+    }
+  }
+  if (resolvedMode && BYPASS_MODES.has(resolvedMode)) {
+    console.error('[gate-enforcement] pipelineMode ' + resolvedMode + ': gates bypassed by design');
+    exitOk();
+    return;
+  }
+  // Missing or malformed files: proceed with normal enforcement.
 ```
 
 ---
 
-## Notes for Implementer
+### Finding 5 — `scripts/lean-risk-classify.mjs`
 
-- Apply the two `hooks/subagent-start.js` edits in order: helper first, then the guard inside `main`. The second replacement is independent of line numbers but depends on the helper being present in the file.
-- The `runActivePath` variable in `ctx-session-start.js` is already a local `const` inside `emitStaleUnitNoticeIfAny` (line 96). The `unlinkSync` call uses it directly — no new variable needed.
-- The `readRunStatus` function uses synchronous `fs.readFileSync` to match the existing copy in `ctx-session-start.js`. The surrounding `main` in `subagent-start.js` is async, but synchronous reads are fine here — the helper is called once per hook invocation on a small JSON file.
-- The CHANGELOG prepend: the entire block from `## [2026-04-19]` through the closing `---` is inserted before the existing first line. The rest of the file is untouched.
+**Bug:** `extractFilePaths()` only matches `### \`path/to/file\`` level-3 headings (line 100). Coders using level-4 headings, bold paths, or list items with backtick paths silently skip path-based risk checks.
 
-## Self-review
+**Root cause:** Single regex on line 100.
 
-- **Async:** No new async calls. `readRunStatus` uses synchronous `fs.readFileSync` — intentional and safe (matches source pattern, called once per hook invocation). `fs.unlinkSync` is sync — `emitStaleUnitNoticeIfAny` is a sync function. No await/catch gaps introduced.
-- **State mutations:** In `subagent-start.js` guard path: `data` is read but not mutated before early exit — clean. In `ctx-session-start.js` terminal branch: the previous `data.currentUnit = null` mutation is removed entirely; `unlinkSync` operates on the path string only.
-- **Edge cases:**
-  - `data.runId` absent or null: `readRunStatus` returns `null` immediately (guard: `if (!runId || typeof runId !== 'string') return null`). Guard condition `runStatus && ...` is false → fall through. Correct.
-  - `run.json` missing: `readFileSync` throws, caught by try/catch, returns `null` → fall through. Correct.
-  - `run.json` present but `status` field absent or non-string: returns `null` → fall through. Correct.
-  - `unlinkSync` fails (file already deleted by concurrent cleanup, permissions): caught by try/catch, falls through silently. Correct.
-  - Non-terminal run with stale `currentUnit`: unlink path not taken; existing stale-notice logic unchanged. Correct.
-- **Return checks:** `readRunStatus` return is guarded with `if (runStatus && TERMINAL_STATUSES.has(runStatus))` — handles both `null` and non-terminal strings. Correct.
-- **No `console.log`** — stderr only via `process.stderr.write`. Correct per GENERAL.md hook protocol.
-- **No `.pipeline/` files in handoff** — confirmed. No board.json, features.json, or other pipeline config files referenced.
+**Change:** Add supplementary patterns. Deduplicate with a `Set`.
 
-## Doc hints
-arch-update: false
-decision: true
+```js
+// BEFORE (lines 96-106):
+function extractFilePaths(filesSection) {
+  if (!filesSection) return [];
+  const paths = [];
+  // Match level-3 headings containing a file path: ### `path/to/file.ext`
+  const re = /^###\s+[`'"]?([^\s`'"]+)[`'"]?\s*$/gm;
+  let m;
+  while ((m = re.exec(filesSection)) !== null) {
+    paths.push(m[1].replace(/\\/g, '/'));
+  }
+  return paths;
+}
+
+// AFTER:
+function extractFilePaths(filesSection) {
+  if (!filesSection) return [];
+  const seen = new Set();
+  const add = (p) => { const n = p.replace(/\\/g, '/'); if (n) seen.add(n); };
+
+  // Pattern 1 (primary): ### `path/to/file.ext` or ### path/to/file.ext
+  const re1 = /^###\s+[`'"]?([^\s`'"]+)[`'"]?\s*$/gm;
+  let m;
+  while ((m = re1.exec(filesSection)) !== null) add(m[1]);
+
+  // Pattern 2: #### `path/to/file.ext` (level-4 headings)
+  const re2 = /^####\s+[`'"]?([^\s`'"]+)[`'"]?\s*$/gm;
+  while ((m = re2.exec(filesSection)) !== null) add(m[1]);
+
+  // Pattern 3: **`path/to/file.ext`** or **path/to/file.ext:**
+  const re3 = /^\*\*[`']?([^`'*\s][^`'*]*?)[`']?\*\*:?\s*$/gm;
+  while ((m = re3.exec(filesSection)) !== null) {
+    const p = m[1].trim();
+    if (p.includes('/')) add(p); // must look like a path
+  }
+
+  // Pattern 4: - `path/to/file.ext` or * `path/to/file.ext` (list items)
+  const re4 = /^[-*]\s+`([^`]+)`/gm;
+  while ((m = re4.exec(filesSection)) !== null) {
+    const p = m[1].trim();
+    if (p.includes('/')) add(p); // must contain / to distinguish from inline code
+  }
+
+  return Array.from(seen);
+}
+```
+
+---
+
+### Finding 6 — `mcp/lib/config-store.js`
+
+**Bug:** Module-level `_cache` is only invalidated by `writeForgeConfig()`. External file edits (hand-editing, bootstrap hook) are invisible until MCP server restart.
+
+**Root cause:** Lines 94, 109-113 — cache hit check uses only `pluginDataDir` + `projectDir`, never comparing the file's mtime.
+
+**Change:** Store `mtime` alongside the cached data. On each `readForgeConfig()` call, `statSync` the file and compare. If mtime changed, discard cache and re-read.
+
+```js
+// BEFORE (lines 91-113):
+// Module-level routing config cache — loaded once per session, invalidated on write.
+let _cache = null; // { config, configPath, pluginDataDir, projectDir }
+
+export function readForgeConfig(pluginDataDir, projectDir) {
+  if (_cache !== null &&
+      _cache.pluginDataDir === pluginDataDir &&
+      _cache.projectDir === projectDir) {
+    return { config: _cache.config, configPath: _cache.configPath };
+  }
+  // ... (rest of function, lines 115-144)
+
+// AFTER:
+// Module-level routing config cache — invalidated on write or when mtime changes.
+// { config, configPath, pluginDataDir, projectDir, mtimeMs }
+let _cache = null;
+
+export function readForgeConfig(pluginDataDir, projectDir) {
+  if (_cache !== null &&
+      _cache.pluginDataDir === pluginDataDir &&
+      _cache.projectDir === projectDir) {
+    // Check mtime to detect external edits (hand-editing, bootstrap hook, etc.)
+    try {
+      const { statSync } = await import('node:fs'); // already imported at top — use synchronous
+      // (statSync is already imported via the top-level import — see correction below)
+    } catch (_) { /* ignore */ }
+    // NOTE: Use the already-imported statSync from the top-level import block
+    let currentMtime = 0;
+    try {
+      currentMtime = statSync(_cache.configPath).mtimeMs;
+    } catch (_) {
+      // file gone — force re-read
+      _cache = null;
+    }
+    if (_cache !== null && currentMtime === _cache.mtimeMs) {
+      return { config: _cache.config, configPath: _cache.configPath };
+    }
+    // mtime changed or file gone — fall through to re-read
+    _cache = null;
+  }
+  // ... rest of function unchanged until cache assignment:
+```
+
+The import at the top of the file needs `statSync` added:
+
+```js
+// BEFORE (line 4):
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+
+// AFTER:
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+```
+
+And the cache assignment inside the loop (currently line 136) needs `mtimeMs` added:
+
+```js
+// BEFORE:
+      _cache = { config, configPath: candidate, pluginDataDir, projectDir };
+
+// AFTER:
+      let mtimeMs = 0;
+      try { mtimeMs = statSync(candidate).mtimeMs; } catch (_) { /* ignore */ }
+      _cache = { config, configPath: candidate, pluginDataDir, projectDir, mtimeMs };
+```
+
+And clean up the stray bogus `await import` block added above — the full corrected `readForgeConfig` with the mtime check is:
+
+```js
+export function readForgeConfig(pluginDataDir, projectDir) {
+  if (_cache !== null &&
+      _cache.pluginDataDir === pluginDataDir &&
+      _cache.projectDir === projectDir) {
+    // Validate mtime to detect external edits — cheap (one stat call).
+    let currentMtime = 0;
+    try {
+      currentMtime = statSync(_cache.configPath).mtimeMs;
+    } catch (_) {
+      _cache = null; // file gone — force re-read
+    }
+    if (_cache !== null && currentMtime === _cache.mtimeMs) {
+      return { config: _cache.config, configPath: _cache.configPath };
+    }
+    _cache = null; // mtime changed — fall through to re-read
+  }
+
+  const candidates = [];
+  if (pluginDataDir) {
+    candidates.push(join(pluginDataDir, 'forge-config.json'));
+  }
+  candidates.push(join(projectDir, '.pipeline', 'forge-config.json'));
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      let raw;
+      try {
+        raw = readFileSync(candidate, 'utf-8');
+      } catch (err) {
+        throw new Error('forge-config.json read failed at ' + candidate + ': ' + err.message);
+      }
+      let config;
+      try {
+        config = JSON.parse(raw);
+      } catch (err) {
+        throw new Error('forge-config.json parse failed at ' + candidate + ': ' + err.message);
+      }
+      validateForgeConfig(config, candidate);
+      let mtimeMs = 0;
+      try { mtimeMs = statSync(candidate).mtimeMs; } catch (_) { /* ignore */ }
+      _cache = { config, configPath: candidate, pluginDataDir, projectDir, mtimeMs };
+      return { config, configPath: candidate };
+    }
+  }
+
+  throw new Error(
+    'forge-config.json not found. Searched: ' + candidates.join(', ') +
+    '. Run /forge:init or copy forge-config.default.json to one of these locations.',
+  );
+}
+```
+
+---
+
+### Finding 7 — `mcp/server.js`
+
+**Bug:** A 401 response calls `markQuotaExhausted()`, which blocks all models on that provider for the session. A 401 is auth failure, not quota exhaustion.
+
+**Root cause:** Lines 797-798 — the `isAuthError` branch calls `markQuotaExhausted(projectDir, currentProviderId)`.
+
+**Change:** For 401 errors, return a descriptive error without marking the provider exhausted. For 403, also skip quota marking. Only 429 / "quota" string maps to `markQuotaExhausted`.
+
+```js
+// BEFORE (lines 793-801):
+          const isAuthError = msg.includes("401");
+          const isQuotaError = msg.includes("429") || msg.toLowerCase().includes("quota");
+
+          if (isAuthError) {
+            try { markQuotaExhausted(projectDir, currentProviderId); } catch (_) { /* best-effort */ }
+          } else if (isQuotaError) {
+            try { markModelQuotaExhausted(projectDir, currentProviderId, currentModelId); } catch (_) { /* best-effort */ }
+          }
+
+// AFTER:
+          const isAuthError = msg.includes("401") || msg.includes("403");
+          const isQuotaError = msg.includes("429") || msg.toLowerCase().includes("quota");
+
+          if (isAuthError) {
+            // Auth errors (401 invalid key, 403 forbidden) are NOT quota exhaustion.
+            // Return immediately with a descriptive message — do NOT mark provider exhausted.
+            return errorResult(
+              "API key invalid, expired, or forbidden for provider \"" + currentProviderId +
+              "\" (HTTP " + (msg.includes("401") ? "401" : "403") + "): " + msg
+            );
+          } else if (isQuotaError) {
+            try { markModelQuotaExhausted(projectDir, currentProviderId, currentModelId); } catch (_) { /* best-effort */ }
+          }
+```
+
+---
+
+## Verification
+
+pre-flight clean
+
+## Blockers
+
+None.
+
+## Why these fixes are correct
+
+1. **Finding 1:** The old code used `startedAt` age as a proxy for "is the run still live". `run.json` status is the authoritative signal. Non-terminal runs are active regardless of elapsed time.
+
+2. **Finding 8:** The single `isSourceFile` function was shared between two logically different contexts. Adding an `includeAgents` parameter separates advisory (where we don't want noise on agent edits) from enforcement (where we must gate on agent edits).
+
+3. **Finding 2:** Dynamic scan matches how `subagent-start.js` already works. The enforcement hook now can't drift from the actual agents directory.
+
+4. **Finding 3:** Word-boundary regex eliminates false positives from "pushback", "recommit", "commitment" while preserving all true positives. The `exec()` loop also handles multiple occurrences of a keyword correctly.
+
+5. **Finding 4:** Per-run `mode` is more specific than the project default. The fallback chain (run-active.json → project.json) follows the same precedence used elsewhere in the pipeline.
+
+6. **Finding 5:** Adding three supplementary extraction patterns with path-validation guards (`includes('/')` for list items and bold paths) broadens coverage without introducing false positives from short inline code tokens.
+
+7. **Finding 6:** One `statSync` call per cache hit is cheap (kernel metadata only, no read). It covers all external-edit scenarios including bootstrap hook writes and hand-editing.
+
+8. **Finding 7:** 401 is "wrong API key" and 403 is "access denied on this endpoint" — neither indicates the provider's quota is exhausted. Returning an error immediately without marking exhausted preserves the ability to retry after fixing the key, and does not poison other models on the same provider.
+
+## Regression risk
+
+- **Finding 1:** If `run.json` is absent (pre-registry projects), `isPipelineActive()` returns `true` for any non-empty `runId`. This is the documented fail-open behavior — same as `subagent-start.js`.
+- **Finding 8:** The advisory path now passes `{ includeAgents: false }` explicitly. Any caller that forgets the flag gets the safe default (`true` = include agents in enforcement). No silent regression.
+- **Finding 2:** Fail-open is in the "enforce on all" direction when agent scan fails — more conservative than before, no less safe.
+- **Finding 4:** Projects without `run-active.json` fall back to `project.json` as before. No behavior change for those projects.
+- **Finding 7:** The early `return` on auth error means the retry loop is exited for 401/403. This is correct — retrying with the same key would always fail. The transient-reroute path is unaffected (503 only).

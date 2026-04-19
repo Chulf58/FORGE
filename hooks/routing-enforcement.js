@@ -18,25 +18,42 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { resolvePluginRoot } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 10_000;
 const RECOMMENDATION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const LOG_RELATIVE_PATH = path.join('.pipeline', 'session-dispatch-log.json');
 
-// Known FORGE pipeline agents — kept in sync with agentModelMap in
-// forge-config.default.json. supervisor is intentionally excluded because it
-// runs through forge_call_external, never the Agent tool.
-const PIPELINE_AGENTS = new Set([
-  'agent-optimizer', 'architect', 'brainstormer', 'cleanup', 'coder',
-  'coder-scout', 'completeness-checker', 'compound-refresh', 'debug',
-  'documenter', 'gotcha-checker', 'ideator', 'implementation-architect',
-  'implementer', 'implementer-triage', 'integrity-checker', 'planner',
-  'refactor', 'regression-risk', 'researcher', 'researcher-triage',
-  'reviewer-boundary', 'reviewer-logic', 'reviewer-performance',
-  'reviewer-safety', 'reviewer-style', 'reviewer-triage', 'skills-generator',
-  'tool-call-auditor',
-]);
+// Dynamically derived from agents/*.md on first call.
+// undefined = not yet probed; null = failed (fail-open); Set = ok
+let _pipelineAgents = undefined;
+
+function getPipelineAgentSet() {
+  if (_pipelineAgents !== undefined) return _pipelineAgents;
+  try {
+    const agentsDir = path.join(resolvePluginRoot(), 'agents');
+    const entries = fs.readdirSync(agentsDir);
+    const names = entries
+      .filter(n => n.endsWith('.md'))
+      .map(n => n.slice(0, -3)); // strip .md
+    if (names.length === 0) {
+      _pipelineAgents = null; // empty dir — fail open
+      return _pipelineAgents;
+    }
+    _pipelineAgents = new Set(names);
+    return _pipelineAgents;
+  } catch (_) {
+    _pipelineAgents = null;
+    return _pipelineAgents;
+  }
+}
+
+function isPipelineAgent(name) {
+  const set = getPipelineAgentSet();
+  if (!set) return true; // allowlist unavailable → fail open (enforce on all)
+  return set.has(name);
+}
 
 function exitOk() { process.exit(0); }
 
@@ -93,7 +110,7 @@ async function main(rawInput) {
   if (!subagentType || typeof subagentType !== 'string') { exitOk(); return; }
 
   // Not a FORGE pipeline agent — enforcement does not apply.
-  if (!PIPELINE_AGENTS.has(subagentType)) { exitOk(); return; }
+  if (!isPipelineAgent(subagentType)) { exitOk(); return; }
 
   const projectDir = process.cwd();
   const entries = readDispatchLog(projectDir);

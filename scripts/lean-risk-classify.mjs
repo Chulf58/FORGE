@@ -95,14 +95,33 @@ function extractSection(content, headingText) {
 
 function extractFilePaths(filesSection) {
   if (!filesSection) return [];
-  const paths = [];
-  // Match level-3 headings containing a file path: ### `path/to/file.ext`
-  const re = /^###\s+[`'"]?([^\s`'"]+)[`'"]?\s*$/gm;
+  const seen = new Set();
+  const add = (p) => { const n = p.replace(/\\/g, '/'); if (n) seen.add(n); };
+
+  // Pattern 1 (primary): ### `path/to/file.ext` or ### path/to/file.ext
+  const re1 = /^###\s+[`'"]?([^\s`'"]+)[`'"]?\s*$/gm;
   let m;
-  while ((m = re.exec(filesSection)) !== null) {
-    paths.push(m[1].replace(/\\/g, '/'));
+  while ((m = re1.exec(filesSection)) !== null) add(m[1]);
+
+  // Pattern 2: #### `path/to/file.ext` (level-4 headings)
+  const re2 = /^####\s+[`'"]?([^\s`'"]+)[`'"]?\s*$/gm;
+  while ((m = re2.exec(filesSection)) !== null) add(m[1]);
+
+  // Pattern 3: **`path/to/file.ext`** or **path/to/file.ext:**
+  const re3 = /^\*\*[`']?([^`'*\s][^`'*]*?)[`']?\*\*:?\s*$/gm;
+  while ((m = re3.exec(filesSection)) !== null) {
+    const p = m[1].trim();
+    if (p.includes('/')) add(p); // must look like a path
   }
-  return paths;
+
+  // Pattern 4: - `path/to/file.ext` or * `path/to/file.ext` (list items)
+  const re4 = /^[-*]\s+`([^`]+)`/gm;
+  while ((m = re4.exec(filesSection)) !== null) {
+    const p = m[1].trim();
+    if (p.includes('/')) add(p); // must contain / to distinguish from inline code
+  }
+
+  return Array.from(seen);
 }
 
 function extractCodeBlockContent(filesSection) {

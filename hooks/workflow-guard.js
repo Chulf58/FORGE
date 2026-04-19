@@ -6,7 +6,8 @@ const path = require('path');
 const readline = require('readline');
 
 const STDIN_TIMEOUT_MS  = 10_000;
-const MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
 
 function exitOk() {
   process.exit(0);
@@ -43,31 +44,43 @@ async function isGuardEnabled() {
 }
 
 async function isPipelineActive() {
-  const markerPath = path.join(process.cwd(), '.pipeline', 'run-active.json');
+  const projectDir = process.cwd();
+  const markerPath = path.join(projectDir, '.pipeline', 'run-active.json');
+  let runId;
   try {
-    await fs.promises.access(markerPath);
     const raw = await fs.promises.readFile(markerPath, 'utf8');
     const data = JSON.parse(raw);
-    if (!data || typeof data.startedAt !== 'number') return false;
-    // Stale marker (older than 5 minutes) or future timestamp (clock skew / corrupted JSON)
-    // is treated as absent. The future-timestamp guard prevents a negative delta from
-    // making the stale check permanently false when the system clock moves backwards.
-    if (Date.now() - data.startedAt > MARKER_MAX_AGE_MS || data.startedAt > Date.now()) return false;
-    return true;
+    if (!data || !data.runId) return false;
+    runId = data.runId;
   } catch (_) {
     return false;
   }
+  // Validate runId to prevent path traversal via a tampered run-active.json.
+  if (!/^r-[a-zA-Z0-9-]+$/.test(runId)) return false;
+  // Cross-reference the run registry for terminal status.
+  // Fail-open: if run.json is absent or unreadable, treat as non-terminal.
+  try {
+    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+    const raw = await fs.promises.readFile(runPath, 'utf8');
+    const run = JSON.parse(raw);
+    if (run && run.status && TERMINAL_STATUSES.has(run.status)) return false;
+  } catch (_) {
+    // run.json absent or unreadable — fail open (non-terminal assumed)
+  }
+  return true;
 }
 
-function isSourceFile(filePath) {
+function isSourceFile(filePath, { includeAgents = true } = {}) {
   if (!filePath || typeof filePath !== 'string') return false;
   const normalised = filePath.replace(/\\/g, '/');
-  // Exclude pipeline, docs, config, and agent directories — everything else is source
+  // Exclude pipeline, docs, config directories — everything else is source.
+  // agents/ is excluded only for the advisory path (includeAgents: false).
   const excluded = [
     '/.pipeline/', '/docs/', '/.claude/', '/templates/',
-    '/node_modules/', '/.git/', '/mcp/', '/hooks/', '/agents/',
+    '/node_modules/', '/.git/', '/mcp/', '/hooks/',
     '/skills/', '/bin/',
   ];
+  if (!includeAgents) excluded.push('/agents/');
   for (const ex of excluded) {
     if (normalised.includes(ex)) return false;
   }
@@ -244,8 +257,8 @@ async function main(rawInput) {
   // Pipeline active? No advisory needed.
   if (await isPipelineActive()) { exitOk(); return; }
 
-  // Only warn for source files
-  if (!isSourceFile(filePath)) { exitOk(); return; }
+  // Only warn for source files (advisory path excludes agents/)
+  if (!isSourceFile(filePath, { includeAgents: false })) { exitOk(); return; }
 
   // Emit advisory via additionalContext (injected directly into Claude's active session)
   const advisory =

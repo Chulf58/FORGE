@@ -791,11 +791,20 @@ server.registerTool(
           // model from the same provider:
           //   401 (auth/billing) — applies to the whole provider (bad key, disabled billing)
           //   429 / "quota" string — per-model rate or quota failure; mark only this model
-          const isAuthError = msg.includes("401");
+          // Detect auth errors by the exact prefix produced by sanitizeErrorMessage —
+          // "OpenAI API error 401: ..." or "OpenAI API error 403: ...". Using the
+          // prefix avoids false positives from response body content that happens
+          // to contain "401" or "403" as data.
+          const isAuthError = msg.startsWith("OpenAI API error 401") || msg.startsWith("OpenAI API error 403");
           const isQuotaError = msg.includes("429") || msg.toLowerCase().includes("quota");
 
           if (isAuthError) {
-            try { markQuotaExhausted(projectDir, currentProviderId); } catch (_) { /* best-effort */ }
+            // Auth errors (401 invalid key, 403 forbidden) are NOT quota exhaustion.
+            // Return immediately with a descriptive message — do NOT mark provider exhausted.
+            return errorResult(
+              "API key invalid, expired, or forbidden for provider \"" + currentProviderId +
+              "\" (" + msg + "): check the API key configured in the provider's envVar."
+            );
           } else if (isQuotaError) {
             try { markModelQuotaExhausted(projectDir, currentProviderId, currentModelId); } catch (_) { /* best-effort */ }
           }

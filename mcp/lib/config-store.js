@@ -1,7 +1,7 @@
 // config-store.js — forge-config.json read/write helpers (ESM)
 // Config priority: CLAUDE_PLUGIN_DATA/forge-config.json -> projectDir/.pipeline/forge-config.json
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Known provider types supported by forge_call_external adapters.
@@ -88,10 +88,9 @@ export function resolvePluginDataDir() {
   return process.env.CLAUDE_PLUGIN_DATA || null;
 }
 
-// Module-level routing config cache — loaded once per session, invalidated on write.
-// The routing config (models, providers, agentModelMap) changes only when the user
-// explicitly updates it, so re-reading on every recommendation call is wasteful.
-let _cache = null; // { config, configPath, pluginDataDir, projectDir }
+// Module-level routing config cache — invalidated on write or when mtime changes.
+// { config, configPath, pluginDataDir, projectDir, mtimeMs }
+let _cache = null;
 
 /**
  * Reads forge-config.json — cached after first load.
@@ -109,7 +108,17 @@ export function readForgeConfig(pluginDataDir, projectDir) {
   if (_cache !== null &&
       _cache.pluginDataDir === pluginDataDir &&
       _cache.projectDir === projectDir) {
-    return { config: _cache.config, configPath: _cache.configPath };
+    // Validate mtime to detect external edits — cheap (one stat call).
+    let currentMtime = 0;
+    try {
+      currentMtime = statSync(_cache.configPath).mtimeMs;
+    } catch (_) {
+      _cache = null; // file gone — force re-read
+    }
+    if (_cache !== null && currentMtime === _cache.mtimeMs) {
+      return { config: _cache.config, configPath: _cache.configPath };
+    }
+    _cache = null; // mtime changed — fall through to re-read
   }
 
   const candidates = [];
@@ -133,7 +142,9 @@ export function readForgeConfig(pluginDataDir, projectDir) {
         throw new Error('forge-config.json parse failed at ' + candidate + ': ' + err.message);
       }
       validateForgeConfig(config, candidate);
-      _cache = { config, configPath: candidate, pluginDataDir, projectDir };
+      let mtimeMs = 0;
+      try { mtimeMs = statSync(candidate).mtimeMs; } catch (_) { /* ignore */ }
+      _cache = { config, configPath: candidate, pluginDataDir, projectDir, mtimeMs };
       return { config, configPath: candidate };
     }
   }
