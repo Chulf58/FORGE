@@ -1,3 +1,11 @@
+## [2026-04-19] Stuck-loop detection in subagent dispatch
+
+- Added stuck-loop detection to `hooks/subagent-start.js` — warns on 2nd dispatch of same agent type within a run, blocks on 3rd+ with exit(2)
+- Prevents runaway retry loops from burning tokens when agents fail to progress
+- Detection is by `agent_type` (e.g., `coder`, `reviewer-safety`), counting only prior dispatches before the new entry is recorded
+
+---
+
 ## [2026-04-19] Worktree merge conflict handling
 
 - Added pre-merge dirty-check to `merge()` in `bin/forge-worktree.js` — rejects the merge with a structured JSON error if the main repo has uncommitted changes, listing the dirty files

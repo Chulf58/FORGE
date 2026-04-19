@@ -132,6 +132,35 @@ async function main(rawInput) {
     return;
   }
 
+  // Stuck-loop detection: count prior dispatches of this agent_type in the run.
+  // Runs BEFORE the new entry is pushed, so priorCount reflects history only.
+  // Fail-open: if data.agents is not an array or agentType is falsy, skip.
+  if (Array.isArray(data.agents) && agentType) {
+    const normalizedType = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
+    const priorCount = data.agents.filter((a) => {
+      const t = a.agent_type || '';
+      return (t.startsWith('forge:') ? t.slice('forge:'.length) : t) === normalizedType;
+    }).length;
+
+    const safeType = normalizedType.replace(/[\r\n]/g, ' ').trim();
+    const safeRunId = (data.runId || '(unknown)').replace(/[\r\n]/g, ' ').trim();
+
+    if (priorCount === 1) {
+      process.stderr.write(
+        '[forge-stuck] WARNING: Agent ' + safeType +
+        ' dispatched a 2nd time in run ' + safeRunId +
+        '. Allowing retry.\n'
+      );
+    } else if (priorCount >= 2) {
+      process.stderr.write(
+        '[forge-stuck] BLOCKED: Agent ' + safeType +
+        ' dispatched ' + (priorCount + 1) + ' times in run ' + safeRunId +
+        '. Stopping to prevent token burn.\n'
+      );
+      process.exit(2);
+    }
+  }
+
   // Push new entry into agents array (mutate in-place)
   const nowTs = Date.now();
   data.agents.push({

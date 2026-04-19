@@ -132,6 +132,26 @@ Files the pipeline reads/writes in the target project:
 
 ---
 
+## Stuck-loop detection — subagent-start.js
+
+`hooks/subagent-start.js` detects when the same FORGE agent type dispatches repeatedly within a single pipeline run and stops runaway loops before they burn tokens.
+
+**Thresholds:**
+- **1st dispatch** — proceeds normally, no message.
+- **2nd dispatch** — emits a stderr warning and allows the retry:
+  `[forge-stuck] WARNING: Agent <type> dispatched a 2nd time in run <runId>. Allowing retry.`
+- **3rd+ dispatch** — emits a stderr error and exits with code 2 (blocks the tool call):
+  `[forge-stuck] BLOCKED: Agent <type> dispatched N times in run <runId>. Stopping to prevent token burn.`
+
+**Key details:**
+- Detection is by `agent_type` (e.g., `coder`, `reviewer-safety`), not `agent_id`.
+- The `data.agents` array is the source of truth — counts only entries recorded before the new dispatch.
+- The `forge:` namespace prefix is stripped before comparison (same normalization as the rest of the hook).
+- Fail-open: if `data.agents` is not an array or `agent_type` is falsy, the check is skipped.
+- Only applies to FORGE pipeline agents — built-in Claude Code subagents are filtered out before this check runs.
+
+---
+
 ## run-active.json lifecycle contract
 
 `.pipeline/run-active.json` is a temporary pointer file tracking the in-progress pipeline run.
