@@ -1,3 +1,10 @@
+## [2026-04-19] Hello World slash command
+
+- Added `/forge:hello` slash command that responds with "Hello, World!"
+- Command file: `commands/forge/hello.md`
+
+---
+
 ## [2026-04-19] Fix forge-worktree.js pre-merge dirty-check to exclude pipeline artifacts
 
 - Updated pre-merge dirty-file detection in `bin/forge-worktree.js` to filter `.worktrees/` and `.pipeline/` entries before blocking merges

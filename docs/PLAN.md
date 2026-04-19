@@ -55,23 +55,6 @@
 
 ---
 
-### Feature: Hello World Slash Command
-
-- [ ] 1. Create the `/forge:hello` slash command file (`commands/forge/hello.md`)
-  Create `commands/forge/hello.md` with a minimal prompt body that outputs the text "Hello, World!" when invoked. No YAML frontmatter is required for a simple static command. The file body should be a single instruction directing Claude to respond with "Hello, World!".
-  Verify: `commands/forge/hello.md` exists and contains text that will cause Claude to output "Hello, World!" when the user types `/forge:hello`.
-
-### Research needed
-
-- None.
-
-### Approach summary
-
-**Key decisions:**
-- Single file, single task — the minimum needed for a working slash command. Slash commands in this plugin are Markdown files under `commands/forge/`; no agent, hook, or config change is required for a static response command.
-
----
-
 ### Feature: Fix stale run-active.json pointer pollution
 
 - [x] 1. Add `readRunStatus` helper and `TERMINAL_STATUSES` set to `hooks/subagent-start.js` (`hooks/subagent-start.js`)
