@@ -4,6 +4,26 @@ Non-obvious technical decisions made during development. Reference this when a s
 
 ---
 
+## [2026-04-19] Rename templates/ → scaffolds/ for terminology accuracy
+
+**Context:** The plugin provides project initialization files in a `templates/` directory. This directory is referenced throughout the codebase (agent definitions, hooks, documentation, config). The naming "templates" is ambiguous: it could mean Jinja-style template engines, code snippet libraries, or many other things. The actual purpose is to scaffold (initialize) new projects by copying directory trees into target projects.
+
+**Decision:** Rename `templates/` to `scaffolds/` throughout the codebase. This includes the directory itself (via `git mv`), all path references in documentation, agent definitions, hooks, and configuration, and internal self-references within scaffold sub-projects.
+
+**Alternatives considered:**
+1. **Keep `templates/`** — familiar term in some contexts (e.g. Python Jinja), but ambiguous across the industry. Docs must constantly clarify "by templates we mean...".
+2. **Use `init-files/` or `initialization/`** — literal but verbose. "Scaffolds" is the industry-standard term (Rails, Next.js, Create React App all use "scaffold" for init templates).
+3. **Rename to `starters/` or `projects/`** — also reasonable, but less semantically accurate than "scaffolds" (starters implies starter code, projects implies complete projects; scaffolds explicitly means structural templates).
+
+**Reason:** "Scaffolds" is the precise term used by the tooling community (Rails, Next.js, etc.) for exactly this pattern: structured templates that initialize new projects. Aligning plugin terminology with industry standard reduces cognitive overhead for users and makes the codebase self-documenting.
+
+**Trade-offs:**
+- All existing references must be updated in a single pass (done in this refactor). If references are missed, the mismatch is visible (404 paths, failed inits).
+- Historical records (CHANGELOG, archived plans, decision log) retain the old name to preserve accuracy of what happened at the time.
+- Scaffold internal documents (e.g., `scaffolds/code/CLAUDE.md`) also get updated to refer to their own directory by the new name, improving clarity within those sub-projects.
+
+---
+
 ## [2026-04-19] Two-tier git guard with approval-token vs hard-gate-only
 
 **Context:** Destructive git operations (force push, amend, reset --hard) must be blocked to prevent pipeline corruption. The question was whether ALL git writes (commit, push) should be hard-blocked, or whether common operations should be soft-blocked pending user approval — creating a smoother developer experience for intentional git workflows while still protecting against accidental cascades.

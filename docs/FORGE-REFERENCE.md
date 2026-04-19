@@ -880,9 +880,9 @@ Run {
 
 | Directory | Purpose |
 |-----------|---------|
-| `templates/code/` | Standard code project scaffold (agents, CLAUDE.md, docs — no hooks, no hook settings) |
-| `templates/instructional/` | Instructional/learning project scaffold (no hooks, no hook settings) |
-| `templates/power-automate/` | Power Automate project scaffold (no hooks, no hook settings) |
+| `scaffolds/code/` | Standard code project scaffold (agents, CLAUDE.md, docs — no hooks, no hook settings) |
+| `scaffolds/instructional/` | Instructional/learning project scaffold (no hooks, no hook settings) |
+| `scaffolds/power-automate/` | Power Automate project scaffold (no hooks, no hook settings) |
 
 Templates do not ship `.claude/hooks/` or hook registrations in `.claude/settings.json`. All hooks are provided centrally by the plugin via `hooks/hooks.json`.
 

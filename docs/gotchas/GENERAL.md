@@ -14,7 +14,7 @@
 | Hook scripts | `hooks/*.js` | Node.js scripts (stdin JSON, stdout/stderr output) |
 | Plugin manifest | `.claude-plugin/plugin.json` | JSON — name, version, author |
 | Utility scripts | `bin/forge-status.js`, `bin/forge-worktree.js` | Node.js scripts (standalone) |
-| Project templates | `templates/` | Directory trees copied by `/forge:init` |
+| Project scaffolds | `scaffolds/` | Directory trees copied by `/forge:init` |
 
 ---
 

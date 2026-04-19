@@ -11,7 +11,8 @@
       { "id": "debug-pipeline", "text": "Debug issues via debug agent + reviewers", "addedAt": 0 },
       { "id": "refactor-pipeline", "text": "Refactor code via refactor agent + reviewers", "addedAt": 0 },
       { "id": "architecture-analysis", "text": "Audit project structure via architect agent", "addedAt": 0 },
-      { "id": "code-review", "text": "Multi-reviewer code review (safety, logic, style, performance, boundary)", "addedAt": 0 }
+      { "id": "code-review", "text": "Multi-reviewer code review (safety, logic, style, performance, boundary)", "addedAt": 0 },
+      { "id": "reviewer-boundary-fix", "text": "Fixed reviewer-boundary prompt — align plan-stage detection and add skip gate (2026-04-19)", "addedAt": 1776584619010 }
     ],
     "keyFiles": [
       "agents/planner.md",
@@ -31,7 +32,7 @@
     "dependsOn": [],
     "usedBy": ["slash-commands"],
     "addedAt": 0,
-    "updatedAt": 0
+    "updatedAt": 1776584619010
   },
   {
     "id": "slash-commands",
@@ -113,10 +114,10 @@
     "updatedAt": 0
   },
   {
-    "id": "project-templates",
-    "name": "Project Templates",
-    "description": "Scaffold templates for initializing new projects with FORGE pipeline files.",
-    "notes": "Templates are directory trees copied by /forge:init. Each template type (code, code-csharp, power-automate, instructional, etc.) provides starter CLAUDE.md, docs/, and .pipeline/ files tailored to that stack. The architect agent then customizes GENERAL.md and modules.json for the specific project.",
+    "id": "project-scaffolds",
+    "name": "Project Scaffolds",
+    "description": "Project scaffolds for initializing new projects with FORGE pipeline files.",
+    "notes": "Scaffolds are directory trees copied by /forge:init. Each scaffold type (code, code-csharp, power-automate, instructional, etc.) provides starter CLAUDE.md, docs/, and .pipeline/ files tailored to that stack. The architect agent then customizes GENERAL.md and modules.json for the specific project.",
     "capabilities": [
       { "id": "code-template", "text": "TypeScript/JavaScript project template with full pipeline scaffold", "addedAt": 0 },
       { "id": "csharp-template", "text": "C# project template", "addedAt": 0 },
@@ -124,10 +125,10 @@
       { "id": "instructional-template", "text": "Non-code instructional project template", "addedAt": 0 }
     ],
     "keyFiles": [
-      "templates/code/CLAUDE.md",
-      "templates/code-csharp/docs/",
-      "templates/power-automate/docs/",
-      "templates/instructional/CLAUDE.md"
+      "scaffolds/code/CLAUDE.md",
+      "scaffolds/code-csharp/docs/",
+      "scaffolds/power-automate/docs/",
+      "scaffolds/instructional/CLAUDE.md"
     ],
     "stores": [],
     "ipcChannels": [],

@@ -76,7 +76,7 @@ function isSourceFile(filePath, { includeAgents = true } = {}) {
   // Exclude pipeline, docs, config directories — everything else is source.
   // agents/ is excluded only for the advisory path (includeAgents: false).
   const excluded = [
-    '/.pipeline/', '/docs/', '/.claude/', '/templates/',
+    '/.pipeline/', '/docs/', '/.claude/', '/scaffolds/',
     '/node_modules/', '/.git/', '/mcp/', '/hooks/',
     '/skills/', '/bin/',
   ];

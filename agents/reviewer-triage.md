@@ -83,7 +83,7 @@ Include only sections that exist in the project's GENERAL.md. Do not fabricate c
 
 You operate in either **plan-stage mode** or **implement-stage mode**. Determine which as follows:
 
-**Primary signal (decisive):** If the orchestrator's invocation instruction begins with the literal prefix `[plan-stage mode]`, you are in plan-stage mode. This prefix is set by the FORGE orchestrator in `templates/code/CLAUDE.md` and is the authoritative signal.
+**Primary signal (decisive):** If the orchestrator's invocation instruction begins with the literal prefix `[plan-stage mode]`, you are in plan-stage mode. This prefix is set by the FORGE orchestrator in `scaffolds/code/CLAUDE.md` and is the authoritative signal.
 
 **Secondary signal (confirmatory):** If the primary signal is absent, check whether `docs/context/handoff.md` exists and is readable. If it is absent or unreadable, proceed in **plan-stage mode** and emit a warning. If it is present and readable, read its first 10 lines — if it contains a `# Handoff:` heading, proceed in **implement-stage mode**; if it does not (e.g. it is blank, corrupted, or from a prior run with a different context), treat as stale and proceed in **plan-stage mode** with a warning.
 

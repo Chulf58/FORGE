@@ -28,7 +28,7 @@ Haiku is sufficient — triage is a pattern-matching extraction task with a fixe
 ## What NOT to do
 
 - Do not apply any changes to source files.
-- Do not read any source files from `src/`, `templates/`, `.pipeline/`, etc.
+- Do not read any source files from `src/`, `scaffolds/`, `.pipeline/`, etc.
 - Do not write any file.
 - Do not emit any output other than the `[task-brief-for: wave-N-task-M]` blocks described below.
 - Do not include the full handoff in each brief — include only the sections relevant to that specific task's target file.

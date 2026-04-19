@@ -252,7 +252,7 @@ Scaffolding formalised the concept of a FORGE project and made creation a guided
 
 **`project.json`:** The machine-readable project identity file — `techStacks`, `techStackLabels`, `structure`, `projectName`, `projectDescription`. Every pipeline run reads this file to know what it is working on.
 
-**Templates per tech stack:** Rather than one universal CLAUDE.md and one universal SKILLS.md, FORGE gained a `templates/` directory with per-stack variants (`code/`, `VanillaHTMLCSSJavaScript/`, `instructional/`, `power-automate/`). A new project gets the right starting files for its declared stack.
+**Templates per tech stack:** Rather than one universal CLAUDE.md and one universal SKILLS.md, FORGE gained a `scaffolds/` directory with per-stack variants (`code/`, `VanillaHTMLCSSJavaScript/`, `instructional/`, `power-automate/`). A new project gets the right starting files for its declared stack.
 
 **How it evolved:** The initial model copied everything — CLAUDE.md, SKILLS.md, hooks — into the project folder at creation time. This created orphan copies: fixing a routing bug in FORGE's templates never reached existing projects. The model shifted toward runtime injection: SKILLS.md is no longer copied, it is read from FORGE's own templates directory on every run. CLAUDE.md is moving toward a thin project brief only, with routing rules injected by FORGE at run time. The goal is a project folder that holds only project data, with FORGE owning and injecting all operational logic.
 
@@ -489,7 +489,7 @@ A systematic competitive analysis compared FORGE against CrewAI, LangGraph, Auto
 - **Diff review UI (Gate2Bar)** — collapsible file sections, copy-to-clipboard button for the full diff.
 - **Per-agent latency budget (RunTimer)** — warning state after 5 min: timer turns gold, "· slow" label appears.
 - **Verification-aware planning** — planner now writes a `Verify:` line per task; implementer uses it for wave self-checks; gotcha-checker validates Verify: coverage.
-- **Circuit breaker for revision loops** — orchestrator compares BLOCK reasons across cycles; stops and escalates if same reason appears unchanged (added to all 3 revision loops in templates/code/CLAUDE.md).
+- **Circuit breaker for revision loops** — orchestrator compares BLOCK reasons across cycles; stops and escalates if same reason appears unchanged (added to all 3 revision loops in scaffolds/code/CLAUDE.md).
 - **Prompt injection guard** — researcher sanitises web-fetched content and emits `[INJECTION-WARNING]` for adversarial patterns; reviewer-safety scans docs/RESEARCH/.
 - **Regression-risk agent** — Haiku agent (step 1b in implement feature STANDARD/FULL); reads modules.json + handoff.md, flags high-risk touched modules via `[health]` signals.
 - **Spec agent** — Haiku pre-planner agent; writes structured spec to docs/SPEC.md with acceptance criteria, out-of-scope, open questions. Opt-in via `"specAgent": true`.
@@ -498,7 +498,7 @@ A systematic competitive analysis compared FORGE against CrewAI, LangGraph, Auto
 - **Domain-context agent** — Haiku pre-planner agent; checks feature against docs/DOMAIN.md domain rules. Activated by file presence in project's `.claude/agents/`.
 - **Completeness-checker agent** — Haiku agent (step 1c in implement feature STANDARD/FULL); reads PLAN.md + handoff.md, emits `[reviewer-verdict]` BLOCK for unaddressed tasks.
 - **Per-run cost telemetry** — `load-token-usage` IPC now returns last 5 runs; agents.svelte.ts stores `recentRuns`; USAGE tab shows "RECENT RUNS" section (mode, cost, tokens).
-- **Parallel coder fix** — FORGE's CLAUDE.md and templates/code/CLAUDE.md now explicitly state sprint coder must run sequentially (all coders write to same handoff.md).
+- **Parallel coder fix** — FORGE's CLAUDE.md and scaffolds/code/CLAUDE.md now explicitly state sprint coder must run sequentially (all coders write to same handoff.md).
 - **One Chat Phase 2 agent catalog** — board entry updated with 3-tier catalog (always-pipeline / conditional-pipeline / on-demand-only) for the intent classifier.
 - **Missing-project-folder-handling** — `check-folder-exists` IPC wired through all four layers (handler → preload → types → ipc.ts); ProjectsModal shows ⚠ MISSING badge on projects whose folder no longer exists, disables selecting them, and adds a LOCATE button to re-point to the new path via browse dialog + re-registration.
 
@@ -528,7 +528,7 @@ project.json: capabilities[] → resolveCapabilitiesForTask() → filterSkillsBy
 
 The Era 9 SKILLS system filtered by stack label — a task on an Electron project got all Electron rules. The problem: stack label is coarse. A fix to a Svelte component still received Electron IPC rules even though no main process code was involved. Research on the "lost in the middle" effect confirmed why this mattered — rules placed in the middle of injected context are recalled at ~40–50% vs ~90% at the start or end. Irrelevant rules don't just waste tokens; they crowd out the rules that do apply.
 
-**Per-capability files** broke the monolithic SKILLS.md subsections into individual concern files at `templates/code/docs/gotchas/skills/<id>.md` — `electron-ipc`, `electron-security`, `svelte5-reactivity`, `svelte5-components`, `typescript-strict`. Each file is independently stamped with a generated date so the integrity-checker can flag stale sections in isolation rather than the whole file.
+**Per-capability files** broke the monolithic SKILLS.md subsections into individual concern files at `scaffolds/code/docs/gotchas/skills/<id>.md` — `electron-ipc`, `electron-security`, `svelte5-reactivity`, `svelte5-components`, `typescript-strict`. Each file is independently stamped with a generated date so the integrity-checker can flag stale sections in isolation rather than the whole file.
 
 **Task-aware injection** added `resolveCapabilitiesForTask()` in `shared.ts`. It parses file paths mentioned in the handoff, maps them to capability IDs via a `FILE_TO_CAPABILITIES` table, and intersects the result with the project's declared capabilities. A task touching only `.svelte` files gets only `svelte5-reactivity` and `svelte5-components` — main process IPC rules are not injected at all.
 

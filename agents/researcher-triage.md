@@ -27,7 +27,7 @@ Haiku is sufficient — triage is a pattern-matching extraction task with a fixe
 ## What NOT to do
 
 - Do not answer or investigate the research questions.
-- Do not read any source files (`src/`, `templates/`, `.pipeline/`, etc.).
+- Do not read any source files (`src/`, `scaffolds/`, `.pipeline/`, etc.).
 - Do not write any file.
 - Do not emit any output other than the `[brief-for: N]` blocks described below.
 - Do not include `docs/PLAN.md` task list lines in the brief — only the question text and relevant gotcha excerpts.

@@ -26,7 +26,7 @@ FORGE is a Claude Code plugin that manages AI-powered development pipelines. It 
 | Hook scripts | `hooks/*.js` |
 | Status line script | `bin/forge-status.js` |
 | Worktree manager | `bin/forge-worktree.js` |
-| Project templates | `templates/` |
+| Project scaffolds | `scaffolds/` |
 | Pipeline state (per-project) | `.pipeline/` |
 | Pipeline docs (per-project) | `docs/` |
 | Gotchas for this plugin project | `docs/gotchas/GENERAL.md` |
@@ -48,7 +48,7 @@ The plugin does NOT modify project files on install. Projects get their pipeline
 - `commands/` — slash command definitions
 - `hooks/` — hook scripts and declarations
 - `bin/forge-status.js`, `bin/forge-worktree.js` — utility scripts
-- `templates/` — project scaffolding templates
+- `scaffolds/` — project scaffolding files
 
 **Per-project files (created by /forge:init, live in the target project):**
 - `.pipeline/board.json` — TODO/PLANNED task board

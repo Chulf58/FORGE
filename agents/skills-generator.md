@@ -80,7 +80,7 @@ Structure:
 
 ## Reference files
 
-If `templates/code/docs/gotchas/skills/` exists relative to the FORGE install, read 1–2 files from it before generating — they are the canonical examples of correct format and rule density. Match their style: pure `- ` bullets under `## AgentName` headings, no code blocks, no bold headers, no tables. Every rule must be a single actionable instruction a pipeline agent can follow without further clarification.
+If `scaffolds/code/docs/gotchas/skills/` exists relative to the FORGE install, read 1–2 files from it before generating — they are the canonical examples of correct format and rule density. Match their style: pure `- ` bullets under `## AgentName` headings, no code blocks, no bold headers, no tables. Every rule must be a single actionable instruction a pipeline agent can follow without further clarification.
 
 ## Content guidelines per agent section
 

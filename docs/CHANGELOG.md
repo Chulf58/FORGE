@@ -1,3 +1,11 @@
+## [2026-04-19] Rename templates/ to scaffolds/
+
+- Renamed `templates/` directory to `scaffolds/` throughout the plugin
+- Updated all references in documentation, agent definitions, hooks, and configuration files
+- Improves terminology consistency: "scaffolds" more accurately describes project initialization templates
+
+---
+
 ## [2026-04-19] Add gitIntegration to ALLOWED_CONFIG_KEYS
 
 - Expanded `forge_update_config` to accept `gitIntegration` configuration objects
