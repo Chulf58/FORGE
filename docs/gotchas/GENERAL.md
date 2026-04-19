@@ -132,6 +132,25 @@ Files the pipeline reads/writes in the target project:
 
 ---
 
+## run-active.json lifecycle contract
+
+`.pipeline/run-active.json` is a temporary pointer file tracking the in-progress pipeline run.
+
+| Role | Owner |
+|------|-------|
+| Create / initialise | `forge_create_run` and `forge_resume_run` MCP tools |
+| Append agent entries | `hooks/subagent-start.js` (SubagentStart event) |
+| Delete on terminal run | `hooks/ctx-session-start.js` → `emitStaleUnitNoticeIfAny` |
+| Clear `currentUnit` on agent stop | `hooks/subagent-stop.js` (SubagentStop event) |
+
+**Terminal statuses:** `completed`, `failed`, `discarded`. Any run whose `run.json` carries one of these statuses is terminal.
+
+**Fail-open rule:** if `run.json` is absent, unreadable, or unparseable, both hooks treat the run as non-terminal and proceed normally.
+
+**Why delete, not null-write:** writing `{ currentUnit: null }` back to disk preserves the `runId` identity field, allowing `subagent-start.js` to read and re-append to a finished run on the next agent dispatch. Deletion is the cleanest teardown — `subagent-start.js` already exits silently when the file is absent (lines 74-81).
+
+---
+
 ## Signal protocol — bracket-prefix lines from agents
 
 Agents emit signals as lines starting with `[signal-name]`. These are consumed by the orchestrator or hooks:

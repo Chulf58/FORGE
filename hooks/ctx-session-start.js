@@ -108,8 +108,7 @@ function emitStaleUnitNoticeIfAny(projectDir) {
     const runStatus = readRunStatus(projectDir, runId);
     if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
       try {
-        data.currentUnit = null;
-        fs.writeFileSync(runActivePath, JSON.stringify(data, null, 2), 'utf8');
+        fs.unlinkSync(runActivePath);
       } catch (_) {
         // Cleanup failed — fall through silently. We deliberately do NOT
         // emit the misleading notice in this case either; the marker just
