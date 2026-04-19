@@ -138,14 +138,19 @@ Use Grep (`output_mode: "content"`, `-n: true`) on `docs/PLAN.md` for pattern `^
 Read `docs/PLAN.md` with `offset: <start_line - 1>` and `limit: <end_line - start_line>`. This loads only the section to archive.
 
 **Step 4c — Append to archive:**
-Use Bash to append the section to `docs/PLAN-archive.md`, with `[x]` added to the heading:
-```bash
-cat >> docs/PLAN-archive.md << 'ARCHIVE_EOF'
+Use Edit to append the section to `docs/PLAN-archive.md`. Do NOT use Bash `cat >>` (blocked by bash-guard) or Write (rewrites the entire file — token-expensive on large archives).
+
+1. Read `docs/PLAN-archive.md` with `offset` set to read only the **last 3 lines** (use Grep `output_mode: "count"` pattern `.*` to get the line count first, then Read with `offset: <count - 3>`).
+2. Use Edit: set `old_string` to those last 3 lines, set `new_string` to those same 3 lines followed by a blank line and the archived section with `[x]` added to the heading:
+
+```
+<last 3 lines unchanged>
 
 ### [x] Feature: <name>
 <rest of section content>
-ARCHIVE_EOF
 ```
+
+If `docs/PLAN-archive.md` does not exist, use Write to create it with just the archived section.
 
 **Step 4d — Remove from PLAN.md:**
 Use Edit on `docs/PLAN.md` — set `old_string` to the full section text (from `### Feature: <name>` through its last line, including the trailing `---` separator if present), `new_string` to empty string `""`. This removes the section in-place without reading or rewriting the rest of the file.
@@ -270,18 +275,16 @@ Uses the `board.json` state as updated by Steps 5 and 5b (do not re-read it).
 
 (b) If `N` is 0, log: `Board: no completed todos to archive` — skip the rest of this step.
 
-(c) If `N` > 0: for each completed todo, append a compact entry to `docs/PLAN-archive.md` using Bash:
+(c) If `N` > 0: append all completed todo entries to `docs/PLAN-archive.md` using the same Edit-based append pattern as Step 4c (match last 3 lines, extend with new content). Do NOT use Bash `cat >>` or Write.
 
-```bash
-cat >> docs/PLAN-archive.md << 'ARCHIVE_EOF'
-
+Format each entry as:
+```
 ### [x] Todo: <id>
 <first line of the todo text, stripped of any leading FEATURE:/BUG/UX/CLEANUP:/DISCUSS: prefix>
 Done: <YYYY-MM-DD from doneAt epoch, or "unknown" if doneAt is absent>
-ARCHIVE_EOF
 ```
 
-Append all `N` entries in a single Bash call if possible, or one per entry. Do not append duplicates — if the todo id already appears in PLAN-archive.md (grep for it), skip that entry.
+Combine all `N` entries into a single Edit call. Do not append duplicates — if the todo id already appears in PLAN-archive.md (grep for it), skip that entry.
 
 (d) Remove all `N` completed entries from `todos[]`. Log: `Board: archived N completed todos to PLAN-archive.md`
 
