@@ -1,3 +1,11 @@
+## [2026-04-19] Fix forge-worktree.js pre-merge dirty-check to exclude pipeline artifacts
+
+- Updated pre-merge dirty-file detection in `bin/forge-worktree.js` to filter `.worktrees/` and `.pipeline/` entries before blocking merges
+- Prevents false merge blocks when pipeline state files exist in main repo (normal during concurrent pipeline runs)
+- Dirty-check now reports only user-modified sources, making merge hygiene rules actionable
+
+---
+
 ## [2026-04-19] LEAN-lite gate for debug and refactor pipelines
 
 - Ported LEAN-lite reviewer-skip gate from implement skill to debug and refactor skills — gates operate post-debug-agent and post-refactor-agent respectively
