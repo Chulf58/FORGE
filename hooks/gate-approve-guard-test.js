@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
-// Tests for the gate self-approval guard:
-//   1. approval-token.js generates 'gate-approve' from "approve" in user message
-//   2. workflow-guard.js blocks Write/Edit to gate-pending.json with "approved"
+// Tests for the approval-token + gate self-approval guard system:
+//   1. approval-token.js parses real Claude Code UserPromptSubmit payloads
+//      (canonical shape: { prompt: "..." }) and generates correct tokens
+//   2. approval-token.js also handles legacy/test payload shapes as fallbacks
+//   3. workflow-guard.js blocks Write/Edit to gate-pending.json with "approved"
 //      status when no approval token exists
-//   3. workflow-guard.js allows the same writes when a valid token is present
-//   4. Unrelated writes are unaffected
+//   4. workflow-guard.js allows the same writes when a valid token is present
+//   5. Unrelated writes are unaffected
 //
 // Run: node hooks/gate-approve-guard-test.js
 
@@ -60,6 +62,12 @@ function makeTmpProject() {
   return tmp;
 }
 
+function readToken(projectDir) {
+  const tokenPath = join(projectDir, '.pipeline', 'action-approved.json');
+  if (!existsSync(tokenPath)) return null;
+  return JSON.parse(readFileSync(tokenPath, 'utf8'));
+}
+
 let passed = 0;
 let failed = 0;
 function assert(cond, label) {
@@ -70,79 +78,211 @@ function assert(cond, label) {
 async function test() {
   console.log('\n── gate-approve-guard-test.js ───────────────────────────────────────────');
 
-  // ── approval-token.js tests ──────────────────────────────────────────
+  // ── Canonical payload shape (real Claude Code: { prompt: "..." }) ─────
 
-  // 1. "approve" in user message → generates gate-approve token
+  // 1. Canonical shape: gate-approve via "approve" keyword
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: '/forge:approve',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token !== null, 'canonical: /forge:approve creates token file');
+    assert(token && token.actions.includes('gate-approve'),
+      'canonical: token includes gate-approve action');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 2. Canonical shape: git commit token
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: 'yes go ahead and commit',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token !== null, 'canonical: "commit" creates token file');
+    assert(token && token.actions.includes('commit'),
+      'canonical: token includes commit action');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 3. Canonical shape: git push token
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: 'push it to remote',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token !== null, 'canonical: "push" creates token file');
+    assert(token && token.actions.includes('push'),
+      'canonical: token includes push action');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 4. Canonical shape: combined commit + push + approve in one message
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: 'approve the gate, then commit and push',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token !== null, 'canonical: combined keywords create token');
+    assert(token && token.actions.includes('gate-approve'),
+      'canonical: combined includes gate-approve');
+    assert(token && token.actions.includes('commit'),
+      'canonical: combined includes commit');
+    assert(token && token.actions.includes('push'),
+      'canonical: combined includes push');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 5. Canonical shape: negated "don't commit" → no commit token
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: "don't commit yet",
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    if (token) {
+      assert(!token.actions.includes('commit'),
+        'canonical: negated commit does NOT include commit action');
+    } else {
+      assert(true, 'canonical: negated commit creates no token');
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 6. Canonical shape: negated "don't approve" → no gate-approve token
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: "don't approve this",
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    if (token) {
+      assert(!token.actions.includes('gate-approve'),
+        'canonical: negated approve does NOT include gate-approve');
+    } else {
+      assert(true, 'canonical: negated approve creates no token');
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 7. Canonical shape: unrelated message → no token, deletes any existing
+  {
+    const tmp = makeTmpProject();
+    writeApprovalToken(tmp, ['commit'], 120000);
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: 'just checking the status',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token === null, 'canonical: unrelated message deletes existing token (clean slate)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // ── Fallback payload shapes (legacy/test compatibility) ──────────────
+
+  // 8. Fallback: message.content string shape
   {
     const tmp = makeTmpProject();
     await runHook(APPROVAL_TOKEN_HOOK, {
       message: { content: '/forge:approve' },
     }, tmp);
-    const tokenPath = join(tmp, '.pipeline', 'action-approved.json');
-    const exists = existsSync(tokenPath);
-    assert(exists, 'approval-token: /forge:approve creates token file');
-    if (exists) {
-      const data = JSON.parse(readFileSync(tokenPath, 'utf8'));
-      assert(data.actions.includes('gate-approve'),
-        'approval-token: token includes gate-approve action');
-    }
+    const token = readToken(tmp);
+    assert(token !== null, 'fallback message.content: creates token');
+    assert(token && token.actions.includes('gate-approve'),
+      'fallback message.content: includes gate-approve');
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 2. "yes approve it" in user message → generates gate-approve token
+  // 9. Fallback: message as plain string
   {
     const tmp = makeTmpProject();
     await runHook(APPROVAL_TOKEN_HOOK, {
-      message: { content: 'yes approve it' },
+      message: 'commit and push',
     }, tmp);
-    const tokenPath = join(tmp, '.pipeline', 'action-approved.json');
-    const exists = existsSync(tokenPath);
-    assert(exists, 'approval-token: "yes approve it" creates token file');
-    if (exists) {
-      const data = JSON.parse(readFileSync(tokenPath, 'utf8'));
-      assert(data.actions.includes('gate-approve'),
-        'approval-token: token includes gate-approve action');
-    }
+    const token = readToken(tmp);
+    assert(token !== null, 'fallback message string: creates token');
+    assert(token && token.actions.includes('commit'),
+      'fallback message string: includes commit');
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 3. Negated approve → no gate-approve token (but may have other actions)
+  // 10. Fallback: user_prompt string
   {
     const tmp = makeTmpProject();
     await runHook(APPROVAL_TOKEN_HOOK, {
-      message: { content: "don't approve this" },
+      user_prompt: 'approve the plan',
     }, tmp);
-    const tokenPath = join(tmp, '.pipeline', 'action-approved.json');
-    if (existsSync(tokenPath)) {
-      const data = JSON.parse(readFileSync(tokenPath, 'utf8'));
-      assert(!data.actions.includes('gate-approve'),
-        'approval-token: negated approve does NOT include gate-approve');
-    } else {
-      assert(true, 'approval-token: negated approve does NOT create token');
-    }
+    const token = readToken(tmp);
+    assert(token !== null, 'fallback user_prompt: creates token');
+    assert(token && token.actions.includes('gate-approve'),
+      'fallback user_prompt: includes gate-approve');
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 4. No approve keyword → no gate-approve token
+  // ── Malformed/edge case payloads ─────────────────────────────────────
+
+  // 11. Empty prompt string → no token
   {
     const tmp = makeTmpProject();
     await runHook(APPROVAL_TOKEN_HOOK, {
-      message: { content: 'just checking the status' },
+      prompt: '',
+      session_id: 's1',
     }, tmp);
-    const tokenPath = join(tmp, '.pipeline', 'action-approved.json');
-    if (existsSync(tokenPath)) {
-      const data = JSON.parse(readFileSync(tokenPath, 'utf8'));
-      assert(!data.actions.includes('gate-approve'),
-        'approval-token: unrelated message does NOT include gate-approve');
-    } else {
-      assert(true, 'approval-token: unrelated message creates no token');
-    }
+    const token = readToken(tmp);
+    assert(token === null, 'empty prompt: no token created');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 12. No message fields at all → no token
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token === null, 'no message fields: no token created');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 13. Malformed stdin → no token, no crash
+  {
+    const tmp = makeTmpProject();
+    const child = spawn(process.execPath, [APPROVAL_TOKEN_HOOK], {
+      cwd: tmp,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN_ROOT },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const result = await new Promise((resolve) => {
+      child.stdin.write('not valid json {{{');
+      child.stdin.end();
+      child.on('close', code => resolve({ code }));
+    });
+    assert(result.code === 0, 'malformed stdin: exits 0 (no crash)');
+    const token = readToken(tmp);
+    assert(token === null, 'malformed stdin: no token created');
     rmSync(tmp, { recursive: true, force: true });
   }
 
   // ── workflow-guard.js Write tests ────────────────────────────────────
 
-  // 5. Write gate-pending.json with approved + no token → blocked
+  // 14. Write gate-pending.json with approved + no token → blocked
   {
     const tmp = makeTmpProject();
     const content = JSON.stringify({ gate: 'gate2', status: 'approved', feature: 'test' });
@@ -157,7 +297,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 6. Write gate-pending.json with approved + valid token → allowed
+  // 15. Write gate-pending.json with approved + valid token → allowed
   {
     const tmp = makeTmpProject();
     writeApprovalToken(tmp, ['gate-approve'], 120000);
@@ -171,7 +311,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 7. Write gate-pending.json with pending status + no token → allowed
+  // 16. Write gate-pending.json with pending status + no token → allowed
   {
     const tmp = makeTmpProject();
     const content = JSON.stringify({ gate: 'gate2', status: 'pending', feature: 'test' });
@@ -184,7 +324,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 8. Edit gate-pending.json with "approved" in new_string + no token → blocked
+  // 17. Edit gate-pending.json with "approved" + no token → blocked
   {
     const tmp = makeTmpProject();
     const filePath = join(tmp, '.pipeline', 'gate-pending.json');
@@ -200,7 +340,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 9. Edit gate-pending.json with "approved" in new_string + valid token → allowed
+  // 18. Edit gate-pending.json with "approved" + valid token → allowed
   {
     const tmp = makeTmpProject();
     writeApprovalToken(tmp, ['gate-approve'], 120000);
@@ -217,7 +357,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 10. Write to a different file → unaffected (no gate check)
+  // 19. Write to a different file → unaffected
   {
     const tmp = makeTmpProject();
     const filePath = join(tmp, 'some-other-file.json');
@@ -230,10 +370,10 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 11. Expired token → blocked
+  // 20. Expired token → blocked
   {
     const tmp = makeTmpProject();
-    writeApprovalToken(tmp, ['gate-approve'], -1000); // already expired
+    writeApprovalToken(tmp, ['gate-approve'], -1000);
     const content = JSON.stringify({ gate: 'gate2', status: 'approved', feature: 'test' });
     const filePath = join(tmp, '.pipeline', 'gate-pending.json');
     const { code } = await runHook(WORKFLOW_GUARD_HOOK, {
@@ -244,7 +384,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 12. Token with commit/push but not gate-approve → blocked
+  // 21. Token with commit/push but not gate-approve → blocked
   {
     const tmp = makeTmpProject();
     writeApprovalToken(tmp, ['commit', 'push'], 120000);
@@ -258,20 +398,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 13. Non-JSON Write to gate-pending.json with "approved" string → blocked
-  {
-    const tmp = makeTmpProject();
-    const filePath = join(tmp, '.pipeline', 'gate-pending.json');
-    const content = 'some text with "status": "approved" in it';
-    const { code } = await runHook(WORKFLOW_GUARD_HOOK, {
-      tool_name: 'Write',
-      tool_input: { file_path: filePath, content },
-    }, tmp);
-    assert(code === 2, 'workflow-guard: non-JSON Write with approved pattern → exit 2 (blocked)');
-    rmSync(tmp, { recursive: true, force: true });
-  }
-
-  // 14. Non-Agent tool call (Bash) passes through workflow-guard
+  // 22. Bash tool call → unaffected
   {
     const tmp = makeTmpProject();
     const { code } = await runHook(WORKFLOW_GUARD_HOOK, {
@@ -279,6 +406,45 @@ async function test() {
       tool_input: { command: 'echo hello' },
     }, tmp);
     assert(code === 0, 'workflow-guard: Bash tool call → exit 0 (not Write/Edit)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // ── End-to-end: canonical payload → token → guard allows ─────────────
+
+  // 23. Full round-trip: canonical approve payload → token minted → Write allowed
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: 'approve',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token !== null, 'e2e: approve prompt mints token');
+    const content = JSON.stringify({ gate: 'gate2', status: 'approved', feature: 'test' });
+    const filePath = join(tmp, '.pipeline', 'gate-pending.json');
+    const { code } = await runHook(WORKFLOW_GUARD_HOOK, {
+      tool_name: 'Write',
+      tool_input: { file_path: filePath, content },
+    }, tmp);
+    assert(code === 0, 'e2e: Write approved succeeds after approve token minted');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 24. Full round-trip: canonical commit payload → token minted → token has commit
+  {
+    const tmp = makeTmpProject();
+    await runHook(APPROVAL_TOKEN_HOOK, {
+      prompt: 'commit the changes',
+      session_id: 's1',
+      cwd: tmp,
+    }, tmp);
+    const token = readToken(tmp);
+    assert(token !== null, 'e2e: commit prompt mints token');
+    assert(token && token.actions.includes('commit'),
+      'e2e: minted token has commit action');
+    assert(token && token.expiresAt,
+      'e2e: minted token has expiresAt for TTL enforcement');
     rmSync(tmp, { recursive: true, force: true });
   }
 

@@ -38,27 +38,34 @@ function isNegated(text, index) {
 
 /**
  * Extracts a plain-text string from the UserPromptSubmit payload.
- * Tries multiple field shapes defensively.
+ *
+ * Claude Code sends { prompt: "user text", session_id, cwd, ... } on stdin.
+ * The canonical field is `payload.prompt` (plain string). Legacy/test shapes
+ * are kept as defensive fallbacks.
  */
 function extractUserMessage(payload) {
   if (!payload || typeof payload !== 'object') return '';
 
-  // Shape 1: payload.message.content is a string
+  // Canonical shape: payload.prompt is a plain string (Claude Code documented contract)
+  if (typeof payload.prompt === 'string') {
+    return payload.prompt;
+  }
+  // Fallback 1: payload.message.content is a string
   if (payload.message && typeof payload.message.content === 'string') {
     return payload.message.content;
   }
-  // Shape 2: payload.message.content is an array of blocks
+  // Fallback 2: payload.message.content is an array of blocks
   if (payload.message && Array.isArray(payload.message.content)) {
     return payload.message.content
       .filter((b) => b && b.type === 'text')
       .map((b) => b.text || '')
       .join(' ');
   }
-  // Shape 3: payload.message is a plain string
+  // Fallback 3: payload.message is a plain string
   if (typeof payload.message === 'string') {
     return payload.message;
   }
-  // Shape 4: payload.user_prompt is a string
+  // Fallback 4: payload.user_prompt is a string
   if (typeof payload.user_prompt === 'string') {
     return payload.user_prompt;
   }
