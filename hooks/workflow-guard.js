@@ -287,6 +287,27 @@ async function main(rawInput) {
     return;
   }
 
+  // Block ALL direct writes to action-approved.json.
+  // Managed exclusively by approval-token.js (UserPromptSubmit hook) via fs.writeFileSync.
+  // If the model could Write this file, it could forge approval tokens to bypass
+  // bash-guard (commit/push) and gate self-approval checks.
+  if (normalisedPath.endsWith('.pipeline/action-approved.json')) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            'FORGE: Direct writes to .pipeline/action-approved.json are not allowed. ' +
+            'Approval tokens are created automatically by the UserPromptSubmit hook ' +
+            'when the user includes action keywords (commit, push, approve) in their message.',
+        },
+      }) + '\n'
+    );
+    process.exit(2);
+    return;
+  }
+
   // Gate-pending.json: allow only pending writes (skill gate-presentation) or
   // writes with an explicit user approval token. Block everything else.
   if (normalisedPath.endsWith('.pipeline/gate-pending.json')) {

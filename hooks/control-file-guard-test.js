@@ -213,9 +213,52 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // --- action-approved.json: ALL writes blocked ---
+
+  // 12. Write to action-approved.json → blocked
+  {
+    const tmp = makeTmp();
+    const filePath = join(tmp, '.pipeline', 'action-approved.json');
+    const content = JSON.stringify({ actions: ['commit'], expiresAt: new Date(Date.now() + 120000).toISOString() });
+    const { code, stdout } = await runHook({
+      tool_name: 'Write',
+      tool_input: { file_path: filePath, content },
+    }, tmp);
+    assert(code === 2, 'Write action-approved.json → exit 2');
+    assert(stdout.includes('action-approved.json'), 'Write action-approved.json → mentions file');
+    assert(stdout.includes('UserPromptSubmit'), 'Write action-approved.json → points to correct hook');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 13. Edit to action-approved.json → blocked
+  {
+    const tmp = makeTmp();
+    const filePath = join(tmp, '.pipeline', 'action-approved.json');
+    const { code } = await runHook({
+      tool_name: 'Edit',
+      tool_input: { file_path: filePath, old_string: '"commit"', new_string: '"gate-approve"' },
+    }, tmp);
+    assert(code === 2, 'Edit action-approved.json → exit 2');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 14. Write action-approved.json with gate-approve token → still blocked (unconditional)
+  {
+    const tmp = makeTmp();
+    writeApprovalToken(tmp, ['gate-approve'], 120000);
+    const filePath = join(tmp, '.pipeline', 'action-approved.json');
+    const content = JSON.stringify({ actions: ['gate-approve', 'commit'], expiresAt: new Date(Date.now() + 120000).toISOString() });
+    const { code } = await runHook({
+      tool_name: 'Write',
+      tool_input: { file_path: filePath, content },
+    }, tmp);
+    assert(code === 2, 'Write action-approved.json + existing token → still exit 2 (unconditional)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   // --- Other .pipeline/ files: unaffected ---
 
-  // 12. Write to .pipeline/board.json → unaffected
+  // 15. Write to .pipeline/board.json → unaffected
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'board.json');
@@ -227,7 +270,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 13. Write to .pipeline/project.json → unaffected
+  // 16. Write to .pipeline/project.json → unaffected
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'project.json');
@@ -239,7 +282,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 14. Write to .pipeline/modules.json → unaffected
+  // 17. Write to .pipeline/modules.json → unaffected
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'modules.json');
@@ -251,7 +294,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 15. Non-Write/Edit tool → unaffected
+  // 18. Non-Write/Edit tool → unaffected
   {
     const tmp = makeTmp();
     const { code } = await runHook({
@@ -262,7 +305,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 16. Write to regular file outside .pipeline/ → unaffected
+  // 19. Write to regular file outside .pipeline/ → unaffected
   {
     const tmp = makeTmp();
     const filePath = join(tmp, 'src', 'index.js');
@@ -274,7 +317,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 17. Windows-style backslash path to run-active.json → still blocked
+  // 20. Windows-style backslash path to run-active.json → still blocked
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'run-active.json'); // join uses OS separator
