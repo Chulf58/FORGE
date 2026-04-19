@@ -938,10 +938,11 @@ server.registerTool(
       preferred: z.string().optional().describe("New preferred model ID"),
       fallback: z.string().optional().describe("New fallback model ID"),
       requiredCapabilities: z.array(z.string()).optional().describe("Required capability tags"),
+      allowedVendors: z.array(z.string()).optional().describe("Restrict routing to these provider IDs only (e.g. ['anthropic'])"),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
-  async ({ agentName, preferred, fallback, requiredCapabilities }) => {
+  async ({ agentName, preferred, fallback, requiredCapabilities, allowedVendors }) => {
     try {
       const projectDir = resolveProjectDir();
       const pluginDataDir = resolvePluginDataDir();
@@ -956,6 +957,7 @@ server.registerTool(
       if (preferred !== undefined) entry.preferred = preferred;
       if (fallback !== undefined) entry.fallback = fallback;
       if (requiredCapabilities !== undefined) entry.requiredCapabilities = requiredCapabilities;
+      if (allowedVendors !== undefined) entry.allowedVendors = allowedVendors;
 
       writeForgeConfig(configPath, config);
       return textResult(config.agentModelMap[agentName]);

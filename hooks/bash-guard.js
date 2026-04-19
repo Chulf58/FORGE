@@ -1,6 +1,8 @@
 'use strict';
 
 const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
 
 const STDIN_TIMEOUT_MS = 10000;
 
@@ -98,6 +100,112 @@ function extractAllCommandWords(command) {
     .filter(Boolean);
 }
 
+// ---------------------------------------------------------------------------
+// Git guard constants and helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Patterns that are always hard-blocked on any git command.
+ * Each entry is tested against the full original command string (not a single
+ * segment) — this catches flags like --force or --no-verify wherever they appear
+ * in a chained expression.
+ */
+const GIT_HARD_BLOCKED_PATTERNS = [
+  { pattern: /--force(?:-with-lease)?(?:\s|$)/, reason: '--force / --force-with-lease are forbidden' },
+  { pattern: /--no-verify(?:\s|$)/, reason: '--no-verify is forbidden' },
+  { pattern: /\bgit\b[^|;&]*commit[^|;&]*--amend/, reason: 'git commit --amend is forbidden' },
+  { pattern: /\bgit\b[^|;&]*reset[^|;&]*--hard/, reason: 'git reset --hard is forbidden' },
+  { pattern: /\bgit\b[^|;&]*clean[^|;&]*-[a-zA-Z]*f/, reason: 'git clean -f (any variant) is forbidden' },
+  { pattern: /\bgit\b[^|;&]*branch[^|;&]*-D/, reason: 'git branch -D (force-delete) is forbidden' },
+  { pattern: /\bgit\b[^|;&]*checkout[^|;&]* -- /, reason: 'git checkout -- <path> (discard changes) is forbidden — use `git restore <path>` instead' },
+  { pattern: /\bgit\b[^|;&]*stash[^|;&]*drop/, reason: 'git stash drop is forbidden' },
+];
+
+/**
+ * Git subcommands that require approval (soft-blocked).
+ * Key: subcommand string. Value: human-readable label for the block message.
+ */
+const GIT_SOFT_BLOCKED = {
+  commit: 'git commit',
+  push: 'git push',
+};
+
+/**
+ * Extracts the git subcommand from a command segment, skipping -C and -c flags
+ * (which each consume one argument). Returns null if the segment is not a git call.
+ *
+ * Examples:
+ *   "git commit -m foo"   → "commit"
+ *   "git -C /path push"   → "push"
+ *   "git -c key=val log"  → "log"
+ *   "echo hello"          → null
+ */
+function getGitSubcommand(segment) {
+  const tokens = segment.trim().split(/\s+/);
+  if (tokens.length === 0) return null;
+
+  // Skip leading env var assignments (FOO=bar git ...)
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) {
+    i++;
+  }
+  if (i >= tokens.length || tokens[i] !== 'git') return null;
+  i++;
+
+  // Skip git-level flags that each consume one argument: -C and -c
+  while (i < tokens.length && (tokens[i] === '-C' || tokens[i] === '-c')) {
+    i += 2; // skip flag + its value
+  }
+
+  // Skip remaining flags (e.g. --no-pager, --paginate)
+  while (i < tokens.length && tokens[i].startsWith('-')) {
+    i++;
+  }
+
+  return tokens[i] || null;
+}
+
+/**
+ * Returns true when .pipeline/run-active.json exists and contains a non-empty
+ * runId. An active pipeline run means git operations were initiated by the
+ * pipeline itself and don't need a separate approval token.
+ * Fail-open: any read/parse error returns false.
+ */
+function hasActivePipelineRun() {
+  try {
+    const runActivePath = path.join(process.cwd(), '.pipeline', 'run-active.json');
+    const raw = fs.readFileSync(runActivePath, 'utf8');
+    const data = JSON.parse(raw);
+    return typeof data.runId === 'string' && data.runId.length > 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Returns true when .pipeline/action-approved.json exists, is not expired, and
+ * its `actions` array includes the given action string.
+ * Fail-open: any read/parse error returns false.
+ */
+function hasValidApprovalToken(action) {
+  try {
+    const tokenPath = path.join(process.cwd(), '.pipeline', 'action-approved.json');
+    const raw = fs.readFileSync(tokenPath, 'utf8');
+    const data = JSON.parse(raw);
+
+    if (!Array.isArray(data.actions) || !data.expiresAt) return false;
+
+    const expiresAt = new Date(data.expiresAt);
+    if (isNaN(expiresAt.getTime()) || expiresAt < new Date()) return false;
+
+    return data.actions.includes(action);
+  } catch (_) {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 /**
  * Checks if the command contains output redirection (> or >>).
  * Used to distinguish `echo "hello"` (allowed) from `echo "x" > file` (blocked).
@@ -150,6 +258,42 @@ async function main(rawInput) {
       exitBlock(
         '[bash-guard] Use Write tool instead of `echo > file`. ' +
         'Bash is reserved for git, npm, node, and process operations.'
+      );
+      return;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Git guard — check each segment for hard-blocked and soft-blocked patterns
+  // ---------------------------------------------------------------------------
+  const segments = splitIntoSegments(command);
+  for (const segment of segments) {
+    const sub = getGitSubcommand(segment);
+    if (sub === null) continue; // not a git command segment
+
+    // Hard-block: test the full command string for destructive patterns.
+    // (Flags like --force may appear after a subcommand in the same segment;
+    // testing the full string catches them regardless of position.)
+    for (const { pattern, reason } of GIT_HARD_BLOCKED_PATTERNS) {
+      if (pattern.test(command)) {
+        exitBlock('[bash-guard] Blocked: ' + reason + '. This operation is permanently disabled.');
+        return;
+      }
+    }
+
+    // Soft-block: require pipeline run OR valid approval token
+    if (GIT_SOFT_BLOCKED[sub] !== undefined) {
+      if (hasActivePipelineRun()) {
+        // Active pipeline run — allow (the pipeline initiated this git call)
+        continue;
+      }
+      if (hasValidApprovalToken(sub)) {
+        // User explicitly approved this action in their last message — allow
+        continue;
+      }
+      exitBlock(
+        '[bash-guard] `' + GIT_SOFT_BLOCKED[sub] + '` requires explicit user approval. ' +
+        'Ask the user first — their response will unlock the command.'
       );
       return;
     }

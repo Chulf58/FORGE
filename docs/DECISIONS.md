@@ -4,6 +4,26 @@ Non-obvious technical decisions made during development. Reference this when a s
 
 ---
 
+## [2026-04-19] Two-tier git guard with approval-token vs hard-gate-only
+
+**Context:** Destructive git operations (force push, amend, reset --hard) must be blocked to prevent pipeline corruption. The question was whether ALL git writes (commit, push) should be hard-blocked, or whether common operations should be soft-blocked pending user approval — creating a smoother developer experience for intentional git workflows while still protecting against accidental cascades.
+
+**Decision:** Implement two tiers. Hard-blocked: `--force`, `--no-verify`, `--amend`, `reset --hard`, `clean -f`, `branch -D`, `checkout -- <path>`, `stash drop` — these are never allowed, no exception. Soft-blocked: `git commit` and `git push` (without destructive flags) — these require either an active pipeline run OR an approval token written by a new `UserPromptSubmit` hook that scans each user message for `commit`/`push` keywords with negation-word guards.
+
+**Alternatives considered:**
+1. **Hard-block all git writes** — simpler to enforce, but blocks legitimate `git commit` during manual apply runs and forces the user to wait or use pipeline mechanisms. Reduces velocity for manual workflows.
+2. **Soft-block everything, require token always** — consistent, but adds friction to every git call. Unnecessary for hard-destructive ops that should never be allowed.
+3. **Soft-block only within active pipeline, hard-block outside** — less friction in-pipeline, but provides no user control for manual `git commit` outside the pipeline.
+
+**Reason:** The two-tier approach balances safety (hard-block the operations that corrupt history) with usability (allow intentional `commit` / `push` when the user explicitly requests them). The 120-second token window and negation-word detection (`don't commit`) provide muscle-memory compatibility: users write naturally ("now commit this") and the token permits the follow-up call without re-approval. Hard-blocks remain uncompromising — a mistyped `--force` cannot sneak through.
+
+**Trade-offs:**
+- Token TTL (120s) is a fixed window. If a user approves `commit`, then waits >2 min before running the command, they must re-approve. Acceptable — most git workflows complete within seconds.
+- Negation detection scans only ~40 chars before the keyword. Edge case: "I don't want to commit to this design; let's commit to the new API instead" may detect the second `commit` even though the first negation is >40 chars away. Acceptable — the user can clarify with "push" instead of "commit" if needed, or simply approve twice.
+- Active pipeline runs bypass soft-blocks entirely. This is intentional: the pipeline owns the git calls it initiates and should not require a separate user token. But it does mean a rogue pipeline hook that calls `git commit` will succeed without a token file. Mitigated by: hard-blocks still apply (pipeline cannot force-push), and `run-active.json` must exist and hold a valid `runId` (not writeable by user code in normal flows).
+
+---
+
 ## [2026-04-15] Observer-primary over wrapper; wt.exe SessionStart hook for auto-split-pane
 
 **Context:** This sprint delivered two parallel TUI surfaces for the FORGE dashboard: a **wrapper** (`scripts/forge-wrapper-proto.mjs`) that embeds Claude as a `node-pty` child, renders it via `@xterm/headless` into a blessed split-pane with the dashboard on the right, and carries all the complex PTY/render/mouse/quit code; and an **observer** (`scripts/forge-observer-proto.mjs`), a standalone full-screen blessed dashboard intended to run in a separate terminal pane next to native `claude`. Board tasks `24fae760` (TUI library evaluation) and `3438a2be` (wrapper-primary vs observer-primary) were both flagged as blocking. This entry settles `3438a2be`; `24fae760` consequentially simplifies.

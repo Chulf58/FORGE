@@ -1,3 +1,21 @@
+## [2026-04-19] Git guard and approval-token for bash-guard
+
+- Added hard-block for destructive git operations (`--force`, `--no-verify`, `--amend`, `reset --hard`, etc.) — no override possible
+- Added soft-block for `git commit` and `git push` unless an active pipeline run or user approval token is present
+- Implemented `hooks/approval-token.js` to scan user messages for git keywords and write 120-second approval tokens
+- Updated `hooks/bash-guard.js` with git guard logic: hard-block patterns, soft-block subcommands, token/pipeline run checks
+- Extended `docs/gotchas/GENERAL.md` with Git guard section documenting both tiers and the approval-token mechanism
+
+---
+
+## [2026-04-19] refactor(reviewer): fix boundary prompt — align plan-stage detection and skip gate
+
+- Replaced fragile string-match plan-stage condition with clean `[plan-stage review]` marker check (matching sibling reviewers)
+- Added skip gate for source-file reads: boundary now skips when only prompt/template/docs/config files are modified
+- Fixes silent exhaustion of `maxTurns` budget during plan reviews and unnecessary file reads on docs-only refactors
+
+---
+
 ## [2026-04-19] fix(hooks): stale run-active.json pointer pollution
 
 ### Motivation

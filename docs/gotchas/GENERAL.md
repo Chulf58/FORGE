@@ -185,6 +185,35 @@ The branch-slug sanitization in `skills/apply/SKILL.md` (lowercase, `[a-z0-9-]` 
 
 ---
 
+## Git guard — bash-guard blocks destructive and unapproved git commands
+
+`hooks/bash-guard.js` enforces two tiers of git restrictions on all Bash tool calls.
+
+**Hard-blocked (always denied, no override):**
+- `--force` / `--force-with-lease` on any git command
+- `--no-verify` on any git command
+- `git commit --amend`
+- `git reset --hard`
+- `git clean -f` (any variant with the `-f` flag)
+- `git branch -D` (force-delete)
+- `git checkout -- <path>` (discard changes) — use `git restore <path>` instead
+- `git stash drop`
+
+**Soft-blocked (require explicit approval OR active pipeline run):**
+- `git commit` (without `--amend`)
+- `git push` (without `--force`)
+
+**Approval-token mechanism (`hooks/approval-token.js`):**
+1. Every user turn, `UserPromptSubmit` scans the message for `commit` / `push` keywords.
+2. Negation words in the ~40 chars before the keyword (`don't`, `do not`, `no`, `stop`, `cancel`, `never`, `avoid`) suppress the match.
+3. When keywords are found, `.pipeline/action-approved.json` is written with a 120-second TTL.
+4. When no keywords are found, any existing token file is deleted (clean slate per turn).
+5. `bash-guard.js` reads the token at hook time, checks expiry, and allows the command if the action is listed.
+
+**Pipeline bypass:** If `.pipeline/run-active.json` exists with a non-empty `runId`, soft-blocks are bypassed — the pipeline initiated the git call and no user approval token is needed.
+
+---
+
 ## Platform differences (Windows)
 
 - Hook scripts run via `node` — ensure `node` is on PATH
