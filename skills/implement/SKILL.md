@@ -81,11 +81,17 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
 1. **Coder-scout** (skip in LEAN): writes `<worktreePath>/docs/context/scout.json`
 2. **Coder:** writes draft to `<worktreePath>/docs/context/handoff.md`
 3. **Completeness-checker** (skip in LEAN): verifies plan coverage
-4. **Reviewer-triage → reviewers:** dispatch based on mode
-5. **Gate #2:** First update the run, then write gate state:
+4. **LEAN-lite reviewer gate** — **LEAN mode only**. In STANDARD and FULL, skip this step entirely and proceed to step 5.
+   - Run via Bash: `node scripts/lean-risk-classify.mjs --handoff=<worktreePath>/docs/context/handoff.md`. Append the flag `--force-review` to the command if the operator's original `$ARGUMENTS` (or the current user prompt in this session) contains the literal token `[force-review]`.
+   - Capture the stdout JSON (shape: `{ "skipReviewers": <bool>, "reasons": [...], "triggeredRules": [...] }`) and write it to `<worktreePath>/docs/context/lean-gate.json` for post-run auditability.
+   - Log a single stderr line: `[lean-gate] skip=<bool> reasons=[<comma-joined>] triggered=[<comma-joined>]`.
+   - Decision: if `skipReviewers` is `true`, skip step 5 entirely (no reviewer-triage, no reviewer dispatch) and proceed directly to step 6 (Gate #2). If `skipReviewers` is `false`, proceed to step 5 as normal.
+   - The policy this enforces is documented in `CLAUDE.md` under "LEAN-lite skip rule" and "Risk surface". Do not override the classifier's verdict — if a reviewer pass is genuinely desired on a non-risk LEAN change, the operator re-invokes with `[force-review]`.
+5. **Reviewer-triage → reviewers:** dispatch based on mode. Skipped when step 4 set `skipReviewers: true`.
+6. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<feature name>","status":"pending","applyKeyword":"apply feature: <feature>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
-   - Present the implementation summary to the user
+   - Present the implementation summary to the user (include the LEAN-lite gate decision when it fired: "Reviewers skipped — classifier verdict `lean-gate.json`" or "Reviewers ran — classifier matched: <rules>").
    - Ask user to type /forge:approve or /forge:discard
 
 $ARGUMENTS

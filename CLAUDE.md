@@ -141,12 +141,32 @@ Understand what the task involves: which files, what complexity, what risk.
 ### Step 3 — Decide the agent team
 Based on the assessment, determine which agents are needed. The pipeline and mode follow from this.
 
-**Mandatory agents** — always included for any source change (non-negotiable):
+**Mandatory agents** — always included when a source change touches the **risk surface** (see below). In that case they are non-negotiable regardless of mode.
 
 | Agent | Role |
 |-------|------|
 | `reviewer-safety` | Security check |
 | `reviewer-boundary` | Boundary correctness |
+
+**Risk surface** — a change is risk-surface when any of the following hold:
+
+- Shell / `child_process` / process spawning.
+- `fs` writes or deletes outside `.pipeline/`.
+- Auth / crypto / secret / credential handling.
+- Network boundaries — HTTP clients, server handlers, `fetch`, `http.createServer`.
+- New MCP tools, hook scripts, commands, or public handlers.
+- Schema / contract changes — tool schemas, signal formats, persisted `.pipeline/*` shape, model/config schema.
+- Security-sensitive path, import, or environment-variable resolution.
+- Merge / apply / worktree boundary code.
+
+**LEAN-lite skip rule** — in **LEAN mode only**, reviewer dispatch is skipped when **all** of the following hold:
+
+- `coder` emitted `## Verification: pre-flight clean`.
+- `coder` emitted no `## Blockers` bullets.
+- The handoff diff matches none of the risk-surface rules above.
+- The operator did not include the literal token `[force-review]` in the invocation.
+
+The classifier that enforces this lives at `scripts/lean-risk-classify.mjs`; the gate is wired into `skills/implement/SKILL.md` (post-coder step). STANDARD and FULL modes always dispatch reviewers — the skip rule does not apply there.
 
 **Contextual agents** — add based on task signals:
 
