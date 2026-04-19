@@ -265,20 +265,43 @@ async function main(rawInput) {
     }
   }
 
-  // --- Gate self-approval guard for gate-pending.json writes ---
-  // Prevents the model from writing status "approved" to gate-pending.json
-  // without explicit user authorization (approval-token with gate-approve action).
+  // --- Control file guards: run-active.json and gate-pending.json ---
   const normalisedPath = filePath.replace(/\\/g, '/');
+
+  // Block ALL direct writes to run-active.json.
+  // Managed exclusively by MCP tools (forge_create_run, forge_resume_run)
+  // and hooks (subagent-start, subagent-stop). No legitimate Write/Edit path.
+  if (normalisedPath.endsWith('.pipeline/run-active.json')) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            'FORGE: Direct writes to .pipeline/run-active.json are not allowed. ' +
+            'Use forge_create_run or forge_resume_run MCP tools to manage run state.',
+        },
+      }) + '\n'
+    );
+    process.exit(2);
+    return;
+  }
+
+  // Gate-pending.json: allow only pending writes (skill gate-presentation) or
+  // writes with an explicit user approval token. Block everything else.
   if (normalisedPath.endsWith('.pipeline/gate-pending.json')) {
     let isApprovalWrite = false;
+    let isPendingWrite = false;
 
     if (toolName === 'Write') {
       const content = toolInput.content || '';
       try {
         const parsed = JSON.parse(content);
         isApprovalWrite = parsed && parsed.status === 'approved';
+        isPendingWrite = parsed && parsed.status === 'pending';
       } catch (_) {
         isApprovalWrite = /"status"\s*:\s*"approved"/.test(content);
+        isPendingWrite = /"status"\s*:\s*"pending"/.test(content);
       }
     } else if (toolName === 'Edit') {
       const newString = toolInput.new_string || '';
@@ -296,6 +319,23 @@ async function main(rawInput) {
               'The user must invoke /forge:approve or include "approve" in their message ' +
               'before gate-pending.json can be written with status "approved". ' +
               'This prevents model self-approval of pipeline gates.',
+          },
+        }) + '\n'
+      );
+      process.exit(2);
+      return;
+    }
+
+    if (!isPendingWrite && !hasValidGateApprovalToken()) {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              'FORGE: Direct writes to .pipeline/gate-pending.json require either ' +
+              'status "pending" (gate presentation) or explicit user authorization via /forge:approve. ' +
+              'Use forge_set_gate MCP tool for other gate state changes.',
           },
         }) + '\n'
       );
