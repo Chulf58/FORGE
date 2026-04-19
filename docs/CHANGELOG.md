@@ -1,3 +1,11 @@
+## [2026-04-19] LEAN-lite gate for debug and refactor pipelines
+
+- Ported LEAN-lite reviewer-skip gate from implement skill to debug and refactor skills — gates operate post-debug-agent and post-refactor-agent respectively
+- For refactor, `reviewer-style` always runs even when gate skips other reviewers (style consistency required for refactors)
+- Updated `CLAUDE.md` to document the expanded scope and note plan pipeline deferral for future adaptation
+
+---
+
 ## [2026-04-19] Stuck-loop detection in subagent dispatch
 
 - Added stuck-loop detection to `hooks/subagent-start.js` — warns on 2nd dispatch of same agent type within a run, blocks on 3rd+ with exit(2)

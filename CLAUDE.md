@@ -166,7 +166,7 @@ Based on the assessment, determine which agents are needed. The pipeline and mod
 - The handoff diff matches none of the risk-surface rules above.
 - The operator did not include the literal token `[force-review]` in the invocation.
 
-The classifier that enforces this lives at `scripts/lean-risk-classify.mjs`; the gate is wired into `skills/implement/SKILL.md` (post-coder step). STANDARD and FULL modes always dispatch reviewers — the skip rule does not apply there.
+The classifier that enforces this lives at `scripts/lean-risk-classify.mjs`; the gate is wired into `skills/implement/SKILL.md` (post-coder step), `skills/debug/SKILL.md` (post-debug-agent step), and `skills/refactor/SKILL.md` (post-refactor-agent step). STANDARD and FULL modes always dispatch reviewers — the skip rule does not apply there. Note: for refactor, `reviewer-style` always runs even when the gate skips other reviewers. The plan pipeline (`skills/plan/SKILL.md`) does not yet use this gate — its output is `docs/PLAN.md` not `docs/context/handoff.md`, which requires classifier adaptation (deferred).
 
 **Contextual agents** — add based on task signals:
 
