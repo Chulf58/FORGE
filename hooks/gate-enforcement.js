@@ -96,12 +96,52 @@ async function main(rawInput) {
   const projectDir = process.cwd();
 
   // Step 7: check pipelineMode — bypass for TRIVIAL and SPRINT.
-  // Prefer the per-run mode from run-active.json; fall back to project.json.
+  //
+  // Trust model: run-active.json is writable by the model via Write tool (it's
+  // inside .pipeline/ which isSourceFile() excludes). A tampered run-active.json
+  // with mode:"TRIVIAL" would bypass gates for implement/debug/refactor runs.
+  //
+  // Defense: when run-active.json claims a bypass mode, cross-reference with the
+  // authoritative run record. The run record is created through forge_create_run
+  // which validates mode via validateModeForRisk(). If the run record disagrees
+  // or the bypass mode is invalid for the run's pipelineType, fall through to
+  // normal gate enforcement.
+  //
+  // Additionally: TRIVIAL is only valid for plan/apply. If the run's
+  // pipelineType is implement/debug/refactor, TRIVIAL bypass is rejected
+  // regardless of what any file says.
+  const SOURCE_MUTATING = new Set(['implement', 'debug', 'refactor']);
+
   let resolvedMode = null;
+  let resolvedPipelineType = null;
   const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
   const runActiveResult = readJsonFile(runActivePath);
   if (runActiveResult.ok && runActiveResult.data && runActiveResult.data.mode) {
     resolvedMode = runActiveResult.data.mode;
+    resolvedPipelineType = runActiveResult.data.pipelineType || null;
+
+    // Cross-reference: if bypass mode claimed, verify against the run record.
+    // Fail closed: if we cannot verify the bypass, revoke it.
+    if (BYPASS_MODES.has(resolvedMode) && runActiveResult.data.runId) {
+      const runId = runActiveResult.data.runId;
+      let verified = false;
+      if (/^r-[a-zA-Z0-9]+$/.test(runId)) {
+        const runJsonResult = readJsonFile(
+          path.join(projectDir, '.pipeline', 'runs', runId, 'run.json')
+        );
+        if (runJsonResult.ok && runJsonResult.data) {
+          const runRecord = runJsonResult.data;
+          if (runRecord.mode) resolvedMode = runRecord.mode;
+          if (runRecord.pipelineType) resolvedPipelineType = runRecord.pipelineType;
+          verified = true;
+        }
+      }
+      if (!verified) {
+        // Invalid runId or missing/unreadable run record — revoke bypass
+        resolvedMode = null;
+        resolvedPipelineType = null;
+      }
+    }
   } else {
     const projectJsonPath = path.join(projectDir, '.pipeline', 'project.json');
     const projectResult = readJsonFile(projectJsonPath);
@@ -109,10 +149,20 @@ async function main(rawInput) {
       resolvedMode = projectResult.data.pipelineMode || null;
     }
   }
+
   if (resolvedMode && BYPASS_MODES.has(resolvedMode)) {
-    console.error('[gate-enforcement] pipelineMode ' + resolvedMode + ': gates bypassed by design');
-    exitOk();
-    return;
+    // Final structural check: TRIVIAL is never valid for source-mutating pipelines
+    if (resolvedMode === 'TRIVIAL' && resolvedPipelineType && SOURCE_MUTATING.has(resolvedPipelineType)) {
+      console.error(
+        '[gate-enforcement] TRIVIAL mode invalid for ' + resolvedPipelineType +
+        ' pipeline — proceeding with gate enforcement'
+      );
+      // Fall through to gate check below
+    } else {
+      console.error('[gate-enforcement] pipelineMode ' + resolvedMode + ': gates bypassed by design');
+      exitOk();
+      return;
+    }
   }
   // Missing or malformed files: proceed with normal enforcement.
 
