@@ -1,3 +1,11 @@
+## [2026-04-19] Worktree merge conflict handling
+
+- Added pre-merge dirty-check to `merge()` in `bin/forge-worktree.js` — rejects the merge with a structured JSON error if the main repo has uncommitted changes, listing the dirty files
+- Implemented two-pass merge strategy: pass 1 attempts a plain `git merge`; on conflict, collects conflicting file names, aborts, then retries with `-X theirs` (worktree-side precedence) as pass 2
+- On successful auto-resolve, the JSON result now includes `autoResolved: true` and `strategy: "theirs"`; on total failure, `conflictFiles` is surfaced in both the error output and `run.json`
+
+---
+
 ## [2026-04-19] Enforcement hardening — 8 hook & MCP findings fixed
 
 - **workflow-guard.js:** `isPipelineActive()` now checks run registry terminal status instead of wall-clock age; advisory path (`includeAgents: false`) separates from apply-gate enforcement path (agents are now gated on apply)

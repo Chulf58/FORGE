@@ -1,0 +1,10 @@
+{
+  "skipReviewers": false,
+  "reasons": [
+    "risk-surface-match"
+  ],
+  "triggeredRules": [
+    "bin-script:bin/forge-worktree.js",
+    "merge-apply-worktree-boundary:bin/forge-worktree.js"
+  ]
+}
