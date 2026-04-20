@@ -1721,6 +1721,18 @@
         "tokens",
         "codeburn"
       ]
+    },
+    {
+      "id": "08854ae7",
+      "priority": "high",
+      "text": "Harden bash-guard pipeline bypass: the active-run bypass currently lets any git commit/push through while run-active.json exists — including non-pipeline commits on main (e.g. pre-merge cleanup). Mechanical fix needed: bash-guard should distinguish worktree commits (legitimate pipeline ops) from main-branch commits during an active run. Proposed: check if the git -C target or cwd matches the run's worktreePath — allow if yes, require approval token if no. Supervisor involvement required — this is a mechanical guard change, not a rule/prompt fix.",
+      "done": false,
+      "addedAt": 1776667091564,
+      "tags": [
+        "hooks",
+        "security",
+        "bash-guard"
+      ]
     }
   ],
   "planned": []

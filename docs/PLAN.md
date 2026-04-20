@@ -35,3 +35,38 @@
 
 **Trade-offs accepted:**
 - Fail-open on unreadable registry: if `run.json` is missing or unparseable, both hooks treat the run as non-terminal and proceed as before. This preserves existing behaviour at the cost of not cleaning up when the registry is corrupt — acceptable because corrupt registries are rare and the symptom (stale pointer) is harmless in that case.
+
+---
+
+### Feature: SessionEnd and FileChanged lifecycle hooks
+
+- [ ] 1. Create `hooks/session-end.js` — SessionEnd hook with end-of-session protocol reminder (`hooks/session-end.js`)
+  CommonJS hook script. Reads stdin with the standard readline + timeout pattern (10 s timeout, crlfDelay: Infinity). Parses payload, calls `resolveProjectDir(payload)`. Reads `.pipeline/project.json`; if `sessionEndReminder === false`, exits silently. Reads `.pipeline/run-active.json`; if the agents array contains any agent whose type includes `implementer` or `coder` with a `completedAt` timestamp, checks whether `docs/context/handoff.md` was modified within the last 60 minutes AND whether `docs/CHANGELOG.md` was modified within the last 60 minutes. If source-modifying agents ran but either file is stale/missing, emits a reminder via `process.stderr.write(...)`. Never exits with code other than 0. All fs reads wrapped in try/catch; any failure is fail-open.
+  Verify: file exists at `hooks/session-end.js`, starts with `'use strict'`, uses `require('./hook-utils')` for `resolveProjectDir`, and exits 0 in all branches including parse errors.
+
+- [ ] 2. Create `hooks/file-changed.js` — FileChanged hook for gate-pending.json and board.json (`hooks/file-changed.js`)
+  CommonJS hook script. Reads stdin with same readline + timeout pattern. Parses payload; extracts the changed file path from `payload.file` (or the field name used by Claude Code for FileChanged — flag in Research needed if unknown). If path does not end with `.pipeline/gate-pending.json` or `.pipeline/board.json`, exits 0 with no output. For gate-pending.json: reads the file, builds an `additionalContext` string describing the current gate status and feature name; emits `process.stdout.write(JSON.stringify({ additionalContext }))`. For board.json: emits `additionalContext` noting that new TODOs may have been added externally. All fs reads in try/catch; on any error, exits 0 silently.
+  Verify: file exists at `hooks/file-changed.js`, starts with `'use strict'`, emits no stdout for non-matching file paths, and always exits 0.
+
+- [ ] 3. Register both hooks in `hooks/hooks.json` (`hooks/hooks.json`)
+  Append a `"SessionEnd"` top-level key with one entry: `{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\"" }] }`. Append a `"FileChanged"` top-level key with one entry using the same command pattern pointing to `hooks/file-changed.js`. Use the exact same JSON structure as the existing `Stop` and `SessionStart` entries. No `matcher` field is needed for SessionEnd; check Claude Code docs for whether FileChanged requires a matcher or glob pattern — flag in Research needed.
+  Verify: `hooks/hooks.json` is valid JSON, contains both `"SessionEnd"` and `"FileChanged"` keys, and all paths use `${CLAUDE_PLUGIN_ROOT}`.
+
+### Research needed
+
+- **FileChanged payload field name:** The exact field name in the stdin payload that carries the changed file path for the `FileChanged` hook event is unknown. Common candidates are `payload.file`, `payload.path`, `payload.filePath`. The implementer must verify against Claude Code hook documentation or source before coding `hooks/file-changed.js`.
+- **FileChanged hook matcher/glob:** Whether the `FileChanged` hook declaration requires a `matcher` field (file glob pattern) in `hooks/hooks.json`, or whether the hook fires unconditionally and filtering is the script's responsibility. If a matcher is needed, the correct syntax for matching `.pipeline/*.json` must be verified.
+- **SessionEnd payload shape:** Confirm what fields (if any) the `SessionEnd` hook payload provides beyond `cwd`. In particular, whether it carries `session_id` or a timestamp that could help with staleness detection.
+
+### Approach summary
+
+**Key decisions:**
+- SessionEnd is advisory-only (stderr reminder, never blocking) — matches the established pattern of ctx-stop.js. Configurable via `sessionEndReminder` boolean in project.json with default-true semantics (no key = enabled).
+- FileChanged uses `additionalContext` stdout output for the two monitored files — consistent with how ctx-session-start.js injects context — and is a silent no-op for all other paths.
+- Both hooks follow the exact stdin/readline + timeout pattern from ctx-stop.js and ctx-session-start.js to ensure consistency with the rest of the hook fleet.
+
+**Trade-offs accepted:**
+- The 60-minute freshness window for the SessionEnd handoff/CHANGELOG check is a heuristic — it will produce false negatives for very long sessions and false positives if the user legitimately updated the files hours earlier. This is acceptable for an advisory-only reminder.
+
+**Uncertainties:**
+- FileChanged hook payload field name and matcher syntax are unknown — implementer must verify before coding. Plan tasks 2 and 3 are fully specified except for these two fields.
