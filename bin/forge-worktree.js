@@ -17,7 +17,7 @@ const path = require('path');
 const cmd = process.argv[2];
 const slug = process.argv[3];
 
-const WORKTREE_DIR = '.worktrees';
+const WORKTREE_DIR = path.resolve(process.cwd(), '.worktrees');
 
 // Guard against shell injection via slug — only alphanumeric, hyphens, underscores allowed
 function validateSlug(s) {

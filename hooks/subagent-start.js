@@ -3,53 +3,12 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, resolvePluginRoot } = require('./hook-utils');
+const { resolveProjectDir, isForgeAgent } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
 function exitOk() {
   process.exit(0);
-}
-
-// -- FORGE agent allowlist ---------------------------------------------------
-// Derived from the plugin's agents/*.md filenames. Only events whose
-// agent_type matches a known FORGE agent are recorded. Built-in Claude Code
-// subagents (general-purpose, Explore, Plan, claude-code-guide, etc.) are
-// skipped — they are session activity, not FORGE pipeline activity.
-//
-// Cached per process. On any failure resolving the list, returns null and
-// the caller falls back to pre-change behavior (record everything).
-
-let _forgeAgents = undefined; // undefined = not yet probed; null = failed; Set = ok
-function getForgeAgentSet() {
-  if (_forgeAgents !== undefined) return _forgeAgents;
-  try {
-    const pluginRoot = resolvePluginRoot();
-    const agentsDir = path.join(pluginRoot, 'agents');
-    const entries = fs.readdirSync(agentsDir);
-    const names = entries
-      .filter(n => n.endsWith('.md'))
-      .map(n => n.slice(0, -3)); // strip .md
-    if (names.length === 0) {
-      _forgeAgents = null; // empty dir — fail open
-      return _forgeAgents;
-    }
-    _forgeAgents = new Set(names);
-    return _forgeAgents;
-  } catch (_) {
-    _forgeAgents = null;
-    return _forgeAgents;
-  }
-}
-
-function isForgeAgent(agentType) {
-  if (!agentType) return false;
-  const allowlist = getForgeAgentSet();
-  if (!allowlist) return true; // allowlist unavailable → fail open (record all)
-  // Accept bare names ("planner") and namespaced names ("forge:planner").
-  // The allowlist is built from bare filenames — normalize before lookup.
-  const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
-  return allowlist.has(normalized);
 }
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);

@@ -818,6 +818,12 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
   async ({ providerId, modelId, prompt, maxTokens, reasoningEffort, agentName }) => {
+    // Prompt size limit — prevents exfiltration of large file contents
+    const MAX_PROMPT_CHARS = 100_000;
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return errorResult("Prompt exceeds " + MAX_PROMPT_CHARS + " character limit (" + prompt.length + " chars). Trim the prompt.");
+    }
+
     // Maximum number of model reroutes on transient 503 — prevents infinite loops
     const MAX_REROUTES = 3;
 
@@ -965,6 +971,15 @@ server.registerTool(
       const usage = readUsage(projectDir);
       if (!usage.providers) usage.providers = {};
 
+      // Rate-limit resets to prevent infinite retry loops
+      if (usage.updatedAt) {
+        const lastUpdate = new Date(usage.updatedAt);
+        const elapsed = Date.now() - lastUpdate.getTime();
+        if (elapsed < 60_000) {
+          return errorResult("Usage was reset less than 60 seconds ago. Wait before retrying.");
+        }
+      }
+
       const resetAt = new Date().toISOString();
 
       // Clears provider-level AND any per-model quotaExhausted flags so users
@@ -1037,6 +1052,20 @@ server.registerTool(
 
       if (!config.agentModelMap || !config.agentModelMap[agentName]) {
         return errorResult("Agent not in agentModelMap: " + agentName);
+      }
+
+      // Reviewer agents must stay on Anthropic — block vendor redirection
+      const LOCKED_VENDOR_AGENTS = [
+        'reviewer-safety', 'reviewer-boundary', 'reviewer-logic',
+        'reviewer-style', 'reviewer-performance', 'reviewer-triage',
+      ];
+      if (allowedVendors !== undefined && LOCKED_VENDOR_AGENTS.includes(agentName)) {
+        if (!allowedVendors.includes('anthropic')) {
+          return errorResult(
+            "Reviewer agents must include 'anthropic' in allowedVendors. " +
+            "Routing reviewers to non-Anthropic providers is not allowed."
+          );
+        }
       }
 
       // Apply provided fields in-place

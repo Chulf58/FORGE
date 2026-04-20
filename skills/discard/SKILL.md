@@ -29,4 +29,4 @@ Call `forge_get_run` with the `runId` to get the full run object including `work
 1. Delete the gate file at the resolved location.
 2. If gate1: also remove the active plan section from `docs/PLAN.md` (in the main project root — plans are not worktree-scoped).
 3. Update the run: call `forge_update_run` with the `runId` and `status: "discarded"`, `currentStep: "discarded"`.
-4. Print "Gate discarded."
+4. Print "Gate <N> discarded for '<feature>'." (read `gate` and `feature` from the gate file before deleting it).

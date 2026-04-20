@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const { hasValidApprovalToken: hasValidApprovalTokenShared } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS  = 10_000;
 
@@ -56,7 +57,7 @@ async function isPipelineActive() {
     return false;
   }
   // Validate runId to prevent path traversal via a tampered run-active.json.
-  if (!/^r-[a-zA-Z0-9-]+$/.test(runId)) return false;
+  if (!/^r-[a-zA-Z0-9]+$/.test(runId)) return false;
   // Cross-reference the run registry for terminal status.
   // Fail-open: if run.json is absent or unreadable, treat as non-terminal.
   try {
@@ -91,19 +92,8 @@ function isSourceFile(filePath, { includeAgents = true } = {}) {
 }
 
 // -- Gate self-approval token check ------------------------------------------
-// Mirrors bash-guard's hasValidApprovalToken but checks for 'gate-approve' action.
 function hasValidGateApprovalToken() {
-  try {
-    const tokenPath = path.join(process.cwd(), '.pipeline', 'action-approved.json');
-    const raw = fs.readFileSync(tokenPath, 'utf8');
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data.actions) || !data.expiresAt) return false;
-    const expiresAt = new Date(data.expiresAt);
-    if (isNaN(expiresAt.getTime()) || expiresAt < new Date()) return false;
-    return data.actions.includes('gate-approve');
-  } catch (_) {
-    return false;
-  }
+  return hasValidApprovalTokenShared('gate-approve');
 }
 
 // -- Gate #2 enforcement for apply runs --------------------------------------

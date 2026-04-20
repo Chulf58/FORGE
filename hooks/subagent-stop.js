@@ -3,43 +3,12 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
+const { resolveProjectDir, stripAnsi, isForgeAgent } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 5000;
 
 function exitOk() {
   process.exit(0);
-}
-
-// -- FORGE agent allowlist ---------------------------------------------------
-// See subagent-start.js for rationale. Duplicated here so both hooks filter
-// symmetrically — a non-FORGE agent_type skipped at start must also skip at
-// stop, so we never look for an entry that was never recorded.
-
-let _forgeAgents = undefined;
-function getForgeAgentSet() {
-  if (_forgeAgents !== undefined) return _forgeAgents;
-  try {
-    const pluginRoot = resolvePluginRoot();
-    const agentsDir = path.join(pluginRoot, 'agents');
-    const entries = fs.readdirSync(agentsDir);
-    const names = entries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));
-    if (names.length === 0) { _forgeAgents = null; return _forgeAgents; }
-    _forgeAgents = new Set(names);
-    return _forgeAgents;
-  } catch (_) {
-    _forgeAgents = null;
-    return _forgeAgents;
-  }
-}
-
-function isForgeAgent(agentType) {
-  if (!agentType) return false;
-  const allowlist = getForgeAgentSet();
-  if (!allowlist) return true; // fail open
-  // Accept bare names ("planner") and namespaced names ("forge:planner").
-  const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
-  return allowlist.has(normalized);
 }
 
 // Only reviewer-typed agents may emit [reviewer-verdict] signals.

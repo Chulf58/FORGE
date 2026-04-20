@@ -101,7 +101,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
 
 5. **Auto-commit** (opt-in — only if `gitIntegration.autoCommit`):
    - Use the sanitized `feature` field returned by `forge_create_run` in Step 1 as `<safe-feature>`. It has been mechanically sanitized at source — do not use raw `$ARGUMENTS` here. (Defense in depth: `"`, `\`, `` ` ``, `$`, newlines, and control characters have already been stripped.)
-   - Run `git add -A` then `git commit -m "feat(forge): <safe-feature>"`
+   - Run `git add` with the specific files the implementer changed (use `git diff --name-only` and `git status --porcelain` to identify them). Do NOT use `git add -A` — it stages untracked files that may contain secrets or agent artifacts. Then `git commit -m "feat(forge): <safe-feature>"`
    - If nothing to commit (exit code 1 or output contains "nothing to commit"): log "[git-integration] Nothing to commit — skipping" and continue
    - If pre-commit hooks fail: log the error output and continue. Do NOT use `--no-verify`.
    - Never amend, never force, never skip hooks
@@ -118,7 +118,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
 
 8. **Worktree commit** (mandatory when a worktree was resolved in Step 2b — NOT gated by gitIntegration):
    - This commits the implementer's and documenter's changes onto the worktree branch so Step 9 can merge them. This is infrastructure, not a user preference.
-   - Run via Bash: `git -C <worktreePath> add -A`
+   - Run via Bash: `git -C <worktreePath> add` with the specific files the implementer changed (use `git -C <worktreePath> diff --name-only` and `git -C <worktreePath> status --porcelain`). Do NOT use `git add -A`.
    - Then: `git -C <worktreePath> commit -m "feat(forge): <safe-feature>"` (use the same sanitized feature name from Step 5; if Step 5 was skipped, sanitize now: strip `"`, `\`, `` ` ``, `$`, newlines, control characters)
    - If nothing to commit (exit code 1 or output contains "nothing to commit"): log `[worktree] No changes to commit on worktree branch — skipping.` and continue to Step 9.
    - If commit fails for any other reason: log `[worktree] Commit failed: <error>` and continue. Step 9 merge will likely be a no-op but will not crash.

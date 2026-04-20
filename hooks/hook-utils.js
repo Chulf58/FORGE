@@ -112,4 +112,57 @@ function stripAnsi(value) {
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, ''); // C0/C1 (keep \t \n \r)
 }
 
-module.exports = { resolveProjectDir, resolvePluginRoot, stripAnsi };
+/**
+ * Checks whether a valid, non-expired approval token exists for the given action.
+ * Shared implementation — used by bash-guard, workflow-guard, and any other hook
+ * that needs to verify user approval.
+ *
+ * @param {string} action - action to check (e.g. 'commit', 'push', 'gate-approve')
+ * @param {string} [projectDir] - project directory (defaults to process.cwd())
+ * @returns {boolean}
+ */
+function hasValidApprovalToken(action, projectDir) {
+  const fs = require('fs');
+  try {
+    const tokenPath = path.join(projectDir || process.cwd(), '.pipeline', 'action-approved.json');
+    const raw = fs.readFileSync(tokenPath, 'utf8');
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.actions) || !data.expiresAt) return false;
+    const expiresAt = new Date(data.expiresAt);
+    if (isNaN(expiresAt.getTime()) || expiresAt < new Date()) return false;
+    return data.actions.includes(action);
+  } catch (_) {
+    return false;
+  }
+}
+
+// -- FORGE agent allowlist ---------------------------------------------------
+// Derived from the plugin's agents/*.md filenames. Only events whose
+// agent_type matches a known FORGE agent are recorded.
+
+let _forgeAgents = undefined;
+function getForgeAgentSet() {
+  if (_forgeAgents !== undefined) return _forgeAgents;
+  try {
+    const pluginRoot = resolvePluginRoot();
+    const agentsDir = path.join(pluginRoot, 'agents');
+    const entries = require('fs').readdirSync(agentsDir);
+    const names = entries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));
+    if (names.length === 0) { _forgeAgents = null; return _forgeAgents; }
+    _forgeAgents = new Set(names);
+    return _forgeAgents;
+  } catch (_) {
+    _forgeAgents = null;
+    return _forgeAgents;
+  }
+}
+
+function isForgeAgent(agentType) {
+  if (!agentType) return false;
+  const allowlist = getForgeAgentSet();
+  if (!allowlist) return true;
+  const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
+  return allowlist.has(normalized);
+}
+
+module.exports = { resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken, getForgeAgentSet, isForgeAgent };

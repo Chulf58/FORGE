@@ -29,6 +29,7 @@ const RISK_PATH_PATTERNS = [
   { rule: 'mcp-tool', regex: /^mcp\// },
   { rule: 'command', regex: /^commands\// },
   { rule: 'plugin-manifest', regex: /^\.claude-plugin\// },
+  { rule: 'pipeline-state-schema', regex: /^\.pipeline\/.*\.json$/ },
   {
     rule: 'merge-apply-worktree-boundary',
     regex: /^(bin\/forge-worktree|hooks\/(workflow-guard|gate-enforcement|routing-enforcement|subagent-(start|stop)))/,
@@ -73,6 +74,10 @@ const RISK_CONTENT_PATTERNS = [
   {
     rule: 'env-or-path-resolution',
     regex: /\b(path\.resolve\s*\(.*process\.env|resolveProjectDir|resolvePluginRoot|resolvePluginDataDir)/,
+  },
+  {
+    rule: 'signal-format-change',
+    regex: /\[reviewer-verdict\]|\[todo\]|\[suggest\]|\[health\]|\[task-block\]|\[solution-hit\]|\[promote-gotcha\]/,
   },
 ];
 

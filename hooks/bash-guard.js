@@ -3,6 +3,7 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
+const { hasValidApprovalToken } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 10000;
 
@@ -215,28 +216,6 @@ function hasActivePipelineRun() {
     const raw = fs.readFileSync(runActivePath, 'utf8');
     const data = JSON.parse(raw);
     return typeof data.runId === 'string' && data.runId.length > 0;
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
- * Returns true when .pipeline/action-approved.json exists, is not expired, and
- * its `actions` array includes the given action string.
- * Fail-open: any read/parse error returns false.
- */
-function hasValidApprovalToken(action) {
-  try {
-    const tokenPath = path.join(process.cwd(), '.pipeline', 'action-approved.json');
-    const raw = fs.readFileSync(tokenPath, 'utf8');
-    const data = JSON.parse(raw);
-
-    if (!Array.isArray(data.actions) || !data.expiresAt) return false;
-
-    const expiresAt = new Date(data.expiresAt);
-    if (isNaN(expiresAt.getTime()) || expiresAt < new Date()) return false;
-
-    return data.actions.includes(action);
   } catch (_) {
     return false;
   }
