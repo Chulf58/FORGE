@@ -66,29 +66,27 @@ function create() {
   // Create worktree with new branch from current HEAD
   run('git', ['worktree', 'add', wtPath, '-b', branch]);
 
-  // Copy .pipeline/ to worktree so sessions have board, modules, project.json
+  // Merge-copy directories: git checkout may have created these from tracked files,
+  // but gitignored files (PLAN.md, board.json, etc.) still need copying from main.
   const pipelineSrc = '.pipeline';
   const pipelineDst = path.join(wtPath, '.pipeline');
-  if (fs.existsSync(pipelineSrc) && !fs.existsSync(pipelineDst)) {
+  if (fs.existsSync(pipelineSrc)) {
     copyDirSync(pipelineSrc, pipelineDst);
   }
 
-  // Copy docs/ to worktree so sessions have PLAN.md, gotchas, solutions
   const docsSrc = 'docs';
   const docsDst = path.join(wtPath, 'docs');
-  if (fs.existsSync(docsSrc) && !fs.existsSync(docsDst)) {
+  if (fs.existsSync(docsSrc)) {
     copyDirSync(docsSrc, docsDst);
   }
 
-  // Copy .claude/ to worktree so sessions have agents and commands
   const claudeSrc = '.claude';
   const claudeDst = path.join(wtPath, '.claude');
-  if (fs.existsSync(claudeSrc) && !fs.existsSync(claudeDst)) {
+  if (fs.existsSync(claudeSrc)) {
     copyDirSync(claudeSrc, claudeDst);
   }
 
-  // Copy CLAUDE.md
-  if (fs.existsSync('CLAUDE.md') && !fs.existsSync(path.join(wtPath, 'CLAUDE.md'))) {
+  if (fs.existsSync('CLAUDE.md')) {
     fs.copyFileSync('CLAUDE.md', path.join(wtPath, 'CLAUDE.md'));
   }
 
