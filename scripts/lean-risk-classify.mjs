@@ -194,9 +194,13 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
     ...extractFilePaths(createBody),
     ...extractFilePaths(modifyBody),
   ];
+  // Scan code blocks from canonical sections AND the full handoff.
+  // A manipulated coder could place risk-surface code in non-canonical sections
+  // (e.g. "## Approach") to evade section-scoped scanning.
   const codeContent = [
     extractCodeBlockContent(createBody),
     extractCodeBlockContent(modifyBody),
+    extractCodeBlockContent(handoffContent),
   ].join('\n');
 
   const triggered = [];

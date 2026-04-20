@@ -161,21 +161,24 @@ function merge() {
     }
   }
 
-  // Commit any uncommitted changes in the worktree before merging.
+  // Reject uncommitted changes in the worktree — the apply skill (Step 8) is
+  // responsible for committing. Auto-committing here would silently include
+  // unreviewed files (a compromised agent could plant arbitrary content).
   const wtStatus = run('git', ['-C', wtPath, 'status', '--porcelain'], { allowFail: true });
   if (wtStatus) {
-    run('git', ['-C', wtPath, 'add', '-A']);
-    try {
-      execFileSync('git', ['-C', wtPath, 'commit', '-m', 'feat(forge): apply changes'], {
-        encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch (e) {
-      // Commit failed (pre-commit hook, etc.) — log but continue to merge attempt
-      console.error(`[worktree] Pre-merge commit failed: ${e.message}`);
-    }
+    const uncommittedFiles = wtStatus.split('\n').filter(Boolean).map(l => l.trim());
+    console.error(JSON.stringify({
+      ok: false,
+      error: 'Worktree has uncommitted changes — the apply skill should have committed in Step 8.',
+      uncommittedFiles,
+    }));
+    process.exit(1);
   }
 
-  // Pass 1: plain merge
+  // Single-pass merge — no auto-resolution with -X theirs.
+  // If conflicts arise, fail and let the user resolve manually.
+  // Auto-resolving with -X theirs is dangerous: the worktree branch silently
+  // wins all conflicts, including on security-critical files.
   let mergeOk = false;
   let autoResolved = false;
   let pass1ConflictFiles = [];
@@ -183,7 +186,7 @@ function merge() {
     execFileSync('git', ['merge', branch, '--no-edit'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     mergeOk = true;
   } catch (_) {
-    // Pass 1 failed — collect conflict files while index still has unmerged entries
+    // Merge failed — collect conflict files for diagnostics
     try {
       const diffOut = execFileSync(
         'git', ['diff', '--name-only', '--diff-filter=U'],
@@ -194,27 +197,14 @@ function merge() {
       // diff failed — leave empty
     }
 
-    // Abort pass 1 before retrying
+    // Abort the failed merge cleanly
     try {
       execFileSync('git', ['merge', '--abort'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (_2) {
       // --abort can fail when merge wasn't started (e.g. fast-forward failure) — ignore
     }
 
-    // Pass 2: retry with worktree-side precedence
-    try {
-      execFileSync('git', ['merge', branch, '--no-edit', '-X', 'theirs'], {
-        encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      mergeOk = true;
-      autoResolved = true;
-    } catch (_3) {
-      // Pass 2 also failed — abort cleanly, use pass1 conflict list for diagnostics
-      try {
-        execFileSync('git', ['merge', '--abort'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-      } catch (_5) {
-        // ignore abort errors
-      }
+    {
 
       try {
         const runJsonPath = path.join('.pipeline', 'runs', slug, 'run.json');

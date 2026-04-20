@@ -311,6 +311,46 @@ async function main(rawInput) {
     return;
   }
 
+  // Block ALL direct writes to session-dispatch-log.json.
+  // Managed exclusively by MCP server (appendDispatchLogEntry) after
+  // forge_get_model_recommendation. If the model could Write this file, it could
+  // forge dispatch log entries to bypass routing-enforcement.
+  if (normalisedPath.endsWith('.pipeline/session-dispatch-log.json')) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            'FORGE: Direct writes to .pipeline/session-dispatch-log.json are not allowed. ' +
+            'Dispatch log entries are created automatically by forge_get_model_recommendation.',
+        },
+      }) + '\n'
+    );
+    process.exit(2);
+    return;
+  }
+
+  // Block ALL direct writes to project.json.
+  // Managed exclusively by MCP tools (forge_update_config, forge_read_project).
+  // If the model could Write this file, it could downgrade pipelineMode to
+  // SPRINT/TRIVIAL to bypass gate enforcement and reviewer dispatch.
+  if (normalisedPath.endsWith('.pipeline/project.json')) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            'FORGE: Direct writes to .pipeline/project.json are not allowed. ' +
+            'Use forge_update_config MCP tool to modify project settings.',
+        },
+      }) + '\n'
+    );
+    process.exit(2);
+    return;
+  }
+
   // Gate-pending.json: allow only pending writes (skill gate-presentation) or
   // writes with an explicit user approval token. Block everything else.
   if (normalisedPath.endsWith('.pipeline/gate-pending.json')) {

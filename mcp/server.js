@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from "./lib/config-store.js";
@@ -439,6 +439,14 @@ server.registerTool(
         return errorResult("Invalid type for " + key + ": expected array, got " + typeof value);
       }
 
+      // Enum validation for pipelineMode
+      if (key === "pipelineMode") {
+        const VALID_MODES = ["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"];
+        if (!VALID_MODES.includes(value)) {
+          return errorResult("Invalid pipelineMode: '" + value + "'. Must be one of: " + VALID_MODES.join(", "));
+        }
+      }
+
       const projectDir = resolveProjectDir();
       const check = requirePipeline(projectDir);
       if (!check.ok) return check.result;
@@ -591,6 +599,12 @@ server.registerTool(
       }
 
       writeJsonSafe(gatePath, data);
+
+      // Consume the approval token after successful gate approval to prevent
+      // replay attacks — one user "approve" authorizes exactly one gate.
+      if (status === "approved") {
+        try { unlinkSync(join(check.pipelineDir, "action-approved.json")); } catch (_) { /* already gone */ }
+      }
 
       // --- Run registry sync (best-effort — never blocks the gate operation) ---
       // Uses resolvedRunId (from explicit input, preserved gate file, or fallback)
@@ -1472,6 +1486,32 @@ server.registerTool(
       const projectDir = resolveProjectDir();
       // Strip undefined values so the core function only sees actual changes
       const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([_, v]) => v !== undefined));
+
+      // Gate-pending status guard: block transitions out of gate-pending to
+      // completed/running without a gate approval token. The model cannot skip
+      // gates by calling forge_update_run({ status: 'completed' }) directly.
+      // forge_set_gate (which has its own token check) calls updateRun() core
+      // function directly, so this guard does not interfere with legitimate approvals.
+      if (cleanPatch.status && cleanPatch.status !== 'failed' && cleanPatch.status !== 'discarded') {
+        const existing = getRun(projectDir, runId);
+        if (existing && existing.status === 'gate-pending') {
+          if (!hasGateApprovalToken(projectDir)) {
+            return errorResult(
+              "FORGE: Cannot transition run from gate-pending to '" + cleanPatch.status +
+              "' without user approval. Use /forge:approve or /forge:discard."
+            );
+          }
+        }
+      }
+
+      // Worktree path containment: worktreePath must resolve under .worktrees/
+      if (cleanPatch.worktreePath) {
+        const normalizedWt = resolve(cleanPatch.worktreePath).replace(/\\/g, '/').toLowerCase();
+        const expectedBase = resolve(join(projectDir, '.worktrees')).replace(/\\/g, '/').toLowerCase();
+        if (!normalizedWt.startsWith(expectedBase + '/') && normalizedWt !== expectedBase) {
+          return errorResult("FORGE: worktreePath must be under the project's .worktrees/ directory.");
+        }
+      }
 
       // Canonical feature preservation: if the caller provides gateState,
       // override gateState.feature with the stored run.feature. The run's

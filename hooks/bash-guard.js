@@ -101,6 +101,44 @@ function extractAllCommandWords(command) {
 }
 
 // ---------------------------------------------------------------------------
+// Control file write guard — blocks Bash commands that write to protected
+// .pipeline/ control files. workflow-guard.js blocks Write/Edit tool calls to
+// these files, but Bash can bypass that via node -e, printf, tee, or shell
+// redirects. This section closes that gap.
+// ---------------------------------------------------------------------------
+
+const PROTECTED_CONTROL_FILES = [
+  'run-active.json',
+  'action-approved.json',
+  'gate-pending.json',
+  'session-dispatch-log.json',
+  'project.json',
+];
+
+// Mask heredoc bodies so commit messages mentioning control file names or
+// "node -e" don't trigger false positives. Heredocs are input (<<), not
+// output redirects, so masking them loses no attack signal.
+function maskHeredocs(command) {
+  return command.replace(/<<-?\s*['"]?(\w+)['"]?\s*\n[\s\S]*?\n\1(?=\s|$)/gm,
+    (m) => 'x'.repeat(m.length));
+}
+
+function referencesControlFile(command) {
+  const safe = maskHeredocs(command);
+  return PROTECTED_CONTROL_FILES.some(f => safe.includes(f));
+}
+
+function hasBashWriteVector(command) {
+  const safe = maskHeredocs(command);
+  if (/>\s*['"]?\.pipeline\//.test(safe)) return true;
+  if (/>>\s*['"]?\.pipeline\//.test(safe)) return true;
+  if (/\btee\b/.test(safe) && /\.pipeline\//.test(safe)) return true;
+  if (/\bnode\s+-(e|p)\b/.test(safe)) return true;
+  if (/\bprintf\b/.test(safe) && hasOutputRedirect(safe)) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Git guard constants and helpers
 // ---------------------------------------------------------------------------
 
@@ -261,6 +299,17 @@ async function main(rawInput) {
       );
       return;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Control file write guard
+  // ---------------------------------------------------------------------------
+  if (referencesControlFile(command) && hasBashWriteVector(command)) {
+    exitBlock(
+      '[bash-guard] Blocked: command writes to a protected .pipeline/ control file via Bash. ' +
+      'Use the corresponding MCP tool (forge_create_run, forge_set_gate, etc.) or the Write tool instead.'
+    );
+    return;
   }
 
   // ---------------------------------------------------------------------------

@@ -152,11 +152,19 @@ async function main(rawInput) {
         '. Allowing retry.\n'
       );
     } else if (priorCount >= 2) {
-      process.stderr.write(
-        '[forge-stuck] BLOCKED: Agent ' + safeType +
+      const reason = '[forge-stuck] BLOCKED: Agent ' + safeType +
         ' dispatched ' + (priorCount + 1) + ' times in run ' + safeRunId +
-        '. Stopping to prevent token burn.\n'
+        '. Stopping to prevent token burn.';
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: reason,
+          },
+        }) + '\n'
       );
+      process.stderr.write(reason + '\n');
       process.exit(2);
     }
   }

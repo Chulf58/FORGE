@@ -88,6 +88,11 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
    - Decision: if `skipReviewers` is `true`, skip step 5 entirely (no reviewer-triage, no reviewer dispatch) and proceed directly to step 6 (Gate #2). If `skipReviewers` is `false`, proceed to step 5 as normal.
    - The policy this enforces is documented in `CLAUDE.md` under "LEAN-lite skip rule" and "Risk surface". Do not override the classifier's verdict — if a reviewer pass is genuinely desired on a non-risk LEAN change, the operator re-invokes with `[force-review]`.
 5. **Reviewer-triage → reviewers:** dispatch based on mode. Skipped when step 4 set `skipReviewers: true`.
+5b. **Reviewer verdict handling** (only when step 5 ran):
+   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
+   - If ANY reviewer emitted **BLOCK**: stop. Do NOT proceed to Gate #2. Present the blocker list and emit `[suggest] fix blockers and re-run /forge:implement`. Call `forge_update_run` with `status: "failed"`, `currentStep: "reviewer-blocked"`.
+   - If ANY reviewer emitted **REVISE** (and none BLOCK): proceed to Gate #2, but include the REVISE warnings in the gate presentation so the user sees them before approving.
+   - If ALL reviewers emitted **APPROVED**: proceed to Gate #2 normally.
 6. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<feature name>","status":"pending","applyKeyword":"apply feature: <feature>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
