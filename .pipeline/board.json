@@ -1749,6 +1749,32 @@
         "bug"
       ],
       "doneAt": 1776676097243
+    },
+    {
+      "id": "b335d4d1",
+      "priority": "high",
+      "text": "FEATURE: /forge:doctor diagnostic command. Checks: node in PATH, mcp/node_modules present, bin/forge-mcp-server.cmd exists, MCP server responding (forge_dashboard_state or similar probe). Reports pass/fail table with actionable fix instructions per check. First-install UX — when things don't work, user needs a single command to find out why.",
+      "done": false,
+      "addedAt": 1776681528865,
+      "tags": [
+        "feature",
+        "ux",
+        "install",
+        "diagnostics"
+      ]
+    },
+    {
+      "id": "094aaab3",
+      "priority": "medium",
+      "text": "UX: Surface actionable message when MCP tools are unavailable. Skills currently call forge_read_project and silently fail when MCP is down. Detect MCP unavailability and emit: \"[forge] MCP server not running. Run /forge:doctor to diagnose, or restart Claude Code.\" Affects all skills that fall back from MCP to direct file reads.",
+      "done": false,
+      "addedAt": 1776681532005,
+      "tags": [
+        "ux",
+        "mcp",
+        "install",
+        "error-handling"
+      ]
     }
   ],
   "planned": []
