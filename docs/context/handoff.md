@@ -1,305 +1,277 @@
-# Handoff: SessionEnd and FileChanged lifecycle hooks
+# Handoff: SessionStart auto-split observer pane (Windows Terminal)
 
 ## Summary
-Adds `hooks/session-end.js` (end-of-session protocol reminder) and `hooks/file-changed.js` (gate/board context injection), registered in `hooks/hooks.json`.
+Adds `hooks/observer-autosplit.js` to open the FORGE observer in a Windows Terminal split pane on SessionStart, with unit tests and a `wrapperLauncherContent` comment update.
 
 ## Files to create
-
-### `hooks/session-end.js`
+### `hooks/observer-autosplit.js`
 ```javascript
 'use strict';
 
-// SessionEnd hook — advisory reminder when end-of-session protocol appears incomplete.
-// Never blocks (exit 0 always). Emits stderr reminder when source-modifying agents
-// ran but handoff.md or CHANGELOG.md are stale (older than 60 minutes).
-
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
-
-const STDIN_TIMEOUT_MS = 10000;
-const FRESHNESS_MS = 60 * 60 * 1000; // 60 minutes
-
-async function main(rawInput) {
-  let payload;
-  try {
-    payload = JSON.parse(rawInput);
-  } catch (_) {
-    process.exit(0);
-    return;
-  }
-
-  const projectDir = resolveProjectDir(payload);
-
-  // Check sessionEndReminder opt-out in project.json
-  try {
-    const projRaw = await fs.promises.readFile(
-      path.join(projectDir, '.pipeline', 'project.json'),
-      'utf8',
-    );
-    const projData = JSON.parse(projRaw);
-    if (projData.sessionEndReminder === false) {
-      process.exit(0);
-      return;
-    }
-  } catch (_) { /* missing or unreadable — default to enabled */ }
-
-  // Check whether any source-modifying agents (implementer or coder) completed
-  let sourceAgentRan = false;
-  try {
-    const activeRaw = await fs.promises.readFile(
-      path.join(projectDir, '.pipeline', 'run-active.json'),
-      'utf8',
-    );
-    const activeData = JSON.parse(activeRaw);
-    if (Array.isArray(activeData.agents)) {
-      sourceAgentRan = activeData.agents.some((a) => {
-        const t = typeof a.agent_type === 'string' ? a.agent_type : '';
-        return (t.includes('implementer') || t.includes('coder')) && a.completedAt;
-      });
-    }
-  } catch (_) { /* run-active absent or unreadable — skip check */ }
-
-  if (!sourceAgentRan) {
-    process.exit(0);
-    return;
-  }
-
-  const now = Date.now();
-  const stale = [];
-
-  // Check handoff.md freshness
-  try {
-    const stat = await fs.promises.stat(
-      path.join(projectDir, 'docs', 'context', 'handoff.md'),
-    );
-    if ((now - stat.mtimeMs) > FRESHNESS_MS) {
-      stale.push('docs/context/handoff.md');
-    }
-  } catch (_) {
-    stale.push('docs/context/handoff.md (missing)');
-  }
-
-  // Check CHANGELOG.md freshness
-  try {
-    const stat = await fs.promises.stat(
-      path.join(projectDir, 'docs', 'CHANGELOG.md'),
-    );
-    if ((now - stat.mtimeMs) > FRESHNESS_MS) {
-      stale.push('docs/CHANGELOG.md');
-    }
-  } catch (_) {
-    stale.push('docs/CHANGELOG.md (missing)');
-  }
-
-  if (stale.length > 0) {
-    process.stderr.write(
-      '[forge-session-end] End-of-session protocol reminder: source-modifying agent ran ' +
-      'but the following files appear stale (>60 min): ' + stale.join(', ') + '. ' +
-      'Run the documenter agent and update CHANGELOG before closing.\n',
-    );
-  }
-
-  process.exit(0);
-}
-
-// -- Stdin reader with timeout guard -----------------------------------------
-let inputData = '';
-const timer = setTimeout(() => {
-  main(inputData || '{}').catch(() => process.exit(0));
-}, STDIN_TIMEOUT_MS);
-
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on('line', (line) => { inputData += line + '\n'; });
-rl.on('close', () => {
-  clearTimeout(timer);
-  main(inputData || '{}').catch(() => process.exit(0));
-});
-```
-
-### `hooks/file-changed.js`
-```javascript
-'use strict';
-
-// FileChanged hook — injects additionalContext when gate-pending.json or
-// board.json change on disk, so Claude sees the updated pipeline state
-// without needing an explicit read.
+// observer-autosplit.js — SessionStart hook
+// Opens the FORGE observer in a Windows Terminal split pane when:
+//   - Running on Windows
+//   - wt.exe is on PATH
+//   - This is not a subagent session (CLAUDE_CODE_TEAM_NAME not set)
 //
-// Defensive on payload field name: Claude Code FileChanged payload field name
-// was not confirmed in available documentation; the hook probes payload.file,
-// payload.path, payload.filePath, and payload.file_path in order and uses
-// the first non-empty string found. If none resolves, exits 0 silently.
+// Always exits 0 — session start is never blocked.
 
-const fs = require('fs');
 const path = require('path');
+const { execFileSync, spawn } = require('child_process');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolvePluginRoot } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10000;
+const STDIN_TIMEOUT_MS = 5000;
 
 /**
- * Extract the changed file path from the payload using multiple candidate
- * field names, because the exact Claude Code FileChanged payload field is
- * not confirmed in documentation available at authoring time.
+ * Returns a non-empty skip reason string, or null to proceed.
+ * Pure function — testable without spawning.
  *
- * @param {object} payload - parsed hook stdin payload
- * @returns {string} changed file path, or empty string if not found
+ * @param {{ [key: string]: string | undefined }} env
+ * @param {string} platform
+ * @returns {string | null}
  */
-function resolveChangedFilePath(payload) {
-  const candidates = ['file', 'path', 'filePath', 'file_path'];
-  for (const key of candidates) {
-    const val = payload[key];
-    if (val && typeof val === 'string') return val;
+function shouldSkip(env, platform) {
+  if (env.CLAUDE_CODE_TEAM_NAME) {
+    return 'subagent session (CLAUDE_CODE_TEAM_NAME set)';
   }
-  return '';
+  if (platform !== 'win32') {
+    return 'non-Windows platform';
+  }
+  return null;
 }
 
-async function main(rawInput) {
-  let payload;
+/**
+ * Build the wt.exe args array (excludes 'wt.exe' itself).
+ *
+ * @param {string} observerCmdPath  Absolute path to bin/forge-observer.cmd
+ * @returns {string[]}
+ */
+function buildWtArgs(observerCmdPath) {
+  return [
+    '-w', '0',
+    'sp', '-V',
+    '--size', '0.35',
+    '--',
+    'cmd', '/c', observerCmdPath,
+  ];
+}
+
+/**
+ * Check whether wt.exe is available on PATH.
+ * Returns true if found, false if not.
+ */
+function isWtAvailable() {
   try {
-    payload = JSON.parse(rawInput);
+    execFileSync('where', ['wt.exe'], { stdio: 'ignore', timeout: 2000 });
+    return true;
   } catch (_) {
+    return false;
+  }
+}
+
+async function main(_rawInput) {
+  const skipReason = shouldSkip(process.env, process.platform);
+  if (skipReason) {
+    process.stderr.write('[forge-observer-autosplit] skipping — ' + skipReason + '\n');
     process.exit(0);
     return;
   }
 
-  const changedPath = resolveChangedFilePath(payload);
-  if (!changedPath) {
+  if (!isWtAvailable()) {
+    process.stderr.write('[forge-observer-autosplit] wt.exe not found — skipping split\n');
     process.exit(0);
     return;
   }
 
-  // Normalise to forward slashes for cross-platform suffix matching
-  const normalised = changedPath.replace(/\\/g, '/');
-  const isGatePending = normalised.endsWith('.pipeline/gate-pending.json');
-  const isBoardJson = normalised.endsWith('.pipeline/board.json');
+  const pluginRoot = resolvePluginRoot();
+  const observerCmdPath = path.join(pluginRoot, 'bin', 'forge-observer.cmd');
+  const args = buildWtArgs(observerCmdPath);
 
-  if (!isGatePending && !isBoardJson) {
-    process.exit(0);
-    return;
+  try {
+    const child = spawn('wt.exe', args, { detached: true, stdio: 'ignore' });
+    child.unref();
+    process.stderr.write('[forge-observer-autosplit] opened observer split pane\n');
+  } catch (err) {
+    process.stderr.write(
+      '[forge-observer-autosplit] spawn failed: ' + (err.message || String(err)) + '\n',
+    );
   }
-
-  const projectDir = resolveProjectDir(payload);
-  let additionalContext = '';
-
-  if (isGatePending) {
-    try {
-      const raw = await fs.promises.readFile(
-        path.join(projectDir, '.pipeline', 'gate-pending.json'),
-        'utf8',
-      );
-      const data = JSON.parse(raw);
-      const gate = data.gate || 'unknown';
-      const status = data.status || 'unknown';
-      const feature = data.feature || 'unknown';
-      additionalContext =
-        '[FORGE] gate-pending.json changed: gate=' + gate +
-        ' status=' + status +
-        ' feature="' + feature + '".' +
-        (status === 'approved'
-          ? ' Gate is now approved — the next pipeline step may proceed.'
-          : status === 'pending'
-          ? ' Gate is pending — awaiting approval before the next step.'
-          : '');
-    } catch (_) {
-      // File unreadable after change (e.g. deleted) — exit silently
-      process.exit(0);
-      return;
-    }
-  }
-
-  if (isBoardJson) {
-    additionalContext =
-      '[FORGE] board.json changed externally — new TODOs or status changes ' +
-      'may have been written. Use forge_read_board to see the current board state.';
-  }
-
-  if (additionalContext) {
-    process.stdout.write(JSON.stringify({ additionalContext }));
-  }
-
   process.exit(0);
 }
 
-// -- Stdin reader with timeout guard -----------------------------------------
-let inputData = '';
-const timer = setTimeout(() => {
-  main(inputData || '{}').catch(() => process.exit(0));
-}, STDIN_TIMEOUT_MS);
+// Export pure helpers for unit tests.
+module.exports = { shouldSkip, buildWtArgs };
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on('line', (line) => { inputData += line + '\n'; });
-rl.on('close', () => {
-  clearTimeout(timer);
-  main(inputData || '{}').catch(() => process.exit(0));
-});
+// -- Stdin reader — only runs when executed directly, not when require()d -----
+// Guard prevents the stdin loop and process.exit() from firing when the test
+// file loads this module via require().
+if (require.main === module) {
+  let inputData = '';
+  const timer = setTimeout(() => {
+    main(inputData || '{}').catch(() => process.exit(0));
+  }, STDIN_TIMEOUT_MS);
+
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  rl.on('line', (line) => { inputData += line + '\n'; });
+  rl.on('close', () => {
+    clearTimeout(timer);
+    main(inputData || '{}').catch(() => process.exit(0));
+  });
+}
+```
+
+### `scripts/test-observer-autosplit.mjs`
+```javascript
+/**
+ * Unit tests for observer-autosplit.js guard logic and command-string shape.
+ * No external test runner. Run: node scripts/test-observer-autosplit.mjs
+ * Exits 0 on success, 1 on any failure.
+ */
+
+import assert from 'assert/strict';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const require = createRequire(import.meta.url);
+
+// Load hook module via require(). The stdin loop is guarded by `require.main === module`
+// so it does not execute here — only the pure helper exports are loaded.
+const hookPath = path.join(__dirname, '..', 'hooks', 'observer-autosplit.js');
+let shouldSkip, buildWtArgs;
+try {
+  const mod = require(hookPath);
+  shouldSkip = mod.shouldSkip;
+  buildWtArgs = mod.buildWtArgs;
+} catch (err) {
+  console.error('[FAIL] Could not require hook:', err.message);
+  process.exit(1);
+}
+
+let passed = 0;
+
+// --- Test 1: subagent skip ---------------------------------------------------
+try {
+  const reason = shouldSkip({ CLAUDE_CODE_TEAM_NAME: 'test' }, 'win32');
+  assert.ok(reason !== null, 'should return a skip reason when CLAUDE_CODE_TEAM_NAME is set');
+  assert.ok(typeof reason === 'string' && reason.includes('subagent'), 'reason should mention subagent');
+  console.log('[PASS] Test 1: subagent guard returns skip reason');
+  passed++;
+} catch (err) {
+  console.error('[FAIL] Test 1: subagent guard —', err.message);
+}
+
+// --- Test 2: non-Windows skip -----------------------------------------------
+try {
+  const reason = shouldSkip({}, 'linux');
+  assert.ok(reason !== null, 'should return a skip reason on non-Windows');
+  assert.ok(typeof reason === 'string' && reason.includes('non-Windows'), 'reason should mention non-Windows');
+  console.log('[PASS] Test 2: non-Windows guard returns skip reason');
+  passed++;
+} catch (err) {
+  console.error('[FAIL] Test 2: non-Windows guard —', err.message);
+}
+
+// --- Test 3: command string shape -------------------------------------------
+try {
+  const pluginRoot = 'C:\\plugin';
+  const observerCmdPath = path.win32.join(pluginRoot, 'bin', 'forge-observer.cmd');
+  const args = buildWtArgs(observerCmdPath);
+  const expected = [
+    '-w', '0',
+    'sp', '-V',
+    '--size', '0.35',
+    '--',
+    'cmd', '/c',
+    'C:\\plugin\\bin\\forge-observer.cmd',
+  ];
+  assert.deepEqual(args, expected, 'args array must match expected shape');
+  console.log('[PASS] Test 3: command string shape is correct');
+  passed++;
+} catch (err) {
+  console.error('[FAIL] Test 3: command string shape —', err.message);
+}
+
+// --- Result -----------------------------------------------------------------
+if (passed === 3) {
+  process.exit(0);
+} else {
+  console.error('[FAIL] ' + (3 - passed) + ' test(s) failed');
+  process.exit(1);
+}
 ```
 
 ## Files to modify
-
 ### `hooks/hooks.json`
-**Change:** Insert `SessionEnd` and `FileChanged` entries before `SubagentStart`.
+**Change:** Append observer-autosplit entry as last item in SessionStart array.
 
 **Find:**
 ```json
-    "SubagentStart": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/usage-clear-quota-flags.js\""
           }
         ]
-      },
+      }
+    ],
+    "UserPromptSubmit": [
 ```
 
 **Replace with:**
 ```json
-    "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\""
-          }
-        ]
-      }
-    ],
-    "FileChanged": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/file-changed.js\""
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/usage-clear-quota-flags.js\""
           }
         ]
       },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-autosplit.js\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
 ```
 
-## Blockers
-- FileChanged payload field name is unconfirmed — hook probes `file`, `path`, `filePath`, `file_path` defensively; verify against a live Claude Code session and narrow `resolveChangedFilePath` if the actual field is known.
-- FileChanged matcher requirement is unconfirmed — the hooks.json entry omits `matcher` (matching the pattern of `SessionEnd`); if Claude Code requires a glob to make `FileChanged` fire at all, add `"matcher": "**/.pipeline/*.json"` to the `FileChanged` entry.
-- SessionEnd payload shape unconfirmed — hook relies only on `payload.cwd` via `resolveProjectDir`, which falls back to `process.cwd()` when absent; correctness is maintained regardless.
+### `hooks/mcp-deps-install.js`
+**Change:** Add observer-pointer comment line to `wrapperLauncherContent` string.
+
+**Find:**
+```javascript
+  const wrapperLauncherContent =
+    '@echo off\r\n' +
+    'REM FORGE wrapper launcher — auto-generated by hooks/mcp-deps-install.js on SessionStart.\r\n' +
+    'REM Edits will be overwritten next session. Update the generator if you want a different shape.\r\n' +
+    claudeEnvLine +
+    '"' + process.execPath + '" "' + wrapperJsPath + '" %*\r\n';
+```
+
+**Replace with:**
+```javascript
+  const wrapperLauncherContent =
+    '@echo off\r\n' +
+    'REM FORGE wrapper launcher — auto-generated by hooks/mcp-deps-install.js on SessionStart.\r\n' +
+    'REM Edits will be overwritten next session. Update the generator if you want a different shape.\r\n' +
+    'REM For the observer-primary UX, use bin/forge-observer.cmd to launch the dashboard.\r\n' +
+    claudeEnvLine +
+    '"' + process.execPath + '" "' + wrapperJsPath + '" %*\r\n';
+```
 
 ## Verification
-- Both hooks call `process.exit(0)` followed by `return` on every early-exit branch to prevent async fall-through after the readline close handler.
-- `file-changed.js` emits no stdout for non-matching paths; the stdout write is guarded by the `additionalContext` non-empty check.
+- Stdin loop guarded with `require.main === module` — prior draft lacked this, causing `process.exit(0)` to fire when the test loaded the module via `require()`, killing the test process before any assertions ran.
 
 ## Doc hints
 arch-update: true
-decision: true
-
-**Decision:** `file-changed.js` probes four candidate field names (`file`, `path`, `filePath`, `file_path`) rather than assuming one, because the Claude Code FileChanged payload shape was not confirmed at authoring time. The first non-empty string wins; if none resolves, the hook exits silently — fail-open, never blocking.
+decision: false

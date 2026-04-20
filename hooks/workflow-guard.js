@@ -187,9 +187,12 @@ async function checkApplyGateAndHandoff(filePath) {
   }
 
   // Gate2 is approved — now verify handoff matches the gate feature
+  // When a worktreePath is set, read the handoff from there — the worktree holds
+  // the feature-specific handoff while the main project may hold a different one.
   let handoffFeature = null;
+  const handoffBase = worktreePath || projectDir;
   try {
-    const raw = await fs.promises.readFile(path.join(projectDir, 'docs', 'context', 'handoff.md'), 'utf8');
+    const raw = await fs.promises.readFile(path.join(handoffBase, 'docs', 'context', 'handoff.md'), 'utf8');
     const firstLine = raw.split('\n')[0] || '';
     // Extract feature name from "# Handoff: <name>" header
     const match = firstLine.match(/^#\s*Handoff:\s*(.+)/i);
