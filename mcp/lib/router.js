@@ -55,6 +55,21 @@ export function recommendModel(agentName, config, usage, options = {}) {
     return true;
   }
 
+  /**
+   * Extracts the Agent-tool-compatible short family name from a model ID.
+   * Returns null if the pattern does not match (non-Anthropic or unknown format).
+   * Examples: 'claude-sonnet-4-6' → 'sonnet', 'claude-opus-4-6' → 'opus',
+   *           'claude-haiku-4-5-20251001' → 'haiku'
+   */
+  function extractFamily(modelId) {
+    if (!modelId) return null;
+    const m = modelId.match(/^claude-([a-z]+)-/);
+    if (!m) return null;
+    const name = m[1];
+    if (name === 'sonnet' || name === 'opus' || name === 'haiku') return name;
+    return null;
+  }
+
   // Priority 0: capability-cost routing — primary path for all agents.
   // Finds cheapest available model satisfying all required capabilities in provider scope.
   // Default scope = all enabled providers; allowedVendors forces a specific scope override.
@@ -92,6 +107,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
       return {
         modelId: chosen.id,
         providerId: chosen.providerId,
+        family: chosen.providerId === 'anthropic' ? extractFamily(chosen.id) : null,
         source: 'capability-cost',
         reason: `Most-minimal-match available model in [${providerScope.join(', ')}] satisfying [${requiredCaps.join(', ')}]`,
       };
@@ -101,6 +117,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
     return {
       modelId: null,
       providerId: null,
+      family: null,
       source: 'error',
       reason: `No available model found with capabilities [${requiredCaps.join(', ')}] in scope [${providerScope.join(', ')}] for agent "${agentName}"`,
     };
@@ -110,6 +127,7 @@ export function recommendModel(agentName, config, usage, options = {}) {
   return {
     modelId: DEFAULT_MODEL,
     providerId: DEFAULT_PROVIDER,
+    family: extractFamily(DEFAULT_MODEL),
     source: 'default',
     reason: 'No routing requirements declared; using hardcoded default',
   };
