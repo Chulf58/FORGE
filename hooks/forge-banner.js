@@ -32,8 +32,22 @@ function fire(rawInput) {
     }
     const banner = fs.readFileSync(bannerPath, 'utf8');
 
+    let version = null;
+    try {
+      const pluginMeta = JSON.parse(
+        fs.readFileSync(path.join(pluginRoot, '.claude-plugin', 'plugin.json'), 'utf8'),
+      );
+      if (typeof pluginMeta.version === 'string' && pluginMeta.version.length > 0) {
+        version = pluginMeta.version;
+      }
+    } catch (_) {
+      // fail-open: version stays null, banner still prints
+    }
+
+    const versionLine = version !== null ? `\nFORGE v${version}` : '';
+
     // Primary: direct terminal output — visible immediately at startup.
-    process.stderr.write(banner + '\n');
+    process.stderr.write(banner + versionLine + '\n');
 
     // Secondary: model context injection — gives the model awareness of FORGE
     // commands for its first response. Not relied upon for user display.
