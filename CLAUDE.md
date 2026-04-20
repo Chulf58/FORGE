@@ -114,6 +114,17 @@ The classifier that enforces this lives at `scripts/lean-risk-classify.mjs`. STA
 
 Before doing anything, present the full agent team, pipeline, and mode with reasoning. Wait for explicit user approval before starting.
 
+## Model routing
+
+Before each agent invocation, resolve which model and execution path to use:
+
+1. Call `forge_get_model_recommendation` with the agent name.
+2. If `source === "error"` or `modelId === null`: surface the `reason` prefixed with `[routing error]` and stop — do not proceed to the agent.
+3. Dispatch based on `providerId`:
+   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
+   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
+4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
+
 ## Tool efficiency
 
 Pick the cheapest dedicated tool for each operation. `hooks/bash-guard.js` enforces a subset as a backstop.
