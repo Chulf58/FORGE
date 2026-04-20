@@ -1,5 +1,5 @@
 {
   "skipReviewers": false,
-  "reasons": ["risk-surface-match"],
-  "triggeredRules": ["mcp-tool:mcp/lib/router.js"]
+  "reasons": ["verification-not-clean"],
+  "triggeredRules": []
 }
