@@ -129,8 +129,17 @@ After writing the numbered task list, inspect the tasks for independent groups a
 
 ```
 - [ ] 2. Add data access function (`src/lib/data.ts`) (wave: 1)
+  Intent: Expose typed read/write helpers so feature module does not query raw storage.
+  Verify: Function returns typed result; unit-testable without feature module.
+
 - [ ] 3. Add utility helper (`src/utils/format.ts`) (wave: 1)
+  Intent: Centralise display formatting so feature and data layers stay format-agnostic.
+  Verify: Helper formats sample input correctly; no dependency on data or feature modules.
+
 - [ ] 4. Add main feature module (`src/features/foo.ts`) (wave: 2)
+  Depends: 2, 3
+  Intent: Wire data access and formatting into the user-facing feature.
+  Verify: Feature renders formatted data from the data layer end-to-end.
 ```
 
 Tasks without a wave annotation default to sequential execution.

@@ -79,6 +79,14 @@ Opt-in via `.pipeline/project.json`: `gitIntegration: { enabled, branchPrefix, a
 
 ---
 
+## Known tool limitations
+
+**Glob on worktree paths** — Glob can produce false negatives under worktree roots (`.worktrees/<runId>/`). Before assuming a file is absent, try Read on the expected path directly.
+
+**Subagent text truncation** — Subagent text output can truncate even when underlying file writes succeed. Treat truncated coder summary text as cosmetic unless written artifacts (e.g. `docs/context/handoff.md`) are actually missing or incomplete.
+
+---
+
 ## Mechanically enforced (hooks — do not duplicate here)
 
 These rules are enforced by hooks with descriptive block/warning messages. Agents do not need to read about them — violations are caught and explained at runtime:
