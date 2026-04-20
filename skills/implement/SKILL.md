@@ -67,7 +67,7 @@ After reading the plan, assess whether the next implementation slice needs narro
 
 **If NONE are true:** skip directly to Step 3.
 
-## STEP 3 — Run implement pipeline
+## STEP 3 — Run coder pipeline
 
 Update the run: call `forge_update_run` with the `runId` and `currentStep: "coder"`.
 
@@ -89,14 +89,26 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
    - The policy this enforces is documented in `CLAUDE.md` under "LEAN-lite skip rule" and "Risk surface". Do not override the classifier's verdict — if a reviewer pass is genuinely desired on a non-risk LEAN change, the operator re-invokes with `[force-review]`.
 5. **Reviewer-triage → reviewers:** dispatch based on mode. Skipped when step 4 set `skipReviewers: true`.
 5b. **Reviewer verdict handling** (only when step 5 ran):
+
+   Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
+
    - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
    - If ANY reviewer emitted **BLOCK**: stop. Do NOT proceed to Gate #2. Present the blocker list and emit `[suggest] fix blockers and re-run /forge:implement`. Call `forge_update_run` with `status: "failed"`, `currentStep: "reviewer-blocked"`.
-   - If ANY reviewer emitted **REVISE** (and none BLOCK): proceed to Gate #2, but include the REVISE warnings in the gate presentation so the user sees them before approving.
+   - If ANY reviewer emitted **REVISE** (and none BLOCK):
+     - If `N < 2`: increment `N` to `N+1`. Call `forge_update_run` with `currentStep: "coder-revision-N"` (replace N with the current value). Re-invoke the coder with `[revision-mode: N]` prepended to its prompt; pass all REVISE warnings as context (list them in the prompt). Then proceed to step 5c.
+     - If `N >= 2`: call `forge_update_run` with `currentStep: "gate2-with-warnings"`. Fall through to Gate #2 with all accumulated REVISE warnings included in the gate presentation.
    - If ALL reviewers emitted **APPROVED**: proceed to Gate #2 normally.
+
+5c. **Re-run reviewers after coder revision** (only when step 5b triggered the `N < 2` re-invoke path):
+
+   After the revised coder output is written to `<worktreePath>/docs/context/handoff.md`: call `forge_update_run` with `currentStep: "reviewer-revision-N"` (replace N with the current value). Re-run reviewer-triage and the dispatched reviewers (same mode as step 5). Collect their `[reviewer-verdict]` signals. Return to step 5b verdict handling with the updated `N`.
+
+   > Note: the LEAN-lite gate (step 4) is NOT re-run on revision passes. A REVISE verdict already proves reviewer scrutiny is warranted, so the classifier is bypassed and reviewers always run in the revision loop regardless of mode.
+
 6. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<feature name>","status":"pending","applyKeyword":"apply feature: <feature>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
-   - Present the implementation summary to the user (include the LEAN-lite gate decision when it fired: "Reviewers skipped — classifier verdict `lean-gate.json`" or "Reviewers ran — classifier matched: <rules>").
+   - Present the implementation summary to the user (include the LEAN-lite gate decision when it fired: "Reviewers skipped — classifier verdict `lean-gate.json`" or "Reviewers ran — classifier matched: <rules>"). If `N > 0` (at least one revision loop ran), prepend: "Coder revised N time(s). Final reviewer verdict: <APPROVED|REVISE>." to the summary. If the final verdict is REVISE (max iterations reached), also list the unresolved warnings.
    - Ask user to type /forge:approve or /forge:discard
 
 $ARGUMENTS
