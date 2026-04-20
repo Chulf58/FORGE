@@ -48,7 +48,7 @@ Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project`
 
 ## STEP 2b — Resolve worktree (if applicable)
 
-Check if a worktree-backed implement run exists for this feature. Use `forge_list_runs` filtered by `pipelineType: "implement"` to find the most recent completed implement run. Call `forge_get_run` on it to check for a non-null `worktreePath`.
+Check if a worktree-backed run exists for this feature. Use `forge_list_runs` filtered by `pipelineType` values `"implement"`, `"refactor"`, and `"debug"` to find all completed runs for this feature. Among all matches, select the most recent one (by `createdAt`). Call `forge_get_run` on it to check for a non-null `worktreePath`.
 
 If the run has a `worktreePath` AND the directory exists on disk: save it as `<worktreePath>`. All agent work in STEP 3 happens inside this path. Then persist it into the active run marker so enforcement hooks can read it:
 
@@ -116,8 +116,8 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - Do NOT use `--no-verify`. Do NOT amend. Do NOT force.
    - If no worktree was resolved in Step 2b: skip this step entirely.
 
-9. **Worktree merge-back** (automatic when a worktree-backed implement run exists):
-   - Check if a worktree was used for this feature. Read `gate-pending.json` — if it has a `feature` field, use `forge_list_runs` filtered by `pipelineType: "implement"` to find the most recent completed implement run. Call `forge_get_run` on it to check for a non-null `worktreePath`. If no worktree-backed run is found, skip this step silently.
+9. **Worktree merge-back** (automatic when a worktree-backed run exists):
+   - Check if a worktree was used for this feature. Read `gate-pending.json` — if it has a `feature` field, use `forge_list_runs` filtered by `pipelineType` values `"implement"`, `"refactor"`, and `"debug"` to find all completed runs for this feature. Select the most recent (by `createdAt`). Call `forge_get_run` on it to check for a non-null `worktreePath`. If no worktree-backed run is found, skip this step silently.
    - If a worktree exists: extract the `runId` from the implement run. Run via Bash: `node bin/forge-worktree.js merge <runId>` (use the absolute path via `$CLAUDE_PLUGIN_ROOT` if available, else relative from project root).
    - On success (exit 0): log `[worktree] Merged forge/<runId> into main and cleaned up worktree.`
    - On failure (non-zero exit): log `[worktree] Merge failed — resolve manually with: git merge forge/<runId>` and continue. Do NOT delete the worktree on failure. Do NOT force-merge. Do NOT retry. The worktree is left intact for manual inspection.
