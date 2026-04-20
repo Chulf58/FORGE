@@ -20,7 +20,7 @@ Haiku is sufficient — triage is a pattern-matching extraction task with a fixe
 ## Your role
 
 1. Read `docs/context/handoff.md` in full.
-2. Read `docs/PLAN.md` — locate the active feature's unchecked tasks that have `(wave: N)` annotations. Group them by wave number.
+2. Read `docs/PLAN.md` — locate the active feature's unchecked task blocks (title line, `Intent:`, `Depends:`, `Verify:`) that have `(wave: N)` annotations. Group them by wave number. Task numbers are stable IDs — use them for cross-references.
 3. If no wave-annotated tasks exist, emit nothing and stop. The orchestrator runs the implementer sequentially without you.
 4. Read `docs/gotchas/GENERAL.md` and, if it exists, `docs/gotchas/SKILLS.md`. For each task, extract only the lines directly relevant to the task's target file type from whichever document has the matching content. The `## Implementer-Triage` section in SKILLS.md (if present) lists the default file-type-to-gotcha mapping for the project's stack. Maximum 10 lines per task.
 5. For each wave-annotated task (in wave-number order, then task-number order within a wave), emit one `[task-brief-for: wave-N-task-M]` block (see output format below).
@@ -37,7 +37,7 @@ Haiku is sufficient — triage is a pattern-matching extraction task with a fixe
 
 For each wave task, the brief must contain:
 
-1. **Task line** — the exact task description line from `docs/PLAN.md` (verbatim, including file path in backticks and wave annotation).
+1. **Task block** — the full structured task from `docs/PLAN.md`: title line (verbatim, including file path and wave annotation), `Intent:` line, and `Verify:` line. Include `Depends:` line if present. Do not paraphrase — copy verbatim.
 
 2. **Handoff section** — the relevant section(s) from `docs/context/handoff.md` for the task's target file. Use this search strategy:
    - Find the `## Files to modify` or `## Files to create` section.
@@ -45,7 +45,7 @@ For each wave task, the brief must contain:
    - Include the heading and its entire content block (all code blocks, descriptions, and find/replace blocks under it).
    - If the handoff has a cross-cutting section (e.g. `## Shared changes`) that affects the task's target file, include that section too.
 
-3. **Dependency context** — if the task is in wave 2 or higher: scan the task descriptions of all earlier-wave tasks. If any earlier-wave task's file path appears in this task's handoff section (e.g. an interface added in wave 1 that wave 2 imports), quote the earlier-wave task line and the relevant handoff excerpt for it. This gives the implementer the full context for cross-wave dependencies without re-reading the handoff.
+3. **Dependency context** — if the task has a `Depends: N, M` line: for each referenced task number, include that task's title line, `Intent:`, and the relevant handoff excerpt. If no `Depends:` line exists but the task is in wave 2+: check whether any earlier-wave task's file path appears in this task's handoff section and include it if so. This gives the implementer the full context for cross-wave dependencies without re-reading the handoff.
 
 4. **Gotcha context** — verbatim excerpt from `docs/gotchas/GENERAL.md` or `docs/gotchas/SKILLS.md` most relevant to this task's file type. If `docs/gotchas/SKILLS.md` exists, prefer the `## Implementer-Triage` section there — it maps file types to the applicable gotchas for the project's stack. If no matching section exists in either file, omit this sub-section entirely. Maximum 10 lines.
 
@@ -55,7 +55,9 @@ Emit one block per wave task. Blocks must be contiguous with no other text betwe
 
 ```
 [task-brief-for: wave-1-task-1]
-Task: - [ ] 1. <verbatim task line from docs/PLAN.md>
+Task: - [ ] 1. <verbatim task title line from docs/PLAN.md>
+Intent: <verbatim Intent line>
+Verify: <verbatim Verify line>
 Target file: <file path>
 Wave: 1
 
@@ -68,7 +70,10 @@ Gotcha context:
 [/task-brief-for]
 
 [task-brief-for: wave-1-task-2]
-Task: - [ ] 3. <verbatim task line>
+Task: - [ ] 3. <verbatim task title line>
+Depends: 1
+Intent: <verbatim Intent line>
+Verify: <verbatim Verify line>
 Target file: <file path>
 Wave: 1
 
@@ -76,10 +81,11 @@ Handoff section:
 ### `<target file path>`
 <verbatim content>
 
-Dependency context from wave 1:
-Task: - [ ] 1. <earlier task line this task depends on>
+Dependency context (task 1):
+Task: - [ ] 1. <dependency task title line>
+Intent: <dependency task Intent line>
 Relevant handoff excerpt:
-<the handoff section for the earlier task that defines the dependency>
+<the handoff section for the dependency task>
 
 Gotcha context:
 <verbatim excerpt>
@@ -97,8 +103,17 @@ Gotcha context:
 Given a plan with:
 ```
 - [ ] 2. Add hook script (`hooks/on-session-start.js`) (wave: 1)
+  Intent: Fire context injection on every new session
+  Verify: Hook runs on SessionStart and emits additionalContext JSON
+
 - [ ] 3. Register hook in declarations (`hooks/hooks.json`) (wave: 1)
+  Intent: Wire the new hook into the plugin manifest
+  Verify: hooks.json contains SessionStart entry pointing to the script
+
 - [ ] 4. Add agent definition (`agents/new-agent.md`) (wave: 2)
+  Depends: 2
+  Intent: Define the agent that consumes the hook's context
+  Verify: Agent frontmatter is valid and references the hook output
 ```
 
 And a handoff with sections for each file, and GENERAL.md containing a hook gotcha:
@@ -107,6 +122,8 @@ Emit:
 ```
 [task-brief-for: wave-1-task-1]
 Task: - [ ] 2. Add hook script (`hooks/on-session-start.js`) (wave: 1)
+Intent: Fire context injection on every new session
+Verify: Hook runs on SessionStart and emits additionalContext JSON
 Target file: hooks/on-session-start.js
 Wave: 1
 
@@ -120,6 +137,8 @@ Gotcha context:
 
 [task-brief-for: wave-1-task-2]
 Task: - [ ] 3. Register hook in declarations (`hooks/hooks.json`) (wave: 1)
+Intent: Wire the new hook into the plugin manifest
+Verify: hooks.json contains SessionStart entry pointing to the script
 Target file: hooks/hooks.json
 Wave: 1
 
@@ -133,6 +152,9 @@ Gotcha context:
 
 [task-brief-for: wave-2-task-1]
 Task: - [ ] 4. Add agent definition (`agents/new-agent.md`) (wave: 2)
+Depends: 2
+Intent: Define the agent that consumes the hook's context
+Verify: Agent frontmatter is valid and references the hook output
 Target file: agents/new-agent.md
 Wave: 2
 
@@ -140,8 +162,9 @@ Handoff section:
 ### `agents/new-agent.md`
 <verbatim content from handoff>
 
-Dependency context from wave 1:
+Dependency context (task 2):
 Task: - [ ] 2. Add hook script (`hooks/on-session-start.js`) (wave: 1)
+Intent: Fire context injection on every new session
 Relevant handoff excerpt:
 <the hook event name and output format defined in wave 1 that the agent relies on>
 
