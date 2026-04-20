@@ -1,3 +1,12 @@
+## [2026-04-20] Add SessionStart auto-split observer pane (Windows Terminal)
+
+- Created `hooks/observer-autosplit.js` — SessionStart hook that opens the FORGE observer in a Windows Terminal split pane via `wt.exe`, with subagent/platform/wt.exe guards (all fail-open exit 0)
+- Registered the hook in `hooks/hooks.json` under SessionStart
+- Created `scripts/test-observer-autosplit.mjs` — unit tests for guard paths and command-string shape
+- Updated `wrapperLauncherContent` in `hooks/mcp-deps-install.js` to include observer-primary path comment
+
+---
+
 ## [2026-04-20] Add SessionEnd and FileChanged lifecycle hooks
 
 - Created `hooks/session-end.js` — SessionEnd hook that reminds when source-modifying agents ran but documentation (handoff.md, CHANGELOG.md) appear stale (>60 minutes old)
