@@ -1,3 +1,10 @@
+## [2026-04-20] Fix planner structured format + gate-enforcement worktree resolution
+
+- Strengthened `agents/planner.md` — added HARD FORMAT GATE section with BAD/GOOD examples before wave assignment, added self-check instruction in "What NOT to do" to enforce `Intent:`/`Verify:` fields
+- Fixed `hooks/gate-enforcement.js` — reads gate-pending.json from worktree path (via run-active.json `worktreePath`) before falling back to main project root, fixing blocked implementer dispatches on worktree-backed runs
+
+---
+
 ## [2026-04-20] Add SessionStart auto-split observer pane (Windows Terminal)
 
 - Created `hooks/observer-autosplit.js` — SessionStart hook that opens the FORGE observer in a Windows Terminal split pane via `wt.exe`, with subagent/platform/wt.exe guards (all fail-open exit 0)

@@ -19,8 +19,11 @@
 //   This hook enforces that an approval *record exists on disk*, not that the orchestrator
 //   actually presented the gate summary to the user and waited. The discipline of
 //   presenting-and-waiting remains a behavioral constraint (memory + agent prompts).
-//   A future improvement could cross-check gate.presentedAt against a session timestamp,
-//   but that is out of scope here.
+//
+// WORKTREE SUPPORT (added 2026-04-20):
+//   When run-active.json has a worktreePath, the hook reads gate-pending.json from the
+//   worktree first, falling back to the main project root. This is needed because
+//   /forge:implement writes the gate file inside the worktree, not the main root.
 //
 // TRIVIAL / SPRINT mode:
 //   Both modes bypass gates by design (no reviewers, no approval steps). When
@@ -166,8 +169,17 @@ async function main(rawInput) {
   }
   // Missing or malformed files: proceed with normal enforcement.
 
-  // Step 8: read gate-pending.json.
-  const gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');
+  // Step 8: read gate-pending.json — check worktree first, fall back to main.
+  // Worktree-backed implement runs write gate-pending.json inside the worktree,
+  // not the main project root. If run-active.json has a worktreePath, try there first.
+  let gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');
+  if (runActiveResult.ok && runActiveResult.data && runActiveResult.data.worktreePath) {
+    const wtGatePath = path.join(runActiveResult.data.worktreePath, '.pipeline', 'gate-pending.json');
+    const wtGateResult = readJsonFile(wtGatePath);
+    if (wtGateResult.ok) {
+      gatePath = wtGatePath;
+    }
+  }
   const gateResult = readJsonFile(gatePath);
 
   if (!gateResult.ok) {

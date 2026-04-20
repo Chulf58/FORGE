@@ -91,6 +91,28 @@ When `PIPELINE MODE` is absent, use STANDARD behaviour.
 - **One feature per heading** — use `### Feature: <name>` format
 - **Append only** — if `docs/PLAN.md` already exists, read it first, then write the complete file with the new `### Feature:` section appended under `## Active Plan`; never delete or modify existing task lines or feature headings
 
+## HARD FORMAT GATE — every task must pass this shape
+
+Each task is exactly: title line → `Intent:` → `Verify:` (+ optional `Depends:`). No other lines beneath a task. If a task you are about to write does not match this shape, delete it and rewrite.
+
+**BAD — will be rejected at Gate #1:**
+```
+- [ ] 1. Create observer auto-split hook (`hooks/observer-autosplit.js`)
+  Create a new CommonJS SessionStart hook script. The script should detect
+  Windows Terminal via WT_SESSION, locate the observer command, and spawn
+  wt.exe with split-pane arguments. Include guard clauses for non-Windows
+  platforms and subagent environments. Export testable functions.
+```
+
+**GOOD — this is the only acceptable shape:**
+```
+- [ ] 1. Create observer auto-split hook (`hooks/observer-autosplit.js`)
+  Intent: Auto-open FORGE observer in a split pane so the operator sees dashboard without manual setup.
+  Verify: Hook runs on SessionStart in Windows Terminal, opens split pane; exits silently on non-WT or non-Windows.
+```
+
+The bad example has implementation instructions (CommonJS, guard clauses, export pattern). The good example has one-sentence WHY and one-sentence PASS/FAIL. The coder decides the HOW.
+
 ## Wave assignment
 
 After writing the numbered task list, inspect the tasks for independent groups and assign wave numbers where parallelism is genuinely possible.
@@ -234,9 +256,10 @@ If you are approaching your context limit mid-plan (before `docs/PLAN.md` has be
 - Do not create new files other than updating `docs/PLAN.md`
 - Do not guess at implementation details — flag them as unknowns
 - Do not remove existing completed items from `docs/PLAN.md`
-- **No prose paragraphs in task descriptions.** Each task is: title line + Intent + Verify (+ optional Depends). No multi-sentence descriptions, no implementation instructions, no narrative justification.
+- **No prose paragraphs in task descriptions.** Each task is: title line + Intent + Verify (+ optional Depends). No multi-sentence descriptions, no implementation instructions, no narrative justification. Re-read the HARD FORMAT GATE section above — if any task has lines other than `Intent:`, `Verify:`, and `Depends:`, it fails.
 - **No re-explaining.** Do not repeat the feature summary in each task. Do not restate approach decisions in task descriptions. Each fact appears once.
 - **No implementation prescriptions.** Do not name specific functions, patterns, line numbers, or libraries in task descriptions. The coder decides HOW — you decide WHAT and WHY.
+- **Self-check before writing.** Before calling Write on `docs/PLAN.md`, verify every task against the HARD FORMAT GATE. Any task with 2+ sentences, implementation detail, or missing `Intent:`/`Verify:` lines must be rewritten first.
 
 ## Output signal
 

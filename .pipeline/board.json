@@ -1735,6 +1735,20 @@
         "security",
         "bash-guard"
       ]
+    },
+    {
+      "id": "eea26eb1",
+      "priority": "high",
+      "text": "BUG: hooks/gate-enforcement.js reads .pipeline/gate-pending.json from the main project root. In worktree-backed implement/apply runs, gate2 approval is written to <worktreePath>/.pipeline/gate-pending.json. This causes apply to stay blocked until the main-project gate file is manually synced. Fix: if run-active.json has worktreePath, gate-enforcement should read gate-pending.json from the worktree first, then fall back to main project root if no worktree is active.",
+      "done": true,
+      "addedAt": 1776675726098,
+      "tags": [
+        "hooks",
+        "gate",
+        "worktree",
+        "bug"
+      ],
+      "doneAt": 1776676097243
     }
   ],
   "planned": []
