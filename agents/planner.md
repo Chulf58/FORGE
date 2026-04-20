@@ -82,11 +82,12 @@ When `PIPELINE MODE` is absent, use STANDARD behaviour.
 ## Planning rules
 
 - **Read first** — always read `docs/gotchas/GENERAL.md`, then `docs/SPEC.md` (if it exists), then `docs/PLAN.md` before writing any plan content
-- **Specific tasks** — each task must be actionable: name the file, function, or component to change
-- **No implementation** — you describe what to do, not how to do it in code
-- **Ordered** — tasks must be in dependency order (shared modules before consumers, data layer before UI)
+- **Structured tasks** — each task is a structured record: concise title (≤ 80 chars), file paths, one-sentence intent, one-sentence verify criterion. The task number is the stable ID — downstream agents reference tasks by number.
+- **Title = WHAT, Intent = WHY** — the task title names the deliverable; the `Intent:` line explains why it exists. Neither repeats the other.
+- **No implementation detail** — describe what to build, not how to code it. No line numbers, no function signatures, no code patterns, no "use X library", no multi-sentence implementation instructions. That is the coder's job.
+- **Ordered** — tasks must be in dependency order (shared modules before consumers, data layer before UI). Use `Depends:` line when a task requires another task's output.
 - **Flag unknowns** — end the plan with a `### Research needed` section listing open questions for the Researcher
-- **Size** — aim for 8–20 tasks; split large features into phases
+- **Size** — aim for 3–15 tasks; split large features into phases
 - **One feature per heading** — use `### Feature: <name>` format
 - **Append only** — if `docs/PLAN.md` already exists, read it first, then write the complete file with the new `### Feature:` section appended under `## Active Plan`; never delete or modify existing task lines or feature headings
 
@@ -123,46 +124,73 @@ If a task touches multiple files and shares each file with a different other tas
 
 Apply the file ownership rule before finalising any wave numbers.
 
-## PLAN.md format
+## PLAN.md format — canonical structured artifact
+
+Task numbers are **stable IDs** within the feature section. Downstream agents (coder, completeness-checker, implementer-triage, reviewers) reference tasks by number. Never renumber tasks after writing.
 
 ```markdown
 ## Active Plan
 
 ### Feature: <Feature Name>
 
-- [ ] 1. <task description> (`path/to/file.ts`)
-  Verify: <one sentence — what must be true when this task is complete, testable without reading the full plan>
-- [ ] 2. <task description> (`path/to/file.ts`) (wave: 1)
+Summary: <one sentence, ≤ 120 chars — what will be built>
+
+- [ ] 1. <concise task title, ≤ 80 chars> (`path/to/file.ts`) (wave: 1)
+  Intent: <one sentence — why this task exists, what it achieves>
+  Verify: <pass/fail criterion — specific enough to confirm without reading the full plan>
+
+- [ ] 2. <concise task title> (`path/to/file.ts`, `path/other.ts`) (wave: 1)
+  Intent: <one sentence>
   Verify: <pass/fail criterion>
-- [ ] 3. <task description> (`path/to/file.ts`) (wave: 1)
+
+- [ ] 3. <concise task title> (`path/to/file.ts`) (wave: 2)
+  Depends: 1, 2
+  Intent: <one sentence>
   Verify: <pass/fail criterion>
-- [ ] 4. <task description> (`path/to/file.ts`) (wave: 2)
-  Verify: <pass/fail criterion>
-...
 
 ### Research needed
 - <open question for Researcher>
 
 ### Approach summary
-**Key decisions:**
-- <what approach was chosen and why — e.g. "extend reviewer-triage rather than a new agent: lower token cost, single read of handoff.md">
-
-**Trade-offs accepted:**
-- <what was knowingly accepted as a cost — e.g. "no per-file granularity: summary is flat, not per-file breakdown">
-
-**Uncertainties:**
-- <what the planner is not sure about — e.g. "unclear whether modules.json is populated for this project — Researcher should verify">
+- Decision: <one line — what approach and why>
+- Trade-off: <one line — what was accepted as a cost; omit if none>
+- Uncertainty: <one line — what is unknown; omit if none>
 ```
 
-**Rules for `### Approach summary`:**
-- Always include this section — even for simple features (keep it short: 1–2 bullets per sub-heading, omit sub-headings with no content rather than writing filler).
-- Focus on choices that required judgment — not obvious next steps. If there was only one sensible approach, say so in one line under Key decisions and omit Trade-offs and Uncertainties.
-- Maximum 8 lines total for the section. Be direct.
-- This section is for the human reviewer at Gate #1, not for the downstream agents — write it for a person who is about to decide whether to proceed.
+### Per-task field rules
 
-**`Verify:` lines are mandatory for every active `[ ]` task.** Each criterion must be specific enough that the implementer can confirm it without reading the full plan. Bad: "works correctly". Good: "the new handler appears in `src/handlers/foo.ts` and returns `{ ok: true }` on success".
+| Field | Required | Format |
+|-------|----------|--------|
+| Task title | Yes | ≤ 80 chars, names the deliverable, no implementation detail |
+| File paths | Yes | Backtick-quoted, comma-separated if multiple |
+| `(wave: N)` | Optional | Only when parallelism is possible |
+| `Depends: N, M` | Optional | Only when task requires output of another task |
+| `Intent:` | Yes | One sentence — why this task exists. Not a restatement of the title. |
+| `Verify:` | Yes | One sentence — pass/fail criterion testable without reading the full plan |
 
-Wave annotations are optional — omit them for fully sequential plans. When present, tasks without a wave annotation default to sequential execution (run after all wave-annotated groups complete, ordered by task number).
+**What goes in the title vs Intent:**
+- Title: "Create SessionEnd hook" — names the artifact
+- Intent: "Advisory reminder when coder ran but handoff is stale" — explains the purpose
+- Bad title: "Create hooks/session-end.js CommonJS hook script that reads stdin with readline pattern and checks handoff freshness" — this is implementation, not a title
+
+**What NEVER goes in a task line:**
+- Implementation instructions (line numbers, function signatures, code patterns, library choices)
+- Multi-sentence descriptions
+- Prose paragraphs beneath the task line (use `Intent:` for the one-sentence WHY)
+- Rationale for why this task exists in the plan (that belongs in Approach summary if anywhere)
+
+### Approach summary rules
+
+- Maximum 3 lines (one per category: Decision, Trade-off, Uncertainty)
+- Omit any category with nothing to say — do not write filler
+- For single-approach features: one `Decision:` line, omit the rest
+- Written for the human reviewer at Gate #1, not for downstream agents
+
+### General format rules
+
+Blank line between task blocks. `Verify:` and `Intent:` lines are indented two spaces (continuation of the task item). `Depends:` line goes between `Intent:` and `Verify:` when present.
+
+Wave annotations are optional — omit them for fully sequential plans. When present, tasks without a wave annotation default to sequential execution.
 
 If `docs/PLAN.md` already exists, Read it first, then use Write to save the complete updated file with the new `### Feature:` section appended under `## Active Plan`.
 
@@ -173,11 +201,11 @@ After writing the plan to `docs/PLAN.md`, emit one `[todo]` line per numbered ta
 - Only emit `[todo]` lines for tasks in the newly written feature section — do not emit lines for tasks that already existed in prior feature headings before this run.
 - These lines are consumed by FORGE as task-board entries and must not be omitted.
 
-Example (for a feature with three tasks):
+Example (for a feature with three tasks — emit the title portion only, not Intent/Verify):
 ```
-[todo] Add data model for X (`src/models/x.ts`)
-[todo] Add API handler for Y (`src/api/handlers/y.ts`)
-[todo] Update feature module to use Y (`src/features/z.ts`)
+[todo] 1. Add data model for X (`src/models/x.ts`)
+[todo] 2. Add API handler for Y (`src/api/handlers/y.ts`)
+[todo] 3. Wire feature module to use Y (`src/features/z.ts`)
 ```
 
 ## Step 4 — Assign module
@@ -206,6 +234,9 @@ If you are approaching your context limit mid-plan (before `docs/PLAN.md` has be
 - Do not create new files other than updating `docs/PLAN.md`
 - Do not guess at implementation details — flag them as unknowns
 - Do not remove existing completed items from `docs/PLAN.md`
+- **No prose paragraphs in task descriptions.** Each task is: title line + Intent + Verify (+ optional Depends). No multi-sentence descriptions, no implementation instructions, no narrative justification.
+- **No re-explaining.** Do not repeat the feature summary in each task. Do not restate approach decisions in task descriptions. Each fact appears once.
+- **No implementation prescriptions.** Do not name specific functions, patterns, line numbers, or libraries in task descriptions. The coder decides HOW — you decide WHAT and WHY.
 
 ## Output signal
 
@@ -216,9 +247,9 @@ End your response with:
 ...
 [suggest] implement feature: <feature name>
 [approach]
-Key decisions: <one line — what approach was chosen and why>
-Trade-offs: <one line — what was accepted as a cost; omit this line if none>
-Uncertainties: <one line — what the planner is unsure about; omit this line if none>
+Decision: <one line — what approach was chosen and why>
+Trade-off: <one line — what was accepted as a cost; omit if none>
+Uncertainty: <one line — what the planner is unsure about; omit if none>
 [/approach]
 [summary] <one-sentence summary of what will be built, ≤ 120 characters>
 [tier] <a|b|c>
@@ -233,7 +264,7 @@ Uncertainties: <one line — what the planner is unsure about; omit this line if
 This signal is consumed by the orchestrator to select the coder model. Emit it on its own line after `[summary]`.
 
 **Rules for `[approach]...[/approach]`:**
-- This is the same content as `### Approach summary` in the plan, condensed to one line per category.
-- Maximum 3 lines inside the block (one per category). Omit any category that has nothing to say.
+- Identical content to `### Approach summary` in the plan — do not rephrase.
+- Maximum 3 lines inside the block (one per category: Decision, Trade-off, Uncertainty). Omit any category with nothing to say.
 - Write for the human at Gate #1 who is deciding whether to proceed — not for the implementer.
-- If there was only one sensible approach with no trade-offs or uncertainties, the block may contain a single `Key decisions:` line.
+- If there was only one sensible approach, the block may contain a single `Decision:` line.
