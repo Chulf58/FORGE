@@ -7,8 +7,9 @@ const CLAUDE_DIR = join(process.env.USERPROFILE || process.env.HOME, '.claude', 
 // Contract change timestamps
 const CODER_CHANGE = new Date('2026-04-19T08:05:00Z');    // b8937af
 const DOC_CHANGE = new Date('2026-04-19T14:30:00Z');       // e999296
+const IMPL_CHANGE = new Date('2026-04-19T17:51:00Z');      // 965fa16
 
-const TARGET_AGENTS = ['forge:coder', 'forge:documenter'];
+const TARGET_AGENTS = ['forge:coder', 'forge:documenter', 'forge:implementer'];
 
 function parseJsonl(filePath) {
   const lines = readFileSync(filePath, 'utf8').split('\n').filter(Boolean);
@@ -98,6 +99,8 @@ for (const sessionDir of entries) {
       period = stats.firstTs && stats.firstTs >= CODER_CHANGE ? 'POST' : 'PRE';
     } else if (agentType === 'documenter') {
       period = stats.firstTs && stats.firstTs >= DOC_CHANGE ? 'POST' : 'PRE';
+    } else if (agentType === 'implementer') {
+      period = stats.firstTs && stats.firstTs >= IMPL_CHANGE ? 'POST' : 'PRE';
     }
 
     results.push({
@@ -174,4 +177,35 @@ if (docPre.length > 2) {
   console.log(`\nDoc PRE max: ${sorted[0].outputTokens.toLocaleString()} (${sorted[0].description.slice(0,50)})`);
   console.log(`Doc PRE min: ${sorted[sorted.length-1].outputTokens.toLocaleString()}`);
   console.log(`Variance ratio: ${(sorted[0].outputTokens / sorted[sorted.length-1].outputTokens).toFixed(1)}x`);
+}
+
+// Print implementer section
+console.log('\n=== IMPLEMENTER CALLS ===\n');
+const impls = results.filter(r => r.agent === 'implementer');
+for (const r of impls) {
+  console.log(`[${r.period}] ${r.session} | out: ${r.outputTokens.toLocaleString()} | turns: ${r.turns} | tools: ${r.toolUses} | out/turn: ${r.outPerTurn} | out/tool: ${r.outPerTool} | model: ${r.model}`);
+  console.log(`       ${r.description.slice(0, 80)}`);
+}
+
+const implPre = impls.filter(r => r.period === 'PRE');
+const implPost = impls.filter(r => r.period === 'POST');
+console.log(`\nImpl PRE  (N=${implPre.length}): avg out/call = ${implPre.length ? Math.round(implPre.reduce((s,r) => s+r.outputTokens, 0)/implPre.length) : 'n/a'}, avg out/turn = ${implPre.length ? Math.round(implPre.reduce((s,r) => s+r.outPerTurn, 0)/implPre.length) : 'n/a'}`);
+console.log(`Impl POST (N=${implPost.length}): avg out/call = ${implPost.length ? Math.round(implPost.reduce((s,r) => s+r.outputTokens, 0)/implPost.length) : 'n/a'}, avg out/turn = ${implPost.length ? Math.round(implPost.reduce((s,r) => s+r.outPerTurn, 0)/implPost.length) : 'n/a'}`);
+if (implPre.length && implPost.length) {
+  const preAvg = implPre.reduce((s,r) => s+r.outputTokens, 0)/implPre.length;
+  const postAvg = implPost.reduce((s,r) => s+r.outputTokens, 0)/implPost.length;
+  console.log(`Delta: ${((postAvg - preAvg) / preAvg * 100).toFixed(1)}% per-call`);
+  const preTurn = implPre.reduce((s,r) => s+r.outPerTurn, 0)/implPre.length;
+  const postTurn = implPost.reduce((s,r) => s+r.outPerTurn, 0)/implPost.length;
+  console.log(`Delta: ${((postTurn - preTurn) / preTurn * 100).toFixed(1)}% per-turn`);
+}
+if (implPre.length > 1) {
+  const sorted = [...implPre].sort((a,b) => b.outputTokens - a.outputTokens);
+  console.log(`\nImpl PRE max: ${sorted[0].outputTokens.toLocaleString()} (${sorted[0].description.slice(0,50)})`);
+  console.log(`Impl PRE min: ${sorted[sorted.length-1].outputTokens.toLocaleString()}`);
+}
+if (implPost.length > 1) {
+  const sorted = [...implPost].sort((a,b) => b.outputTokens - a.outputTokens);
+  console.log(`\nImpl POST max: ${sorted[0].outputTokens.toLocaleString()} (${sorted[0].description.slice(0,50)})`);
+  console.log(`Impl POST min: ${sorted[sorted.length-1].outputTokens.toLocaleString()}`);
 }

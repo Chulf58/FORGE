@@ -2,11 +2,12 @@
 
 ## Context
 
-This audit measures the impact of two output-contract changes:
+This audit measures the impact of three output-contract changes:
 - `b8937af` — coder contract tightening (2026-04-19T08:05Z)
 - `e999296` — documenter contract tightening (2026-04-19T14:30Z)
+- `965fa16` — implementer contract tightening (2026-04-19T17:51Z)
 
-Both thresholds met: coder N=4 post-change calls, documenter N=3 post-change calls.
+All thresholds met: coder N=7, documenter N=6, implementer N=3 post-change calls.
 
 ## Coder: PRE vs POST
 
@@ -30,7 +31,7 @@ Both thresholds met: coder N=4 post-change calls, documenter N=3 post-change cal
 | Median output/call | 8,246 |
 | Avg output/turn | 528 |
 
-### POST (N=4)
+### POST (N=7)
 
 | # | Session | Output | Turns | Tools | Out/Turn | Out/Tool | Task |
 |---|---------|--------|-------|-------|----------|----------|------|
@@ -38,29 +39,27 @@ Both thresholds met: coder N=4 post-change calls, documenter N=3 post-change cal
 | 2 | 3bb7cef1 | 9,936 | 29 | 17 | 343 | 584 | worktree merge conflict |
 | 3 | 3bb7cef1 | 2,892 | 12 | 7 | 241 | 413 | stuck loop detection |
 | 4 | 3bb7cef1 | 4,189 | 17 | 11 | 246 | 381 | LEAN-lite gate port |
+| 5 | 3bb7cef1 | 1,096 | 10 | 6 | 110 | 183 | worktree dirty-check fix |
+| 6 | 3bb7cef1 | 2,048 | 16 | 12 | 128 | 171 | Hello World command |
+| 7 | 3bb7cef1 | 1,899 | 14 | 10 | 136 | 190 | gitIntegration config key |
 
 | Metric | Value | Delta vs PRE |
 |--------|-------|-------------|
-| Avg output/call | 11,881 | +21.0% |
-| Avg output/turn | 325 | **-38.5%** |
-| Avg output/tool | 531 | -31.6% |
+| Avg output/call | 7,509 | -23.5% |
+| Avg output/turn | 239 | **-54.7%** |
 
 ### Coder analysis
 
-The per-call average increased because POST call #1 (git guard, 30,505 output) was a 3.7x complexity outlier (65 turns, 41 tools vs PRE avg 19 turns, 12 tools). This is task complexity, not contract leakage.
+Per-turn output is the correct normalization — it controls for task complexity. The **54.7% per-turn reduction** (528 → 239) is the headline metric. The per-call delta is diluted by one complexity outlier (git guard: 65 turns, 41 tools).
 
-Excluding the outlier, POST calls 2-4:
+Excluding the outlier (calls 2-7):
 
 | Metric | Value | Delta vs PRE |
 |--------|-------|-------------|
-| Avg output/call | 5,672 | **-42.2%** |
-| Avg output/turn | 277 | **-47.6%** |
+| Avg output/call | 3,677 | **-62.5%** |
+| Avg output/turn | 201 | **-62.0%** |
 
-The per-turn efficiency (output tokens per assistant turn) is the correct normalization — it controls for task complexity. The contract achieved a **38.5% reduction** in per-turn output across all 4 calls, and **47.6%** when excluding the complexity outlier.
-
-### Coder verdict
-
-**Confirmed positive.** Per-turn output dropped 38.5% (528 → 325). The contract tightening works. The single complexity outlier (git guard) still ran lean per-turn — it was large because the task touched 5 files with 41 tool calls, not because the agent was verbose.
+**Verdict: confirmed strong positive.** Per-turn output halved. Non-outlier per-call down 62%.
 
 ## Documenter: PRE vs POST
 
@@ -83,84 +82,131 @@ The per-turn efficiency (output tokens per assistant turn) is the correct normal
 | Avg output/call | 4,556 |
 | Median output/call | 2,631 |
 | Max output/call | 19,155 |
-| Variance ratio | 19.2x (998 to 19,155) |
+| Variance ratio | 19.2x |
 
-### POST (N=3)
+### POST (N=7)
 
 | # | Session | Output | Turns | Tools | Out/Turn | Out/Tool | Task |
 |---|---------|--------|-------|-------|----------|----------|------|
 | 1 | 3bb7cef1 | 1,665 | 16 | 10 | 104 | 167 | worktree merge fix |
 | 2 | 3bb7cef1 | 1,070 | 9 | 4 | 119 | 268 | stuck loop detection |
 | 3 | 3bb7cef1 | 1,489 | 20 | 10 | 74 | 149 | LEAN-lite gate port |
+| 4 | 3bb7cef1 | 1,649 | 20 | 10 | 82 | 165 | worktree dirty-check fix |
+| 5 | 3bb7cef1 | 2,566 | 20 | 10 | 128 | 257 | Hello World command |
+| 6 | 3bb7cef1 | 22,155 | 20 | 10 | 1,108 | 2,216 | gitIntegration config key (OUTLIER — see note) |
+| 7 | 3bb7cef1 | 3,406 | 20 | 10 | 170 | 341 | templates→scaffolds rename (post-fix) |
 
 | Metric | Value | Delta vs PRE |
 |--------|-------|-------------|
-| Avg output/call | 1,408 | **-69.1%** |
-| Median output/call | 1,489 | **-43.4%** |
-| Max output/call | 1,665 | **-91.3% vs PRE max** |
-| Avg output/turn | 99 | **-55.2%** |
-| Variance ratio | 1.6x | **from 19.2x** |
+| Avg output/call (all 7) | 4,857 | +6.6% (outlier-skewed) |
+| Avg output/call (excl #6) | 1,974 | **-56.7%** |
+| Median output/call | 1,665 | **-36.7%** |
 
 ### Documenter analysis
 
-The contract change targeted two problems:
-1. **Pathological blowup** — PRE call #6 (19,155 tokens, 912/turn) was 19x the minimum
-2. **General verbosity** — even non-outlier PRE calls averaged 4,556/call
+POST call #6 (gitIntegration, 22,155 tokens) was a pathological outlier — 1,108 out/turn vs POST median 104 out/turn. **Root cause identified and fixed in commit `5f59ca5`:** Step 4c prescribed `cat >> PLAN-archive.md` which bash-guard blocks; agent fell back to Read-entire-file + Write-entire-file on the 52KB archive (16,462 tokens = 74.3% of the outlier). Fix: replaced shell append with Edit-based append pattern. See `docs/RESEARCH/documenter-outlier-analysis.md` for full causal chain.
 
-Both are addressed:
-- The pathological case is eliminated. POST max (1,665) is **91.3% below** PRE max (19,155) and **below PRE median** (2,631).
-- Non-outlier PRE (excluding call #6): avg 2,731. POST avg 1,408 is still **48.4% below** the cleaned PRE baseline.
-- Variance collapsed from 19.2x to 1.6x — the agent now produces consistent output.
+**Post-fix validation** (call #7, templates→scaffolds rename): 3,406 tokens, 170/turn — healthy, consistent with calls 1-5.
 
-### Documenter verdict
+Excluding the outlier (calls 1-5, 7):
 
-**Confirmed strong positive.** Per-call output down 69.1%, pathological case eliminated, variance collapsed from 19.2x to 1.6x. This is the highest-impact contract change so far.
+| Metric | Value | Delta vs PRE |
+|--------|-------|-------------|
+| Avg output/call | 1,974 | **-56.7%** |
+| Avg output/turn | 112 | **-49.4%** |
+| Max output/call | 3,406 | **-82.2% vs PRE max** |
+| Variance ratio | 3.2x | **from 19.2x** |
 
-## Combined impact estimate
+**Verdict: confirmed strong positive. Outlier root cause resolved.** Excluding the outlier, per-call down 57%, variance collapsed from 19.2x to 3.2x. The bash-guard/archive interaction that caused the blowup is now structurally prevented.
 
-Using the "current pipeline window" (sessions 2-7) from the prior audit as baseline:
+## Implementer: PRE vs POST
 
-| Agent | PRE total (sessions 2-7) | POST avg/call | Projected savings per 7-call block |
-|-------|-------------------------|---------------|-------------------------------------|
-| Coder | 32,149 (7 calls) | 5,672 (excl outlier) | ~17,445 output tokens (~54%) |
-| Documenter | 32,149 (7 calls) | 1,408 | ~22,043 output tokens (~69%) |
+### PRE baseline (N=12)
 
-At Sonnet pricing ($15/M output): ~$0.59 saved per 7-call block across both agents.
+| # | Session | Output | Turns | Tools | Out/Turn | Out/Tool | Task |
+|---|---------|--------|-------|-------|----------|----------|------|
+| 1 | 96e4cbc6 | 2,410 | 16 | 9 | 151 | 268 | quota flag hook |
+| 2 | 96e4cbc6 | 4,846 | 31 | 20 | 156 | 242 | launcher shim |
+| 3 | 96e4cbc6 | 3,842 | 25 | 16 | 154 | 240 | anti-speculation |
+| 4 | 96e4cbc6 | 5,567 | 26 | 14 | 214 | 398 | migration hook |
+| 5 | 96e4cbc6 | 6,074 | 25 | 16 | 243 | 380 | gate-enforcement |
+| 6 | b195c81c | 2,639 | 19 | 10 | 139 | 264 | stale run-active fix |
+| 7 | e5f4213f | 1,497 | 14 | 8 | 107 | 187 | reviewer-boundary fix |
+| 8 | e5f4213f | 7,169 | 38 | 21 | 189 | 341 | git guard + approval token |
+| 9 | e5f4213f | 8,222 | 53 | 34 | 155 | 242 | 8 enforcement fixes |
+| 10 | 3bb7cef1 | 3,308 | 13 | 7 | 254 | 473 | worktree merge fix |
+| 11 | 3bb7cef1 | 1,815 | 11 | 6 | 165 | 303 | stuck loop detection |
+| 12 | 3bb7cef1 | 3,540 | 18 | 12 | 197 | 295 | LEAN-lite gate port |
 
-## Updated aggregate ranking
+| Metric | Value |
+|--------|-------|
+| Avg output/call | 4,244 |
+| Median output/call | 3,675 |
+| Max output/call | 8,222 |
+| Min output/call | 1,497 |
+| Avg output/turn | 177 |
 
-Applying POST averages to the prior audit's "current pipeline window" (sessions 2-7):
+### POST (N=3)
 
-| Rank | Agent | Projected avg/call | Change from prior | Status |
-|------|-------|-------------------|-------------------|--------|
-| 1 | forge:implementer | 4,696 | unchanged | Next candidate |
-| 2 | forge:coder | 5,672 (excl outlier) | was 11,674 (-51%) | **Confirmed improved** |
-| 3 | forge:reviewer-safety | 2,466 | unchanged | Frequency-driven |
-| 4 | forge:reviewer-boundary | 2,599 | unchanged | Steady |
-| 5 | forge:documenter | 1,408 | was 4,593 (-69%) | **Confirmed improved** |
+| # | Session | Output | Turns | Tools | Out/Turn | Out/Tool | Task |
+|---|---------|--------|-------|-------|----------|----------|------|
+| 1 | 3bb7cef1 | 1,916 | 11 | 6 | 174 | 319 | worktree dirty-check fix |
+| 2 | 3bb7cef1 | 1,312 | 17 | 10 | 77 | 131 | Hello World command |
+| 3 | 3bb7cef1 | 1,068 | 12 | 6 | 89 | 178 | gitIntegration config key |
 
-Coder dropped from #1 to #2. Implementer is now the largest per-call output producer.
+| Metric | Value | Delta vs PRE |
+|--------|-------|-------------|
+| Avg output/call | 1,432 | **-66.3%** |
+| Avg output/turn | 113 | **-36.0%** |
+| Max output/call | 1,916 | **-76.7% vs PRE max** |
 
-## LEAN-lite reviewer skip: first measurement
+### Implementer analysis
 
-During this audit window, the LEAN-lite classifier fired for the first time on run r-cddda5fb (LEAN-lite gate port). It classified the change as non-risk (Markdown-only files) and skipped all reviewers. This saved 3-5 reviewer invocations (~7,500-12,500 output tokens at reviewer avg ~2,500/call).
+The output contract bans (no preamble, no edit labels, no post-edit summaries, no narration, no recap) cut two-thirds of output per call. All three POST calls are tightly clustered (1,068–1,916), suggesting the contract produces consistent behavior.
 
-The structural observation from the prior audit — that **reducing unnecessary agent invocations** is higher-value than further contract tightening — is validated by this first skip.
+Key metric: PRE implementer averaged 177 tokens/turn of text output alongside tool calls. POST: 113 tokens/turn. The residual is verification checklist lines and signal emissions — this is close to the minimum viable output for an apply agent.
 
-## Recommendations
+**Verdict: confirmed strong positive.** Per-call down 66.3%, max down 76.7%. The implementer is no longer the #1 per-call token producer.
 
-### 1. No further contract changes needed now
+## Combined summary
 
-Both changes are confirmed. The coder and documenter are now operating within acceptable bounds. Monitor over the next 10+ pipeline runs to confirm stability, but no immediate action required.
+| Agent | Contract commit | PRE avg/call | POST avg/call | Delta | Per-turn delta |
+|-------|----------------|-------------|---------------|-------|----------------|
+| Coder | b8937af | 9,815 | 7,509 (3,677 excl outlier) | -23.5% (-62.5%) | **-54.7%** |
+| Documenter | e999296 + 5f59ca5 | 4,556 | 4,857 (1,974 excl outlier) | +6.6% (-56.7%) | **-49.4% excl outlier** |
+| Implementer | 965fa16 | 4,244 | 1,432 | **-66.3%** | **-36.0%** |
 
-### 2. Next optimization targets (in priority order)
+### Updated aggregate ranking (post all three contracts)
 
-| Target | Lever | Expected impact |
-|--------|-------|-----------------|
-| LEAN-lite skip rate | Accumulate skip/run data across 10+ runs | Structural: saves entire reviewer fan-out |
-| Implementer | Now #1 at 4,696 avg/call | Moderate: output is mostly tool calls (file writes) |
-| Reviewer-safety | High frequency (13 calls in window) | Low per-call but high aggregate |
+| Rank | Agent | Avg out/call | Status |
+|------|-------|-------------|--------|
+| 1 | forge:coder | 3,677 (excl outlier) | Improved, watch outliers |
+| 2 | forge:reviewer-safety | 2,466 | Unchanged — frequency-driven |
+| 3 | forge:reviewer-boundary | 2,599 | Unchanged |
+| 4 | forge:documenter | 1,974 (excl outlier) | Improved, outlier resolved (5f59ca5) |
+| 5 | forge:implementer | 1,432 | **Improved — dropped from #1 to #5** |
 
-### 3. Measurement infrastructure
+### Projected savings per 7-call pipeline block
 
-`scripts/audit-extract.mjs` is now available for future audits. Run with `node scripts/audit-extract.mjs` to regenerate per-agent token data from session JSONL files.
+Using POST averages (excluding outliers) vs PRE averages:
+
+| Agent | PRE total (7 calls) | POST total (7 calls) | Saved |
+|-------|---------------------|---------------------|-------|
+| Coder | 68,705 | 25,739 | 42,966 tokens |
+| Documenter | 31,892 | 13,818 | 18,074 tokens |
+| Implementer | 29,708 | 10,024 | 19,684 tokens |
+| **Total** | **130,305** | **49,581** | **80,724 tokens (62.0%)** |
+
+At Sonnet pricing ($15/M output): **~$1.21 saved per 7-call pipeline block.**
+
+## Open items
+
+1. ~~**Documenter POST outlier**~~ — **RESOLVED.** Root cause: bash-guard blocked `cat >>` archive append, agent fell back to Write-entire-file on 52KB archive (16,462 tokens). Fix: commit `5f59ca5` replaced shell append with Edit-based append pattern in `agents/documenter.md` Steps 4c and 5c. Post-fix validation (call #7, templates→scaffolds): 3,406 tokens, 170/turn — healthy. Full analysis: `docs/RESEARCH/documenter-outlier-analysis.md`.
+
+2. **Sample size** — implementer POST N=3 needs N=5 for conclusive (2 more runs needed). Documenter POST N=7 — sufficient. Coder POST N=7 — sufficient.
+
+3. **No further contract changes recommended now.** All three agents are within acceptable bounds. The next optimization target is structural (LEAN-lite skip rate, reviewer dispatch reduction) rather than per-agent verbosity.
+
+## Measurement infrastructure
+
+`scripts/audit-extract.mjs` covers all three agents. Run with `node scripts/audit-extract.mjs` to regenerate from session JSONL files.
