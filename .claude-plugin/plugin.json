@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "FORGE — AI-powered development pipeline manager. Plans, implements, reviews, and applies features through a structured agent pipeline.",
   "author": {
     "name": "FORGE"
