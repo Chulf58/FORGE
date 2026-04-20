@@ -21,7 +21,7 @@ const readline = require('readline');
 const { resolvePluginRoot } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = 10_000;
-const RECOMMENDATION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const RECOMMENDATION_TTL_MS = 15 * 60 * 1000; // 15 minutes — complex pipelines with multiple researchers can exceed 5 min
 
 const LOG_RELATIVE_PATH = path.join('.pipeline', 'session-dispatch-log.json');
 

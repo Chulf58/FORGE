@@ -8,10 +8,10 @@ Run these in order. For each, record PASS or FAIL + fix message.
 Run `node --version` via Bash (timeout 5000). PASS if exit 0. FAIL: "Install Node.js 18+ from https://nodejs.org and restart your terminal."
 
 ### 2. Plugin root resolved
-Check if `CLAUDE_PLUGIN_ROOT` env var is set (read from Bash: `echo $CLAUDE_PLUGIN_ROOT`). PASS if non-empty. FAIL: "Plugin not loaded correctly. Reinstall via: claude plugin add <path>"
+Use Glob for `.claude-plugin/plugin.json` (search from the repo root upward). PASS if found. FAIL: "Plugin not loaded correctly. Reinstall via: claude plugin add <path>"
 
-### 3. MCP server launcher exists
-Use Glob for `bin/forge-mcp-server.cmd` under the plugin root. PASS if found. FAIL: "Restart Claude Code — the SessionStart hook generates this file."
+### 3. MCP server entry point exists
+Use Glob for `mcp/server.js` under the plugin root. PASS if found. FAIL: "Plugin files are incomplete. Reinstall the plugin."
 
 ### 4. MCP dependencies installed
 Use Glob for `mcp/node_modules/@modelcontextprotocol` under the plugin root. PASS if found. FAIL: "Restart Claude Code — the SessionStart hook runs npm install."

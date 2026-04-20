@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "forge-pipeline": {
-      "command": "${CLAUDE_PLUGIN_ROOT}\\bin\\forge-mcp-server.cmd",
-      "args": []
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/server.js"]
     }
   }
 }

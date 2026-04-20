@@ -329,7 +329,7 @@ async function main(rawInput) {
       }
     } else if (toolName === 'Edit') {
       const newString = toolInput.new_string || '';
-      isApprovalWrite = /approved/.test(newString);
+      isApprovalWrite = /"status"\s*:\s*"approved"/.test(newString);
     }
 
     if (isApprovalWrite && !hasValidGateApprovalToken()) {

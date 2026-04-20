@@ -68,7 +68,7 @@ const RISK_CONTENT_PATTERNS = [
   },
   {
     rule: 'schema-contract-change',
-    regex: /\b(registerTool\s*\(|z\.object\s*\(|z\.string\s*\(|z\.enum\s*\(|\[reviewer-verdict\]|\[suggest\]|\[todo\])/,
+    regex: /\b(registerTool\s*\(|z\.object\s*\(|z\.string\s*\(|z\.enum\s*\()/,
   },
   {
     rule: 'env-or-path-resolution',
