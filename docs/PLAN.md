@@ -70,3 +70,53 @@
 
 **Uncertainties:**
 - FileChanged hook payload field name and matcher syntax are unknown — implementer must verify before coding. Plan tasks 2 and 3 are fully specified except for these two fields.
+
+---
+
+### Feature: SessionStart auto-split observer pane (Windows Terminal)
+
+- [ ] 1. Update `hooks/mcp-deps-install.js` to target `scripts/forge-observer.mjs` (not the proto path) in the observer launcher generator (`hooks/mcp-deps-install.js`)
+  Verify the `observerScriptPath` variable at line 430 points to `scripts/forge-observer.mjs`. If it already does, this task is a no-op (confirm and skip). The feature request references `scripts/forge-observer-proto.mjs` but the live file is `scripts/forge-observer.mjs` — the generator must stay in sync.
+  Verify: `hooks/mcp-deps-install.js` line building `observerScriptPath` concatenates `pluginRoot` with `scripts/forge-observer.mjs`, matching the existing `bin/forge-observer.cmd` content.
+
+- [ ] 2. Create `hooks/observer-autosplit.js` — new SessionStart hook that opens the observer in a Windows Terminal split pane (`hooks/observer-autosplit.js`)
+  CommonJS hook script. Protocol: readline + timeout pattern (5 s, crlfDelay: Infinity), always exits 0 (never blocks session start). Logic:
+  1. **Subagent guard:** if `process.env.CLAUDE_CODE_TEAM_NAME` is set, emit `[forge-observer-autosplit] skipping — subagent session (CLAUDE_CODE_TEAM_NAME set)` to stderr and exit 0. Also walk parent-process check: read `process.env.CLAUDE_CODE_SESSION_ARGS` or similar for `--parent-session-id`; if found, skip. If neither env var is available, skip the parent-process walk (out of scope; log a note).
+  2. **Platform guard:** if `process.platform !== 'win32'`, exit 0 silently (macOS/Linux are out of scope for this slice).
+  3. **wt.exe detection:** use `child_process.execFileSync('where', ['wt.exe'], ...)` (with stdio: 'ignore', timeout 2000). If it throws, emit `[forge-observer-autosplit] wt.exe not found — skipping split` to stderr and exit 0.
+  4. **Build command:** resolve absolute path to `bin/forge-observer.cmd` from `CLAUDE_PLUGIN_ROOT` env var (`path.join(pluginRoot, 'bin', 'forge-observer.cmd')`). Build the `wt.exe` invocation array: `['wt.exe', '-w', '0', 'sp', '-V', '--size', '0.35', '--', 'cmd', '/c', observerCmdPath]`. No shell string interpolation — use `execFile` or `spawn` with explicit args array.
+  5. **Spawn:** use `child_process.spawn('wt.exe', [...args], { detached: true, stdio: 'ignore' })` and call `.unref()` so the hook process can exit without waiting. Wrap in try/catch; on any error emit `[forge-observer-autosplit] spawn failed: <msg>` to stderr and exit 0.
+  6. **Success log:** emit `[forge-observer-autosplit] opened observer split pane` to stderr and exit 0.
+  Verify: file exists at `hooks/observer-autosplit.js`, starts with `'use strict'`, never exits with code != 0, and all three skip paths (subagent, non-Windows, no wt.exe) emit a `[forge-observer-autosplit]` prefixed stderr line and exit 0.
+
+- [ ] 3. Register `hooks/observer-autosplit.js` in `hooks/hooks.json` under `SessionStart` (`hooks/hooks.json`)
+  Append a new entry in the `SessionStart` array: `{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-autosplit.js\"" }] }`. Place it as the last entry in the SessionStart array (after `usage-clear-quota-flags`). Use the exact same JSON structure as existing SessionStart entries. Do not modify any other section.
+  Verify: `hooks/hooks.json` is valid JSON, the `SessionStart` array contains an entry pointing to `observer-autosplit.js`, and all paths in the file still use `${CLAUDE_PLUGIN_ROOT}`.
+
+- [ ] 4. Create `scripts/test-observer-autosplit.mjs` — unit tests for the three guard paths and command-string shape (`scripts/test-observer-autosplit.mjs`)
+  ESM test file. No external test runner — plain `assert` from Node `assert/strict`. Three test cases:
+  1. **Subagent skip:** set `process.env.CLAUDE_CODE_TEAM_NAME = 'test'` before requiring the module's testable exports; verify the guard returns the skip signal without calling `spawn`. Use a mock/stub for `child_process` or extract the logic into a pure `shouldSkip(env)` helper that the test can call directly.
+  2. **wt.exe missing:** mock `execFileSync` to throw; verify the hook logs the skip message and does not call `spawn`.
+  3. **Command string shape:** given a mock `pluginRoot = 'C:\\plugin'`, verify the constructed args array equals `['-w', '0', 'sp', '-V', '--size', '0.35', '--', 'cmd', '/c', 'C:\\plugin\\bin\\forge-observer.cmd']`.
+  The test must not call `spawn` or open any real processes. Print `[PASS]` lines for each test and exit 0 on success, exit 1 on any failure.
+  Verify: running `node scripts/test-observer-autosplit.mjs` exits 0 and prints three `[PASS]` lines; the file contains no `spawn` calls that could open real WT panes.
+
+- [ ] 5. Update `bin/forge.cmd` comment to point at the observer-primary path (`bin/forge.cmd`)
+  The file is auto-generated by `hooks/mcp-deps-install.js`. Update the generator (in the `wrapperLauncherContent` string in `hooks/mcp-deps-install.js`) to change the second comment line from its current text to: `REM For the observer-primary UX, use bin/forge-observer.cmd to launch the dashboard.`. This ensures every regenerated `bin/forge.cmd` carries the pointer without requiring a separate edit on each session.
+  Verify: the `wrapperLauncherContent` string in `hooks/mcp-deps-install.js` includes the updated comment text referencing `bin/forge-observer.cmd`; the structure (first `@echo off` line, comment lines, optional claude env-var line, exec line) is preserved.
+
+### Research needed
+
+- **Subagent session detection — env var name:** The feature request mentions `CLAUDE_CODE_TEAM_NAME` and walking the process tree for `--parent-session-id`. The exact env var or CLI arg that Claude Code sets on subagent spawns needs verification against Claude Code source or docs. If `CLAUDE_CODE_TEAM_NAME` is wrong, the guard will fail and every subagent session will attempt a split. The implementer should grep Claude Code hooks documentation or the existing `hooks/subagent-start.js` for the authoritative env var before coding task 2.
+- **`wt.exe` args for split-pane — `-V` vs `split-pane` subcommand:** The reference invocation uses positional `sp -V` (shorthand). Verify this is stable across Windows Terminal versions (1.x vs 1.2x). The long form `wt.exe new-tab --profile ... split-pane` is more stable but more verbose. If short-form `sp` fails on older WT, the implementer should prefer the long form.
+
+### Approach summary
+
+**Key decisions:**
+- New dedicated hook file (`observer-autosplit.js`) rather than extending `mcp-deps-install.js`: separation of concerns — the installer handles file generation, the autosplit handles UX spawning. Easier to disable/remove independently.
+- Guard order: subagent check first (env var, cheapest), then platform check, then `wt.exe` detection. All three are fail-open exits — session start is never blocked.
+- Pure-function extraction for testability: the `shouldSkip` helper and command-string builder are extracted so the unit test can exercise them without spawning real processes.
+
+**Trade-offs accepted:**
+- No process-tree walk for `--parent-session-id` in this slice — relies on `CLAUDE_CODE_TEAM_NAME` only. If that env var is not set for all subagent types, some subagent sessions may open extra panes. Acceptable as a first slice; process-tree walk is a follow-up.
+- `bin/forge.cmd` is auto-generated; the comment update lives in the generator, not the file. This means the change only takes effect after the next SessionStart regeneration.

@@ -944,13 +944,14 @@
       "id": "add-session-lifecycle-hooks",
       "priority": "medium",
       "text": "FEATURE: Add SessionEnd and Stop hooks. SessionEnd: optionally run end-of-session protocol (configurable, not forced — user may not want handoff written every time). Stop: check if pipeline step completed and emit progress. FileChanged: watch .pipeline/board.json and gate-pending.json for external changes. Keep hooks minimal and deterministic per real plugin patterns.",
-      "done": false,
+      "done": true,
       "addedAt": 1775848039903,
       "tags": [
         "feature",
         "hooks",
         "lifecycle"
-      ]
+      ],
+      "doneAt": 1776669108171
     },
     {
       "id": "plugin-smart-module-assignment",
@@ -1639,14 +1640,15 @@
       "id": "b632212f",
       "priority": "high",
       "text": "BUG: Multi-model routing is not actually wired end-to-end — router recommendations are ignored at Agent dispatch.\n\n**Observed 2026-04-19 (plan run r-96162b4a):**\n- `forge_get_model_recommendation` returned `{providerId:\"anthropic\", modelId:\"claude-sonnet-4-6\"}` for planner, reviewer-safety, reviewer-boundary, reviewer-logic.\n- Skills/orchestration dispatched via `Agent(subagent_type=...)` WITHOUT passing `model=<recommendedId>`.\n- Agents fell back to their frontmatter `model:` field. reviewer-safety and reviewer-logic self-reported `\"model\":\"claude-haiku-4-5-20251001\"` in their verdict JSON — sonnet recommendation ignored.\n\n**Why this matters:**\n- The capability-cost router exists, is called, and returns valid recommendations — but the recommendation never reaches the actual dispatch. We are running on whatever each agent file happens to have in its frontmatter, not on what the router says.\n- Multi-model is effectively a no-op today for the Anthropic path. Non-Anthropic providers (Gemini, etc.) would route via `forge_call_external` correctly, but no agent in the current LEAN pipeline goes non-Anthropic, so in practice every dispatch is the agent's hardcoded frontmatter model.\n\n**Root cause hypotheses to verify:**\n1. The Agent tool's `model` parameter only accepts `sonnet|opus|haiku` (confirmed this turn — got `InputValidationError: expected one of \"sonnet\"|\"opus\"|\"haiku\"` when passing `claude-sonnet-4-6`). So the router's full model IDs are incompatible with the Agent tool's model-override schema — there's no way to pass `claude-sonnet-4-6` through `Agent()`. Needs a translation step (modelId → family) at the dispatch boundary.\n2. Skill files may not instruct the orchestrator to pass the model through at all — check skills/plan/SKILL.md, skills/implement/SKILL.md, etc. \"Model routing\" sections.\n\n**Fix scope (to be planned):**\n1. Add a translation helper (`mcp/lib/anthropic-family.js` or similar) that maps full Anthropic model IDs to Agent-tool families (`claude-sonnet-4-6` → `sonnet`, `claude-opus-4-7` → `opus`, `claude-haiku-4-5-20251001` → `haiku`).\n2. Update every skill's \"Model routing\" section to actually USE the recommendation — pass the translated family to `Agent(subagent_type=..., model=<family>)`.\n3. Consider: should the agent frontmatter `model:` field be removed entirely once routing is wired? Or kept as a last-resort fallback when MCP is unavailable?\n4. Add a validation step: if a skill dispatches without calling `forge_get_model_recommendation` first, log a warning. (Hook-level enforcement via PreToolUse is a stretch goal.)\n\n**Agent team (when planned):** coder → reviewer-safety → reviewer-boundary → reviewer-logic → implementer → documenter. Scope: LEAN to STANDARD depending on how many skills need updating.\n\n**Reference:** this turn's tool-call evidence shows all 4 agent dispatches fell back to frontmatter — see reviewer-verdict JSON from reviewer-safety (agentId a74d40675fc42c1a1) and reviewer-logic (agentId a1a4bf4eab5efd857).",
-      "done": false,
+      "done": true,
       "addedAt": 1776581465341,
       "tags": [
         "routing",
         "multi-model",
         "agent-dispatch",
         "bug"
-      ]
+      ],
+      "doneAt": 1776669108830
     },
     {
       "id": "89dab759",
