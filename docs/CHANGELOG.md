@@ -1,3 +1,12 @@
+## [2026-04-20] Wire model routing end-to-end
+
+- Added `extractFamily()` function to `mcp/lib/router.js` to derive short family names (sonnet/opus/haiku) from Anthropic model IDs
+- Extended `recommendModel()` to return a `family` field in all three code paths (capability-cost success, error, and default fallback)
+- Updated 5 skill files (apply, implement, debug, plan, refactor) to dispatch Anthropic agents with `model=<family>` instead of full `modelId`
+- Extended null fallback in skill files to cover both MCP unavailability and `family === null` cases
+
+---
+
 ## [2026-04-19] Rename templates/ to scaffolds/
 
 - Renamed `templates/` directory to `scaffolds/` throughout the plugin
