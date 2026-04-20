@@ -18,7 +18,9 @@ Read `docs/PLAN.md` and `docs/context/handoff.md` exactly once each at the start
 
 ## Step 1 — Read the plan (active section only)
 
-Read `docs/PLAN.md`. Find the most recent `### Feature:` section. Extract every active `[ ]` task — read only that section. Stop at the first line that starts with `  Verify:`, at `### Approach summary`, or at `### Research needed`. Do NOT read completed `[x]` tasks or any other `### Feature:` section.
+Read `docs/PLAN.md`. Find the most recent `### Feature:` section. For each unchecked `[ ]` task, read the full task block: title line (with task number, file paths, wave annotation), `Intent:` line, `Depends:` line (if present), and `Verify:` line. Stop at `### Approach summary` or `### Research needed`. Do NOT read completed `[x]` tasks or any other `### Feature:` section.
+
+Task numbers are stable IDs — use them to match against the handoff's `(task N)` tags and to reference tasks in your verdict output.
 
 If no active tasks are found, print:
 `completeness-checker: no active plan tasks found — skipping`
@@ -28,15 +30,21 @@ And stop.
 
 ## Step 2 — Read the handoff
 
-Read `docs/context/handoff.md`. Focus on `## Files to create`, `## Files to modify`, `## Implementation notes`, and any numbered task sections.
+Read `docs/context/handoff.md`. Focus on `## Files to create` and `## Files to modify` sections. File headings and `**Change (task N):**` lines carry task-number tags that map directly to plan task IDs — use these for matching.
 
 ## Step 3 — Check coverage
 
-For each active `[ ]` task from the plan, assess whether the handoff addresses it:
+For each active `[ ]` task from the plan, assess whether the handoff addresses it. Use these matching strategies in order:
 
-- **Covered** — handoff mentions the file, function, component, or concept described in the task. Evidence does not need to be line-for-line — inference is acceptable if clear.
-- **Partial** — handoff touches the area but the task's stated goal is not clearly achieved (e.g. a task says "add validation" and handoff mentions the file but not validation logic).
-- **Missing** — no evidence the task is addressed anywhere in the handoff.
+1. **Task-tag match** — look for `(task N)` in handoff file headings or `**Change (task N):**` lines. Direct match = strongest evidence of coverage.
+2. **File-path match** — the task's backtick-quoted file paths appear in `## Files to create` or `## Files to modify` headings.
+3. **Intent match** — the task's `Intent:` describes a purpose that the handoff content clearly satisfies.
+
+Then classify:
+
+- **Covered** — task-tag match found, OR file-path match + the `Verify:` criterion is satisfiable by the handoff content.
+- **Partial** — file-path match exists but the `Verify:` criterion is not clearly met (e.g. the file is touched but the specific deliverable described in `Intent:` or `Verify:` is absent).
+- **Missing** — no task-tag, file-path, or intent match in the handoff.
 
 ## Step 4 — Emit verdict
 
@@ -50,8 +58,8 @@ Completeness check: N task(s) reviewed
 - Missing: N (blockers)
 ```
 
-For each Missing task, print one line: `BLOCK: Task <N> not addressed — "<task title>"`
-For each Partial task, print one line: `WARN: Task <N> partially addressed — "<task title>"`
+For each Missing task, print one line: `BLOCK: Task <N> not addressed — "<task title>" (verify: <Verify criterion>)`
+For each Partial task, print one line: `WARN: Task <N> partially addressed — "<task title>" (unmet: <what Verify criterion is not satisfied>)`
 
 Then emit exactly one `[reviewer-verdict]` signal:
 ```
