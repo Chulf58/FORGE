@@ -1,285 +1,305 @@
-# Handoff: Wire model routing end-to-end
+# Handoff: SessionEnd and FileChanged lifecycle hooks
 
 ## Summary
-Add a `family` field to `recommendModel` output and update 5 skill files to pass `family` (not `modelId`) to `Agent` dispatch.
+Adds `hooks/session-end.js` (end-of-session protocol reminder) and `hooks/file-changed.js` (gate/board context injection), registered in `hooks/hooks.json`.
 
-## Files to modify
-### `mcp/lib/router.js`
-**Change:** Add `family` field derived from modelId to every return path.
+## Files to create
 
-**Find:**
-```js
-  // Priority 0: capability-cost routing — primary path for all agents.
-```
+### `hooks/session-end.js`
+```javascript
+'use strict';
 
-**Replace with:**
-```js
-  /**
-   * Extracts the Agent-tool-compatible short family name from a model ID.
-   * Returns null if the pattern does not match (non-Anthropic or unknown format).
-   * Examples: 'claude-sonnet-4-6' → 'sonnet', 'claude-opus-4-6' → 'opus',
-   *           'claude-haiku-4-5-20251001' → 'haiku'
-   */
-  function extractFamily(modelId) {
-    if (!modelId) return null;
-    const m = modelId.match(/^claude-([a-z]+)-/);
-    if (!m) return null;
-    const name = m[1];
-    if (name === 'sonnet' || name === 'opus' || name === 'haiku') return name;
-    return null;
+// SessionEnd hook — advisory reminder when end-of-session protocol appears incomplete.
+// Never blocks (exit 0 always). Emits stderr reminder when source-modifying agents
+// ran but handoff.md or CHANGELOG.md are stale (older than 60 minutes).
+
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const { resolveProjectDir } = require('./hook-utils');
+
+const STDIN_TIMEOUT_MS = 10000;
+const FRESHNESS_MS = 60 * 60 * 1000; // 60 minutes
+
+async function main(rawInput) {
+  let payload;
+  try {
+    payload = JSON.parse(rawInput);
+  } catch (_) {
+    process.exit(0);
+    return;
   }
 
-  // Priority 0: capability-cost routing — primary path for all agents.
+  const projectDir = resolveProjectDir(payload);
+
+  // Check sessionEndReminder opt-out in project.json
+  try {
+    const projRaw = await fs.promises.readFile(
+      path.join(projectDir, '.pipeline', 'project.json'),
+      'utf8',
+    );
+    const projData = JSON.parse(projRaw);
+    if (projData.sessionEndReminder === false) {
+      process.exit(0);
+      return;
+    }
+  } catch (_) { /* missing or unreadable — default to enabled */ }
+
+  // Check whether any source-modifying agents (implementer or coder) completed
+  let sourceAgentRan = false;
+  try {
+    const activeRaw = await fs.promises.readFile(
+      path.join(projectDir, '.pipeline', 'run-active.json'),
+      'utf8',
+    );
+    const activeData = JSON.parse(activeRaw);
+    if (Array.isArray(activeData.agents)) {
+      sourceAgentRan = activeData.agents.some((a) => {
+        const t = typeof a.agent_type === 'string' ? a.agent_type : '';
+        return (t.includes('implementer') || t.includes('coder')) && a.completedAt;
+      });
+    }
+  } catch (_) { /* run-active absent or unreadable — skip check */ }
+
+  if (!sourceAgentRan) {
+    process.exit(0);
+    return;
+  }
+
+  const now = Date.now();
+  const stale = [];
+
+  // Check handoff.md freshness
+  try {
+    const stat = await fs.promises.stat(
+      path.join(projectDir, 'docs', 'context', 'handoff.md'),
+    );
+    if ((now - stat.mtimeMs) > FRESHNESS_MS) {
+      stale.push('docs/context/handoff.md');
+    }
+  } catch (_) {
+    stale.push('docs/context/handoff.md (missing)');
+  }
+
+  // Check CHANGELOG.md freshness
+  try {
+    const stat = await fs.promises.stat(
+      path.join(projectDir, 'docs', 'CHANGELOG.md'),
+    );
+    if ((now - stat.mtimeMs) > FRESHNESS_MS) {
+      stale.push('docs/CHANGELOG.md');
+    }
+  } catch (_) {
+    stale.push('docs/CHANGELOG.md (missing)');
+  }
+
+  if (stale.length > 0) {
+    process.stderr.write(
+      '[forge-session-end] End-of-session protocol reminder: source-modifying agent ran ' +
+      'but the following files appear stale (>60 min): ' + stale.join(', ') + '. ' +
+      'Run the documenter agent and update CHANGELOG before closing.\n',
+    );
+  }
+
+  process.exit(0);
+}
+
+// -- Stdin reader with timeout guard -----------------------------------------
+let inputData = '';
+const timer = setTimeout(() => {
+  main(inputData || '{}').catch(() => process.exit(0));
+}, STDIN_TIMEOUT_MS);
+
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', (line) => { inputData += line + '\n'; });
+rl.on('close', () => {
+  clearTimeout(timer);
+  main(inputData || '{}').catch(() => process.exit(0));
+});
 ```
 
+### `hooks/file-changed.js`
+```javascript
+'use strict';
+
+// FileChanged hook — injects additionalContext when gate-pending.json or
+// board.json change on disk, so Claude sees the updated pipeline state
+// without needing an explicit read.
+//
+// Defensive on payload field name: Claude Code FileChanged payload field name
+// was not confirmed in available documentation; the hook probes payload.file,
+// payload.path, payload.filePath, and payload.file_path in order and uses
+// the first non-empty string found. If none resolves, exits 0 silently.
+
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const { resolveProjectDir } = require('./hook-utils');
+
+const STDIN_TIMEOUT_MS = 10000;
+
+/**
+ * Extract the changed file path from the payload using multiple candidate
+ * field names, because the exact Claude Code FileChanged payload field is
+ * not confirmed in documentation available at authoring time.
+ *
+ * @param {object} payload - parsed hook stdin payload
+ * @returns {string} changed file path, or empty string if not found
+ */
+function resolveChangedFilePath(payload) {
+  const candidates = ['file', 'path', 'filePath', 'file_path'];
+  for (const key of candidates) {
+    const val = payload[key];
+    if (val && typeof val === 'string') return val;
+  }
+  return '';
+}
+
+async function main(rawInput) {
+  let payload;
+  try {
+    payload = JSON.parse(rawInput);
+  } catch (_) {
+    process.exit(0);
+    return;
+  }
+
+  const changedPath = resolveChangedFilePath(payload);
+  if (!changedPath) {
+    process.exit(0);
+    return;
+  }
+
+  // Normalise to forward slashes for cross-platform suffix matching
+  const normalised = changedPath.replace(/\\/g, '/');
+  const isGatePending = normalised.endsWith('.pipeline/gate-pending.json');
+  const isBoardJson = normalised.endsWith('.pipeline/board.json');
+
+  if (!isGatePending && !isBoardJson) {
+    process.exit(0);
+    return;
+  }
+
+  const projectDir = resolveProjectDir(payload);
+  let additionalContext = '';
+
+  if (isGatePending) {
+    try {
+      const raw = await fs.promises.readFile(
+        path.join(projectDir, '.pipeline', 'gate-pending.json'),
+        'utf8',
+      );
+      const data = JSON.parse(raw);
+      const gate = data.gate || 'unknown';
+      const status = data.status || 'unknown';
+      const feature = data.feature || 'unknown';
+      additionalContext =
+        '[FORGE] gate-pending.json changed: gate=' + gate +
+        ' status=' + status +
+        ' feature="' + feature + '".' +
+        (status === 'approved'
+          ? ' Gate is now approved — the next pipeline step may proceed.'
+          : status === 'pending'
+          ? ' Gate is pending — awaiting approval before the next step.'
+          : '');
+    } catch (_) {
+      // File unreadable after change (e.g. deleted) — exit silently
+      process.exit(0);
+      return;
+    }
+  }
+
+  if (isBoardJson) {
+    additionalContext =
+      '[FORGE] board.json changed externally — new TODOs or status changes ' +
+      'may have been written. Use forge_read_board to see the current board state.';
+  }
+
+  if (additionalContext) {
+    process.stdout.write(JSON.stringify({ additionalContext }));
+  }
+
+  process.exit(0);
+}
+
+// -- Stdin reader with timeout guard -----------------------------------------
+let inputData = '';
+const timer = setTimeout(() => {
+  main(inputData || '{}').catch(() => process.exit(0));
+}, STDIN_TIMEOUT_MS);
+
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', (line) => { inputData += line + '\n'; });
+rl.on('close', () => {
+  clearTimeout(timer);
+  main(inputData || '{}').catch(() => process.exit(0));
+});
+```
+
+## Files to modify
+
+### `hooks/hooks.json`
+**Change:** Insert `SessionEnd` and `FileChanged` entries before `SubagentStart`.
+
 **Find:**
-```js
-      const chosen = capCandidates[0];
-      return {
-        modelId: chosen.id,
-        providerId: chosen.providerId,
-        source: 'capability-cost',
-        reason: `Most-minimal-match available model in [${providerScope.join(', ')}] satisfying [${requiredCaps.join(', ')}]`,
-      };
+```json
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.js\""
+          }
+        ]
+      },
 ```
 
 **Replace with:**
-```js
-      const chosen = capCandidates[0];
-      return {
-        modelId: chosen.id,
-        providerId: chosen.providerId,
-        family: chosen.providerId === 'anthropic' ? extractFamily(chosen.id) : null,
-        source: 'capability-cost',
-        reason: `Most-minimal-match available model in [${providerScope.join(', ')}] satisfying [${requiredCaps.join(', ')}]`,
-      };
+```json
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\""
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/file-changed.js\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.js\""
+          }
+        ]
+      },
 ```
 
-**Find:**
-```js
-    // No match — fail explicitly; capability requirements are hard constraints
-    return {
-      modelId: null,
-      providerId: null,
-      source: 'error',
-      reason: `No available model found with capabilities [${requiredCaps.join(', ')}] in scope [${providerScope.join(', ')}] for agent "${agentName}"`,
-    };
-```
+## Blockers
+- FileChanged payload field name is unconfirmed — hook probes `file`, `path`, `filePath`, `file_path` defensively; verify against a live Claude Code session and narrow `resolveChangedFilePath` if the actual field is known.
+- FileChanged matcher requirement is unconfirmed — the hooks.json entry omits `matcher` (matching the pattern of `SessionEnd`); if Claude Code requires a glob to make `FileChanged` fire at all, add `"matcher": "**/.pipeline/*.json"` to the `FileChanged` entry.
+- SessionEnd payload shape unconfirmed — hook relies only on `payload.cwd` via `resolveProjectDir`, which falls back to `process.cwd()` when absent; correctness is maintained regardless.
 
-**Replace with:**
-```js
-    // No match — fail explicitly; capability requirements are hard constraints
-    return {
-      modelId: null,
-      providerId: null,
-      family: null,
-      source: 'error',
-      reason: `No available model found with capabilities [${requiredCaps.join(', ')}] in scope [${providerScope.join(', ')}] for agent "${agentName}"`,
-    };
-```
-
-**Find:**
-```js
-  // Priority 1: hardcoded default — safety net for agents with no requirements.
-  return {
-    modelId: DEFAULT_MODEL,
-    providerId: DEFAULT_PROVIDER,
-    source: 'default',
-    reason: 'No routing requirements declared; using hardcoded default',
-  };
-```
-
-**Replace with:**
-```js
-  // Priority 1: hardcoded default — safety net for agents with no requirements.
-  return {
-    modelId: DEFAULT_MODEL,
-    providerId: DEFAULT_PROVIDER,
-    family: extractFamily(DEFAULT_MODEL),
-    source: 'default',
-    reason: 'No routing requirements declared; using hardcoded default',
-  };
-```
-
-### `skills/apply/SKILL.md`
-**Change:** Replace `model=<modelId>` with `model=<family>` and clarify fallback covers null family.
-
-**Find:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-**Replace with:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-### `skills/implement/SKILL.md`
-**Change:** Replace `model=<modelId>` with `model=<family>` and clarify fallback covers null family.
-
-**Find:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-**Replace with:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-### `skills/debug/SKILL.md`
-**Change:** Replace `model=<modelId>` with `model=<family>` and clarify fallback covers null family.
-
-**Find:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-**Replace with:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-### `skills/plan/SKILL.md`
-**Change:** Replace `model=<modelId>` with `model=<family>` and clarify fallback covers null family.
-
-**Find:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-**Replace with:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-### `skills/refactor/SKILL.md`
-**Change:** Replace `model=<modelId>` with `model=<family>` and clarify fallback covers null family.
-
-**Find:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<modelId>)`
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error): fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-**Replace with:**
-```markdown
-3. Dispatch based on `providerId`:
-   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
-   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
-4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
-```
-
-#### `CLAUDE.md`
-- line 29 — `| Project templates | \`templates/\` |` → `| Project scaffolds | \`scaffolds/\` |`
-- line 51 — `- \`templates/\` — project scaffolding templates` → `- \`scaffolds/\` — project scaffolding files`
-
-#### `docs/gotchas/GENERAL.md`
-- line 17 — `| Project templates | \`templates/\` | Directory trees copied by \`/forge:init\` |` → `| Project scaffolds | \`scaffolds/\` | Directory trees copied by \`/forge:init\` |`
-
-#### `docs/ARCHITECTURE.md`
-- line 20 — `| Project Templates | Scaffold templates for new project init | \`templates/\` |` → `| Project Scaffolds | Scaffold files for new project init | \`scaffolds/\` |`
-
-#### `.pipeline/agent-roles.json`
-- line 21 — `"templates/**"` in implementer allowedPaths → `"scaffolds/**"`
-- line 24 — `"templates/**/docs/gotchas/SKILLS.md"` in skills-generator allowedPaths → `"scaffolds/**/docs/gotchas/SKILLS.md"`
-
-#### `.pipeline/modules.json`
-- line 128 — `"templates/code/CLAUDE.md"` → `"scaffolds/code/CLAUDE.md"`
-- line 129 — `"templates/code-csharp/docs/"` → `"scaffolds/code-csharp/docs/"`
-- line 130 — `"templates/power-automate/docs/"` → `"scaffolds/power-automate/docs/"`
-- line 131 — `"templates/instructional/CLAUDE.md"` → `"scaffolds/instructional/CLAUDE.md"`
-
-#### `agents/skills-generator.md`
-- line 83 — `templates/code/docs/gotchas/skills/` → `scaffolds/code/docs/gotchas/skills/`
-
-#### `agents/implementer-triage.md`
-- line 31 — `src/`, `templates/`, `.pipeline/` → `src/`, `scaffolds/`, `.pipeline/`
-
-#### `agents/researcher-triage.md`
-- line 30 — `src/`, `templates/`, `.pipeline/` → `src/`, `scaffolds/`, `.pipeline/`
-
-#### `agents/reviewer-triage.md`
-- line 86 — `templates/code/CLAUDE.md` → `scaffolds/code/CLAUDE.md`
-
-#### `hooks/workflow-guard.js`
-- line 79 — `'/templates/'` → `'/scaffolds/'`
-
-#### `docs/FORGE-REFERENCE.md`
-- line 883 — `` `templates/code/` `` → `` `scaffolds/code/` ``
-- line 884 — `` `templates/instructional/` `` → `` `scaffolds/instructional/` ``
-- line 885 — `` `templates/power-automate/` `` → `` `scaffolds/power-automate/` ``
-
-#### `docs/FORGE-OVERVIEW.md`
-- line 255 — `FORGE gained a \`templates/\` directory` → `FORGE gained a \`scaffolds/\` directory`
-- line 492 — `templates/code/CLAUDE.md` → `scaffolds/code/CLAUDE.md`
-- line 501 — `templates/code/CLAUDE.md` → `scaffolds/code/CLAUDE.md`
-- line 531 — `templates/code/docs/gotchas/skills/` → `scaffolds/code/docs/gotchas/skills/`
-
-#### `docs/lean-lite-skip-audit-2026-04-19.md`
-- line 131 — `### Gap 2: templates/ not in RISK_PATH_PATTERNS` → `### Gap 2: scaffolds/ not in RISK_PATH_PATTERNS`
-- line 190 — `templates/ and scripts/ gaps are acceptable as-is` → `scaffolds/ and scripts/ gaps are acceptable as-is`
-
-#### Files that move with the directory rename but contain internal self-references:
-
-After `git mv templates scaffolds`, these three files exist at new paths. Their internal strings still say `templates/` and must be updated:
-
-#### `scaffolds/code/.claude/agents/skills-generator.md` (was `templates/code/...`)
-- line 74 — both occurrences of `templates/<stack>/docs/gotchas/SKILLS.md` → `scaffolds/<stack>/docs/gotchas/SKILLS.md`
-
-#### `scaffolds/power-automate/.claude/agents/skills-generator.md` (was `templates/power-automate/...`)
-- line 74 — both occurrences of `templates/<stack>/docs/gotchas/SKILLS.md` → `scaffolds/<stack>/docs/gotchas/SKILLS.md`
-
-#### `scaffolds/instructional/.claude/agents/skills-generator.md` (was `templates/instructional/...`)
-- line 74 — both occurrences of `templates/<stack>/docs/gotchas/SKILLS.md` → `scaffolds/<stack>/docs/gotchas/SKILLS.md`
-
----
-
-### Files intentionally NOT updated
-- `docs/CHANGELOG.md` — historical entries accurately describe what was done at the time; leave as-is
-- `docs/archive/PLAN_HISTORY.md`, `docs/archive/CHANGELOG_HISTORY.md` — archived historical records
-- `docs/PLAN-archive.md` — archived explore tasks
-- `docs/RESEARCH/` — research notes, historical context only
-- `docs/DECISIONS.md` — historical decision record; path reference at line 963 describes reasoning at decision time, not a live path dependency
-- `.pipeline/board.json` — task description text strings; the rename task entry (line 1190) will be closed after apply; other entries are historical records
-- `.pipeline/runs/` — run log records
-- `.claude/settings.local.json` — stale approved-bash allowlist entries from old sessions; the `rm templates/...` commands ran at install time and are inert
-- `mcp/node_modules/` — third-party SDK code using `resources/templates/list` (MCP protocol term, unrelated to our directory)
+## Verification
+- Both hooks call `process.exit(0)` followed by `return` on every early-exit branch to prevent async fall-through after the readline close handler.
+- `file-changed.js` emits no stdout for non-matching paths; the stdout write is guarded by the `additionalContext` non-empty check.
 
 ## Doc hints
-arch-update: false
-decision: false
+arch-update: true
+decision: true
 
-## Verification: pre-flight clean
-- No hook scripts modified (only the string `'/templates/'` in `workflow-guard.js` — a path segment in the write-guard allow-list, not a security boundary change)
-- No routing/MCP logic modified
-- No security-sensitive paths changed
-- Directory rename is a `git mv`, preserving history
-- All changes are string replacements of `templates/` → `scaffolds/` in path literals and documentation
-- No behaviour changes — `scaffolds/` serves the identical role as `templates/`
+**Decision:** `file-changed.js` probes four candidate field names (`file`, `path`, `filePath`, `file_path`) rather than assuming one, because the Claude Code FileChanged payload shape was not confirmed at authoring time. The first non-empty string wins; if none resolves, the hook exits silently — fail-open, never blocking.

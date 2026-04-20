@@ -1,3 +1,11 @@
+## [2026-04-20] Add SessionEnd and FileChanged lifecycle hooks
+
+- Created `hooks/session-end.js` — SessionEnd hook that reminds when source-modifying agents ran but documentation (handoff.md, CHANGELOG.md) appear stale (>60 minutes old)
+- Created `hooks/file-changed.js` — FileChanged hook that injects context when gate-pending.json or board.json change on disk, so Claude sees pipeline state updates without explicit reads
+- Registered both hooks in `hooks/hooks.json` under SessionEnd and FileChanged events
+
+---
+
 ## [2026-04-20] Wire model routing end-to-end
 
 - Added `extractFamily()` function to `mcp/lib/router.js` to derive short family names (sonnet/opus/haiku) from Anthropic model IDs
