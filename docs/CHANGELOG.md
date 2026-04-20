@@ -1,3 +1,13 @@
+## [2026-04-20] Trim GENERAL.md 439→~90 lines + add mechanical enforcement hooks
+
+- Trimmed `docs/gotchas/GENERAL.md` from 439 to ~90 lines — deleted duplicates (signal protocol, pipeline state files, model routing all in CLAUDE.md), removed Electron disclaimer (no refs remain), compressed verbose sections to single-line rules
+- Created `hooks/doc-size-guard.js` — PostToolUse advisory hook that warns when PLAN.md >80, CHANGELOG >200, ARCHITECTURE >800, GENERAL.md >200 lines. Replaces the doc-only threshold table.
+- Added truncation detection to `hooks/subagent-stop.js` — checks if artifact-producing agents (coder, planner, debug, refactor) wrote their expected output file after start. Marks outcome as `truncated` if missing/stale. Reviewers without verdict get `no-verdict`.
+- Merged 3 unique signals (`[task-block]`, `[solution-hit]`, `[promote-gotcha]`) from GENERAL.md into CLAUDE.md signal table
+- Registered doc-size-guard.js in hooks.json under Write|Edit matcher
+
+---
+
 ## [2026-04-20] Fix planner structured format + gate-enforcement worktree resolution
 
 - Strengthened `agents/planner.md` — added HARD FORMAT GATE section with BAD/GOOD examples before wave assignment, added self-check instruction in "What NOT to do" to enforce `Intent:`/`Verify:` fields

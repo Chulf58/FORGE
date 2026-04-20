@@ -101,6 +101,9 @@ Agents emit signals as bracket-prefixed lines. Key signals:
 | `[health]` | `[health] file\|aspect\|sev\|note` | Report code health issue |
 | `[questions]` / `[/questions]` | multi-line block | Agent clarification questions |
 | `[reviewer-verdict]` | `[reviewer-verdict] {...JSON}` | Reviewer result (APPROVED/BLOCK/REVISE) |
+| `[task-block]` | `[task-block] taskId blockedBy:id1,id2` | Mark task as blocked |
+| `[solution-hit]` | `[solution-hit] docs/solutions/<file>.md — <summary>` | Known fix pattern applied |
+| `[promote-gotcha]` | `[promote-gotcha] docs/solutions/<file>.md — <reason>` | Solution ready for GENERAL.md promotion |
 | `[CONTEXT-CHECKPOINT]` | literal | Context window low |
 
 `[reviewer-verdict]` JSON requires: `agent`, `verdict`, `blockers`, `warnings`, `feature`, `model`.

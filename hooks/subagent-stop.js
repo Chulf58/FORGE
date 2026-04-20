@@ -155,7 +155,42 @@ async function main(rawInput) {
   // always get outcome "completed" regardless of message content.
   const lastMessage = payload.last_assistant_message || null;
   const verdict = isReviewerAgent(agentType) ? extractVerdict(lastMessage, agentType) : null;
-  const outcome = verdict !== null ? verdict : 'completed';
+  let outcome = verdict !== null ? verdict : 'completed';
+
+  // Reviewer without verdict = likely truncation or prompt failure.
+  if (isReviewerAgent(agentType) && verdict === null) {
+    outcome = 'no-verdict';
+    console.error('[forge-subagent] WARNING: ' + stripAnsi(agentType) + ' stopped without emitting [reviewer-verdict] — possible truncation');
+  }
+
+  // Truncation detection for artifact-producing agents.
+  // If the agent's expected output file was not modified after it started,
+  // the agent was likely truncated mid-generation before writing its artifact.
+  const EXPECTED_ARTIFACTS = {
+    'coder': 'docs/context/handoff.md',
+    'planner': 'docs/PLAN.md',
+    'debug': 'docs/context/handoff.md',
+    'refactor': 'docs/context/handoff.md',
+    'implementation-architect': 'docs/context/slice-brief.md',
+  };
+
+  const normalizedType = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
+  const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];
+
+  if (artifactRelPath && typeof entry.startedAt === 'number' && outcome === 'completed') {
+    const baseDir = data.worktreePath || projectDir;
+    const artifactPath = path.join(baseDir, artifactRelPath);
+    try {
+      const stat = fs.statSync(artifactPath);
+      if (stat.mtimeMs < entry.startedAt) {
+        outcome = 'truncated';
+        console.error('[forge-subagent] WARNING: ' + normalizedType + ' stopped but ' + artifactRelPath + ' was not updated — possible truncation');
+      }
+    } catch (_) {
+      outcome = 'truncated';
+      console.error('[forge-subagent] WARNING: ' + normalizedType + ' stopped but ' + artifactRelPath + ' not found — possible truncation');
+    }
+  }
 
   // Patch entry in-place
   const completedAt = Date.now();
