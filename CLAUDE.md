@@ -247,6 +247,12 @@ Call `forge_dashboard_state`. Returns a compact four-group snapshot. Do not read
 **Check a specific run's full record.**
 Call `forge_get_run` with the run ID. Returns the hydrated `run.json` contents.
 
+### MCP unavailability
+
+When any `forge_*` MCP tool call fails (connection error, tool not found, timeout), emit this warning once per session before falling back to direct file reads:
+
+`[forge] MCP server not running. Run /forge:doctor to diagnose, or restart Claude Code.`
+
 ### Hard rules (preserved for emphasis)
 
 **No subagents for file reads.** Never use the `Agent` tool to read files, extract data, or answer questions that can be resolved with `Read`, `Grep`, or `Glob` directly. Subagents are for open-ended research across many files or protecting the main context from large outputs — not for single-file lookups.
