@@ -195,7 +195,39 @@ Create `.pipeline/` with:
 
 Create `docs/` with:
 - `PLAN.md` (empty active plan template)
-- `gotchas/GENERAL.md` (stack-specific conventions placeholder)
+
+## STEP 4 — Apply scaffold (based on tech stack)
+
+Resolve the scaffold directory from the user's tech stack answer:
+
+| Tech stack keywords | Scaffold |
+|---|---|
+| power automate, power platform, flow | `power-automate` |
+| instructional, documentation, non-code, training | `instructional` |
+| anything else (code, node, python, web, etc.) | `code` |
+
+The scaffold root is `${CLAUDE_PLUGIN_ROOT}/scaffolds/<scaffold-name>/`.
+
+Copy these files from the scaffold into the project (skip any that don't exist in the scaffold; never overwrite files that already exist in the project):
+
+1. `CLAUDE.md` → project root `CLAUDE.md`
+2. `docs/gotchas/GENERAL.md` → project `docs/gotchas/GENERAL.md`
+3. `docs/gotchas/SKILLS.md` → project `docs/gotchas/SKILLS.md` (if exists in scaffold)
+
+Use Bash for the copy:
+
+```
+SCAFFOLD="${CLAUDE_PLUGIN_ROOT}/scaffolds/<scaffold-name>"
+for src in "CLAUDE.md" "docs/gotchas/GENERAL.md" "docs/gotchas/SKILLS.md"; do
+  if [ -f "$SCAFFOLD/$src" ] && [ ! -f "$src" ]; then
+    mkdir -p "$(dirname "$src")"
+    cp "$SCAFFOLD/$src" "$src"
+    echo "[scaffold] Copied $src from $scaffold-name scaffold."
+  fi
+done
+```
+
+If `CLAUDE_PLUGIN_ROOT` is not set, skip this step with: `[scaffold] CLAUDE_PLUGIN_ROOT not set — skipping scaffold files.`
 
 Print "FORGE project initialized."
 

@@ -2,6 +2,16 @@
 
 These rules govern how FORGE operates in any project where the plugin is installed.
 
+## Change philosophy
+
+Choose the smallest safe implementation that solves the stated problem. No speculative abstractions. No unrelated cleanup. Prefer existing patterns in the codebase over new structure. Keep the patch easy to justify against unnecessary complexity, hidden side effects, and scope creep.
+
+Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
+
+## Anti-speculation rule
+
+Before claiming anything about this codebase's state, history, what exists, or what happened — cite a file:line from a Read/Grep done THIS turn, or say "I don't know, checking" and call the tool. No "appears to", "likely", "probably", "I assume", "seems to have been". If you lack tool-call evidence this turn, you don't know — verify or disclaim.
+
 ## Pipeline types and agent sets
 
 Pipeline **types** (the slash command) determine which agents run. Pipeline **mode** controls the subset.
@@ -31,24 +41,6 @@ Set per project in `.pipeline/project.json` (`pipelineMode` field):
 | FULL | High-stakes, nothing skipped | Core + completeness-checker + reviewer-triage + all 5 reviewers |
 
 The 5 reviewers: `reviewer-boundary`, `reviewer-safety`, `reviewer-logic`, `reviewer-style`, `reviewer-performance`.
-
-## Signal protocol
-
-Agents emit signals as bracket-prefixed lines. Key signals:
-
-| Signal | Format | Purpose |
-|--------|--------|---------|
-| `[suggest]` | `[suggest] chip text` | Suggest next action |
-| `[todo]` | `[todo] task text` | Add TODO to board |
-| `[health]` | `[health] file\|aspect\|sev\|note` | Report code health issue |
-| `[questions]` / `[/questions]` | multi-line block | Agent clarification questions |
-| `[reviewer-verdict]` | `[reviewer-verdict] {...JSON}` | Reviewer result (APPROVED/BLOCK/REVISE) |
-| `[task-block]` | `[task-block] taskId blockedBy:id1,id2` | Mark task as blocked |
-| `[solution-hit]` | `[solution-hit] docs/solutions/<file>.md — <summary>` | Known fix pattern applied |
-| `[promote-gotcha]` | `[promote-gotcha] docs/solutions/<file>.md — <reason>` | Solution ready for GENERAL.md promotion |
-| `[CONTEXT-CHECKPOINT]` | literal | Context window low |
-
-`[reviewer-verdict]` JSON requires: `agent`, `verdict`, `blockers`, `warnings`, `feature`, `model`.
 
 ## Task approach protocol
 
@@ -90,16 +82,7 @@ Based on the assessment, determine which agents are needed. The pipeline and mod
 
 The classifier that enforces this lives at `scripts/lean-risk-classify.mjs`. STANDARD and FULL modes always dispatch reviewers.
 
-**Contextual agents** — add based on task signals:
-
-| Agent | Include when |
-|-------|-------------|
-| `implementation-architect` | Plan has 10+ tasks, crosses module boundaries, modifies shared state, involves migration sequencing, or prior implement runs failed/revised |
-| `researcher` | External API, unfamiliar library, or unknown technical constraint |
-| `gotcha-checker` | Pattern with known failure modes (file writes, process spawning, reactive state) |
-| `reviewer-logic` | Complex state mutations, async flows, data transforms, multi-step conditionals |
-| `reviewer-performance` | Hot paths, data-heavy operations |
-| `reviewer-style` | Any visible output/formatting change |
+**Contextual agents** — see `docs/FORGE-REFERENCE.md` section 4 for the full dispatch table (implementation-architect, researcher, gotcha-checker, reviewer-logic, reviewer-performance, reviewer-style).
 
 ### Step 4 — The agent team determines the pipeline and mode
 
@@ -127,29 +110,53 @@ Before each agent invocation, resolve which model and execution path to use:
 
 ## Tool efficiency
 
-Pick the cheapest dedicated tool for each operation. `hooks/bash-guard.js` enforces a subset as a backstop.
+Use dedicated tools over Bash: `Read` not `cat`, `Glob` not `find`, `Grep` not `grep`, `Edit` not `sed`. Prefer `forge_*` MCP tools for pipeline state; fall back to direct file reads if MCP unavailable. `hooks/bash-guard.js` enforces this as a backstop. Full tool-choice table in `docs/FORGE-REFERENCE.md` section 10.
 
-| Need to… | Use | Common mistake |
-|---|---|---|
-| Read a file | `Read` | `cat` / `head` / `tail` in Bash |
-| Find files by pattern | `Glob` | `find` / `ls` in Bash |
-| Search inside file contents | `Grep` | `grep` / `rg` in Bash |
-| Check the board state | `forge_read_board` MCP tool, or `Read .pipeline/board.json` | `node -e` to filter JSON |
-| Check dashboard state | `forge_dashboard_state` MCP tool | Reading `.pipeline/runs/*.json` by hand |
-| Check a specific run | `forge_get_run` MCP tool | `Read .pipeline/runs/r-*/run.json` |
-| Check the active run | `forge_get_active_run` MCP tool | `Read .pipeline/run-active.json` |
-| Check the pending gate | `forge_check_gate` MCP tool | `Read .pipeline/gate-pending.json` |
-| Edit an existing file | `Edit` | `sed` / `awk` in Bash |
-| Create a new file | `Write` | `echo > file` in Bash |
-| Git operations, npm, process | Bash | — |
-| Delegate open-ended investigation | `Agent` with appropriate subagent type | Using `Agent` for single-file lookups |
+**No subagents for file reads.** Use `Read`, `Grep`, or `Glob` directly. Subagents are for open-ended research or protecting context from large outputs.
 
-### MCP unavailability
+---
 
-When any `forge_*` MCP tool call fails (connection error, tool not found, timeout), emit this warning once per session before falling back to direct file reads:
+## Plugin development
 
-`[forge] MCP server not running. Run /forge:doctor to diagnose, or restart Claude Code.`
+> These rules apply when working on the FORGE plugin source code itself — editing agents, hooks, skills, or MCP server code in this repo.
 
-### Hard rules
+### Stack
 
-**No subagents for file reads.** Never use the `Agent` tool to read files, extract data, or answer questions that can be resolved with `Read`, `Grep`, or `Glob` directly. Subagents are for open-ended research or protecting the main context from large outputs.
+- **Runtime:** Node.js (hooks are `.js` scripts executed by Claude Code)
+- **Content:** Markdown (agents, commands, skills)
+- **Config:** JSON (plugin manifest, pipeline state, board)
+- **Distribution:** Claude Code plugin system (marketplace or local path)
+
+### Key source locations
+
+| Area | Path |
+|------|------|
+| Plugin manifest | `.claude-plugin/plugin.json` |
+| Pipeline agents | `agents/*.md` |
+| Slash commands | `commands/forge/*.md` |
+| Hook declarations | `hooks/hooks.json` |
+| Hook scripts | `hooks/*.js` |
+| Status line script | `bin/forge-status.js` |
+| Worktree manager | `bin/forge-worktree.js` |
+| Project scaffolds | `scaffolds/` |
+| Pipeline state (per-project) | `.pipeline/` |
+| Pipeline docs (per-project) | `docs/` |
+| Gotchas for this plugin project | `docs/gotchas/GENERAL.md` |
+
+### How the plugin works
+
+When installed, Claude Code loads:
+1. **Agents** from `agents/` — available as subagents in any session
+2. **Commands** from `commands/forge/` — available as `/forge:plan`, `/forge:init`, etc.
+3. **Hooks** from `hooks/hooks.json` — fire on SessionStart, PreToolUse, PostToolUse
+4. **MCP servers** from `.mcp.json` — spawned automatically
+
+The plugin does NOT modify project files on install. Projects get their pipeline state (`docs/`, `.pipeline/`) via `/forge:init`.
+
+### Working on this plugin
+
+Edit files directly — no build step, no compilation. Agent changes take effect on next invocation (no restart needed). Hook and command changes require restarting the Claude Code session.
+
+### Stack rules and gotchas
+
+@docs/gotchas/GENERAL.md

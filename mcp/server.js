@@ -381,6 +381,130 @@ server.registerTool(
   }
 );
 
+// -- Tool: forge_add_note ----------------------------------------------------
+
+server.registerTool(
+  "forge_add_note",
+  {
+    title: "FORGE Add Note",
+    description: "Adds a knowledge note to the notes board — for capturing information, not action items",
+    inputSchema: z.object({
+      text: z.string().describe("Note content"),
+      tags: z.array(z.string()).default([]).describe("Tags for categorisation (e.g. 'salesforce', 'integration')")
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+  },
+  async ({ text, tags }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const check = requirePipeline(projectDir);
+      if (!check.ok) return check.result;
+
+      const notesPath = join(check.pipelineDir, "notes.json");
+      const read = readJsonSafe(notesPath);
+      const store = read.ok ? read.data : { notes: [] };
+      if (!store.notes) store.notes = [];
+
+      const note = {
+        id: "n-" + randomUUID().slice(0, 8),
+        text,
+        tags,
+        addedAt: new Date().toISOString()
+      };
+
+      store.notes.push(note);
+      writeJsonSafe(notesPath, store);
+
+      return textResult(note);
+    } catch (err) {
+      return errorResult("Failed to add note: " + err.message);
+    }
+  }
+);
+
+// -- Tool: forge_read_notes --------------------------------------------------
+
+server.registerTool(
+  "forge_read_notes",
+  {
+    title: "FORGE Read Notes",
+    description: "Returns knowledge notes, optionally filtered by tag or search term",
+    inputSchema: z.object({
+      tag: z.union([z.string(), z.array(z.string())]).optional().describe("Filter by tag — single or array, any-of semantics"),
+      search: z.string().optional().describe("Case-insensitive substring match on note text")
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+  },
+  async ({ tag, search }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const check = requirePipeline(projectDir);
+      if (!check.ok) return check.result;
+
+      const notesPath = join(check.pipelineDir, "notes.json");
+      const read = readJsonSafe(notesPath);
+      if (!read.ok) return textResult([]);
+
+      let items = read.data.notes || [];
+
+      if (tag !== undefined) {
+        const allowed = Array.isArray(tag) ? tag : [tag];
+        items = items.filter(item => {
+          const itemTags = item.tags || [];
+          return allowed.some(t => itemTags.includes(t));
+        });
+      }
+
+      if (search !== undefined) {
+        const lower = search.toLowerCase();
+        items = items.filter(item => item.text.toLowerCase().includes(lower));
+      }
+
+      return textResult(items);
+    } catch (err) {
+      return errorResult("Failed to read notes: " + err.message);
+    }
+  }
+);
+
+// -- Tool: forge_delete_note -------------------------------------------------
+
+server.registerTool(
+  "forge_delete_note",
+  {
+    title: "FORGE Delete Note",
+    description: "Deletes a note by ID",
+    inputSchema: z.object({
+      id: z.string().describe("Note ID to delete")
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true }
+  },
+  async ({ id }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const check = requirePipeline(projectDir);
+      if (!check.ok) return check.result;
+
+      const notesPath = join(check.pipelineDir, "notes.json");
+      const read = readJsonSafe(notesPath);
+      if (!read.ok) return errorResult("Failed to read notes: " + read.error);
+
+      const store = read.data;
+      const before = (store.notes || []).length;
+      store.notes = (store.notes || []).filter(n => n.id !== id);
+
+      if (store.notes.length === before) {
+        return errorResult("Note not found: " + id);
+      }
+
+      writeJsonSafe(notesPath, store);
+      return textResult({ deleted: id });
+    } catch (err) {
+      return errorResult("Failed to delete note: " + err.message);
+    }
+  }
+);
+
 // -- Tool: forge_read_project ------------------------------------------------
 
 server.registerTool(
