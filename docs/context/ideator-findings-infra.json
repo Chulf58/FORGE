@@ -1,0 +1,76 @@
+{
+  "findings": [
+    {
+      "severity": "HIGH",
+      "lens": "fragility",
+      "title": "Stuck-loop block uses exit(2) without deny envelope",
+      "description": "subagent-start.js:154-160 blocks 3rd+ agent dispatch with process.exit(2) and stderr only, but does NOT emit the hookSpecificOutput deny envelope. Per GENERAL.md the current runtime silently discards exit 2 without the envelope, so the block is ineffective and token-burn loops can proceed unchecked.",
+      "file": "hooks/subagent-start.js"
+    },
+    {
+      "severity": "HIGH",
+      "lens": "fragility",
+      "title": "writeJsonSafe has no file locking — concurrent MCP tool calls lose data",
+      "description": "mcp/server.js:49-55 read-mutate-write cycle (readJsonSafe + writeJsonSafe) used by nearly every tool handler. Parallel reviewers calling forge_add_todo or forge_update_task simultaneously cause last-write-wins data loss on board.json. The code acknowledges this in a comment but offers no mitigation.",
+      "file": "mcp/server.js"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "fragility",
+      "title": "forge-worktree.js uses relative paths — breaks when cwd differs from project root",
+      "description": "bin/forge-worktree.js:20 hardcodes WORKTREE_DIR = '.worktrees' and all path.join calls produce relative paths. If the script is invoked from a subdirectory or the merge function's run.json lookup (line 220) resolves against a different cwd, worktree operations target the wrong location.",
+      "file": "bin/forge-worktree.js"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "security-safety",
+      "title": "runId validation regex inconsistency between workflow-guard and MCP schema",
+      "description": "workflow-guard.js:59 uses /^r-[a-zA-Z0-9-]+$/ (allows hyphens) while mcp/server.js:23 uses /^r-[a-zA-Z0-9]+$/ (no hyphens). A run-active.json with runId containing embedded hyphens passes the hook but is rejected by the MCP run registry, creating a split-brain trust boundary.",
+      "file": "hooks/workflow-guard.js"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "security-safety",
+      "title": "forge-worktree.js uses git --force and branch -D, bypassing bash-guard",
+      "description": "bin/forge-worktree.js:247,273,301 calls 'git worktree remove --force' and 'git branch -D' via execFileSync, which are the same destructive operations that bash-guard.js hard-blocks. If the pre-merge commit step (line 168-175) fails, --force silently discards uncommitted worktree changes with no recovery path.",
+      "file": "bin/forge-worktree.js"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "technical-debt",
+      "title": "Approval token validation logic duplicated three times",
+      "description": "mcp/server.js:73-85 (hasGateApprovalToken), hooks/bash-guard.js:190-205 (hasValidApprovalToken), hooks/workflow-guard.js:95-107 (hasValidGateApprovalToken) — three independent implementations of the same token-checking logic. A bug fix to expiry handling or token shape must be applied to all three files.",
+      "file": "hooks/bash-guard.js"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "technical-debt",
+      "title": "FORGE agent allowlist logic duplicated between subagent-start and subagent-stop",
+      "description": "hooks/subagent-start.js:14-53 and hooks/subagent-stop.js:14-43 contain verbatim copies of getForgeAgentSet() and isForgeAgent(). Both read agents/*.md, cache the result, and normalize forge: prefixes identically. Should be extracted to hook-utils.js.",
+      "file": "hooks/subagent-stop.js"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "missing-capabilities",
+      "title": "forge_update_config accepts invalid pipelineMode values without validation",
+      "description": "mcp/server.js:413-458 validates pipelineMode is a string but not that it is a valid mode (TRIVIAL/SPRINT/LEAN/STANDARD/FULL). A user can set pipelineMode:'YOLO' or 'lean' (lowercase) and it will be accepted silently, causing downstream failures at forge_create_run time with no clear error trail.",
+      "file": "mcp/server.js"
+    },
+    {
+      "severity": "LOW",
+      "lens": "technical-debt",
+      "title": "PIPELINE_STAGE_LABELS duplicated between mcp/server.js and bin/forge-status.js",
+      "description": "mcp/server.js:136-162 duplicates the stage label map from bin/forge-status.js with a comment acknowledging the debt. forge_resume_run is the second consumer. Adding a new pipeline stage requires updating both files.",
+      "file": "mcp/server.js"
+    },
+    {
+      "severity": "LOW",
+      "lens": "user-experience",
+      "title": "No feedback when pipelineMode casing is wrong in forge_update_config",
+      "description": "mcp/server.js:413-458 accepts 'lean' when it should be 'LEAN', returning success. The user's pipeline later fails at forge_create_run with a Zod enum error ('mode must be TRIVIAL|SPRINT|LEAN|STANDARD|FULL') that does not point back to the misconfigured project.json.",
+      "file": "mcp/server.js"
+    }
+  ],
+  "completedLenses": ["fragility", "missing-capabilities", "technical-debt", "security-safety", "user-experience"],
+  "status": "complete"
+}

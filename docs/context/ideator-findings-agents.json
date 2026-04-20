@@ -1,0 +1,76 @@
+{
+  "findings": [
+    {
+      "severity": "HIGH",
+      "lens": "fragility",
+      "title": "Skills have no handler for reviewer BLOCK/REVISE verdicts",
+      "description": "Neither skills/plan/SKILL.md nor skills/implement/SKILL.md contain any conditional logic for reviewer BLOCK or REVISE verdicts — they dispatch reviewers then proceed to the gate step regardless, leaving the orchestrating LLM to infer the correct response with no explicit instruction.",
+      "file": "skills/implement/SKILL.md"
+    },
+    {
+      "severity": "HIGH",
+      "lens": "security-safety",
+      "title": "LEAN-mode reviewer skip removes the only guard against research-injected handoff content",
+      "description": "reviewer-safety checks for [INJECTION-WARNING] markers from researcher output, but in LEAN mode the lean-risk-classify.mjs can skip all reviewers — meaning web-sourced research injection flows through coder handoff to implementer with no safety check.",
+      "file": "agents/reviewer-safety.md"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "fragility",
+      "title": "reviewer-boundary naming split across triage excerpts, output paths, and dispatch tables",
+      "description": "Agent is named reviewer-boundary in agents/reviewer-boundary.md but triage uses bare 'reviewer' for excerpt paths (triage-excerpts/reviewer.md), output paths (reviewer-output/reviewer.md), and dispatch table column headers, while JSON examples use 'reviewer-boundary' — a rename on either side breaks silently.",
+      "file": "agents/reviewer-triage.md"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "fragility",
+      "title": "lean-risk-classify.mjs missing coverage for signal-format and .pipeline/ schema changes",
+      "description": "CLAUDE.md defines 'signal formats' and 'persisted .pipeline/* shape' as risk-surface triggers, but scripts/lean-risk-classify.mjs has no regex for signal format changes or .pipeline/ JSON schema mutations — such handoffs pass the LEAN gate and skip reviewers.",
+      "file": "scripts/lean-risk-classify.mjs"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "missing-capabilities",
+      "title": "No skill orchestrates the coder revision loop after reviewer REVISE",
+      "description": "The coder agent has a [revision-mode: N] protocol for re-drafting after REVISE verdicts, but no skill contains a step that re-invokes the coder with this prefix — the revision capability exists in the agent but is unreachable from the pipeline.",
+      "file": "agents/coder.md"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "technical-debt",
+      "title": "Model routing block duplicated verbatim across 5 pipeline skills",
+      "description": "The identical 8-line 'Model routing' protocol block is copy-pasted into skills/plan/SKILL.md, skills/implement/SKILL.md, skills/apply/SKILL.md, skills/debug/SKILL.md, and skills/refactor/SKILL.md — any routing protocol change requires 5 parallel edits.",
+      "file": "skills/plan/SKILL.md"
+    },
+    {
+      "severity": "MEDIUM",
+      "lens": "user-experience",
+      "title": "Approve and discard skills give generic confirmation with no feature name or context",
+      "description": "skills/approve/SKILL.md prints 'Gate 1 approved' without the feature name, and skills/discard/SKILL.md prints 'Gate discarded' without gate number or feature — the user must remember what was pending.",
+      "file": "skills/approve/SKILL.md"
+    },
+    {
+      "severity": "LOW",
+      "lens": "missing-capabilities",
+      "title": "TRIVIAL and SPRINT modes are undocumented in any skill's mode-decision logic",
+      "description": "CLAUDE.md defines TRIVIAL and SPRINT pipeline modes and hooks enforce them, but no skill (plan, implement, apply) contains decision logic to select or operate in these modes — they only reference LEAN, STANDARD, and FULL.",
+      "file": "skills/plan/SKILL.md"
+    },
+    {
+      "severity": "LOW",
+      "lens": "technical-debt",
+      "title": "6+ agent files in agents/ are unreferenced by any active skill",
+      "description": "integrity-checker, tool-call-auditor, regression-risk, agent-optimizer, skills-generator, and researcher-triage exist in agents/ but are never dispatched by any skill SKILL.md — they appear only in templates and worktrees, suggesting they are dead or deprecated agents.",
+      "file": "agents/integrity-checker.md"
+    },
+    {
+      "severity": "LOW",
+      "lens": "user-experience",
+      "title": "Discard deletes gate file while approve updates it — asymmetric lifecycle",
+      "description": "skills/discard/SKILL.md deletes gate-pending.json on discard, while skills/approve/SKILL.md updates it in-place on approve — any downstream code expecting the gate file to exist after all terminal states will fail on discard.",
+      "file": "skills/discard/SKILL.md"
+    }
+  ],
+  "completedLenses": ["fragility", "missing-capabilities", "technical-debt", "security-safety", "user-experience"],
+  "status": "complete"
+}

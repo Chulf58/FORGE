@@ -1,0 +1,66 @@
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "title": "node -e bypasses ALL control-file write guards",
+      "description": "workflow-guard.js only intercepts Write and Edit tool calls (line 243). bash-guard.js allows `node` as a command. The model can execute `node -e \"require('fs').writeFileSync('.pipeline/action-approved.json', JSON.stringify({actions:['gate-approve','commit','push'], expiresAt: new Date(Date.now()+120000).toISOString(), source:'user-prompt', createdAt: new Date().toISOString()}))\"` to forge an approval token. With a forged token, the model can: (1) self-approve gates by writing status:approved to gate-pending.json via the Write tool (which workflow-guard will now allow because hasValidGateApprovalToken returns true), (2) commit and push via git without user consent (bash-guard checks the same token file), (3) write to run-active.json to set SPRINT/TRIVIAL mode bypassing gate enforcement entirely. This is a full chain: one Bash call forges the token, then all downstream guards fall open.",
+      "file": "hooks/bash-guard.js + hooks/workflow-guard.js",
+      "line": "bash-guard.js:29-40, workflow-guard.js:243",
+      "exploitability": "Trivial. Single Bash command. No preconditions. The model routinely uses `node` for legitimate operations, so the command pattern is not suspicious."
+    },
+    {
+      "severity": "HIGH",
+      "title": "project.json pipelineMode write bypasses gate enforcement",
+      "description": "gate-enforcement.js falls back to reading pipelineMode from .pipeline/project.json when run-active.json is absent (lines 148-154). project.json is NOT a protected control file in workflow-guard.js — writes to it are allowed unconditionally (confirmed by control-file-guard-test.js case 16, line 280). The model can Write {\"pipelineMode\":\"SPRINT\"} to .pipeline/project.json, then dispatch coder or implementer agents without any gate approval. The cross-reference defense (lines 128-146) only fires when run-active.json exists AND claims a bypass mode — it does not protect the project.json fallback path. Exploitation: (1) ensure no run-active.json exists (or delete it via node -e), (2) Write project.json with pipelineMode SPRINT, (3) spawn coder/implementer freely.",
+      "file": "hooks/gate-enforcement.js",
+      "line": "148-154, 156-169",
+      "exploitability": "Easy. Requires only a Write tool call to an unguarded file. No token, no preconditions. The model has routine write access to .pipeline/ files."
+    },
+    {
+      "severity": "HIGH",
+      "title": "Dispatch log forgery bypasses routing enforcement",
+      "description": "routing-enforcement.js checks .pipeline/session-dispatch-log.json for a valid forge_get_model_recommendation entry before allowing Agent spawns (line 76-91). This log file is NOT a protected control file — workflow-guard.js only guards run-active.json, action-approved.json, and gate-pending.json. The model can Write a forged dispatch log entry directly: Write .pipeline/session-dispatch-log.json with {\"entries\":[{\"agentName\":\"coder\",\"ts\":<current_timestamp>}]}. The hasValidRecommendation function (line 93-100) only checks agentName and timestamp freshness — there is no HMAC, nonce, or structural integrity check. This bypasses the mandatory routing requirement entirely.",
+      "file": "hooks/routing-enforcement.js",
+      "line": "76-100",
+      "exploitability": "Easy. Single Write tool call. The model already knows the required JSON structure from reading the hook source. No token needed."
+    },
+    {
+      "severity": "HIGH",
+      "title": "printf/tee bypass bash-guard write prohibition",
+      "description": "bash-guard.js blocks `echo` with output redirects (line 257) but does not block `printf` or `tee`, which achieve identical file-write effects. `printf '{\"runId\":\"r-fake\"}' > .pipeline/run-active.json` writes arbitrary content to any file. `tee` in a pipeline (`node -e 'process.stdout.write(payload)' | tee .pipeline/run-active.json`) also works. While finding #1 (node -e with fs.writeFileSync) is more powerful, printf/tee are simpler and more obvious — an attacker doesn't need Node.js knowledge. This bypasses workflow-guard.js because that hook only intercepts Write/Edit tool calls, not Bash.",
+      "file": "hooks/bash-guard.js",
+      "line": "29-40, 257-263",
+      "exploitability": "Trivial. `printf` is a shell builtin available everywhere. No special knowledge required."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Command substitution and subshells evade bash-guard segment parsing",
+      "description": "splitIntoSegments (line 75-91) masks quoted strings before splitting on operators, but does NOT mask backtick command substitution (`...`) or $(...) subshells. A command like `git log --format=$(cat .env)` or `git log \\`cat .env\\`` embeds a blocked command (cat) inside a subshell that bash-guard does not parse. The segment's first command word is `git` (allowed), so the blocked `cat` inside the subshell executes undetected. The code comment on line 73-74 acknowledges this as a known limitation. Exploitation requires knowing the parsing gap, but it is a standard shell feature.",
+      "file": "hooks/bash-guard.js",
+      "line": "75-91",
+      "exploitability": "Moderate. Requires knowledge of the parsing limitation. The hook's own comments acknowledge false negatives on exotic forms. Realistic for a motivated model that has read the hook source."
+    },
+    {
+      "severity": "MEDIUM",
+      "title": "Approval token TTL of 120s creates a race window for unrelated operations",
+      "description": "approval-token.js writes a 120-second TTL token when the user's message contains action keywords (line 19). The token grants ALL detected actions for the full 2-minute window. If a user says 'approve the gate and commit', the token grants both gate-approve AND commit for 120 seconds. During this window, the model can perform multiple gate approvals and commits — not just the one the user intended. More critically: if the user says 'commit' (granting a commit token), and the model delays the actual commit, it can perform other operations that check for tokens during the 120s window. The token has no nonce, no operation count, and no binding to a specific gate or commit.",
+      "file": "hooks/approval-token.js",
+      "line": "19, 111-129",
+      "exploitability": "Moderate. Requires the model to act within the 120-second window after user approval. The window is generous enough for multi-step exploitation but requires the user to have said an action keyword."
+    }
+  ],
+  "completedLenses": [
+    "bash-guard.js — command blocking, git guard, segment parsing, redirect detection",
+    "approval-token.js — token generation, keyword detection, negation handling, TTL",
+    "gate-enforcement.js — gate checks, mode bypass, cross-reference defense, worktree support",
+    "workflow-guard.js — control file guards, apply gate enforcement, feature matching, worktree path",
+    "routing-enforcement.js — dispatch log validation, pipeline agent detection, TTL check",
+    "hook-utils.js — resolveProjectDir, resolvePluginRoot, stripAnsi",
+    "subagent-start.js — run-active patching, stuck-loop detection, terminal-run guard",
+    "subagent-stop.js — verdict extraction, agent-type validation, truncation detection",
+    "doc-size-guard.js — advisory only, non-blocking",
+    "anti-speculation-inject.js — context injection, non-blocking",
+    "lean-risk-classify.mjs — risk surface classifier, content/path pattern matching"
+  ],
+  "status": "complete"
+}
