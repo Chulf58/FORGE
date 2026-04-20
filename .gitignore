@@ -15,6 +15,30 @@ out
 # because this pattern is anchored with a leading slash.
 /package-lock.json
 
+# Plugin development state — NOT distributed to end users.
+# End-user projects create their own via /forge:init.
+.pipeline/board.json
+.pipeline/modules.json
+.pipeline/agent-roles.json
+docs/PLAN.md
+docs/PLAN-archive.md
+docs/CHANGELOG.md
+docs/ARCHITECTURE.md
+docs/DECISIONS.md
+docs/VISION.md
+docs/RECOVERY-POINTS.md
+docs/FORGE-OVERVIEW.md
+docs/FORGE-OVERVIEW-RECIPE.md
+docs/FORGE-REFERENCE.md
+docs/SUPERVISOR-INSTRUCTIONS.md
+docs/RESEARCH/
+docs/archive/
+docs/solutions/
+docs/context/handoff.md
+docs/context/lean-gate.json
+docs/lean-lite-skip-audit-*.md
+docs/token-audit-*.md
+
 # Pipeline runtime state (per-project, not plugin source)
 .pipeline/run-active.json
 .pipeline/gate-pending.json
