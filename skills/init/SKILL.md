@@ -5,6 +5,16 @@ argument-hint: "[optional: project name]"
 allowed-tools: "Read Write Glob Bash"
 ---
 
+## STEP 0 — Resolve FORGE plugin root
+
+`CLAUDE_PLUGIN_ROOT` is set for hook subprocesses but NOT for general Bash tool calls. Discover the plugin path reliably:
+
+1. Try Bash: `echo "$CLAUDE_PLUGIN_ROOT"` — if non-empty, use that path. Done.
+2. If empty, search for the plugin manifest: use Glob with pattern `**/.claude-plugin/plugin.json` under the user's home directory (e.g. `C:\Users\<user>` on Windows, `~` on macOS/Linux). Read each match and find the one containing `"name": "forge"`. The plugin root is the parent directory of the `.claude-plugin/` folder.
+3. If still not found, print: `[init] ERROR: Cannot find FORGE plugin directory. Steps 1e, 1f, and 4 will be skipped. Ensure the FORGE plugin is installed, or set CLAUDE_PLUGIN_ROOT in your launcher script.`
+
+Store the resolved path as `PLUGIN_ROOT` for use by all subsequent steps. When later steps reference `PLUGIN_ROOT`, use this resolved value.
+
 ## STEP 1 — Clean stale legacy artifacts (ALWAYS run this step, even if project is already initialized)
 
 ### 1a — Stale commands
@@ -41,144 +51,79 @@ If `.claude/hooks/` does not exist: skip silently.
 
 ### 1c — Ensure .gitignore covers FORGE local state
 
-FORGE creates `.pipeline/` and `.worktrees/` which must not be committed. Ensure `.gitignore` includes them. Use Bash:
+FORGE creates `.pipeline/` and `.worktrees/` which must not be committed. Ensure `.gitignore` includes them.
 
-```
-for entry in ".pipeline/" ".worktrees/"; do
-  grep -qxF "$entry" .gitignore 2>/dev/null || echo "$entry" >> .gitignore
-done
-```
+1. Use Read to check if `.gitignore` exists and read its contents. If Read returns "file does not exist", treat contents as empty.
+2. Check if `.pipeline/` and `.worktrees/` are already present (one per line, exact match).
+3. If any entries are missing, use Write (if creating new) or Edit (if appending to existing) to add the missing entries, each on its own line.
 
-This creates `.gitignore` if absent, or appends missing entries if it exists. It does NOT duplicate lines already present.
+Do NOT use Bash for this step — bash-guard blocks grep and echo-to-file.
 
 ### 1d — Warn if FORGE state is already tracked in git
 
-If the project is a git repo, check whether `.pipeline/` or `.worktrees/` have tracked files. Use Bash:
+If the project is a git repo, check whether `.pipeline/` or `.worktrees/` have tracked files.
+
+1. Use Bash: `git rev-parse --git-dir` — if this exits non-zero, the project is not a git repo; skip silently.
+2. If it IS a git repo, run two separate Bash commands: `git ls-files .pipeline` and `git ls-files .worktrees`.
+3. For each that returns non-empty output, print a warning as text output (NOT via Bash echo):
 
 ```
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  for dir in ".pipeline" ".worktrees"; do
-    if git ls-files "$dir" 2>/dev/null | grep -q .; then
-      echo ""
-      echo "WARNING: $dir/ has files tracked in git."
-      echo "This can cause stale state in worktree checkouts and noisy git diffs."
-      echo "To fix, run:"
-      echo "  git rm -r --cached $dir/"
-      echo "  git commit -m \"chore: untrack FORGE local state ($dir/)\""
-      echo ""
-    fi
-  done
-fi
+WARNING: <dir>/ has files tracked in git.
+This can cause stale state in worktree checkouts and noisy git diffs.
+To fix, run:
+  git rm -r --cached <dir>/
+  git commit -m "chore: untrack FORGE local state (<dir>/)"
 ```
 
-If the project is not a git repo, skip silently.
 Do NOT run `git rm` automatically — only print the commands for the user.
+Do NOT combine git commands with echo or grep in Bash — bash-guard blocks those.
 
 ### 1e — Register project-level statusLine (non-destructive)
 
-Claude Code's native `statusLine` feature shows a persistent bar at the bottom of the terminal — ideal for project/session identity. FORGE ships a status line script at `${CLAUDE_PLUGIN_ROOT}/bin/forge-status.js`.
+If `PLUGIN_ROOT` was not resolved in Step 0, skip this step with: `[statusLine] Plugin root unknown — skipping.`
 
-Register it in the project's `.claude/settings.json` only if no `statusLine` is already configured. Bare `node` is not reliably on PATH for statusLine invocations on Windows, so FORGE generates a small `.claude/forge-status.cmd` wrapper that embeds the absolute Node path from the current runtime (`process.execPath`), then points the statusLine config at the wrapper. This avoids the "node is not recognized" failure and the cmd.exe double-quoted-token parsing bug.
+Claude Code's `statusLine` shows a persistent bar at the bottom of the terminal. FORGE ships a status line script at `PLUGIN_ROOT/bin/forge-status.js`.
 
-Use Bash + node for safe JSON handling:
+On Windows, bare `node` is not reliably on PATH for statusLine invocations, so FORGE writes a small `.claude/forge-status.cmd` wrapper that embeds the absolute Node path. Use Bash to get the node path: `Bash: node -e "console.log(process.execPath)"` — store the result as `NODE_EXE`.
+
+**1e-i — Write the wrapper file.** Use Write to create `.claude/forge-status.cmd` with this content (substitute `NODE_EXE` and `PLUGIN_ROOT` with the resolved values):
 
 ```
-mkdir -p .claude
-node -e '
-const fs = require("fs");
-const path = require("path");
-const p = ".claude/settings.json";
-const wrapperPath = ".claude/forge-status.cmd";
+@echo off
+"<NODE_EXE>" "<PLUGIN_ROOT>/bin/forge-status.js" %*
+```
 
-// 1) Always (re)generate the wrapper — it embeds the current node.exe path
-//    and is tiny/idempotent. This removes the bare-node PATH dependency.
-const pluginRootVar = process.env.CLAUDE_PLUGIN_ROOT;
-if (!pluginRootVar) {
-  console.log("[statusLine] CLAUDE_PLUGIN_ROOT not set — cannot generate wrapper; skipping.");
-  process.exit(0);
-}
-const nodeExe = process.execPath;
-const scriptPath = path.join(pluginRootVar, "bin", "forge-status.js");
-const wrapperContent = "@echo off\r\n\"" + nodeExe + "\" \"" + scriptPath + "\" %*\r\n";
-fs.writeFileSync(wrapperPath, wrapperContent);
-console.log("[statusLine] Wrote wrapper: " + wrapperPath);
+Use `\r\n` line endings (Windows). Create the `.claude/` directory via `Bash: mkdir -p .claude` if needed.
 
-// 2) Update settings.json to point at the wrapper (conservative on existing).
-let s;
-let fileExisted = false;
-try {
-  const raw = fs.readFileSync(p, "utf8");
-  fileExisted = true;
-  try {
-    s = JSON.parse(raw);
-  } catch (_) {
-    console.log("[statusLine] WARNING: .claude/settings.json exists but is not valid JSON.");
-    console.log("[statusLine] FORGE did NOT modify the file. Fix the JSON and re-run /forge:init.");
-    process.exit(0);
+**1e-ii — Update settings.json.** Use Read to check if `.claude/settings.json` exists.
+
+- If it exists: parse the JSON. If it has a `statusLine` field that does NOT contain `forge-status` in its command, print `[statusLine] Already configured (non-FORGE) — not replacing.` and skip. Otherwise, update or add the `statusLine` field using Edit.
+- If it does not exist: use Write to create it.
+
+The `statusLine` value must be:
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": ".claude/forge-status.cmd"
   }
-} catch (_) {
-  s = {};
 }
-
-// Migration: if an existing statusLine command uses the old bare-node form
-// (contains `node "${CLAUDE_PLUGIN_ROOT}/bin/forge-status.js"` or absolute
-// node.exe + script with double quotes), upgrade it to the wrapper.
-const oldFormPatterns = [
-  /node\s+"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/forge-status\.js"/,
-  /bin\/forge-status\.js/
-];
-const isOldForgeStatus = s.statusLine
-  && typeof s.statusLine === "object"
-  && typeof s.statusLine.command === "string"
-  && oldFormPatterns.some(re => re.test(s.statusLine.command))
-  && !s.statusLine.command.includes("forge-status.cmd");
-
-if (s.statusLine && !isOldForgeStatus) {
-  console.log("[statusLine] Already configured (non-FORGE) — FORGE did not replace it.");
-  process.exit(0);
-}
-
-s.statusLine = {
-  type: "command",
-  command: ".claude/forge-status.cmd"
-};
-fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n");
-if (isOldForgeStatus) {
-  console.log("[statusLine] Upgraded old FORGE statusLine form to wrapper.");
-} else {
-  console.log(fileExisted
-    ? "[statusLine] Added FORGE status line to existing .claude/settings.json"
-    : "[statusLine] Created .claude/settings.json with FORGE status line"
-  );
-}
-'
 ```
 
-This creates `.claude/settings.json` if absent, preserves all existing fields when valid, refuses to modify when the file is invalid JSON, and only adds `statusLine` when none exists. The user must restart the Claude Code session for the status line to appear.
+Preserve all other existing fields in settings.json. The user must restart for the status line to appear.
 
 ### 1f — Seed project-local forge-config.json (fallback when CLAUDE_PLUGIN_DATA is unset)
 
-`mcp/lib/config-store.js` reads model-routing config from `${CLAUDE_PLUGIN_DATA}/forge-config.json` first, then falls back to `.pipeline/forge-config.json`. The `hooks/mcp-deps-install.js` bootstrap handles the plugin-data path only when `CLAUDE_PLUGIN_DATA` is set; when it is not, the project-local fallback must exist or config-dependent MCP tools (model recommendation, external provider calls, usage tracking) fail with a "forge-config.json not found" error.
+If `PLUGIN_ROOT` was not resolved in Step 0, skip this step with: `[forge-config] Plugin root unknown — skipping.`
 
-Copy `${CLAUDE_PLUGIN_ROOT}/forge-config.default.json` to `.pipeline/forge-config.json` only when the destination does not already exist. Never overwrite — user edits to the project config must be preserved across re-runs of `/forge:init`.
+`mcp/lib/config-store.js` reads model-routing config from `${CLAUDE_PLUGIN_DATA}/forge-config.json` first, then falls back to `.pipeline/forge-config.json`. When `CLAUDE_PLUGIN_DATA` is not set, the project-local fallback must exist or config-dependent MCP tools fail.
 
-Use Bash:
+1. Use Read to check if `.pipeline/forge-config.json` already exists. If it does, print `[forge-config] .pipeline/forge-config.json already exists — preserving.` and skip.
+2. Use Read to read `PLUGIN_ROOT/forge-config.default.json`. If it does not exist, print `[forge-config] Default template not found — skipping.` and skip.
+3. Use Write to create `.pipeline/forge-config.json` with the contents read from the default template. Create `.pipeline/` via `Bash: mkdir -p .pipeline` if needed.
+4. Print: `[forge-config] Seeded .pipeline/forge-config.json from default template.`
 
-```
-if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
-  echo "[forge-config] CLAUDE_PLUGIN_ROOT not set — skipping project-local config seed."
-elif [ -f ".pipeline/forge-config.json" ]; then
-  echo "[forge-config] .pipeline/forge-config.json already exists — preserving."
-elif [ ! -f "$CLAUDE_PLUGIN_ROOT/forge-config.default.json" ]; then
-  echo "[forge-config] Default template not found at \$CLAUDE_PLUGIN_ROOT/forge-config.default.json — skipping."
-else
-  mkdir -p .pipeline
-  cp "$CLAUDE_PLUGIN_ROOT/forge-config.default.json" .pipeline/forge-config.json
-  echo "[forge-config] Seeded .pipeline/forge-config.json from default template."
-fi
-```
-
-This step is idempotent: running it repeatedly is safe. It never touches an existing config file, creates `.pipeline/` on demand, and degrades cleanly (no error, just a skip message) when either the plugin root or the default template is unavailable.
+Never overwrite — user edits to the project config must be preserved across re-runs of `/forge:init`.
 
 ## STEP 2 — Check if already initialized
 
@@ -203,31 +148,31 @@ Resolve the scaffold directory from the user's tech stack answer:
 | Tech stack keywords | Scaffold |
 |---|---|
 | power automate, power platform, flow | `power-automate` |
-| instructional, documentation, non-code, training | `instructional` |
+| instructional, documentation, non-code, training, handover, checklist, process, salesforce, servicenow, crm, erp, admin, platform admin, consulting | `instructional` |
 | anything else (code, node, python, web, etc.) | `code` |
 
-The scaffold root is `${CLAUDE_PLUGIN_ROOT}/scaffolds/<scaffold-name>/`.
+If `PLUGIN_ROOT` was not resolved in Step 0:
+1. Print: `[scaffold] WARNING: Plugin root unknown — scaffold files (including CLAUDE.md) were NOT copied.`
+2. Print: `To fix: set CLAUDE_PLUGIN_ROOT in your launcher script, or ensure the FORGE plugin is installed, then re-run /forge:init.`
+3. Do NOT skip silently — the missing CLAUDE.md will break pipeline routing.
+4. Stop here.
 
-Copy these files from the scaffold into the project (skip any that don't exist in the scaffold; never overwrite files that already exist in the project):
+The scaffold root is `PLUGIN_ROOT/scaffolds/<scaffold-name>/`.
+
+Copy these files from the scaffold into the project. For each file, use Read to read the source from the scaffold directory, then Write to create it in the project. **Never overwrite files that already exist in the project** — check with Read first.
 
 1. `CLAUDE.md` → project root `CLAUDE.md`
 2. `docs/gotchas/GENERAL.md` → project `docs/gotchas/GENERAL.md`
 3. `docs/gotchas/SKILLS.md` → project `docs/gotchas/SKILLS.md` (if exists in scaffold)
 
-Use Bash for the copy:
+For each file:
+1. Use Read to check if the destination already exists in the project. If it does, skip it.
+2. Use Read to read the source file from `PLUGIN_ROOT/scaffolds/<scaffold-name>/<file>`. If it does not exist in the scaffold, skip it.
+3. Create parent directories if needed via `Bash: mkdir -p <parent>`.
+4. Use Write to create the file in the project with the contents from the scaffold.
+5. Print: `[scaffold] Copied <file> from <scaffold-name> scaffold.`
 
-```
-SCAFFOLD="${CLAUDE_PLUGIN_ROOT}/scaffolds/<scaffold-name>"
-for src in "CLAUDE.md" "docs/gotchas/GENERAL.md" "docs/gotchas/SKILLS.md"; do
-  if [ -f "$SCAFFOLD/$src" ] && [ ! -f "$src" ]; then
-    mkdir -p "$(dirname "$src")"
-    cp "$SCAFFOLD/$src" "$src"
-    echo "[scaffold] Copied $src from $scaffold-name scaffold."
-  fi
-done
-```
-
-If `CLAUDE_PLUGIN_ROOT` is not set, skip this step with: `[scaffold] CLAUDE_PLUGIN_ROOT not set — skipping scaffold files.`
+Do NOT use Bash for the copy — use Read + Write to avoid `CLAUDE_PLUGIN_ROOT` env var dependency.
 
 Print "FORGE project initialized."
 
