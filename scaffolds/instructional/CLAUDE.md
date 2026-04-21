@@ -1,18 +1,20 @@
 <!-- Instructional template: pipeline ends after Gate #1 approval. No implementer, no tester, no Gate #2. -->
 
-# FORGE Pipeline Orchestration
+# FORGE Pipeline — Runtime Instructions
 
-This project is managed through the FORGE pipeline. Every prompt is routed to a specific pipeline based on its prefix. Read this file before responding to any prompt.
+These rules govern how FORGE operates in any project where the plugin is installed.
 
----
+## Change philosophy
 
-## Agent invocation rule — working directory
+Choose the smallest safe implementation that solves the stated problem. No speculative abstractions. No unrelated cleanup. Prefer existing patterns over new structure.
 
-When invoking ANY subagent via the Agent tool, always include the project's absolute folder path in the prompt. Use this format at the start of the prompt:
+Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
 
-`Working directory: <absolute project folder path>`
+## Anti-speculation rule
 
-This ensures the agent can resolve relative paths (e.g. `docs/PLAN.md`) to absolute paths if needed. Without this, agents may fail to find files when the Claude CLI's working directory doesn't match the project folder.
+Before claiming anything about this codebase's state, history, what exists, or what happened — cite a file:line from a Read/Grep done THIS turn, or say "I don't know, checking" and call the tool. No "appears to", "likely", "probably", "I assume". If you lack tool-call evidence this turn, you don't know — verify or disclaim.
+
+When invoking ANY subagent, include `Working directory: <absolute project folder path>` at the start of the prompt.
 
 ---
 
@@ -169,37 +171,21 @@ Agents should read only what they need:
 
 ## Tool efficiency
 
-For every operation, pick the cheapest dedicated tool that does the job. The table below is the decision reference. The FORGE plugin's `bash-guard` hook enforces a subset of this as a backstop — the table is the primary guidance and should make the backstop rarely fire.
-
-| Need to… | Use | Common mistake |
+| Need to… | Use | Not… |
 |---|---|---|
-| Read a file | `Read` | `cat` / `head` / `tail` in Bash (blocked by bash-guard); also `node -e 'require("./foo.json")…'` for JSON (slow Node startup, raw stdout, no formatting) |
-| Find files by pattern | `Glob` | `find` / `ls` in Bash (blocked) |
-| Search inside file contents | `Grep` | `grep` / `rg` in Bash (blocked) |
-| Extract fields from a local JSON file | `Read` the file, parse and filter in your response | `node -e "const x=require('./foo.json'); …"` — same data with ~100–300 ms of Node startup, raw stdout, and no rendering control |
-| Check the board state (TODOs, planned) | `forge_read_board` MCP tool, or `Read .pipeline/board.json` | Shelling out with `node -e` to filter; reading `.pipeline/*` directly when MCP is available |
-| Check dashboard state (active runs, pending gates, recent completions, board summary) | `forge_dashboard_state` MCP tool | Reading `.pipeline/runs/*.json` by hand |
-| Check a specific run's full record | `forge_get_run` MCP tool with the run ID | `Read .pipeline/runs/r-*/run.json` when MCP is available |
-| Check the active-run pointer / current unit | `forge_get_active_run` MCP tool | `Read .pipeline/run-active.json` directly |
-| Check the pending gate | `forge_check_gate` MCP tool | `Read .pipeline/gate-pending.json` directly |
-| Edit an existing file | `Edit` | `sed` / `awk` (blocked) |
-| Create a new file | `Write` | `echo > file` / `cat <<EOF > file` (blocked) |
-| Run tests | Bash → the project's configured test command | — |
-| Run a project script | Bash → the script directly | `node -e '…'` inline (write a script file instead — preserves provenance and is re-runnable) |
-| Git operations, npm, process / env | Bash | — |
-| Delegate an open-ended multi-step investigation | `Agent` with the appropriate subagent type | Using `Agent` to read a single file or extract one field — Read/Grep/Glob are cheaper |
+| Read a file | `Read` | `cat`/`head`/`tail`/`node -e require` |
+| Find files | `Glob` | `find`/`ls` |
+| Search contents | `Grep` | `grep`/`rg` |
+| Board state | `forge_read_board` or `Read .pipeline/board.json` | `node -e` |
+| Dashboard | `forge_dashboard_state` | manual `.pipeline/runs/` reads |
+| Edit file | `Edit` | `sed`/`awk` |
+| Create file | `Write` | `echo >`/`cat <<EOF` |
+| Git/npm/process | Bash | — |
 
-### Common FORGE data lookups — worked examples
+**No subagents for file reads.** Use Read/Grep/Glob directly.
 
-**Check what's on the TODO board.**
-Call `forge_read_board`. If MCP is unavailable, `Read .pipeline/board.json` and filter in your response. Never `node -e "const b=require('./.pipeline/board.json'); b.todos.filter(…)"` — it's slower, uglier, and unnecessary.
+---
 
-**Check current pipeline state (runs, gates, recent completions, board summary).**
-Call `forge_dashboard_state`. Returns a compact four-group snapshot. Do not read `.pipeline/runs/*.json` individually — the tool's output is the contract.
+## Project gotchas
 
-**Check a specific run's full record.**
-Call `forge_get_run` with the run ID. Returns the hydrated `run.json` contents.
-
-### Hard rules (preserved for emphasis)
-
-**No subagents for file reads.** Never use the `Agent` tool to read files, extract data, or answer questions that can be resolved with `Read`, `Grep`, or `Glob` directly. Subagents are for open-ended research across many files or protecting the main context from large outputs — not for single-file lookups.
+@docs/gotchas/GENERAL.md

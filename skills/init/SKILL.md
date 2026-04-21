@@ -138,8 +138,7 @@ Create `.pipeline/` with:
 - `board.json` (`{"todos":[]}`)
 - `modules.json` (`[]`)
 
-Create `docs/` with:
-- `PLAN.md` (empty active plan template)
+Create `docs/` directory (via `Bash: mkdir -p docs`). Do NOT create `PLAN.md` here — it is copied from the scaffold in Step 4 (with format hints). If Step 4 is skipped (no plugin root), create a minimal `docs/PLAN.md` with content: `## Active Plan\n`.
 
 ## STEP 4 — Apply scaffold (based on tech stack)
 
@@ -162,17 +161,25 @@ The scaffold root is `PLUGIN_ROOT/scaffolds/<scaffold-name>/`.
 Copy these files from the scaffold into the project. For each file, use Read to read the source from the scaffold directory, then Write to create it in the project. **Never overwrite files that already exist in the project** — check with Read first.
 
 1. `CLAUDE.md` → project root `CLAUDE.md`
-2. `docs/gotchas/GENERAL.md` → project `docs/gotchas/GENERAL.md`
-3. `docs/gotchas/SKILLS.md` → project `docs/gotchas/SKILLS.md` (if exists in scaffold)
+2. `docs/PLAN.md` → project `docs/PLAN.md` (has format hints for the planner)
+3. `docs/gotchas/GENERAL.md` → project `docs/gotchas/GENERAL.md`
+4. `docs/gotchas/SKILLS.md` → project `docs/gotchas/SKILLS.md` (if exists in scaffold)
+5. `.claude/agents/documenter.md` → project `.claude/agents/documenter.md` (if exists in scaffold)
+6. `.claude/agents/tool-call-auditor.md` → project `.claude/agents/tool-call-auditor.md` (if exists in scaffold)
+7. `.claude/agents/nyquist-auditor.md` → project `.claude/agents/nyquist-auditor.md` (if exists in scaffold)
+8. `.claude/agents/skills-generator.md` → project `.claude/agents/skills-generator.md` (if exists in scaffold)
+9. `.claude/agents/integrity-checker.md` → project `.claude/agents/integrity-checker.md` (if exists in scaffold)
 
-For each file:
+For each file in the list above:
 1. Use Read to check if the destination already exists in the project. If it does, skip it.
 2. Use Read to read the source file from `PLUGIN_ROOT/scaffolds/<scaffold-name>/<file>`. If it does not exist in the scaffold, skip it.
 3. Create parent directories if needed via `Bash: mkdir -p <parent>`.
 4. Use Write to create the file in the project with the contents from the scaffold.
 5. Print: `[scaffold] Copied <file> from <scaffold-name> scaffold.`
 
-Do NOT use Bash for the copy — use Read + Write to avoid `CLAUDE_PLUGIN_ROOT` env var dependency.
+**Additional glob-based copy** — after the list above, use Glob to find all `*.md` files under `PLUGIN_ROOT/scaffolds/<scaffold-name>/docs/gotchas/skills/`. For each file found, copy it to the same relative path in the project (e.g. `docs/gotchas/skills/typescript-strict.md`). Same rules: never overwrite, Read + Write only.
+
+Do NOT use Bash for any copy — use Read + Write to avoid `CLAUDE_PLUGIN_ROOT` env var dependency.
 
 Print "FORGE project initialized."
 
