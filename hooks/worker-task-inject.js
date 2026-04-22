@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 5000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 const TASK_FILE = '.pipeline/worker-task.json';
 
 async function main(rawInput) {
@@ -27,20 +27,19 @@ async function main(rawInput) {
     return;
   }
 
-  try { fs.unlinkSync(taskPath); } catch (_) {}
-
   process.stderr.write('[worker-task] injecting task for run ' + (data.runId || '?') + '\n');
 
-  const skill = data.pipelineType || 'plan';
+  const safe = (s) => String(s || '?').replace(/[\r\n]/g, ' ').trim();
+  const skill = safe(data.pipelineType || 'plan');
   const lines = [];
   lines.push('You are a FORGE worker session spawned to execute a pipeline task.');
   lines.push('');
-  lines.push('Run: ' + (data.runId || '?'));
-  lines.push('Feature: ' + (data.feature || '?'));
+  lines.push('Run: ' + safe(data.runId));
+  lines.push('Feature: ' + safe(data.feature));
   lines.push('Pipeline: ' + skill);
   lines.push('');
   lines.push('When the user types their first message (even just "go"), execute:');
-  lines.push('  /forge:' + skill + ' ' + (data.feature || ''));
+  lines.push('  /forge:' + skill + ' ' + safe(data.feature));
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
@@ -48,6 +47,15 @@ async function main(rawInput) {
       additionalContext: lines.join('\n'),
     },
   }) + '\n');
+
+  // Delete AFTER stdout write — if we crash between delete and write, task context is lost
+  try { fs.unlinkSync(taskPath); } catch (_) {}
+
+  // Mark this session as a worker so other hooks (worker-done-inject) can skip it
+  try {
+    const markerPath = path.join(projectDir, '.pipeline', '.worker-session');
+    fs.writeFileSync(markerPath, JSON.stringify({ runId: data.runId, since: new Date().toISOString() }) + '\n', 'utf8');
+  } catch (_) {}
 
   process.exit(0);
 }

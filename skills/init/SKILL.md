@@ -51,10 +51,10 @@ If `.claude/hooks/` does not exist: skip silently.
 
 ### 1c — Ensure .gitignore covers FORGE local state
 
-FORGE creates `.pipeline/` and `.worktrees/` which must not be committed. Ensure `.gitignore` includes them.
+FORGE creates `.pipeline/` and `.worktrees/` which must not be committed. The generated launcher (`forge.cmd` / `forge.sh`) contains absolute paths and must also be ignored.
 
 1. Use Read to check if `.gitignore` exists and read its contents. If Read returns "file does not exist", treat contents as empty.
-2. Check if `.pipeline/` and `.worktrees/` are already present (one per line, exact match).
+2. Check if these entries are already present (one per line, exact match): `.pipeline/`, `.worktrees/`, `forge.cmd`, `forge.sh`.
 3. If any entries are missing, use Write (if creating new) or Edit (if appending to existing) to add the missing entries, each on its own line.
 
 Do NOT use Bash for this step — bash-guard blocks grep and echo-to-file.
@@ -124,6 +124,70 @@ If `PLUGIN_ROOT` was not resolved in Step 0, skip this step with: `[forge-config
 4. Print: `[forge-config] Seeded .pipeline/forge-config.json from default template.`
 
 Never overwrite — user edits to the project config must be preserved across re-runs of `/forge:init`.
+
+### 1g — Generate project launcher (forge.cmd / forge.sh)
+
+If `PLUGIN_ROOT` was not resolved in Step 0, skip this step with: `[launcher] Plugin root unknown — skipping.`
+
+The launcher opens Claude Code with the FORGE Observer TUI in a split-pane layout — Claude on the left, observer on the right. It is regenerated on every `/forge:init` run to pick up path changes.
+
+**1g-i — Resolve paths.** `NODE_EXE` was already resolved in Step 1e. Additionally resolve:
+
+1. Claude CLI path — Bash: `node -e "const{execSync}=require('child_process');console.log(execSync(process.platform==='win32'?'where claude':'which claude',{encoding:'utf8'}).trim().split(/\\r?\\n/)[0])"`
+   Store as `CLAUDE_EXE`. If this fails, print `[launcher] Claude CLI not found on PATH — skipping.` and skip.
+2. Platform — Bash: `node -e "console.log(process.platform)"`
+   Store as `PLATFORM`.
+
+**1g-ii — Write the launcher.**
+
+**If PLATFORM is `win32`** — write `forge.cmd` in the project root:
+
+```
+@echo off
+set "PROJECT=%~dp0."
+set "NODE=<NODE_EXE>"
+set "CLAUDE=<CLAUDE_EXE>"
+for /f "delims=" %%i in ('where wt 2^>nul') do set "WT=%%i"
+if not defined WT (
+  echo Windows Terminal not found. Install it from the Microsoft Store.
+  echo Falling back to Claude only...
+  "%CLAUDE%"
+  exit /b
+)
+"%WT%" -d "%PROJECT%" cmd /k "%CLAUDE%" ; sp -V -s 0.35 -d "%PROJECT%" cmd /k call "%NODE%" "<PLUGIN_ROOT>/scripts/forge-observer.mjs"
+```
+
+Substitute `<NODE_EXE>`, `<CLAUDE_EXE>`, and `<PLUGIN_ROOT>` with the resolved values. Use `\r\n` line endings.
+
+**If PLATFORM is NOT `win32`** (macOS, Linux, Azure Cloud Shell) — write `forge.sh` in the project root:
+
+```bash
+#!/usr/bin/env bash
+set -e
+PROJECT="$(cd "$(dirname "$0")" && pwd)"
+NODE="<NODE_EXE>"
+CLAUDE="<CLAUDE_EXE>"
+OBSERVER="<PLUGIN_ROOT>/scripts/forge-observer.mjs"
+
+if command -v tmux &>/dev/null; then
+  tmux new-session -d -s forge -c "$PROJECT" "$CLAUDE" \; \
+    split-window -h -p 35 -c "$PROJECT" "$NODE" "$OBSERVER" \; \
+    select-pane -t 0 \; \
+    attach-session -t forge
+else
+  echo "tmux not found. Install it for split-pane layout."
+  echo "Falling back to Claude only..."
+  exec "$CLAUDE"
+fi
+```
+
+Substitute `<NODE_EXE>`, `<CLAUDE_EXE>`, and `<PLUGIN_ROOT>` with the resolved values. Use `\n` line endings.
+
+After writing, make the script executable: `Bash: chmod +x forge.sh`
+
+**1g-iii — Print result.**
+
+Print: `[launcher] Generated <filename> — run it to open Claude + Observer side by side.`
 
 ## STEP 2 — Check if already initialized
 

@@ -56,25 +56,7 @@ async function getLastUsage(transcriptPath) {
   return null;
 }
 
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
-
-/**
- * Read the status of a run from the local registry at
- * .pipeline/runs/<runId>/run.json. Returns the status string or null when
- * the run file is absent, unreadable, unparseable, or missing a status.
- * Defensive — never throws.
- */
-function readRunStatus(projectDir, runId) {
-  if (!runId || typeof runId !== 'string') return null;
-  try {
-    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
-    const raw = fs.readFileSync(runPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
-  } catch (_) {
-    return null;
-  }
-}
+const { TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
 
 /**
  * Report-only recovery primitive: if .pipeline/run-active.json exists and
@@ -145,6 +127,10 @@ async function main(rawInput) {
   // fire it first so it appears even when we exit early below.
   const projectDir = resolveProjectDir(payload);
   emitStaleUnitNoticeIfAny(projectDir);
+
+  // Clean stale worker-session marker from prior sessions. If this is a worker,
+  // worker-task-inject.js (runs later in the SessionStart chain) will recreate it.
+  try { fs.unlinkSync(path.join(projectDir, '.pipeline', '.worker-session')); } catch (_) {}
 
   if (!sessionId) { exitOk(); return; }
 

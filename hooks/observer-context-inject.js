@@ -3,9 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10_000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 const STALE_MS = 300_000;
 const SIGNAL_FILE = '.pipeline/observer-selected.json';
 

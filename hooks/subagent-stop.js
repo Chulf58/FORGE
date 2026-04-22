@@ -151,7 +151,7 @@ async function main(rawInput) {
     const artifactPath = path.join(baseDir, artifactRelPath);
     try {
       const stat = fs.statSync(artifactPath);
-      if (stat.mtimeMs < entry.startedAt) {
+      if (stat.mtimeMs < entry.startedAt - 2000) {
         outcome = 'truncated';
         console.error('[forge-subagent] WARNING: ' + normalizedType + ' stopped but ' + artifactRelPath + ' was not updated — possible truncation');
       }

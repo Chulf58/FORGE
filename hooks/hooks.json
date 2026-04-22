@@ -1,5 +1,5 @@
 {
-  "description": "FORGE pipeline hooks — context tracking, workflow guard, and banner",
+  "description": "FORGE pipeline hooks — context tracking, workflow guard, and banner. SessionStart order matters: ctx-session-start cleans stale state (incl. .worker-session marker), then worker-task-inject may recreate the marker for worker sessions.",
   "hooks": {
     "SessionStart": [
       {

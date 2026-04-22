@@ -11,25 +11,7 @@ function exitOk() {
   process.exit(0);
 }
 
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
-
-/**
- * Read the status of a run from the local registry at
- * .pipeline/runs/<runId>/run.json. Returns the status string or null when
- * the run file is absent, unreadable, unparseable, or missing a status.
- * Defensive — never throws.
- */
-function readRunStatus(projectDir, runId) {
-  if (!runId || typeof runId !== 'string') return null;
-  try {
-    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
-    const raw = fs.readFileSync(runPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
-  } catch (_) {
-    return null;
-  }
-}
+const { TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
 
 async function main(rawInput) {
   let payload;

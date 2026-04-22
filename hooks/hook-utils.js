@@ -165,4 +165,36 @@ function isForgeAgent(agentType) {
   return allowlist.has(normalized);
 }
 
-module.exports = { resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken, getForgeAgentSet, isForgeAgent };
+// -- Shared constants ---------------------------------------------------------
+
+const STDIN_TIMEOUT_LONG = 10_000;
+const STDIN_TIMEOUT_SHORT = 5000;
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
+
+// -- Shared run-status reader -------------------------------------------------
+
+/**
+ * Read the status of a run from the local registry at
+ * .pipeline/runs/<runId>/run.json. Returns the status string or null when
+ * the run file is absent, unreadable, unparseable, or missing a status.
+ * Defensive — never throws.
+ */
+function readRunStatus(projectDir, runId) {
+  if (!runId || typeof runId !== 'string') return null;
+  try {
+    const fs = require('fs');
+    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+    const raw = fs.readFileSync(runPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.status === 'string' ? parsed.status : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+module.exports = {
+  resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken,
+  getForgeAgentSet, isForgeAgent,
+  STDIN_TIMEOUT_LONG, STDIN_TIMEOUT_SHORT, TERMINAL_STATUSES, readRunStatus,
+};
