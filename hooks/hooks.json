@@ -49,6 +49,14 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-autosplit.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/worker-task-inject.js\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -67,6 +75,22 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/approval-token.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-context-inject.js\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/worker-done-inject.js\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -76,6 +100,16 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ctx-post-tool.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/worker-heartbeat.js\"",
+            "async": true
           }
         ]
       },

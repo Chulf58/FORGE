@@ -6,11 +6,7 @@
 const RISK_KEYWORDS = /\b(hook|hooks|mcp|security|auth|crypto|secret|credential|token|spawn|child_process|migration|schema|contract|network|fetch|http|inject|xss|csrf|permission|guard|enforcement|worktree|merge)\b/i;
 
 function validateModeForRisk(pipelineType, mode, feature) {
-  if (mode !== 'TRIVIAL' && mode !== 'SPRINT') return null;
-
-  if (mode === 'TRIVIAL' && pipelineType !== 'plan' && pipelineType !== 'apply') {
-    return 'BLOCKED:TRIVIAL-' + pipelineType;
-  }
+  if (mode !== 'SPRINT') return null;
 
   const SOURCE_MUTATING = new Set(['implement', 'debug', 'refactor']);
   if (mode === 'SPRINT' && SOURCE_MUTATING.has(pipelineType) && feature && RISK_KEYWORDS.test(feature)) {
@@ -50,23 +46,6 @@ function assertNotNull(label, actual) {
     console.error(`FAIL: ${label}\n  expected: non-null\n  actual:   null`);
   }
 }
-
-// --- TRIVIAL mode tests ---
-
-// TRIVIAL + plan = allowed (plan doesn't modify source)
-assertNull('TRIVIAL+plan allowed', validateModeForRisk('plan', 'TRIVIAL', 'add login page'));
-
-// TRIVIAL + apply = allowed (apply is post-review)
-assertNull('TRIVIAL+apply allowed', validateModeForRisk('apply', 'TRIVIAL', 'apply login changes'));
-
-// TRIVIAL + implement = blocked (modifies source, needs review)
-assertNotNull('TRIVIAL+implement blocked', validateModeForRisk('implement', 'TRIVIAL', 'simple rename'));
-
-// TRIVIAL + debug = blocked
-assertNotNull('TRIVIAL+debug blocked', validateModeForRisk('debug', 'TRIVIAL', 'fix typo'));
-
-// TRIVIAL + refactor = blocked
-assertNotNull('TRIVIAL+refactor blocked', validateModeForRisk('refactor', 'TRIVIAL', 'clean up names'));
 
 // --- SPRINT mode tests ---
 
@@ -142,17 +121,9 @@ assertNotNull('SPRINT case insensitive Security', validateModeForRisk('implement
 
 // --- Risk keyword must be word-bounded ---
 assertNull('SPRINT "hooked" not matched', validateModeForRisk('implement', 'SPRINT', 'I am hooked on this feature'));
-// But "hook" as a standalone word IS matched
 assertNotNull('SPRINT "hook" standalone matched', validateModeForRisk('implement', 'SPRINT', 'add a hook for events'));
 
 // --- Resume-time enforcement (same function, simulating stored run fields) ---
-// These prove that resume reuses the exact same validation as create.
-
-// Resume a TRIVIAL implement run = blocked (same as create-time)
-assertNotNull('resume: TRIVIAL+implement blocked', validateModeForRisk('implement', 'TRIVIAL', 'add logging'));
-
-// Resume a TRIVIAL plan run = allowed
-assertNull('resume: TRIVIAL+plan allowed', validateModeForRisk('plan', 'TRIVIAL', 'plan feature'));
 
 // Resume a SPRINT implement with risky feature = blocked
 assertNotNull('resume: SPRINT+implement risky', validateModeForRisk('implement', 'SPRINT', 'hook enforcement fix'));
@@ -168,9 +139,6 @@ assertNull('resume: LEAN+implement risky allowed', validateModeForRisk('implemen
 
 // Resume a STANDARD debug with risky feature = allowed
 assertNull('resume: STANDARD+debug risky allowed', validateModeForRisk('debug', 'STANDARD', 'fix auth crypto'));
-
-// Key property: create and resume use the same function — behavioral alignment is guaranteed
-// by construction (single validateModeForRisk call in both paths), not by duplicated logic.
 
 // --- Summary ---
 console.log(`\nmode-hardening-test: ${pass} passed, ${fail} failed`);

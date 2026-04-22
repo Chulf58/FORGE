@@ -69,7 +69,7 @@ async function test() {
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'run-active.json');
-    const content = JSON.stringify({ runId: 'r-test', mode: 'TRIVIAL', pipelineType: 'plan' });
+    const content = JSON.stringify({ runId: 'r-test', mode: 'LEAN', pipelineType: 'plan' });
     const { code, stdout } = await runHook({
       tool_name: 'Write',
       tool_input: { file_path: filePath, content },
@@ -87,7 +87,7 @@ async function test() {
     const filePath = join(tmp, '.pipeline', 'run-active.json');
     const { code } = await runHook({
       tool_name: 'Edit',
-      tool_input: { file_path: filePath, old_string: '"LEAN"', new_string: '"TRIVIAL"' },
+      tool_input: { file_path: filePath, old_string: '"LEAN"', new_string: '"SPRINT"' },
     }, tmp);
     assert(code === 2, 'Edit run-active.json → exit 2');
     rmSync(tmp, { recursive: true, force: true });

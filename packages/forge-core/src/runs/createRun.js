@@ -20,7 +20,7 @@ export function generateRunId() {
  * @param {string} params.projectRoot - absolute path to the project
  * @param {string} params.sessionId - Claude session ID
  * @param {string} params.pipelineType - one of: plan, implement, apply, debug, refactor
- * @param {string} params.mode - one of: TRIVIAL, SPRINT, LEAN, STANDARD, FULL
+ * @param {string} params.mode - one of: SPRINT, LEAN, STANDARD, FULL
  * @param {string} [params.feature] - feature name / description
  * @param {string} [params.runId] - optional explicit run ID (for testing)
  * @returns {object} the validated Run object

@@ -53,7 +53,7 @@ All revision loops share this pattern:
 ### `implement feature: <description>`
 
 0. If `"tddAgent": true` → invoke **tdd-agent** first.
-0.5. **coder-scout** — writes `docs/context/scout.json`. Skip in LEAN/SPRINT/TRIVIAL.
+0.5. **coder-scout** — writes `docs/context/scout.json`. Skip in LEAN/SPRINT.
 1. **coder** — writes `docs/context/handoff.md`. Run sequentially (never parallelize).
 1b. **regression-risk** — skip if `modules.json` absent.
 1c. **completeness-checker** — skip in LEAN mode.
@@ -106,7 +106,6 @@ When absent, use LEAN. **These tables are binding** — do not add/substitute ag
 ### plan feature:
 | Mode | Agents |
 |------|--------|
-| TRIVIAL | Direct task — no pipeline |
 | SPRINT | planner → Gate #1 |
 | LEAN | planner → researcher? → reviewer-safety → reviewer → Gate #1 |
 | STANDARD | planner → researcher? → gotcha-checker → triage → dispatched reviewers → Gate #1 |
@@ -115,7 +114,6 @@ When absent, use LEAN. **These tables are binding** — do not add/substitute ag
 ### implement feature:
 | Mode | Agents |
 |------|--------|
-| TRIVIAL | Direct task |
 | SPRINT | coder → Gate #2 |
 | LEAN | scout → coder → completeness → reviewer-safety → reviewer → Gate #2 |
 | STANDARD | scout → coder → completeness → triage → dispatched reviewers → Gate #2 |
@@ -124,7 +122,6 @@ When absent, use LEAN. **These tables are binding** — do not add/substitute ag
 ### debug: / refactor:
 | Mode | Agents |
 |------|--------|
-| TRIVIAL | Direct task |
 | SPRINT | agent only → Gate #2 |
 | LEAN | agent → reviewer-safety → reviewer → Gate #2 |
 | STANDARD | agent → triage → dispatched reviewers → Gate #2 |

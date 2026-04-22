@@ -78,44 +78,7 @@ function implementerPayload() {
 
 console.log('\n── gate-enforcement-test.js ──────────────────────────────────────────');
 
-// --- Test 1: TRIVIAL in run-active.json + matching run record (plan) → bypass allowed ---
-{
-  const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-test1', mode: 'TRIVIAL', pipelineType: 'plan' });
-  writeRunRecord(dir, 'r-test1', { mode: 'TRIVIAL', pipelineType: 'plan', status: 'running' });
-  const r = runHook(dir, coderPayload());
-  assert('TRIVIAL+plan: exit 0 (bypass allowed)', r.exitCode, 0);
-}
-
-// --- Test 2: TRIVIAL in run-active.json for implement → bypass rejected, gates enforced ---
-{
-  const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-test1', mode: 'TRIVIAL', pipelineType: 'implement' });
-  writeRunRecord(dir, 'r-test1', { mode: 'TRIVIAL', pipelineType: 'implement', status: 'running' });
-  // No gate-pending.json → should block with gate error (not bypass)
-  const r = runHook(dir, coderPayload());
-  assert('TRIVIAL+implement: exit 2 (bypass rejected, gate enforced)', r.exitCode, 2);
-}
-
-// --- Test 3: Tampered run-active.json claims TRIVIAL but run record says LEAN ---
-{
-  const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-test1', mode: 'TRIVIAL', pipelineType: 'implement' });
-  writeRunRecord(dir, 'r-test1', { mode: 'LEAN', pipelineType: 'implement', status: 'running' });
-  const r = runHook(dir, coderPayload());
-  assert('tampered TRIVIAL vs LEAN run record: exit 2 (cross-ref catches it)', r.exitCode, 2);
-}
-
-// --- Test 4: Tampered run-active.json claims TRIVIAL, no run record exists ---
-{
-  const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-noexist', mode: 'TRIVIAL', pipelineType: 'implement' });
-  // No run record for r-noexist → fail closed, gates enforced
-  const r = runHook(dir, coderPayload());
-  assert('TRIVIAL but no run record: exit 2 (fail closed)', r.exitCode, 2);
-}
-
-// --- Test 5: SPRINT in run-active.json with matching run record → bypass allowed ---
+// --- Test 1: SPRINT in run-active.json with matching run record → bypass allowed ---
 {
   const dir = makeTmp();
   writeRunActive(dir, { runId: 'r-test1', mode: 'SPRINT', pipelineType: 'implement' });
@@ -124,7 +87,7 @@ console.log('\n── gate-enforcement-test.js ───────────
   assert('SPRINT+implement with matching record: exit 0 (bypass allowed)', r.exitCode, 0);
 }
 
-// --- Test 6: Tampered run-active.json claims SPRINT but run record says STANDARD ---
+// --- Test 2: Tampered run-active.json claims SPRINT but run record says STANDARD ---
 {
   const dir = makeTmp();
   writeRunActive(dir, { runId: 'r-test1', mode: 'SPRINT', pipelineType: 'implement' });
@@ -133,17 +96,16 @@ console.log('\n── gate-enforcement-test.js ───────────
   assert('tampered SPRINT vs STANDARD run record: exit 2 (cross-ref catches it)', r.exitCode, 2);
 }
 
-// --- Test 7: LEAN mode → no bypass, normal gate enforcement ---
+// --- Test 3: LEAN mode → no bypass, normal gate enforcement ---
 {
   const dir = makeTmp();
   writeRunActive(dir, { runId: 'r-test1', mode: 'LEAN', pipelineType: 'implement' });
   writeRunRecord(dir, 'r-test1', { mode: 'LEAN', pipelineType: 'implement', status: 'running' });
-  // LEAN is not a bypass mode, so gates are enforced. No gate-pending → block.
   const r = runHook(dir, coderPayload());
   assert('LEAN mode: exit 2 (gates enforced, no gate-pending)', r.exitCode, 2);
 }
 
-// --- Test 8: LEAN mode with approved gate → allowed ---
+// --- Test 4: LEAN mode with approved gate → allowed ---
 {
   const dir = makeTmp();
   writeRunActive(dir, { runId: 'r-test1', mode: 'LEAN', pipelineType: 'implement' });
@@ -153,47 +115,45 @@ console.log('\n── gate-enforcement-test.js ───────────
   assert('LEAN + gate1 approved: exit 0 (allowed)', r.exitCode, 0);
 }
 
-// --- Test 9: Tampered runId with path traversal → fail closed ---
+// --- Test 5: Tampered runId with path traversal → fail closed ---
 {
   const dir = makeTmp();
-  writeRunActive(dir, { runId: '../../../etc', mode: 'TRIVIAL', pipelineType: 'plan' });
+  writeRunActive(dir, { runId: '../../../etc', mode: 'SPRINT', pipelineType: 'plan' });
   const r = runHook(dir, coderPayload());
-  // Invalid runId fails the regex check → no run record lookup → fail closed
   assert('path-traversal runId: exit 2 (fail closed)', r.exitCode, 2);
 }
 
-// --- Test 10: Non-Agent tool call → exit 0 (unaffected) ---
+// --- Test 6: Non-Agent tool call → exit 0 (unaffected) ---
 {
   const dir = makeTmp();
   const r = runHook(dir, { tool_name: 'Write', tool_input: {} });
   assert('non-Agent tool: exit 0 (unaffected)', r.exitCode, 0);
 }
 
-// --- Test 11: TRIVIAL + apply pipeline → bypass allowed (apply is non-mutating) ---
+// --- Test 7: SPRINT + plan with matching record → bypass allowed ---
 {
   const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-test1', mode: 'TRIVIAL', pipelineType: 'apply' });
-  writeRunRecord(dir, 'r-test1', { mode: 'TRIVIAL', pipelineType: 'apply', status: 'running' });
+  writeRunActive(dir, { runId: 'r-test1', mode: 'SPRINT', pipelineType: 'plan' });
+  writeRunRecord(dir, 'r-test1', { mode: 'SPRINT', pipelineType: 'plan', status: 'running' });
+  const r = runHook(dir, coderPayload());
+  assert('SPRINT+plan: exit 0 (bypass allowed)', r.exitCode, 0);
+}
+
+// --- Test 8: SPRINT claimed but no run record → fail closed ---
+{
+  const dir = makeTmp();
+  writeRunActive(dir, { runId: 'r-noexist', mode: 'SPRINT', pipelineType: 'implement' });
+  const r = runHook(dir, coderPayload());
+  assert('SPRINT but no run record: exit 2 (fail closed)', r.exitCode, 2);
+}
+
+// --- Test 9: SPRINT + apply with matching record → bypass allowed ---
+{
+  const dir = makeTmp();
+  writeRunActive(dir, { runId: 'r-test1', mode: 'SPRINT', pipelineType: 'apply' });
+  writeRunRecord(dir, 'r-test1', { mode: 'SPRINT', pipelineType: 'apply', status: 'running' });
   const r = runHook(dir, implementerPayload());
-  assert('TRIVIAL+apply: exit 0 (bypass allowed for non-mutating)', r.exitCode, 0);
-}
-
-// --- Test 12: TRIVIAL + debug → bypass rejected ---
-{
-  const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-test1', mode: 'TRIVIAL', pipelineType: 'debug' });
-  writeRunRecord(dir, 'r-test1', { mode: 'TRIVIAL', pipelineType: 'debug', status: 'running' });
-  const r = runHook(dir, coderPayload());
-  assert('TRIVIAL+debug: exit 2 (bypass rejected)', r.exitCode, 2);
-}
-
-// --- Test 13: TRIVIAL + refactor → bypass rejected ---
-{
-  const dir = makeTmp();
-  writeRunActive(dir, { runId: 'r-test1', mode: 'TRIVIAL', pipelineType: 'refactor' });
-  writeRunRecord(dir, 'r-test1', { mode: 'TRIVIAL', pipelineType: 'refactor', status: 'running' });
-  const r = runHook(dir, coderPayload());
-  assert('TRIVIAL+refactor: exit 2 (bypass rejected)', r.exitCode, 2);
+  assert('SPRINT+apply: exit 0 (bypass allowed)', r.exitCode, 0);
 }
 
 // --- Summary ---

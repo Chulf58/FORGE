@@ -48,9 +48,31 @@ function stageLabelFor(pipelineType, currentStep) {
   return map[currentStep] || currentStep;
 }
 
-const TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
+const HARD_TERMINAL_STATUSES = new Set(["failed", "discarded"]);
 const RECENT_COMPLETED_LIMIT = 5;
 const TOP_TODOS_LIMIT = 5;
+
+const NEXT_STEP_MAP = {
+  plan:      { gate: "gate1", next: "/forge:implement" },
+  implement: { gate: "gate2", next: "/forge:apply" },
+  debug:     { gate: "gate2", next: "/forge:apply" },
+  refactor:  { gate: "gate2", next: "/forge:apply" },
+};
+
+function needsNextStep(run) {
+  if (run.status !== "completed") return null;
+  const mapping = NEXT_STEP_MAP[run.pipelineType];
+  if (!mapping) return null;
+  const gs = run.gateState;
+  if (gs && gs.gate === mapping.gate && gs.status === "approved") return mapping.next;
+  return null;
+}
+
+function isTerminal(entry) {
+  if (HARD_TERMINAL_STATUSES.has(entry.status)) return true;
+  if (entry.status !== "completed") return false;
+  return !needsNextStep(entry);
+}
 
 function readActiveUnit(pipelineDir) {
   try {
@@ -97,9 +119,23 @@ export function buildDashboardState(projectDir) {
   }
 
   // 3) activeRuns — non-terminal, hydrated from run.json where present.
+  //    "completed" runs with an approved gate that needs a next step are NOT
+  //    terminal — they require user attention. But only if no later pipeline
+  //    stage already exists for the same feature.
+  // Only the latest run per feature can need attention.
+  const latestByFeature = new Map();
+  for (const e of allEntries) {
+    const key = (e.feature || "").toLowerCase();
+    const prev = latestByFeature.get(key);
+    if (!prev || (e.updatedAt || "") > (prev.updatedAt || "")) {
+      latestByFeature.set(key, e);
+    }
+  }
+
   const activeRuns = [];
   for (const entry of allEntries) {
-    if (TERMINAL_STATUSES.has(entry.status)) continue;
+    if (HARD_TERMINAL_STATUSES.has(entry.status)) continue;
+    if (entry.status !== "running" && entry.status !== "gate-pending" && entry.status !== "completed") continue;
     let full = null;
     try {
       full = getRun(projectDir, entry.runId);
@@ -107,6 +143,13 @@ export function buildDashboardState(projectDir) {
       full = null;
     }
     const src = full || entry;
+    if (isTerminal(src)) continue;
+    const nextStep = needsNextStep(src);
+    if (nextStep) {
+      const key = (src.feature || "").toLowerCase();
+      const latest = latestByFeature.get(key);
+      if (!latest || latest.runId !== src.runId) continue;
+    }
     activeRuns.push({
       runId: src.runId,
       pipelineType: src.pipelineType,
@@ -120,6 +163,7 @@ export function buildDashboardState(projectDir) {
       currentUnit: src.runId === activeRunId ? activeUnit : null,
       mergeBlocked: src.mergeBlocked || null,
       updatedAt: src.updatedAt || entry.updatedAt || null,
+      actionNeeded: nextStep,
     });
   }
   activeRuns.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
@@ -135,14 +179,17 @@ export function buildDashboardState(projectDir) {
       updatedAt: r.updatedAt,
     }));
 
-  // 5) recentCompleted — bounded terminal tail.
+  // 5) recentCompleted — truly terminal runs only.
+  //    Excludes completed runs that still need a next pipeline step.
+  const activeRunIds = new Set(activeRuns.map(r => r.runId));
   const recentCompleted = allEntries
-    .filter(e => TERMINAL_STATUSES.has(e.status))
+    .filter(e => {
+      if (activeRunIds.has(e.runId)) return false;
+      return HARD_TERMINAL_STATUSES.has(e.status) || e.status === "completed";
+    })
     .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
     .slice(0, RECENT_COMPLETED_LIMIT)
     .map(e => {
-      // Hydrate mergeBlocked from the full run.json — the index entry
-      // doesn't carry it.
       let mergeBlocked = null;
       try {
         const full = getRun(projectDir, e.runId);

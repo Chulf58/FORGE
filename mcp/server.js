@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from "./lib/config-store.js";
@@ -35,6 +35,20 @@ const runIdOrBareSchema = z.string().regex(
 
 function resolveProjectDir() {
   return resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+}
+
+function resolveMainProjectDir() {
+  const projectDir = resolveProjectDir();
+  const gitFile = join(projectDir, ".git");
+  try {
+    const content = readFileSync(gitFile, "utf8").trim();
+    if (content.startsWith("gitdir:")) {
+      const gitdir = content.replace("gitdir:", "").trim();
+      const match = gitdir.match(/(.+)[/\\]\.git[/\\]worktrees[/\\]/);
+      if (match) return resolve(match[1]);
+    }
+  } catch (_) {}
+  return projectDir;
 }
 
 function readJsonSafe(filePath) {
@@ -85,25 +99,16 @@ function hasGateApprovalToken(projectDir) {
 }
 
 // -- Mode-hardening validation ------------------------------------------------
-// Prevents under-scoped modes (TRIVIAL, SPRINT) from being used on tasks whose
-// pipeline type or feature description implies risk-surface work that needs
-// reviewer coverage. Enforced at both forge_create_run and forge_resume_run —
-// the two entry points where mode enters or re-enters the run state.
+// Prevents SPRINT from being used on tasks whose pipeline type or feature
+// description implies risk-surface work that needs reviewer coverage.
+// Enforced at both forge_create_run and forge_resume_run.
+// Note: SUPERVISED mode (direct edits by conductor) doesn't create runs at all,
+// so it never reaches this validation.
 
 const RISK_KEYWORDS = /\b(hook|hooks|mcp|security|auth|crypto|secret|credential|token|spawn|child_process|migration|schema|contract|network|fetch|http|inject|xss|csrf|permission|guard|enforcement|worktree|merge)\b/i;
 
 function validateModeForRisk(pipelineType, mode, feature) {
-  if (mode !== 'TRIVIAL' && mode !== 'SPRINT') return null;
-
-  // TRIVIAL: only allowed for plan and apply — these don't produce source mutations
-  // that need review. implement/debug/refactor always modify source code.
-  if (mode === 'TRIVIAL' && pipelineType !== 'plan' && pipelineType !== 'apply') {
-    return (
-      'FORGE: Mode TRIVIAL is not allowed for "' + pipelineType + '" pipelines. ' +
-      'TRIVIAL bypasses the pipeline entirely and is only valid for plan and apply. ' +
-      'Use LEAN or higher for ' + pipelineType + ' runs.'
-    );
-  }
+  if (mode !== 'SPRINT') return null;
 
   // SPRINT: blocked for source-mutating pipelines when feature description
   // contains risk-surface keywords. plan/apply don't produce unreviewed mutations.
@@ -565,7 +570,7 @@ server.registerTool(
 
       // Enum validation for pipelineMode
       if (key === "pipelineMode") {
-        const VALID_MODES = ["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"];
+        const VALID_MODES = ["SPRINT", "LEAN", "STANDARD", "FULL"];
         if (!VALID_MODES.includes(value)) {
           return errorResult("Invalid pipelineMode: '" + value + "'. Must be one of: " + VALID_MODES.join(", "));
         }
@@ -1402,7 +1407,7 @@ server.registerTool(
     inputSchema: z.object({
       sessionId: z.string().describe("Claude session ID"),
       pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor"]).describe("Pipeline type"),
-      mode: z.enum(["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"]).describe("Pipeline mode"),
+      mode: z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]).describe("Pipeline mode"),
       feature: z.string().default("").describe("Feature name or description"),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -1517,8 +1522,8 @@ server.registerTool(
           z.array(z.enum(["plan", "implement", "apply", "debug", "refactor"]))
         ]).optional().describe("Match pipeline type — single value or any-of array."),
         mode: z.union([
-          z.enum(["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"]),
-          z.array(z.enum(["TRIVIAL", "SPRINT", "LEAN", "STANDARD", "FULL"]))
+          z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]),
+          z.array(z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]))
         ]).optional().describe("Match pipeline mode — single value or any-of array. NOTE: mode is not on lightweight index entries, so this filter forces hydration of each candidate via getRun.")
       }).strict().optional().describe("Structured filter object. Supersedes legacy `status`/`pipelineType` when present. Applies `status` → `pipelineType` → `mode`, AND-combined."),
       fields: z.array(z.string()).optional().describe("Top-level keys to include per returned run. Omit for full objects (index-entry shape by default; full hydrated shape when `filter.mode` is used or when `fields` requests a non-index key). Keys not present on an item are silently dropped for that item.")
@@ -1631,6 +1636,7 @@ server.registerTool(
         createdAt: z.string(),
         approvedAt: z.string().nullable().default(null),
       }).optional().describe("Gate state update"),
+      acknowledged: z.boolean().optional().describe("Mark research run as acknowledged (findings discussed). Clears the observer card."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
@@ -1681,6 +1687,26 @@ server.registerTool(
       }
 
       const run = updateRun(projectDir, runId, cleanPatch);
+      const mainDir = resolveMainProjectDir();
+
+      // Write completion signal when a research run finishes
+      if (cleanPatch.status === "completed" && run.pipelineType === "research") {
+        const doneDir = join(mainDir, ".pipeline", "worker-done");
+        if (!existsSync(doneDir)) mkdirSync(doneDir, { recursive: true });
+        const doneFile = join(doneDir, runId + ".json");
+        const signal = {
+          runId, feature: run.feature || "", pipelineType: "research",
+          completedAt: new Date().toISOString(),
+        };
+        writeFileSync(doneFile, JSON.stringify(signal, null, 2) + "\n", "utf8");
+      }
+
+      // Clean up completion signal when research is acknowledged
+      if (cleanPatch.acknowledged) {
+        const doneFile = join(mainDir, ".pipeline", "worker-done", runId + ".json");
+        try { unlinkSync(doneFile); } catch (_) {}
+      }
+
       return textResult(run);
     } catch (err) {
       return errorResult("forge_update_run failed: " + err.message);
@@ -1707,6 +1733,37 @@ server.registerTool(
       return textResult(run);
     } catch (err) {
       return errorResult("forge_create_worktree failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_escalate ----------------------------------------------------
+
+server.registerTool(
+  "forge_escalate",
+  {
+    title: "FORGE Escalate",
+    description: "Signal that a worker is stuck or needs attention. Writes an escalation file that the Observer TUI surfaces to the user. Use when hitting unexpected blockers, errors, or questions that can't be resolved autonomously.",
+    inputSchema: z.object({
+      runId: runIdSchema.describe("Run ID to escalate"),
+      type: z.enum(["blocker", "error", "question"]).describe("Type of escalation"),
+      message: z.string().min(1).max(500).describe("Short description of what went wrong or what's needed"),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ runId, type, message }) => {
+    try {
+      const projectDir = resolveMainProjectDir();
+      const escDir = join(projectDir, ".pipeline", "escalations");
+      if (!existsSync(escDir)) mkdirSync(escDir, { recursive: true });
+      const escFile = join(escDir, runId + ".json");
+      const tmpFile = escFile + ".tmp";
+      const data = { runId, type, message, createdAt: new Date().toISOString() };
+      writeFileSync(tmpFile, JSON.stringify(data, null, 2) + "\n", "utf8");
+      renameSync(tmpFile, escFile);
+      return textResult("Escalation filed for " + runId + ": " + type + " — " + message);
+    } catch (err) {
+      return errorResult("forge_escalate failed: " + err.message);
     }
   },
 );

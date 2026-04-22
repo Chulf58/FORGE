@@ -132,7 +132,6 @@ Set per project in `.pipeline/project.json` (`pipelineMode` field). Controls how
 
 | Mode | When to use | Effect |
 |------|-------------|--------|
-| TRIVIAL | Single-file fix, no logic change | Bypass pipeline entirely |
 | SPRINT | Easy task, high confidence | Core agent only, no reviewers |
 | LEAN | Everyday default | Core + safety reviewer |
 | STANDARD | Multi-file, cross-cutting changes | Core + completeness-checker + triage-dispatched reviewers |

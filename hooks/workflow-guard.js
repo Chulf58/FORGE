@@ -324,7 +324,7 @@ async function main(rawInput) {
   // Block ALL direct writes to project.json.
   // Managed exclusively by MCP tools (forge_update_config, forge_read_project).
   // If the model could Write this file, it could downgrade pipelineMode to
-  // SPRINT/TRIVIAL to bypass gate enforcement and reviewer dispatch.
+  // SPRINT to bypass gate enforcement and reviewer dispatch.
   if (normalisedPath.endsWith('.pipeline/project.json')) {
     process.stdout.write(
       JSON.stringify({

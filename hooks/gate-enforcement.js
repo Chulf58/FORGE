@@ -25,9 +25,9 @@
 //   worktree first, falling back to the main project root. This is needed because
 //   /forge:implement writes the gate file inside the worktree, not the main root.
 //
-// TRIVIAL / SPRINT mode:
-//   Both modes bypass gates by design (no reviewers, no approval steps). When
-//   pipelineMode is 'TRIVIAL' or 'SPRINT', the hook exits cleanly with a stderr note.
+// SPRINT mode:
+//   SPRINT bypasses gates by design (no reviewers, no approval steps). When
+//   pipelineMode is 'SPRINT', the hook exits cleanly with a stderr note.
 //   Missing or malformed project.json: enforcement proceeds (safer default — do not
 //   assume bypass when mode is unknown).
 
@@ -43,7 +43,7 @@ const GATE_AGENTS = {
 };
 
 // Modes that bypass gates by design.
-const BYPASS_MODES = new Set(['TRIVIAL', 'SPRINT']);
+const BYPASS_MODES = new Set(['SPRINT']);
 
 function exitOk() { process.exit(0); }
 
@@ -98,23 +98,16 @@ async function main(rawInput) {
 
   const projectDir = process.cwd();
 
-  // Step 7: check pipelineMode — bypass for TRIVIAL and SPRINT.
+  // Step 7: check pipelineMode — bypass for SPRINT.
   //
   // Trust model: run-active.json is writable by the model via Write tool (it's
   // inside .pipeline/ which isSourceFile() excludes). A tampered run-active.json
-  // with mode:"TRIVIAL" would bypass gates for implement/debug/refactor runs.
+  // could claim SPRINT to bypass gates.
   //
   // Defense: when run-active.json claims a bypass mode, cross-reference with the
   // authoritative run record. The run record is created through forge_create_run
-  // which validates mode via validateModeForRisk(). If the run record disagrees
-  // or the bypass mode is invalid for the run's pipelineType, fall through to
-  // normal gate enforcement.
-  //
-  // Additionally: TRIVIAL is only valid for plan/apply. If the run's
-  // pipelineType is implement/debug/refactor, TRIVIAL bypass is rejected
-  // regardless of what any file says.
-  const SOURCE_MUTATING = new Set(['implement', 'debug', 'refactor']);
-
+  // which validates mode via validateModeForRisk(). If the run record disagrees,
+  // fall through to normal gate enforcement.
   let resolvedMode = null;
   let resolvedPipelineType = null;
   const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
@@ -154,18 +147,9 @@ async function main(rawInput) {
   }
 
   if (resolvedMode && BYPASS_MODES.has(resolvedMode)) {
-    // Final structural check: TRIVIAL is never valid for source-mutating pipelines
-    if (resolvedMode === 'TRIVIAL' && resolvedPipelineType && SOURCE_MUTATING.has(resolvedPipelineType)) {
-      console.error(
-        '[gate-enforcement] TRIVIAL mode invalid for ' + resolvedPipelineType +
-        ' pipeline — proceeding with gate enforcement'
-      );
-      // Fall through to gate check below
-    } else {
-      console.error('[gate-enforcement] pipelineMode ' + resolvedMode + ': gates bypassed by design');
-      exitOk();
-      return;
-    }
+    console.error('[gate-enforcement] pipelineMode ' + resolvedMode + ': gates bypassed by design');
+    exitOk();
+    return;
   }
   // Missing or malformed files: proceed with normal enforcement.
 

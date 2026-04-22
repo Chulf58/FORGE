@@ -34,7 +34,6 @@ Set per project in `.pipeline/project.json` (`pipelineMode` field):
 
 | Mode | When | Effect |
 |------|------|--------|
-| TRIVIAL | Trivial single-file fix | Bypass pipeline entirely |
 | SPRINT | Easy task, trust yourself | Core agent only, no reviewers |
 | LEAN | Everyday (default) | Core + reviewer-safety + reviewer |
 | STANDARD | Multi-file, state or cross-cutting | Core + completeness-checker + reviewer-triage + triage-dispatched reviewers |

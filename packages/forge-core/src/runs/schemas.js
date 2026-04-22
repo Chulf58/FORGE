@@ -36,7 +36,7 @@ export const Run = z.object({
   worktreePath: z.string().nullable().default(null),
   branchName: z.string().nullable().default(null),
   pipelineType: z.enum(['plan', 'implement', 'apply', 'debug', 'refactor']),
-  mode: z.enum(['TRIVIAL', 'SPRINT', 'LEAN', 'STANDARD', 'FULL']),
+  mode: z.enum(['SPRINT', 'LEAN', 'STANDARD', 'FULL']),
   feature: z.string().default(''),
   status: RunStatus.default('created'),
   createdAt: z.string(),

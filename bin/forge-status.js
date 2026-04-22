@@ -127,6 +127,26 @@ process.stdin.on('end', finalize);
 // render with process.cwd() fallback after the timeout rather than hanging.
 setTimeout(finalize, STDIN_TIMEOUT_MS);
 
+// ─── "Requires attention" detection ─────────────────────────────────────
+// A completed run with an approved gate still needs the user to advance it
+// to the next pipeline step. These are not truly terminal.
+
+const NEXT_STEP_MAP = {
+  plan:      { gate: 'gate1', next: '/forge:implement' },
+  implement: { gate: 'gate2', next: '/forge:apply' },
+  debug:     { gate: 'gate2', next: '/forge:apply' },
+  refactor:  { gate: 'gate2', next: '/forge:apply' },
+};
+
+function needsNextStep(run) {
+  if (run.status !== 'completed') return null;
+  const mapping = NEXT_STEP_MAP[run.pipelineType];
+  if (!mapping) return null;
+  const gs = run.gateState;
+  if (gs && gs.gate === mapping.gate && gs.status === 'approved') return mapping.next;
+  return null;
+}
+
 // ─── Derivation: read state from source-of-truth files ──────────────────
 
 function loadProjectState(projectDir) {
@@ -144,14 +164,35 @@ function loadProjectState(projectDir) {
       //   (silence after 30 min would falsely report "no pending approval")
       // - running     = may be a dead pipeline that crashed mid-run; keep the
       //   stale cutoff so abandoned runs don't linger forever in the statusline
+      // - completed with approved gate = waiting on user to advance; never stale
       const entries = (index.runs || [])
-        .filter(e => e.status === 'running' || e.status === 'gate-pending')
-        .filter(e => e.status === 'gate-pending' || !isStale(e.updatedAt, now))
+        .filter(e => e.status === 'running' || e.status === 'gate-pending' || e.status === 'completed')
+        .filter(e => e.status === 'gate-pending' || e.status === 'completed' || !isStale(e.updatedAt, now))
         .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+
+      // Only the latest run per feature can need attention. Earlier runs in
+      // the same chain are superseded regardless of gate state.
+      const latestByFeature = new Map();
+      const fullIndex = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      for (const e of (fullIndex.runs || [])) {
+        const key = (e.feature || '').toLowerCase();
+        const prev = latestByFeature.get(key);
+        if (!prev || (e.updatedAt || '') > (prev.updatedAt || '')) {
+          latestByFeature.set(key, e);
+        }
+      }
 
       for (const entry of entries) {
         const run = readRun(projectDir, entry.runId);
-        if (run) activeRuns.push(run);
+        if (!run) continue;
+        if (run.status === 'completed') {
+          const next = needsNextStep(run);
+          if (!next) continue;
+          const key = (run.feature || '').toLowerCase();
+          const latest = latestByFeature.get(key);
+          if (!latest || latest.runId !== run.runId) continue;
+        }
+        activeRuns.push(run);
       }
     } catch {}
   }
@@ -232,6 +273,12 @@ function isStale(isoString, now) {
 
 function runToSegment(run) {
   const shortId = (run.runId || '').slice(0, 10);
+
+  // Completed with approved gate — requires user to advance
+  const next = needsNextStep(run);
+  if (next) {
+    return `⏸  ${shortId} · run ${next}`;
+  }
 
   // Gate pending — highlight clearly
   if (run.status === 'gate-pending' && run.gateState) {
