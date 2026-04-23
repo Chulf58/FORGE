@@ -698,11 +698,16 @@ function todoTitle(t) {
   if (t.title) return t.title;
   const text = typeof t.text === 'string' ? t.text : '';
   const stripped = text.split('\n')[0].replace(/^(\[?[A-Z]+\]?):\s*/i, '').trim();
-  const dot = stripped.indexOf('. ');
-  if (dot > 0 && dot <= 60) return stripped.slice(0, dot);
-  if (stripped.length <= 60) return stripped;
-  const cut = stripped.lastIndexOf(' ', 60);
-  return cut > 20 ? stripped.slice(0, cut) : stripped.slice(0, 60);
+  const MAX = 40;
+  const periodIdx = stripped.indexOf('. ');
+  const colonIdx = stripped.indexOf(': ');
+  const dashIdx = stripped.indexOf(' — ');
+  const breaks = [periodIdx, colonIdx, dashIdx].filter(i => i > 0 && i <= MAX);
+  const best = breaks.length > 0 ? Math.min(...breaks) : -1;
+  if (best > 0) return stripped.slice(0, best);
+  if (stripped.length <= MAX) return stripped;
+  const cut = stripped.lastIndexOf(' ', MAX);
+  return cut > 10 ? stripped.slice(0, cut) : stripped.slice(0, MAX);
 }
 
 function todoSummary(t) {

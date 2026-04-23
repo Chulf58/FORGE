@@ -282,7 +282,7 @@ server.registerTool(
 // -- Tool: forge_add_todo ----------------------------------------------------
 
 const TODO_PREFIX_RE = /^(\[?[A-Z]+\]?):\s*/;
-const MAX_TITLE_LEN = 60;
+const MAX_TITLE_LEN = 40;
 
 function generateTodoTitleAndSummary(text) {
   if (!text || typeof text !== "string") return { title: "", summary: "" };
@@ -295,13 +295,18 @@ function generateTodoTitleAndSummary(text) {
 
   let title;
   const periodIdx = stripped.indexOf(". ");
-  if (periodIdx > 0 && periodIdx <= MAX_TITLE_LEN) {
-    title = stripped.slice(0, periodIdx);
+  const colonIdx = stripped.indexOf(": ");
+  const dashIdx = stripped.indexOf(" — ");
+  const breaks = [periodIdx, colonIdx, dashIdx].filter(i => i > 0 && i <= MAX_TITLE_LEN);
+  const bestBreak = breaks.length > 0 ? Math.min(...breaks) : -1;
+
+  if (bestBreak > 0) {
+    title = stripped.slice(0, bestBreak);
   } else if (stripped.length <= MAX_TITLE_LEN) {
     title = stripped;
   } else {
     const cutPoint = stripped.lastIndexOf(" ", MAX_TITLE_LEN);
-    title = cutPoint > 20 ? stripped.slice(0, cutPoint) : stripped.slice(0, MAX_TITLE_LEN);
+    title = cutPoint > 10 ? stripped.slice(0, cutPoint) : stripped.slice(0, MAX_TITLE_LEN);
   }
 
   const allText = lines.join(" ");
