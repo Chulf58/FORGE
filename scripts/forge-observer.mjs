@@ -698,7 +698,7 @@ function todoTitle(t) {
   if (t.title) return t.title;
   const text = typeof t.text === 'string' ? t.text : '';
   const stripped = text.split('\n')[0].replace(/^(\[?[A-Z]+\]?):\s*/i, '').trim();
-  const MAX = 40;
+  const MAX = 36;
   const periodIdx = stripped.indexOf('. ');
   const colonIdx = stripped.indexOf(': ');
   const dashIdx = stripped.indexOf(' — ');
@@ -739,7 +739,13 @@ function buildTodosTab(cols) {
   const lines = [];
   const regions = [];
   const allTodos = loadAllTodos(PROJECT_DIR);
-  const open = allTodos.filter(t => t && t.done !== true);
+  const PRI_ORDER = { high: 0, medium: 1, low: 2 };
+  const open = allTodos.filter(t => t && t.done !== true).sort((a, b) => {
+    const pa = PRI_ORDER[a.priority] ?? 3;
+    const pb = PRI_ORDER[b.priority] ?? 3;
+    if (pa !== pb) return pa - pb;
+    return (a.addedAt || 0) - (b.addedAt || 0);
+  });
   const done = allTodos.filter(t => t && t.done === true);
 
   function push(text) { lines.push(text); }
@@ -784,20 +790,6 @@ function buildTodosTab(cols) {
 
     let detailRows = [];
     if (isExpanded) {
-      if (summary) {
-        const sumWords = summary.split(' ');
-        let line = '';
-        for (const w of sumWords) {
-          const candidate = line ? line + ' ' + w : w;
-          if (candidate.length > inner - 6) {
-            detailRows.push(['_sum', line]);
-            line = w;
-          } else {
-            line = candidate;
-          }
-        }
-        if (line) detailRows.push(['_sum', line]);
-      }
       const rawText = typeof t.text === 'string' ? t.text : '';
       const prefix = rawText.match(/^(\[?[A-Z]+\]?):/)?.[0] || '';
       if (prefix) detailRows.push(['Type', prefix.replace(':', '')]);
@@ -818,12 +810,8 @@ function buildTodosTab(cols) {
     const agePart = age ? '  ' + cd('gray', age) : '';
     push(boxMid(cols, borderColor, box, ' ' + priPart + tagsTail + agePart, isSelected));
     for (const [label, value] of detailRows) {
-      if (label === '_sum') {
-        push(boxMid(cols, borderColor, box, '   ' + c('white', trunc(String(value), inner - 6)), isSelected));
-      } else {
-        const valColor = label === 'Priority' ? priColor : (label === 'Tags' ? 'cyan' : 'white');
-        push(boxMid(cols, borderColor, box, ' ' + c('gray', label.padEnd(10)) + ' ' + c(valColor, trunc(String(value), Math.max(8, inner - 14))), isSelected));
-      }
+      const valColor = label === 'Priority' ? priColor : (label === 'Tags' ? 'cyan' : 'white');
+      push(boxMid(cols, borderColor, box, ' ' + c('gray', label.padEnd(10)) + ' ' + c(valColor, trunc(String(value), Math.max(8, inner - 14))), isSelected));
     }
     push(boxBot(cols, borderColor, box, isSelected));
   }

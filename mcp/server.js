@@ -282,7 +282,7 @@ server.registerTool(
 // -- Tool: forge_add_todo ----------------------------------------------------
 
 const TODO_PREFIX_RE = /^(\[?[A-Z]+\]?):\s*/;
-const MAX_TITLE_LEN = 40;
+const MAX_TITLE_LEN = 36;
 
 function generateTodoTitleAndSummary(text) {
   if (!text || typeof text !== "string") return { title: "", summary: "" };
