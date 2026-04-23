@@ -125,34 +125,16 @@ When `needs_decisions_entry` is `true`, add a max-8-line entry:
 ```
 Skip if trivial. No multi-paragraph explanations.
 
-### 4. PLAN.md — archive completed feature section
+### 4. PLAN.md — remove completed feature section
 
-After a successful apply run, always archive the completed feature section immediately — do not leave it in `docs/PLAN.md`. Note: `docs/BACKLOG.md` contains queued unstarted features — do not touch it during archival.
+After a successful apply run, remove the completed feature section from `docs/PLAN.md`. Git history preserves the plan content; no separate archive file is needed.
 
 **Step 4a — Locate the section:**
 Use Grep (`output_mode: "content"`, `-n: true`) on `docs/PLAN.md` for pattern `^### (\[x\] )?Feature:` to get all feature headings with line numbers. Find the heading matching the current feature name (case-insensitive). Note its start line and the start line of the next `### Feature:` heading (or end-of-file if it is the last feature). This gives you the range.
 
-**Guard:** If no matching heading is found, log `[plan] no plan section found for "<name>" — archival skipped` and skip to Step 5.
+**Guard:** If no matching heading is found, log `[plan] no plan section found for "<name>" — removal skipped` and skip to Step 5.
 
-**Step 4b — Read only that section:**
-Read `docs/PLAN.md` with `offset: <start_line - 1>` and `limit: <end_line - start_line>`. This loads only the section to archive.
-
-**Step 4c — Append to archive:**
-Use Edit to append the section to `docs/PLAN-archive.md`. Do NOT use Bash `cat >>` (blocked by bash-guard) or Write (rewrites the entire file — token-expensive on large archives).
-
-1. Read `docs/PLAN-archive.md` with `offset` set to read only the **last 3 lines** (use Grep `output_mode: "count"` pattern `.*` to get the line count first, then Read with `offset: <count - 3>`).
-2. Use Edit: set `old_string` to those last 3 lines, set `new_string` to those same 3 lines followed by a blank line and the archived section with `[x]` added to the heading:
-
-```
-<last 3 lines unchanged>
-
-### [x] Feature: <name>
-<rest of section content>
-```
-
-If `docs/PLAN-archive.md` does not exist, use Write to create it with just the archived section.
-
-**Step 4d — Remove from PLAN.md:**
+**Step 4b — Remove from PLAN.md:**
 Use Edit on `docs/PLAN.md` — set `old_string` to the full section text (from `### Feature: <name>` through its last line, including the trailing `---` separator if present), `new_string` to empty string `""`. This removes the section in-place without reading or rewriting the rest of the file.
 
 ### 5. Module registry
@@ -207,7 +189,7 @@ If neither stage finds any match, log: `[board] no todo matched for feature "<na
 
 If Step 5 was skipped (board.json unreadable), skip this step too.
 
-For each entry matched by either stage: set `done: true` and add `doneAt: <current epoch ms>`.
+For each matched entry: remove it from the `todos[]` array entirely. Do not set `done: true` — just delete the entry. Git history preserves it.
 
 Write the updated board back to `.pipeline/board.json` (same rules as Step 5: 2-space indent, raw JSON only, preserve all other fields).
 
@@ -265,31 +247,6 @@ Only append items that are genuinely new — do not duplicate existing entries.
 
 Log: `[board] module capabilities: appended to "<moduleName>" · wiring updated (keyFiles: +N, stores: +N)`
 
-## Step 5c — Archive completed todos (feature mode only)
-
-**Only run this step when mode is `feature`.** Skip entirely for `debug` and `refactor` modes.
-
-Uses the `board.json` state as updated by Steps 5 and 5b (do not re-read it).
-
-(a) Scan `todos[]` for all entries where `done` is `true`, **excluding any entries that were just closed by Step 5b in this run** (i.e. skip todos whose id appears in the set of todos Step 5b matched and closed — those are already captured in PLAN-archive.md by Step 4's feature archival). Only archive todos that were already done before this documenter run started. Count the remaining entries as `N`.
-
-(b) If `N` is 0, log: `Board: no completed todos to archive` — skip the rest of this step.
-
-(c) If `N` > 0: append all completed todo entries to `docs/PLAN-archive.md` using the same Edit-based append pattern as Step 4c (match last 3 lines, extend with new content). Do NOT use Bash `cat >>` or Write.
-
-Format each entry as:
-```
-### [x] Todo: <id>
-<first line of the todo text, stripped of any leading FEATURE:/BUG/UX/CLEANUP:/DISCUSS: prefix>
-Done: <YYYY-MM-DD from doneAt epoch, or "unknown" if doneAt is absent>
-```
-
-Combine all `N` entries into a single Edit call. Do not append duplicates — if the todo id already appears in PLAN-archive.md (grep for it), skip that entry.
-
-(d) Remove all `N` completed entries from `todos[]`. Log: `Board: archived N completed todos to PLAN-archive.md`
-
-Write the updated board back to `.pipeline/board.json` (same rules as Step 5: 2-space indent, raw JSON only, preserve all other fields).
-
 ## Step 6 — Pipeline artefact cleanup
 
 Wipe artefacts left over from the completed pipeline run. These bash commands are safe to run even if the targets don't exist.
@@ -326,8 +283,6 @@ Same pattern as Step 7 but: file = `docs/CHANGELOG.md`, threshold = 200 lines, s
 ## Step 8b — Cleanup (formerly separate cleanup agent)
 
 **RESEARCH file deletion:** Derive a slug from the feature name (lowercase, spaces → hyphens, non-alphanumeric removed). Use Glob to check if `docs/RESEARCH/<slug>.md` exists. If so, delete it via Bash `rm`. If not found, skip silently.
-
-**PLAN-archive.md trimming:** Use Bash `wc -l < docs/PLAN-archive.md` to check line count. If ≤ 500, skip. If > 500: read the file, split on `^### [x] Feature:` headings. Keep last 10 feature blocks (closest to EOF). Archive earlier blocks to `docs/archive/PLAN_HISTORY.md` (append after existing content; create with header if absent). Rewrite `docs/PLAN-archive.md` with only the keep set.
 
 ## Step 8c — Knowledge compounding (solution capture)
 

@@ -478,7 +478,13 @@ function loadWorkerDone(projectDir) {
 function refresh() {
   try {
     state = buildDashboardState(PROJECT_DIR);
-    todos = loadOpenTodos(PROJECT_DIR);
+    const PRI = { high: 0, medium: 1, low: 2 };
+    todos = loadOpenTodos(PROJECT_DIR).sort((a, b) => {
+      const pa = PRI[a.priority] ?? 3;
+      const pb = PRI[b.priority] ?? 3;
+      if (pa !== pb) return pa - pb;
+      return (a.addedAt || 0) - (b.addedAt || 0);
+    });
     notes = loadNotes(PROJECT_DIR);
     usage = loadUsage(PROJECT_DIR);
     heartbeats = loadHeartbeats(PROJECT_DIR);
@@ -739,14 +745,7 @@ function buildTodosTab(cols) {
   const inner = Math.max(20, cols - 4);
   const lines = [];
   const regions = [];
-  const allTodos = loadAllTodos(PROJECT_DIR);
-  const PRI_ORDER = { high: 0, medium: 1, low: 2 };
-  const open = allTodos.filter(t => t && t.done !== true).sort((a, b) => {
-    const pa = PRI_ORDER[a.priority] ?? 3;
-    const pb = PRI_ORDER[b.priority] ?? 3;
-    if (pa !== pb) return pa - pb;
-    return (a.addedAt || 0) - (b.addedAt || 0);
-  });
+  const open = todos;
 
   function push(text) { lines.push(text); }
   function blank() { lines.push(''); }

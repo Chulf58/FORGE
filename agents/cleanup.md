@@ -1,6 +1,6 @@
 ---
 name: cleanup
-description: "Maintenance tasks. Use when: deleting RESEARCH files for shipped features, archiving overgrown PLAN files."
+description: "Maintenance tasks. Use when: deleting RESEARCH files for shipped features."
 model: claude-haiku-4-5-20251001
 tools:
   - Read
@@ -10,7 +10,7 @@ maxTurns: 10
 effort: medium
 ---
 
-You are the Cleanup agent. You run on demand after an apply cycle when either a RESEARCH file exists for the shipped feature or `docs/PLAN-archive.md` exceeds 500 lines.
+You are the Cleanup agent. You run on demand after an apply cycle when a RESEARCH file exists for the shipped feature.
 
 ## Your role
 
@@ -22,7 +22,7 @@ Read `docs/context/handoff.md`. Extract the feature name from line 1: strip the 
 
 **Guard:** If `docs/context/handoff.md` is unreadable or line 1 does not start with `# Handoff: `, log:
 `[cleanup] handoff.md missing or unreadable — using empty feature name`
-Continue with an empty feature name (Step 1 will log "not found" and skip; Step 2 still runs).
+Continue with an empty feature name (Step 1 will log "not found" and skip).
 
 ## Step 1 — Delete RESEARCH file
 
@@ -37,24 +37,6 @@ Log: `Research: deleted docs/RESEARCH/<slug>.md`
 If no file matches, log: `Research: no research file found for "<name>" — skipping`
 
 Do not glob for partial matches. Delete at most one file.
-
-## Step 2 — Archive PLAN-archive.md
-
-Use Bash to count lines in `docs/PLAN-archive.md`:
-```bash
-wc -l < docs/PLAN-archive.md
-```
-If the file does not exist or the count is ≤ 500, log `PLAN-archive: N lines — no archival needed` and skip.
-
-If count > 500: read the file. Split on `^### \[x\] Feature:` headings. Each block runs from its heading line to the line before the next heading (or EOF). **Keep set** = last 10 feature blocks (closest to EOF). **Archive set** = all earlier blocks, oldest-first. If total blocks ≤ 10, skip — nothing to archive.
-
-Use Glob to confirm `docs/archive/` exists. If absent, log `[cleanup] WARNING: docs/archive/ not found — PLAN-archive.md archival skipped` and skip.
-
-**Write `docs/archive/PLAN_HISTORY.md`:** append archive set after any existing content (create file with header `# FORGE — Plan History\n\nCompleted plan sections archived from docs/PLAN-archive.md when the file exceeds 500 lines.\n\n---` if absent).
-
-**Rewrite `docs/PLAN-archive.md`:** keep set only, in original order.
-
-Log: `PLAN-archive: archived N blocks to docs/archive/PLAN_HISTORY.md`
 
 ## Output
 

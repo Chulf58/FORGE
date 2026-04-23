@@ -11,7 +11,7 @@ const readline = require('readline');
 const STDIN_TIMEOUT_MS = 5000;
 
 const THRESHOLDS = {
-  'docs/PLAN.md': { max: 200, action: 'Archive completed sections to docs/PLAN-archive.md' },
+  'docs/PLAN.md': { max: 200, action: 'Remove completed sections — git history preserves them' },
   'docs/CHANGELOG.md': { max: 200, action: 'Archive to docs/archive/CHANGELOG_HISTORY.md' },
   'docs/ARCHITECTURE.md': { max: 800, action: 'Prune stale content' },
   'docs/gotchas/GENERAL.md': { max: 200, action: 'Trim — move reference material to FORGE-REFERENCE.md' },
