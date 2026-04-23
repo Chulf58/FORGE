@@ -700,7 +700,9 @@ function todoTitle(t) {
   const stripped = text.split('\n')[0].replace(/^(\[?[A-Z]+\]?):\s*/i, '').trim();
   const dot = stripped.indexOf('. ');
   if (dot > 0 && dot <= 60) return stripped.slice(0, dot);
-  return stripped;
+  if (stripped.length <= 60) return stripped;
+  const cut = stripped.lastIndexOf(' ', 60);
+  return cut > 20 ? stripped.slice(0, cut) : stripped.slice(0, 60);
 }
 
 function todoSummary(t) {
@@ -797,11 +799,13 @@ function buildTodosTab(cols) {
     regions.push({ idx: i, bodyLine: lines.length, h: cardH, type: 'todo' });
 
     push(boxTop(cols, borderColor, box, isSelected));
-    push(boxMid(cols, borderColor, box, ' ' + c(priColor, priIcon) + ' ' + cd('gray', age), isSelected));
     push(boxMid(cols, borderColor, box, ' ' + (isSelected ? cb('white', trunc(title, inner - 4)) : trunc(title, inner - 4)), isSelected));
-    const sumPreview = summary ? trunc(summary, Math.max(6, inner - (tags ? tags.length + 4 : 2))) : '';
-    const tagsPart = tags ? '  ' + c('cyan', trunc(tags, Math.max(6, inner - sumPreview.length - 4))) : '';
-    push(boxMid(cols, borderColor, box, ' ' + cd('gray', sumPreview) + tagsPart, isSelected));
+    const sumPreview = summary ? trunc(summary, Math.max(6, inner - 2)) : '';
+    push(boxMid(cols, borderColor, box, ' ' + cd('gray', sumPreview), isSelected));
+    const priPart = c(priColor, priIcon);
+    const tagsTail = tags ? ' ' + c('cyan', trunc(tags, Math.max(6, inner - 8))) : '';
+    const agePart = age ? '  ' + cd('gray', age) : '';
+    push(boxMid(cols, borderColor, box, ' ' + priPart + tagsTail + agePart, isSelected));
     for (const [label, value] of detailRows) {
       if (label === '_sum') {
         push(boxMid(cols, borderColor, box, '   ' + c('white', trunc(String(value), inner - 6)), isSelected));
@@ -1002,7 +1006,7 @@ function draw() {
   if (flashMessage) {
     footerText = BOLD + COLOR.green + ' ✓ ' + flashMessage + RESET;
   } else {
-    const tabHints = '[1-4] tabs';
+    const tabHints = '[←→] tabs';
     let modeHints;
     if (currentTab === 0) {
       modeHints = expandedIdx >= 0
@@ -1241,6 +1245,8 @@ term.on('key', (name) => {
     case '2': switchTab(1); break;
     case '3': switchTab(2); break;
     case '4': switchTab(3); break;
+    case 'LEFT': case 'h': switchTab(Math.max(0, currentTab - 1)); break;
+    case 'RIGHT': case 'l': switchTab(Math.min(TABS.length - 1, currentTab + 1)); break;
     case 'UP': case 'k': selectPrev(); break;
     case 'DOWN': case 'j': selectNext(); break;
     case 'ENTER': toggleExpand(); break;
