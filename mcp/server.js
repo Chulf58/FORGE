@@ -46,8 +46,13 @@ function resolveMainProjectDir() {
       const gitdir = content.replace("gitdir:", "").trim();
       const match = gitdir.match(/(.+)[/\\]\.git[/\\]worktrees[/\\]/);
       if (match) return resolve(match[1]);
+      console.error("[forge-mcp] .git gitdir present but worktree pattern did not match: " + gitdir);
     }
-  } catch (_) {}
+  } catch (err) {
+    if (err.code !== "EISDIR" && err.code !== "ENOENT") {
+      console.error("[forge-mcp] .git read failed: " + err.message);
+    }
+  }
   return projectDir;
 }
 
@@ -353,7 +358,7 @@ server.registerTool(
     title: "FORGE Update Task",
     description: "Updates an existing task on the pipeline board",
     inputSchema: z.object({
-      id: z.string().describe("Task ID to update"),
+      id: z.string().min(1).max(36).describe("Task ID to update"),
       done: z.boolean().optional().describe("Mark done/undone"),
       text: z.string().optional().describe("New task text"),
       priority: z.enum(["high", "medium", "low"]).optional().describe("New priority")
@@ -372,10 +377,25 @@ server.registerTool(
 
       const board = read.data;
       const todos = board.todos || [];
-      const task = todos.find(t => t.id === id);
+      const planned = board.planned || [];
+      const task = todos.find(t => t.id === id) || planned.find(t => t.id === id);
 
       if (!task) {
         return errorResult("Task not found: " + id);
+      }
+
+      // Mark done — remove from board before applying other mutations
+      // so text/priority changes don't persist on a removed task.
+      if (done === true && !task.done) {
+        board.todos = todos.filter(t => t.id !== id);
+        board.planned = planned.filter(t => t.id !== id);
+        writeJsonSafe(boardPath, board);
+        return textResult({ ...task, done: true, doneAt: Date.now(), removed: true });
+      }
+
+      if (done === false) {
+        task.done = false;
+        delete task.doneAt;
       }
 
       // Apply text (regenerate title/summary)
@@ -389,16 +409,6 @@ server.registerTool(
       // Apply priority
       if (priority !== undefined) {
         task.priority = priority;
-      }
-
-      // Mark done — remove from board (git history preserves it)
-      if (done === true && !task.done) {
-        board.todos = todos.filter(t => t.id !== id);
-        writeJsonSafe(boardPath, board);
-        return textResult({ ...task, done: true, doneAt: Date.now(), removed: true });
-      } else if (done === false) {
-        task.done = false;
-        delete task.doneAt;
       }
 
       writeJsonSafe(boardPath, board);
@@ -950,7 +960,7 @@ function appendDispatchLogEntry(projectDir, agentName, recommendation) {
   // Cap total size to prevent unbounded growth if recommendations are called
   // very rapidly; the newest entries are the ones that matter.
   const capped = fresh.slice(-DISPATCH_LOG_MAX_ENTRIES);
-  writeFileSync(logPath, JSON.stringify({ entries: capped }, null, 2) + "\n", "utf-8");
+  writeJsonSafe(logPath, { entries: capped });
 }
 
 // -- Tool: forge_call_external -----------------------------------------------
@@ -1381,7 +1391,7 @@ server.registerTool(
     title: "FORGE Set Blocked By",
     description: "Sets or clears the blockedBy array on a board task. Pass task IDs that block this task, or an empty array to unblock.",
     inputSchema: z.object({
-      id: z.string().describe("Task ID to update"),
+      id: z.string().min(1).max(36).describe("Task ID to update"),
       blockedBy: z.array(z.string()).describe("Array of task IDs that block this task (empty array to clear)")
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }

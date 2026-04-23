@@ -28,7 +28,11 @@ export function ensureDir(dirPath) {
 
 export function readJson(filePath) {
   if (!existsSync(filePath)) return null;
-  return JSON.parse(readFileSync(filePath, 'utf-8'));
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (_) {
+    return null;
+  }
 }
 
 export function writeJson(filePath, data) {

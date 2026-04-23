@@ -137,6 +137,7 @@ function hasBashWriteVector(command) {
   if (/\bnode\s+(-e|-p|--eval|--print)\b/.test(safe)) return true;
   if (/\bnpx\b/.test(safe) && /\.pipeline\//.test(safe)) return true;
   if (/\bprintf\b/.test(safe) && hasOutputRedirect(safe)) return true;
+  if (/\b(python3?|perl|ruby|pwsh|powershell)\s+(-e|-c)\b/.test(safe) && /\.pipeline\//.test(safe)) return true;
   return false;
 }
 
