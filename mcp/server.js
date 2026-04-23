@@ -312,14 +312,17 @@ function generateTodoTitleAndSummary(text) {
   const allText = lines.join(" ");
   const body = allText.replace(TODO_PREFIX_RE, "");
 
-  // Strip the title from the start of the body so the summary doesn't repeat it
-  let rest = body;
-  if (rest.startsWith(title.trim())) {
-    rest = rest.slice(title.trim().length).replace(/^[.,:;!?\s]+/, "").trim();
-  }
+  // Find the next full sentence boundary after the title ends
+  const titleEnd = body.indexOf(title.trim());
+  const skipTo = titleEnd >= 0 ? titleEnd + title.trim().length : 0;
+  const afterTitle = body.slice(skipTo);
+  // Jump to the next sentence start — skip partial words/punctuation
+  const nextSentence = afterTitle.match(/[.!?]\s+(.*)/s);
+  const rest = nextSentence ? nextSentence[1].trim() : afterTitle.replace(/^[^a-zA-Z]*/, "").trim();
+
   if (!rest) return { title: title.trim(), summary: "" };
 
-  const sentences = rest.match(/[^.!?]+[.!?]+/g) || [rest];
+  const sentences = rest.split(/(?<=[.!?])\s+(?=[A-Z(])/).filter(Boolean);
   let summary = "";
   for (const s of sentences) {
     const trimmed = s.trim();

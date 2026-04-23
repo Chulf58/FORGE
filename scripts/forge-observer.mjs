@@ -717,12 +717,13 @@ function todoSummary(t) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length === 0) return '';
   const body = lines.join(' ').replace(/^(\[?[A-Z]+\]?):\s*/i, '');
-  let rest = body;
-  if (rest.startsWith(title)) {
-    rest = rest.slice(title.length).replace(/^[.,:;!?\s]+/, '').trim();
-  }
+  const titleEnd = body.indexOf(title);
+  const skipTo = titleEnd >= 0 ? titleEnd + title.length : 0;
+  const afterTitle = body.slice(skipTo);
+  const nextSentence = afterTitle.match(/[.!?]\s+(.*)/s);
+  const rest = nextSentence ? nextSentence[1].trim() : afterTitle.replace(/^[^a-zA-Z]*/, '').trim();
   if (!rest) return '';
-  const sentences = rest.match(/[^.!?]+[.!?]+/g) || [rest];
+  const sentences = rest.split(/(?<=[.!?])\s+(?=[A-Z(])/).filter(Boolean);
   let sum = '';
   for (const s of sentences) {
     const trimmed = s.trim();
