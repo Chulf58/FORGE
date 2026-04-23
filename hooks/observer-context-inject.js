@@ -36,30 +36,43 @@ async function main(rawInput) {
   }
 
   try { fs.unlinkSync(signalPath); } catch (_) {}
-  process.stderr.write('[observer-inject] injecting context for ' + (data.runId || '?') + '\n');
 
-  const parts = [];
-  parts.push(`The user is looking at this run in the FORGE Observer (split-screen TUI). It is their current focus.`);
-  parts.push(`Run: ${data.runId || '?'}  Feature: ${data.feature || '?'}`);
-  parts.push(`Pipeline: ${data.pipelineType || '?'} (${data.mode || '?'})  Status: ${data.status || '?'}`);
-  if (data.gateState) parts.push(`Gate: ${data.gateState.gate} — ${data.gateState.status}`);
-  if (data.actionNeeded) parts.push(`Action needed: ${data.actionNeeded}`);
-  if (data.branchName) parts.push(`Branch: ${data.branchName}`);
+  let context;
 
-  if (data.summary) {
-    const s = data.summary;
-    if (s.diffStat) parts.push(`\nChanges: ${s.diffStat}`);
-    if (s.commits && s.commits.length > 0) {
-      parts.push(`\nCommits:`);
-      for (const cm of s.commits) parts.push(`  ${cm}`);
+  if (data.type === 'todo') {
+    process.stderr.write('[observer-inject] injecting TODO context\n');
+    const safe = (s) => String(s || '').replace(/[\r\n]/g, ' ').trim();
+    const parts = [];
+    parts.push(`The user is looking at this TODO in the FORGE Observer (split-screen TUI). It is their current focus.`);
+    parts.push(`TODO: ${safe(data.text)}`);
+    if (data.priority) parts.push(`Priority: ${safe(data.priority)}`);
+    if (Array.isArray(data.tags) && data.tags.length > 0) parts.push(`Tags: ${data.tags.map(t => '#' + safe(t)).join(' ')}`);
+    if (data.createdAt) parts.push(`Added: ${safe(data.createdAt)}`);
+    context = parts.join('\n');
+  } else {
+    process.stderr.write('[observer-inject] injecting context for ' + (data.runId || '?') + '\n');
+    const parts = [];
+    parts.push(`The user is looking at this run in the FORGE Observer (split-screen TUI). It is their current focus.`);
+    parts.push(`Run: ${data.runId || '?'}  Feature: ${data.feature || '?'}`);
+    parts.push(`Pipeline: ${data.pipelineType || '?'} (${data.mode || '?'})  Status: ${data.status || '?'}`);
+    if (data.gateState) parts.push(`Gate: ${data.gateState.gate} — ${data.gateState.status}`);
+    if (data.actionNeeded) parts.push(`Action needed: ${data.actionNeeded}`);
+    if (data.branchName) parts.push(`Branch: ${data.branchName}`);
+
+    if (data.summary) {
+      const s = data.summary;
+      if (s.diffStat) parts.push(`\nChanges: ${s.diffStat}`);
+      if (s.commits && s.commits.length > 0) {
+        parts.push(`\nCommits:`);
+        for (const cm of s.commits) parts.push(`  ${cm}`);
+      }
+      if (s.handoffLines && s.handoffLines.length > 0) {
+        parts.push(`\nHandoff summary:`);
+        for (const hl of s.handoffLines) parts.push(`  ${hl}`);
+      }
     }
-    if (s.handoffLines && s.handoffLines.length > 0) {
-      parts.push(`\nHandoff summary:`);
-      for (const hl of s.handoffLines) parts.push(`  ${hl}`);
-    }
+    context = parts.join('\n');
   }
-
-  const context = parts.join('\n');
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {

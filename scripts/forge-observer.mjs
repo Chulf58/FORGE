@@ -450,6 +450,8 @@ let completed = [];
 let orderedIds = [];
 let selectedIdx = 0;
 let expandedIdx = -1;
+let todoSelectedIdx = 0;
+let todoExpandedIdx = -1;
 let animFrame = 0;
 let notifiedDone = new Set();
 
@@ -680,48 +682,134 @@ function buildSessionsTab(cols) {
 
 // ── Tab 2: TODOs ────────────────────────────────────────────────────────
 
+function todoPriorityColor(pri) {
+  if (pri === 'high') return 'red';
+  if (pri === 'medium') return 'yellow';
+  return 'gray';
+}
+
+function todoPriorityIcon(pri) {
+  if (pri === 'high') return '!!';
+  if (pri === 'medium') return ' !';
+  return '  ';
+}
+
 function buildTodosTab(cols) {
+  const inner = Math.max(20, cols - 4);
   const lines = [];
+  const regions = [];
   const allTodos = loadAllTodos(PROJECT_DIR);
   const open = allTodos.filter(t => t && t.done !== true);
   const done = allTodos.filter(t => t && t.done === true);
 
-  if (open.length === 0 && done.length === 0) {
-    lines.push('');
-    lines.push(c('gray', '  No TODOs yet'));
-    lines.push(c('gray', '  Use /forge:todo or forge_add_todo to add items'));
-    return { lines, regions: [] };
+  function push(text) { lines.push(text); }
+  function blank() { lines.push(''); }
+  function boxTop(w, clr, b, bold) {
+    const s = bold ? cb : c;
+    return s(clr, b.tl + b.h.repeat(w - 2) + b.tr);
+  }
+  function boxMid(w, clr, b, content, bold) {
+    const vis = stripAnsi(content);
+    const s = bold ? cb : c;
+    return s(clr, b.v) + content + ' '.repeat(Math.max(0, w - 2 - vis.length)) + s(clr, b.v);
+  }
+  function boxBot(w, clr, b, bold) {
+    const s = bold ? cb : c;
+    return s(clr, b.bl + b.h.repeat(w - 2) + b.br);
   }
 
-  if (open.length > 0) {
-    lines.push('');
-    for (let i = 0; i < open.length; i++) {
-      const t = open[i];
-      const pri = t.priority === 'high' ? cb('red', '!!') : t.priority === 'medium' ? c('yellow', ' !') : c('gray', '  ');
-      const text = typeof t.text === 'string' ? t.text : '';
-      const tags = Array.isArray(t.tags) && t.tags.length > 0
-        ? ' ' + c('cyan', t.tags.map(tag => '#' + tag).join(' '))
-        : '';
-      const age = t.createdAt ? cd('gray', ' ' + fmtRel(t.createdAt)) : '';
-      lines.push('  ' + pri + ' ' + c('white', '☐ ') + trunc(text, Math.max(10, cols - 20)) + tags + age);
+  if (open.length === 0 && done.length === 0) {
+    blank();
+    push(c('gray', '  No TODOs yet'));
+    push(c('gray', '  Use /forge:todo or forge_add_todo to add items'));
+    return { lines, regions };
+  }
+
+  // Clamp selection
+  const totalTodos = open.length;
+  if (todoSelectedIdx >= totalTodos) todoSelectedIdx = Math.max(0, totalTodos - 1);
+  if (todoExpandedIdx >= totalTodos) todoExpandedIdx = -1;
+
+  for (let i = 0; i < open.length; i++) {
+    const t = open[i];
+    const isSelected = todoSelectedIdx === i;
+    const isExpanded = todoExpandedIdx === i;
+    const text = typeof t.text === 'string' ? t.text : '';
+    const priColor = todoPriorityColor(t.priority);
+    const priIcon = todoPriorityIcon(t.priority);
+    const borderColor = isSelected ? 'cyan' : priColor;
+    const box = isSelected ? BOX_SEL : BOX;
+    const age = fmtRel(t.createdAt);
+
+    // Extract title: first line or up to first period/newline
+    const title = text.split('\n')[0].replace(/^(FEATURE|DESIGN|DOCS|DISCUSS|BUG|PARKED|\[PARKED\]):\s*/i, '').trim();
+    const prefix = text.match(/^(\[?[A-Z]+\]?):/)?.[0] || '';
+
+    let detailRows = [];
+    if (isExpanded) {
+      if (prefix) detailRows.push(['Type', prefix.replace(':', '')]);
+      if (t.priority) detailRows.push(['Priority', t.priority]);
+      if (Array.isArray(t.tags) && t.tags.length > 0) {
+        detailRows.push(['Tags', t.tags.map(tag => '#' + tag).join(' ')]);
+      }
+      if (t.createdAt) detailRows.push(['Added', fmtTimestamp(t.createdAt)]);
+      // Show full text wrapped
+      const fullLines = text.split('\n');
+      if (fullLines.length > 1 || text.length > inner - 4) {
+        detailRows.push(['', '']);
+        for (const fl of fullLines) {
+          const trimmed = fl.trim();
+          if (trimmed) detailRows.push(['', trimmed]);
+        }
+      }
     }
+
+    const cardH = isExpanded ? (2 + detailRows.length + 1) : 4;
+    regions.push({ idx: i, bodyLine: lines.length, h: cardH, type: 'todo' });
+
+    // Header line: priority icon + title
+    const titleLine = ' ' + c(priColor, priIcon) + ' ' + (isSelected ? cb('white', trunc(title, inner - 8)) : trunc(title, inner - 8));
+    // Tags line (collapsed): show tags inline
+    const tags = Array.isArray(t.tags) && t.tags.length > 0 ? t.tags.map(tag => '#' + tag).join(' ') : '';
+    const tagsLine = ' ' + (tags ? c('cyan', trunc(tags, inner - age.length - 6)) : cd('gray', 'no tags'));
+    const agePart = age ? '  ' + cd('gray', age) : '';
+
+    push(boxTop(cols, borderColor, box, isSelected));
+    push(boxMid(cols, borderColor, box, titleLine, isSelected));
+
+    if (!isExpanded) {
+      push(boxMid(cols, borderColor, box, tagsLine + agePart, isSelected));
+    }
+
+    if (isExpanded) {
+      for (const [label, value] of detailRows) {
+        if (label === '') {
+          push(boxMid(cols, borderColor, box, '   ' + c('white', trunc(String(value), inner - 6)), isSelected));
+        } else {
+          const valColor = label === 'Priority' ? priColor : (label === 'Tags' ? 'cyan' : 'white');
+          push(boxMid(cols, borderColor, box, ' ' + c('gray', label.padEnd(10)) + ' ' + c(valColor, trunc(String(value), Math.max(8, inner - 14))), isSelected));
+        }
+      }
+    }
+
+    push(boxBot(cols, borderColor, box, isSelected));
   }
 
   if (done.length > 0) {
-    lines.push('');
-    lines.push(cd('gray', '  ── Done (' + done.length + ') ──'));
+    blank();
+    push(cd('gray', '  ── Done (' + done.length + ') ──'));
     const limit = 5;
     for (let i = 0; i < Math.min(done.length, limit); i++) {
       const t = done[i];
       const text = typeof t.text === 'string' ? t.text : '';
-      lines.push(cd('gray', '  ☑ ' + trunc(text, cols - 8)));
+      push(cd('gray', '  ☑ ' + trunc(text.split('\n')[0], cols - 8)));
     }
     if (done.length > limit) {
-      lines.push(cd('gray', '    +' + (done.length - limit) + ' more'));
+      push(cd('gray', '    +' + (done.length - limit) + ' more'));
     }
   }
 
-  return { lines, regions: [] };
+  return { lines, regions };
 }
 
 // ── Tab 3: Notes ────────────────────────────────────────────────────────
@@ -819,14 +907,20 @@ function buildBody(cols) {
   }
 }
 
+function activeSelectedIdx() {
+  if (currentTab === 1) return todoSelectedIdx;
+  return selectedIdx;
+}
+
 function autoScroll(bodyLines, regions, viewportH) {
-  if (currentTab !== 0) {
+  if (currentTab !== 0 && currentTab !== 1) {
     scrollOffset = 0;
     return;
   }
+  const sel = activeSelectedIdx();
   let targetStart = -1, targetEnd = -1;
   for (const r of regions) {
-    if (r.idx === selectedIdx) {
+    if (r.idx === sel) {
       targetStart = r.bodyLine;
       targetEnd = r.bodyLine + r.h;
       break;
@@ -897,6 +991,10 @@ function draw() {
       modeHints = expandedIdx >= 0
         ? '[↑↓] select  [⏎] toggle  [R] resume  [ESC] close'
         : '[↑↓] select  [⏎] open  [R] resume';
+    } else if (currentTab === 1) {
+      modeHints = todoExpandedIdx >= 0
+        ? '[↑↓] select  [⏎] toggle  [ESC] close'
+        : '[↑↓] select  [⏎] open';
     } else {
       modeHints = '';
     }
@@ -913,40 +1011,88 @@ function draw() {
 // ── Input handling ──────────────────────────────────────────────────────
 
 function totalItems() {
+  if (currentTab === 1) return todos.length;
   return workers.length + completed.length;
 }
 
 function signalSelection() {
-  const run = getSelectedRun();
-  if (run) writeObserverSignal(run);
+  if (currentTab === 0) {
+    const run = getSelectedRun();
+    if (run) writeObserverSignal(run);
+  } else if (currentTab === 1) {
+    const todo = getSelectedTodo();
+    if (todo) writeObserverSignalTodo(todo);
+  }
 }
 
 function selectPrev() {
-  if (currentTab !== 0) return;
-  if (selectedIdx > 0) { selectedIdx--; signalSelection(); draw(); }
+  if (currentTab === 0) {
+    if (selectedIdx > 0) { selectedIdx--; signalSelection(); draw(); }
+  } else if (currentTab === 1) {
+    if (todoSelectedIdx > 0) { todoSelectedIdx--; signalSelection(); draw(); }
+  }
 }
 
 function selectNext() {
-  if (currentTab !== 0) return;
-  if (selectedIdx < totalItems() - 1) { selectedIdx++; signalSelection(); draw(); }
+  if (currentTab === 0) {
+    if (selectedIdx < workers.length + completed.length - 1) { selectedIdx++; signalSelection(); draw(); }
+  } else if (currentTab === 1) {
+    if (todoSelectedIdx < todos.length - 1) { todoSelectedIdx++; signalSelection(); draw(); }
+  }
 }
 
 function toggleExpand(idx) {
-  if (currentTab !== 0) return;
-  if (idx === undefined) idx = selectedIdx;
-  if (idx < 0 || idx >= totalItems()) return;
-  if (expandedIdx === idx) {
-    expandedIdx = -1;
-  } else {
-    expandedIdx = idx;
-    selectedIdx = idx;
+  if (currentTab === 0) {
+    if (idx === undefined) idx = selectedIdx;
+    if (idx < 0 || idx >= workers.length + completed.length) return;
+    if (expandedIdx === idx) {
+      expandedIdx = -1;
+    } else {
+      expandedIdx = idx;
+      selectedIdx = idx;
+    }
+    signalSelection();
+    draw();
+  } else if (currentTab === 1) {
+    if (idx === undefined) idx = todoSelectedIdx;
+    if (idx < 0 || idx >= todos.length) return;
+    if (todoExpandedIdx === idx) {
+      todoExpandedIdx = -1;
+    } else {
+      todoExpandedIdx = idx;
+      todoSelectedIdx = idx;
+    }
+    signalSelection();
+    draw();
   }
-  signalSelection();
-  draw();
 }
 
 function collapseExpand() {
-  if (expandedIdx >= 0) { expandedIdx = -1; draw(); }
+  if (currentTab === 0 && expandedIdx >= 0) { expandedIdx = -1; draw(); }
+  if (currentTab === 1 && todoExpandedIdx >= 0) { todoExpandedIdx = -1; draw(); }
+}
+
+function getSelectedTodo() {
+  if (todoSelectedIdx >= 0 && todoSelectedIdx < todos.length) return todos[todoSelectedIdx];
+  return null;
+}
+
+function writeObserverSignalTodo(todo) {
+  if (!todo) return;
+  const signal = {
+    type: 'todo',
+    text: todo.text || '',
+    priority: todo.priority || null,
+    tags: todo.tags || [],
+    todoId: todo.id || null,
+    createdAt: todo.createdAt || null,
+    selectedAt: new Date().toISOString(),
+  };
+  const dir = join(PROJECT_DIR, '.pipeline');
+  try {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'observer-selected.json'), JSON.stringify(signal, null, 2) + '\n', 'utf8');
+  } catch (_) {}
 }
 
 function switchTab(idx) {
@@ -1090,7 +1236,7 @@ term.on('key', (name) => {
 term.on('mouse', (name, data) => {
   switch (name) {
     case 'MOUSE_LEFT_BUTTON_PRESSED': {
-      if (currentTab === 0) {
+      if (currentTab === 0 || currentTab === 1) {
         const idx = hitTest(data.y);
         if (idx >= 0) toggleExpand(idx);
       }
