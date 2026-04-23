@@ -306,7 +306,15 @@ function generateTodoTitleAndSummary(text) {
 
   const allText = lines.join(" ");
   const body = allText.replace(TODO_PREFIX_RE, "");
-  const sentences = body.match(/[^.!?]+[.!?]+/g) || [body];
+
+  // Strip the title from the start of the body so the summary doesn't repeat it
+  let rest = body;
+  if (rest.startsWith(title.trim())) {
+    rest = rest.slice(title.trim().length).replace(/^[.,:;!?\s]+/, "").trim();
+  }
+  if (!rest) return { title: title.trim(), summary: "" };
+
+  const sentences = rest.match(/[^.!?]+[.!?]+/g) || [rest];
   let summary = "";
   for (const s of sentences) {
     const trimmed = s.trim();
@@ -315,7 +323,7 @@ function generateTodoTitleAndSummary(text) {
     summary = candidate;
     if (summary.length >= 80) break;
   }
-  if (!summary) summary = body.slice(0, 160);
+  if (!summary) summary = rest.slice(0, 160);
 
   return { title: title.trim(), summary: summary.trim() };
 }

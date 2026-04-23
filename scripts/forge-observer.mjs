@@ -708,10 +708,16 @@ function todoTitle(t) {
 function todoSummary(t) {
   if (t.summary) return t.summary;
   const text = typeof t.text === 'string' ? t.text : '';
+  const title = todoTitle(t);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length <= 1) return '';
+  if (lines.length === 0) return '';
   const body = lines.join(' ').replace(/^(\[?[A-Z]+\]?):\s*/i, '');
-  const sentences = body.match(/[^.!?]+[.!?]+/g) || [body];
+  let rest = body;
+  if (rest.startsWith(title)) {
+    rest = rest.slice(title.length).replace(/^[.,:;!?\s]+/, '').trim();
+  }
+  if (!rest) return '';
+  const sentences = rest.match(/[^.!?]+[.!?]+/g) || [rest];
   let sum = '';
   for (const s of sentences) {
     const trimmed = s.trim();
@@ -720,7 +726,7 @@ function todoSummary(t) {
     sum = candidate;
     if (sum.length >= 80) break;
   }
-  return sum || body.slice(0, 160);
+  return sum || rest.slice(0, 160);
 }
 
 function buildTodosTab(cols) {
