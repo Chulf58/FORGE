@@ -12,6 +12,9 @@ const { resolveProjectDir, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
+const TODO_TAG = 'modules';
+const TODO_ID_PREFIX = 'module-gap-';
+
 // Directories that are never modules (infra, config, generated).
 const IGNORED_DIRS = new Set([
   'node_modules', '.git', '.pipeline', '.worktrees', '.claude',
@@ -90,11 +93,50 @@ async function main(rawInput) {
     // Can't read project dir — skip silently
   }
 
-  if (warnings.length > 0) {
-    console.error('[forge-modules] ' + warnings.length + ' gap(s) in modules.json:');
-    for (const w of warnings) {
-      console.error('  · ' + w);
+  if (warnings.length === 0) {
+    exitOk();
+    return;
+  }
+
+  console.error('[forge-modules] ' + warnings.length + ' gap(s) in modules.json:');
+  for (const w of warnings) {
+    console.error('  · ' + w);
+  }
+
+  // Auto-add a TODO if one doesn't already exist for these gaps.
+  const boardPath = path.join(projectDir, '.pipeline', 'board.json');
+  try {
+    let board;
+    try {
+      board = JSON.parse(fs.readFileSync(boardPath, 'utf8'));
+    } catch (_) {
+      exitOk();
+      return;
     }
+    if (!Array.isArray(board.todos)) board.todos = [];
+
+    const existingGapTodo = board.todos.find(
+      t => !t.done && Array.isArray(t.tags) && t.tags.includes(TODO_TAG) && t.id.startsWith(TODO_ID_PREFIX)
+    );
+
+    if (!existingGapTodo) {
+      const todoText = 'Update .pipeline/modules.json — ' + warnings.length +
+        ' gap(s) detected: ' + warnings.join('; ');
+      board.todos.push({
+        id: TODO_ID_PREFIX + Date.now().toString(36),
+        priority: 'low',
+        text: todoText,
+        title: 'Update modules.json coverage',
+        summary: warnings.length + ' module gap(s): ' + warnings.slice(0, 3).join(', '),
+        done: false,
+        addedAt: Date.now(),
+        tags: [TODO_TAG],
+      });
+      fs.writeFileSync(boardPath, JSON.stringify(board, null, 2) + '\n', 'utf8');
+      console.error('[forge-modules] Added TODO to board for module gaps');
+    }
+  } catch (_) {
+    // Board write failed — stderr warning is enough
   }
 
   exitOk();
