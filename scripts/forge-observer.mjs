@@ -694,6 +694,33 @@ function todoPriorityIcon(pri) {
   return '  ';
 }
 
+function todoTitle(t) {
+  if (t.title) return t.title;
+  const text = typeof t.text === 'string' ? t.text : '';
+  const stripped = text.split('\n')[0].replace(/^(\[?[A-Z]+\]?):\s*/i, '').trim();
+  const dot = stripped.indexOf('. ');
+  if (dot > 0 && dot <= 60) return stripped.slice(0, dot);
+  return stripped;
+}
+
+function todoSummary(t) {
+  if (t.summary) return t.summary;
+  const text = typeof t.text === 'string' ? t.text : '';
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length <= 1) return '';
+  const body = lines.join(' ').replace(/^(\[?[A-Z]+\]?):\s*/i, '');
+  const sentences = body.match(/[^.!?]+[.!?]+/g) || [body];
+  let sum = '';
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    const candidate = sum ? sum + ' ' + trimmed : trimmed;
+    if (sum && candidate.length > 160) break;
+    sum = candidate;
+    if (sum.length >= 80) break;
+  }
+  return sum || body.slice(0, 160);
+}
+
 function buildTodosTab(cols) {
   const inner = Math.max(20, cols - 4);
   const lines = [];
@@ -725,7 +752,6 @@ function buildTodosTab(cols) {
     return { lines, regions };
   }
 
-  // Clamp selection
   const totalTodos = open.length;
   if (todoSelectedIdx >= totalTodos) todoSelectedIdx = Math.max(0, totalTodos - 1);
   if (todoExpandedIdx >= totalTodos) todoExpandedIdx = -1;
@@ -734,64 +760,56 @@ function buildTodosTab(cols) {
     const t = open[i];
     const isSelected = todoSelectedIdx === i;
     const isExpanded = todoExpandedIdx === i;
-    const text = typeof t.text === 'string' ? t.text : '';
     const priColor = todoPriorityColor(t.priority);
     const priIcon = todoPriorityIcon(t.priority);
+    const title = todoTitle(t);
+    const summary = todoSummary(t);
+    const age = fmtRel(t.createdAt || t.addedAt);
+    const tags = Array.isArray(t.tags) && t.tags.length > 0 ? t.tags.map(tag => '#' + tag).join(' ') : '';
     const borderColor = isSelected ? 'cyan' : priColor;
     const box = isSelected ? BOX_SEL : BOX;
-    const age = fmtRel(t.createdAt);
-
-    // Extract title: first line or up to first period/newline
-    const title = text.split('\n')[0].replace(/^(FEATURE|DESIGN|DOCS|DISCUSS|BUG|PARKED|\[PARKED\]):\s*/i, '').trim();
-    const prefix = text.match(/^(\[?[A-Z]+\]?):/)?.[0] || '';
 
     let detailRows = [];
     if (isExpanded) {
+      if (summary) {
+        const sumWords = summary.split(' ');
+        let line = '';
+        for (const w of sumWords) {
+          const candidate = line ? line + ' ' + w : w;
+          if (candidate.length > inner - 6) {
+            detailRows.push(['_sum', line]);
+            line = w;
+          } else {
+            line = candidate;
+          }
+        }
+        if (line) detailRows.push(['_sum', line]);
+      }
+      const rawText = typeof t.text === 'string' ? t.text : '';
+      const prefix = rawText.match(/^(\[?[A-Z]+\]?):/)?.[0] || '';
       if (prefix) detailRows.push(['Type', prefix.replace(':', '')]);
       if (t.priority) detailRows.push(['Priority', t.priority]);
-      if (Array.isArray(t.tags) && t.tags.length > 0) {
-        detailRows.push(['Tags', t.tags.map(tag => '#' + tag).join(' ')]);
-      }
-      if (t.createdAt) detailRows.push(['Added', fmtTimestamp(t.createdAt)]);
-      // Show full text wrapped
-      const fullLines = text.split('\n');
-      if (fullLines.length > 1 || text.length > inner - 4) {
-        detailRows.push(['', '']);
-        for (const fl of fullLines) {
-          const trimmed = fl.trim();
-          if (trimmed) detailRows.push(['', trimmed]);
-        }
-      }
+      if (tags) detailRows.push(['Tags', tags]);
+      if (t.createdAt || t.addedAt) detailRows.push(['Added', fmtTimestamp(t.createdAt || new Date(t.addedAt).toISOString())]);
     }
 
-    const cardH = isExpanded ? (2 + detailRows.length + 1) : 4;
+    const cardH = 5 + detailRows.length;
     regions.push({ idx: i, bodyLine: lines.length, h: cardH, type: 'todo' });
 
-    // Header line: priority icon + title
-    const titleLine = ' ' + c(priColor, priIcon) + ' ' + (isSelected ? cb('white', trunc(title, inner - 8)) : trunc(title, inner - 8));
-    // Tags line (collapsed): show tags inline
-    const tags = Array.isArray(t.tags) && t.tags.length > 0 ? t.tags.map(tag => '#' + tag).join(' ') : '';
-    const tagsLine = ' ' + (tags ? c('cyan', trunc(tags, inner - age.length - 6)) : cd('gray', 'no tags'));
-    const agePart = age ? '  ' + cd('gray', age) : '';
-
     push(boxTop(cols, borderColor, box, isSelected));
-    push(boxMid(cols, borderColor, box, titleLine, isSelected));
-
-    if (!isExpanded) {
-      push(boxMid(cols, borderColor, box, tagsLine + agePart, isSelected));
-    }
-
-    if (isExpanded) {
-      for (const [label, value] of detailRows) {
-        if (label === '') {
-          push(boxMid(cols, borderColor, box, '   ' + c('white', trunc(String(value), inner - 6)), isSelected));
-        } else {
-          const valColor = label === 'Priority' ? priColor : (label === 'Tags' ? 'cyan' : 'white');
-          push(boxMid(cols, borderColor, box, ' ' + c('gray', label.padEnd(10)) + ' ' + c(valColor, trunc(String(value), Math.max(8, inner - 14))), isSelected));
-        }
+    push(boxMid(cols, borderColor, box, ' ' + c(priColor, priIcon) + ' ' + cd('gray', age), isSelected));
+    push(boxMid(cols, borderColor, box, ' ' + (isSelected ? cb('white', trunc(title, inner - 4)) : trunc(title, inner - 4)), isSelected));
+    const sumPreview = summary ? trunc(summary, Math.max(6, inner - (tags ? tags.length + 4 : 2))) : '';
+    const tagsPart = tags ? '  ' + c('cyan', trunc(tags, Math.max(6, inner - sumPreview.length - 4))) : '';
+    push(boxMid(cols, borderColor, box, ' ' + cd('gray', sumPreview) + tagsPart, isSelected));
+    for (const [label, value] of detailRows) {
+      if (label === '_sum') {
+        push(boxMid(cols, borderColor, box, '   ' + c('white', trunc(String(value), inner - 6)), isSelected));
+      } else {
+        const valColor = label === 'Priority' ? priColor : (label === 'Tags' ? 'cyan' : 'white');
+        push(boxMid(cols, borderColor, box, ' ' + c('gray', label.padEnd(10)) + ' ' + c(valColor, trunc(String(value), Math.max(8, inner - 14))), isSelected));
       }
     }
-
     push(boxBot(cols, borderColor, box, isSelected));
   }
 
@@ -801,8 +819,7 @@ function buildTodosTab(cols) {
     const limit = 5;
     for (let i = 0; i < Math.min(done.length, limit); i++) {
       const t = done[i];
-      const text = typeof t.text === 'string' ? t.text : '';
-      push(cd('gray', '  ☑ ' + trunc(text.split('\n')[0], cols - 8)));
+      push(cd('gray', '  ☑ ' + trunc(todoTitle(t), cols - 8)));
     }
     if (done.length > limit) {
       push(cd('gray', '    +' + (done.length - limit) + ' more'));

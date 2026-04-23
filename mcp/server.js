@@ -281,6 +281,45 @@ server.registerTool(
 
 // -- Tool: forge_add_todo ----------------------------------------------------
 
+const TODO_PREFIX_RE = /^(\[?[A-Z]+\]?):\s*/;
+const MAX_TITLE_LEN = 60;
+
+function generateTodoTitleAndSummary(text) {
+  if (!text || typeof text !== "string") return { title: "", summary: "" };
+
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return { title: "", summary: "" };
+
+  const firstLine = lines[0];
+  const stripped = firstLine.replace(TODO_PREFIX_RE, "");
+
+  let title;
+  const periodIdx = stripped.indexOf(". ");
+  if (periodIdx > 0 && periodIdx <= MAX_TITLE_LEN) {
+    title = stripped.slice(0, periodIdx);
+  } else if (stripped.length <= MAX_TITLE_LEN) {
+    title = stripped;
+  } else {
+    const cutPoint = stripped.lastIndexOf(" ", MAX_TITLE_LEN);
+    title = cutPoint > 20 ? stripped.slice(0, cutPoint) : stripped.slice(0, MAX_TITLE_LEN);
+  }
+
+  const allText = lines.join(" ");
+  const body = allText.replace(TODO_PREFIX_RE, "");
+  const sentences = body.match(/[^.!?]+[.!?]+/g) || [body];
+  let summary = "";
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    const candidate = summary ? summary + " " + trimmed : trimmed;
+    if (summary && candidate.length > 160) break;
+    summary = candidate;
+    if (summary.length >= 80) break;
+  }
+  if (!summary) summary = body.slice(0, 160);
+
+  return { title: title.trim(), summary: summary.trim() };
+}
+
 server.registerTool(
   "forge_add_todo",
   {
@@ -306,10 +345,14 @@ server.registerTool(
       const board = read.data;
       if (!board.todos) board.todos = [];
 
+      const { title, summary } = generateTodoTitleAndSummary(text);
+
       const task = {
         id: randomUUID().slice(0, 8),
         priority,
         text,
+        title,
+        summary,
         done: false,
         addedAt: Date.now(),
         tags
