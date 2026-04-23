@@ -417,23 +417,27 @@ server.registerTool(
         return errorResult("Task not found: " + id);
       }
 
-      // Apply done with guards
-      if (done === true && !task.done) {
-        task.done = true;
-        task.doneAt = Date.now();
-      } else if (done === false) {
-        task.done = false;
-        delete task.doneAt;
-      }
-
-      // Apply text
+      // Apply text (regenerate title/summary)
       if (text !== undefined) {
         task.text = text;
+        const gen = generateTodoTitleAndSummary(text);
+        task.title = gen.title;
+        task.summary = gen.summary;
       }
 
       // Apply priority
       if (priority !== undefined) {
         task.priority = priority;
+      }
+
+      // Mark done — remove from board (git history preserves it)
+      if (done === true && !task.done) {
+        board.todos = todos.filter(t => t.id !== id);
+        writeJsonSafe(boardPath, board);
+        return textResult({ ...task, done: true, doneAt: Date.now(), removed: true });
+      } else if (done === false) {
+        task.done = false;
+        delete task.doneAt;
       }
 
       writeJsonSafe(boardPath, board);

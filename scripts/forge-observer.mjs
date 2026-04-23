@@ -747,7 +747,6 @@ function buildTodosTab(cols) {
     if (pa !== pb) return pa - pb;
     return (a.addedAt || 0) - (b.addedAt || 0);
   });
-  const done = allTodos.filter(t => t && t.done === true);
 
   function push(text) { lines.push(text); }
   function blank() { lines.push(''); }
@@ -765,7 +764,7 @@ function buildTodosTab(cols) {
     return s(clr, b.bl + b.h.repeat(w - 2) + b.br);
   }
 
-  if (open.length === 0 && done.length === 0) {
+  if (open.length === 0) {
     blank();
     push(c('gray', '  No TODOs yet'));
     push(c('gray', '  Use /forge:todo or forge_add_todo to add items'));
@@ -834,19 +833,6 @@ function buildTodosTab(cols) {
       }
     }
     push(boxBot(cols, borderColor, box, isSelected));
-  }
-
-  if (done.length > 0) {
-    blank();
-    push(cd('gray', '  ── Done (' + done.length + ') ──'));
-    const limit = 5;
-    for (let i = 0; i < Math.min(done.length, limit); i++) {
-      const t = done[i];
-      push(cd('gray', '  ☑ ' + trunc(todoTitle(t), cols - 8)));
-    }
-    if (done.length > limit) {
-      push(cd('gray', '    +' + (done.length - limit) + ' more'));
-    }
   }
 
   return { lines, regions };
