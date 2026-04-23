@@ -7,8 +7,9 @@
 
 const fs = require('fs');
 const readline = require('readline');
+const { STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 5000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 const THRESHOLDS = {
   'docs/PLAN.md': { max: 200, action: 'Remove completed sections — git history preserves them' },

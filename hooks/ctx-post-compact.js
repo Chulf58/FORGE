@@ -20,8 +20,9 @@
 // that migration lands.
 
 const readline = require('readline');
+const { STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
 function exitSilent() {
   process.exit(0);

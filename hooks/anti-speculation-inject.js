@@ -18,8 +18,9 @@
  */
 
 const readline = require('readline');
+const { STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10_000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
 const ANTI_SPECULATION_RULE =
   'FORGE anti-speculation rule (always applies):\n' +

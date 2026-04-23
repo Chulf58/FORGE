@@ -4,9 +4,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
-const { hasValidApprovalToken: hasValidApprovalTokenShared } = require('./hook-utils');
+const { hasValidApprovalToken: hasValidApprovalTokenShared, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS  = 10_000;
+const STDIN_TIMEOUT_MS  = STDIN_TIMEOUT_LONG;
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
 

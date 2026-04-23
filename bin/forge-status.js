@@ -97,6 +97,16 @@ const PIPELINE_STAGES = {
       'gate2':                   { stage: 4, label: 'gate2' },
     },
   },
+  research: {
+    icon: '📚',
+    totalStages: 2,
+    label: 'researching',
+    steps: {
+      'started':                 { stage: 1, label: 'starting' },
+      'researcher':              { stage: 2, label: 'researching' },
+      'done':                    { stage: 2, label: 'done' },
+    },
+  },
 };
 
 // ─── IO ─────────────────────────────────────────────────────────────────

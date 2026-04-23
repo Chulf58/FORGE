@@ -60,12 +60,11 @@ function readJsonSafe(filePath) {
   }
 }
 
-// WARNING: No file locking. Concurrent MCP tool calls writing to the same file
-// (e.g. parallel reviewers calling forge_add_todo) can cause last-write-wins data loss.
-// Acceptable for single-session use. If multi-session support is added, implement
-// file locking or move to a lightweight DB.
+// Atomic write via temp-file-rename to prevent partial reads by concurrent sessions.
 function writeJsonSafe(filePath, data) {
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  const tmp = filePath + ".tmp." + process.pid;
+  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  renameSync(tmp, filePath);
 }
 
 function errorResult(msg) {
@@ -133,45 +132,7 @@ function pathsEqual(a, b) {
   return process.platform === "win32" ? A.toLowerCase() === B.toLowerCase() : A === B;
 }
 
-// Pipeline currentStep -> human-readable stage label.
-// DUPLICATED from bin/forge-status.js PIPELINE_STAGES — keep in sync. The duplication
-// is intentional: bin/forge-status.js is CommonJS and not importable from this ESM
-// module, and a shared extraction was deferred until a second consumer needed it.
-// forge_resume_run is the second consumer; if a third arrives, extract to mcp/lib/.
-const PIPELINE_STAGE_LABELS = {
-  plan: {
-    "started": "starting", "brainstormer-decision": "brainstorming",
-    "planner": "planner", "researcher": "researcher", "gotcha-checker": "gotcha-check",
-    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate1": "gate1",
-  },
-  implement: {
-    "started": "starting", "setup": "setup",
-    "implementation-architect": "scoping slice", "coder-scout": "scout", "coder": "coder",
-    "completeness-checker": "completeness",
-    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate2": "gate2",
-  },
-  apply: {
-    "started": "starting", "setup": "setup",
-    "implementer-triage": "triage", "implementer": "implementer",
-    "testing": "tests", "documenter": "documenter",
-    "worktree-commit": "wt-commit", "merge-back": "merge-back", "done": "done",
-  },
-  debug: {
-    "started": "starting", "debug": "tracing",
-    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate2": "gate2",
-  },
-  refactor: {
-    "started": "starting", "refactor": "analyzing",
-    "reviewer-triage": "reviewers", "reviewer-boundary": "reviewers", "gate2": "gate2",
-  },
-};
-
-function stageLabelFor(pipelineType, currentStep) {
-  if (!currentStep) return null;
-  const map = PIPELINE_STAGE_LABELS[pipelineType];
-  if (!map) return currentStep;
-  return map[currentStep] || currentStep;
-}
+import { stageLabelFor } from "./lib/stage-labels.js";
 
 // -- Server ------------------------------------------------------------------
 
@@ -1497,7 +1458,7 @@ server.registerTool(
     description: "Creates a new pipeline run. Returns the full run object with a generated runId.",
     inputSchema: z.object({
       sessionId: z.string().describe("Claude session ID"),
-      pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor"]).describe("Pipeline type"),
+      pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor", "research"]).describe("Pipeline type"),
       mode: z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]).describe("Pipeline mode"),
       feature: z.string().default("").describe("Feature name or description"),
     }),
@@ -1702,6 +1663,9 @@ server.registerTool(
         });
       }
 
+      // Opportunistic pruning — also runs on list, not just create
+      pruneTerminalRuns(projectDir);
+
       return textResult(entries);
     } catch (err) {
       return errorResult("forge_list_runs failed: " + err.message);
@@ -1836,7 +1800,7 @@ server.registerTool(
   "forge_escalate",
   {
     title: "FORGE Escalate",
-    description: "Signal that a worker is stuck or needs attention. Writes an escalation file that the Observer TUI surfaces to the user. Use when hitting unexpected blockers, errors, or questions that can't be resolved autonomously.",
+    description: "Signal that a worker is stuck or needs attention. Writes an escalation file to the MAIN project's .pipeline/escalations/ (not the worktree's) so the Observer TUI surfaces it. Use when hitting unexpected blockers, errors, or questions that can't be resolved autonomously.",
     inputSchema: z.object({
       runId: runIdSchema.describe("Run ID to escalate"),
       type: z.enum(["blocker", "error", "question"]).describe("Type of escalation"),

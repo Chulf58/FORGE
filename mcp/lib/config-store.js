@@ -89,7 +89,8 @@ export function resolvePluginDataDir() {
 }
 
 // Module-level routing config cache — invalidated on write or when mtime changes.
-// { config, configPath, pluginDataDir, projectDir, mtimeMs }
+// Cache key includes both pluginDataDir and projectDir, so worktree contexts
+// with different projectDir values correctly bypass the cache.
 let _cache = null;
 
 /**

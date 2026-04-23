@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 function exitWithContext(additionalContext) {

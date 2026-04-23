@@ -25,6 +25,11 @@ function emptyProvider() {
   };
 }
 
+/** Returns a fresh empty model entry (used under providers[id].models[modelId]). */
+function emptyModel() {
+  return { requestCount: 0, tokenCount: 0, lastUsed: null, quotaExhausted: false };
+}
+
 function usagePath(projectDir) {
   return join(projectDir, '.pipeline', USAGE_FILENAME);
 }
@@ -107,7 +112,7 @@ export function markModelQuotaExhausted(projectDir, providerId, modelId) {
   if (!usage.providers[providerId]) usage.providers[providerId] = emptyProvider();
   if (!usage.providers[providerId].models) usage.providers[providerId].models = {};
   if (!usage.providers[providerId].models[modelId]) {
-    usage.providers[providerId].models[modelId] = { requestCount: 0, tokenCount: 0, lastUsed: null, quotaExhausted: false };
+    usage.providers[providerId].models[modelId] = emptyModel();
   }
   usage.providers[providerId].models[modelId].quotaExhausted = true;
   usage.updatedAt = new Date().toISOString();
@@ -154,7 +159,7 @@ export function recordUsage(projectDir, providerId, tokens, modelId) {
   if (modelId) {
     if (!usage.providers[providerId].models) usage.providers[providerId].models = {};
     if (!usage.providers[providerId].models[modelId]) {
-      usage.providers[providerId].models[modelId] = { requestCount: 0, tokenCount: 0, lastUsed: null, quotaExhausted: false };
+      usage.providers[providerId].models[modelId] = emptyModel();
     }
     usage.providers[providerId].models[modelId].requestCount += 1;
     usage.providers[providerId].models[modelId].tokenCount += tokens;

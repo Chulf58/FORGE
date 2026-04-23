@@ -18,40 +18,16 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolvePluginRoot } = require('./hook-utils');
+const { getForgeAgentSet, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10_000;
-const RECOMMENDATION_TTL_MS = 15 * 60 * 1000; // 15 minutes — complex pipelines with multiple researchers can exceed 5 min
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
+const RECOMMENDATION_TTL_MS = 15 * 60 * 1000;
 
 const LOG_RELATIVE_PATH = path.join('.pipeline', 'session-dispatch-log.json');
 
-// Dynamically derived from agents/*.md on first call.
-// undefined = not yet probed; null = failed (fail-open); Set = ok
-let _pipelineAgents = undefined;
-
-function getPipelineAgentSet() {
-  if (_pipelineAgents !== undefined) return _pipelineAgents;
-  try {
-    const agentsDir = path.join(resolvePluginRoot(), 'agents');
-    const entries = fs.readdirSync(agentsDir);
-    const names = entries
-      .filter(n => n.endsWith('.md'))
-      .map(n => n.slice(0, -3)); // strip .md
-    if (names.length === 0) {
-      _pipelineAgents = null; // empty dir — fail open
-      return _pipelineAgents;
-    }
-    _pipelineAgents = new Set(names);
-    return _pipelineAgents;
-  } catch (_) {
-    _pipelineAgents = null;
-    return _pipelineAgents;
-  }
-}
-
 function isPipelineAgent(name) {
-  const set = getPipelineAgentSet();
-  if (!set) return true; // allowlist unavailable → fail open (enforce on all)
+  const set = getForgeAgentSet();
+  if (!set) return true;
   return set.has(name);
 }
 

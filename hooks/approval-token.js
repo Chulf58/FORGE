@@ -15,8 +15,9 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
+const { STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10_000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 const TOKEN_TTL_MS = 120_000; // 2 minutes
 
 /** Actions and the keywords that trigger them. */

@@ -3,9 +3,9 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
-const { hasValidApprovalToken } = require('./hook-utils');
+const { hasValidApprovalToken, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
 function exitOk() { process.exit(0); }
 function exitBlock(msg) {
@@ -134,7 +134,8 @@ function hasBashWriteVector(command) {
   if (/>\s*['"]?\.pipeline\//.test(safe)) return true;
   if (/>>\s*['"]?\.pipeline\//.test(safe)) return true;
   if (/\btee\b/.test(safe) && /\.pipeline\//.test(safe)) return true;
-  if (/\bnode\s+-(e|p)\b/.test(safe)) return true;
+  if (/\bnode\s+(-e|-p|--eval|--print)\b/.test(safe)) return true;
+  if (/\bnpx\b/.test(safe) && /\.pipeline\//.test(safe)) return true;
   if (/\bprintf\b/.test(safe) && hasOutputRedirect(safe)) return true;
   return false;
 }

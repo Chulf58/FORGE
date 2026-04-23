@@ -11,9 +11,9 @@
 const path = require('path');
 const { execFileSync, spawn } = require('child_process');
 const readline = require('readline');
-const { resolvePluginRoot } = require('./hook-utils');
+const { resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 5000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 /**
  * Returns a non-empty skip reason string, or null to proceed.

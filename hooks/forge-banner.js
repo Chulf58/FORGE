@@ -17,9 +17,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolvePluginRoot } = require('./hook-utils');
+const { resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 5000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 function fire(rawInput) {
   const pluginRoot = resolvePluginRoot();

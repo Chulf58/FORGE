@@ -12,9 +12,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
 /**
  * Extract the changed file path from the payload using multiple candidate

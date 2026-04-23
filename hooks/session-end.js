@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 10000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 const FRESHNESS_MS = 60 * 60 * 1000; // 60 minutes
 
 async function main(rawInput) {

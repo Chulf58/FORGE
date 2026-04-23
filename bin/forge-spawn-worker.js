@@ -32,10 +32,15 @@ if (!fs.existsSync(workDir)) {
   process.exit(1);
 }
 
+if (process.platform !== 'win32') {
+  console.error('[forge-spawn-worker] Worker sessions currently require Windows Terminal (wt.exe). macOS/Linux support is not yet implemented.');
+  process.exit(1);
+}
+
 try {
   execFileSync('where', ['wt.exe'], { stdio: 'ignore', timeout: 2000 });
 } catch (_) {
-  console.error('[forge-spawn-worker] wt.exe not found on PATH');
+  console.error('[forge-spawn-worker] wt.exe not found on PATH. Install Windows Terminal from the Microsoft Store or winget.');
   process.exit(1);
 }
 

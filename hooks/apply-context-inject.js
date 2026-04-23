@@ -15,9 +15,9 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot, stripAnsi, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
-const STDIN_TIMEOUT_MS = 5000;
+const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 // Apply-phase agents that should receive worktree context
 const APPLY_AGENTS = new Set(['implementer', 'documenter']);

@@ -9,7 +9,7 @@
 // No Claude dependency. No MCP dependency. Pure git + filesystem.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { getRun } from './getRun.js';
 import { updateRun } from './updateRun.js';
@@ -148,7 +148,18 @@ export function createWorktree(projectRoot, runId) {
   mkdirSync(worktreeDir, { recursive: true });
 
   if (existsSync(wtPath)) {
-    // Worktree directory already exists (leftover from a crash?) — reuse it
+    // Directory exists (leftover from a crash?) — verify git knows about it.
+    // If git worktree registration is gone (e.g. after `git worktree prune`),
+    // remove the orphaned directory and recreate properly.
+    try {
+      const list = git(['worktree', 'list', '--porcelain'], absRoot);
+      if (!list.includes(wtPath.replace(/\\/g, '/'))) {
+        rmSync(wtPath, { recursive: true, force: true });
+        git(['worktree', 'add', wtPath, '-b', branchName], absRoot);
+      }
+    } catch (_) {
+      // If verification fails, proceed with existing directory — best effort
+    }
   } else {
     // Surface the actual git error if worktree creation fails — could be
     // "branch already exists", permission denied, or a real git error.
