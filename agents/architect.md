@@ -228,8 +228,9 @@ A **module** is a cohesive functional area of the project, not a technical layer
 For each module, identify:
 - **Name**: short, descriptive (2–4 words)
 - **Description**: what the user experiences through this module (1–2 sentences)
-- **Notes**: key technical decisions, files involved, patterns used
-- **Capabilities**: specific things this module can do (each a short action phrase)
+- **Paths**: directory prefixes or specific files that belong to this module
+- **Notes**: key technical decisions, patterns used
+- **Dependencies**: which other modules this one depends on and is used by
 
 ## Step 3 — Write `.pipeline/modules.json`
 
@@ -243,31 +244,21 @@ The JSON must be a valid array matching this exact structure:
     "id": "slugified-module-name",
     "name": "Module Display Name",
     "description": "What the user experiences through this module.",
-    "notes": "Key files: src/foo.js. Technical notes about implementation.",
-    "capabilities": [
-      { "id": "cap-slug-1", "text": "Short description of one specific capability", "addedAt": 0 },
-      { "id": "cap-slug-2", "text": "Another capability", "addedAt": 0 }
-    ],
-    "keyFiles": ["src/path/to/file.ts", "src/path/to/module.ts"],
+    "paths": ["src/module-area/", "lib/related-file.js"],
     "dependsOn": ["other-module-id"],
     "usedBy": ["another-module-id"],
-    "addedAt": 0,
-    "updatedAt": 0
+    "notes": "Key technical notes about implementation."
   }
 ]
 ```
 
 Rules:
 - `id`: lowercase, hyphens only, derived from the name (e.g. "Search & Filter" → `"search-filter"`)
-- `capabilities[].id`: same slugification, append a number if needed for uniqueness
-- `addedAt` / `updatedAt`: use `0` (FORGE will display the date based on when it was loaded)
-- List 3–8 capabilities per module — specific, action-oriented, not vague
-- Every significant feature visible to the user should appear as a capability somewhere
-- `keyFiles`: list the actual source files that implement this module (relative paths from project root)
-- `stores`: list only the state/store files this module reads or writes (filename only)
+- `paths`: directory prefixes (with trailing `/`) or specific file paths. Used for prefix-matching when determining which modules a change touches. Prefer directories over individual files — the goal is "neighborhood map" coverage, not precise file ownership
 - `dependsOn`: list module IDs this module calls into or imports from
 - `usedBy`: list module IDs that call into or import from this module
-- Wiring fields must reflect the actual code — trace imports and store reads/writes rather than guessing
+- Wiring fields must reflect the actual code — trace imports rather than guessing
+- `notes`: brief technical context, not a file list (paths already covers that)
 
 ## Step 4 — Write `docs/ARCHITECTURE.md`
 

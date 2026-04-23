@@ -35,8 +35,8 @@ Before emitting any terminal output, execute the following steps in order:
 
 **Step 2 — Context read.** Read `docs/gotchas/GENERAL.md` and `docs/gotchas/SKILLS.md` (if it exists) once.
 
-**Step 2b — Regression-risk analysis.** Read `.pipeline/modules.json` (if it exists). Extract all file paths from the handoff. For each module, check if any handoff file path contains the module id as a substring. Classify touched modules:
-- **High-risk** if module id contains: `handler`, `store`, `shared`, `session`, `runner`, or has 3+ capabilities.
+**Step 2b — Regression-risk analysis.** Read `.pipeline/modules.json` (if it exists). Extract all file paths from the handoff. For each module, check if any handoff file path starts with any of the module's `paths` entries (prefix match). Classify touched modules:
+- **High-risk** if module has a non-empty `usedBy` array, or its `dependsOn` overlaps with another touched module.
 - **Medium-risk** otherwise.
 For each high-risk module, emit: `[health] <module-id>|coupling|medium|touched by this handoff — verify no unintended side effects`
 Include the risk summary in your dispatch output (after the dispatch list). If modules.json is missing or empty, skip this step silently.

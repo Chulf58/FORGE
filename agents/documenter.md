@@ -193,59 +193,18 @@ For each matched entry: remove it from the `todos[]` array entirely. Do not set 
 
 Write the updated board back to `.pipeline/board.json` (same rules as Step 5: 2-space indent, raw JSON only, preserve all other fields).
 
-## Step 5d — Update module wiring
+## Step 5d — Log touched modules
 
-**Runs in all modes** (feature, debug, refactor). Module wiring should reflect every change, not just features.
+**Runs in all modes** (feature, debug, refactor).
 
-**For feature mode:** Uses the `moduleName` from the planned item found in Step 5. If no moduleName, attempt to identify the primary module by matching file paths from the handoff against existing modules' `keyFiles` arrays.
+Read `.pipeline/modules.json`. If the file does not exist or cannot be parsed, skip silently.
 
-**For debug/refactor mode:** Identify the affected module(s) by matching file paths from the handoff against existing modules' `keyFiles` arrays. If exactly one module matches, use it as the target. If multiple match, update all of them.
+Match file paths from the handoff against each module's `paths` entries (prefix match). Log which modules were touched:
+`[board] modules touched: <module-id>, <module-id>`
 
-**If no module can be identified**, skip this step and emit:
-`[board] module wiring: no matching module found — skipping registry update`
+If no modules match: `[board] modules touched: none`
 
-(a) Read `.pipeline/modules.json`. If the file does not exist or cannot be parsed, emit:
-`[board] module capabilities: modules.json not found or unreadable — skipping`
-Then skip this step.
-
-(b) Locate the module entry whose `name` field matches `moduleName` (case-insensitive substring).
-
-**If no match is found** — this means the planner assigned a new module name that does not yet exist. Create a new module record and append it to the modules array:
-```json
-{
-  "id": "<slugified-module-name>",
-  "name": "<moduleName as supplied>",
-  "description": "",
-  "notes": "",
-  "capabilities": [],
-  "keyFiles": [],
-  "stores": [],
-  "dependsOn": [],
-  "usedBy": [],
-  "addedAt": <current epoch ms>,
-  "updatedAt": <current epoch ms>
-}
-```
-Slugify: lowercase, replace spaces and special characters with hyphens, collapse consecutive hyphens. Use this new record as the target for steps (c)–(f) below. Log: `[board] module capabilities: created new module "<moduleName>"`
-
-(c) Get the current date in `YYYY-MM-DD` format. Compose a capability string:
-`<feature name> (shipped <YYYY-MM-DD>)`
-
-(d) Append this string to the module's `capabilities` array.
-
-(e) **Update wiring fields** by scanning the handoff already read in Step 0 — do not re-read it:
-
-- **`keyFiles`**: find all `src/...` file paths mentioned in the handoff (regex: `src/[^\s\`'"]+`). For each path not already in `keyFiles`, append it.
-- **`stores`**: find all state/store file references mentioned in the handoff. For each not already in `stores`, append the filename only (no path).
-- **`updatedAt`**: set to current epoch ms.
-
-Only append items that are genuinely new — do not duplicate existing entries.
-
-(f) Write the full updated modules array back to `.pipeline/modules.json`:
-- 2-space indentation
-- Write raw JSON only — no markdown fences, no surrounding prose
-
-Log: `[board] module capabilities: appended to "<moduleName>" · wiring updated (keyFiles: +N, stores: +N)`
+Do NOT modify modules.json — the module registry uses directory-based paths that stay current without maintenance.
 
 ## Step 6 — Pipeline artefact cleanup
 

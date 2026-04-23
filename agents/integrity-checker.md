@@ -191,14 +191,14 @@ Validate that `.pipeline/modules.json` reflects the actual codebase.
 (a) Read `.pipeline/modules.json`. If absent, emit one signal and stop this check:
 `[health] .pipeline/modules.json | integrity | high | modules.json missing — run architect to generate`
 
-(b) **Stale keyFiles:** For each module, check that every path in its `keyFiles` array exists on disk (use Glob or Read). For each missing file, emit:
-`[health] .pipeline/modules.json | integrity | medium | module "<name>" references missing keyFile: <path>`
+(b) **Stale paths:** For each module, check that each `paths` entry exists on disk as a directory (trailing `/`) or file. For each missing path, emit:
+`[health] .pipeline/modules.json | integrity | medium | module "<name>" references missing path: <path>`
 
-(c) **Orphaned source files:** For each module, Glob the directories implied by its `keyFiles` entries. For each source file found that does not appear in any module's `keyFiles`, emit:
-`[health] <file-path> | integrity | medium | source file not registered in any module's keyFiles`
+(c) **Broken dependency graph:** For each module, verify that every ID in `dependsOn` and `usedBy` refers to an actual module in the array. For each dangling reference, emit:
+`[health] .pipeline/modules.json | integrity | medium | module "<name>" references unknown module: <id>`
 
-(e) **Empty modules:** For any module with zero capabilities, emit:
-`[health] .pipeline/modules.json | integrity | low | module "<name>" has no capabilities — may need updating`
+(d) **Missing description:** For any module with an empty description, emit:
+`[health] .pipeline/modules.json | integrity | low | module "<name>" has no description`
 
 ---
 

@@ -1,0 +1,101 @@
+[
+  {
+    "id": "pipeline-agents",
+    "name": "Pipeline Agents",
+    "description": "31 agent definitions forming the multi-stage pipeline. Each is a Markdown file with YAML frontmatter.",
+    "paths": ["agents/"],
+    "dependsOn": ["mcp-server"],
+    "usedBy": ["skills"],
+    "notes": "Agent sequence: brainstormer → planner → researcher → gotcha-checker → reviewers (plan), coder → completeness-checker → reviewers (implement), implementer → documenter (apply). Debug/refactor have own paths."
+  },
+  {
+    "id": "skills",
+    "name": "Skills",
+    "description": "User-facing skills that trigger FORGE pipelines. Each is a SKILL.md loaded by Claude Code on invocation.",
+    "paths": ["skills/"],
+    "dependsOn": ["pipeline-agents", "mcp-server"],
+    "usedBy": [],
+    "notes": "Each skill orchestrates MCP tool calls and agent dispatches. Routing: every agent invocation preceded by forge_get_model_recommendation."
+  },
+  {
+    "id": "mcp-server",
+    "name": "MCP Server",
+    "description": "The forge-pipeline MCP server exposing ~30 forge_* tools for pipeline state, model routing, and external provider calls.",
+    "paths": ["mcp/"],
+    "dependsOn": ["run-registry"],
+    "usedBy": ["skills", "hooks"],
+    "notes": "Entry point: mcp/server.js (ESM). Separate mcp/package.json with type:module. Includes router, config-store, usage-store, adapters, dashboard-state, stage-labels, sanitize, model-validation."
+  },
+  {
+    "id": "run-registry",
+    "name": "Run Registry",
+    "description": "Durable, schema-validated run lifecycle store. Each run has a stable runId, lifecycle state, and on-disk representation.",
+    "paths": ["packages/forge-core/"],
+    "dependsOn": [],
+    "usedBy": ["mcp-server"],
+    "notes": "ESM. Schema enforced by Zod. On-disk: .pipeline/runs/<runId>/run.json + index.json. Also handles worktree creation via createWorktree.js."
+  },
+  {
+    "id": "hooks",
+    "name": "Hooks",
+    "description": "Node.js hook scripts wired to Claude Code lifecycle events. Enforce gates, guard bash, track routing, inject context, detect stuck loops.",
+    "paths": ["hooks/"],
+    "dependsOn": ["run-registry"],
+    "usedBy": ["mcp-server"],
+    "notes": "CJS. 27 scripts declared in hooks/hooks.json. Shared utils in hook-utils.js (resolveProjectDir, stripAnsi, approval tokens, timeout constants, agent allowlist)."
+  },
+  {
+    "id": "observer",
+    "name": "Observer TUI",
+    "description": "Read-only terminal-kit split-pane dashboard showing pipeline state: active runs, gates, TODOs, notes, usage.",
+    "paths": ["scripts/forge-observer.mjs", "bin/forge-observer.cmd"],
+    "dependsOn": ["run-registry", "mcp-server"],
+    "usedBy": [],
+    "notes": "Auto-launched by hooks/observer-autosplit.js on Windows. Uses terminal-kit (not Ink/React). Tabs: Sessions, TODOs, Notes, Usage. Signal injection via observer-selected.json."
+  },
+  {
+    "id": "parallel-sessions",
+    "name": "Parallel Sessions",
+    "description": "Git worktree isolation for concurrent pipeline runs. Each implement run gets its own worktree, branch, and .pipeline/ copy.",
+    "paths": ["bin/forge-worktree.js", "bin/forge-spawn-worker.js", "bin/forge-status.js"],
+    "dependsOn": ["run-registry"],
+    "usedBy": ["skills", "hooks"],
+    "notes": "Windows-only worker spawning via wt.exe. gate-enforcement.js is worktree-aware. Worktree creation also in packages/forge-core/src/runs/createWorktree.js."
+  },
+  {
+    "id": "project-scaffolds",
+    "name": "Project Scaffolds",
+    "description": "Bootstrap templates copied by /forge:init. Provides starter CLAUDE.md, docs/, and .pipeline/ for new projects.",
+    "paths": ["scaffolds/"],
+    "dependsOn": [],
+    "usedBy": ["skills"],
+    "notes": "Template types: code (JS/TS), code-csharp, power-automate, instructional. Architect customises after init."
+  },
+  {
+    "id": "dev-tooling",
+    "name": "Dev Tooling",
+    "description": "Plugin development scripts: tests, version bump, token audit, smoke tests, agent validation.",
+    "paths": ["scripts/"],
+    "dependsOn": [],
+    "usedBy": [],
+    "notes": "run-tests.mjs is the regression runner. validate-agents.mjs checks frontmatter. bump-version.mjs updates plugin.json. Observer and dashboard scripts also live here but belong to the observer module."
+  },
+  {
+    "id": "lean-risk-gate",
+    "name": "LEAN Risk Gate",
+    "description": "Classifier that determines whether reviewer dispatch can be skipped in LEAN mode based on handoff risk surface analysis.",
+    "paths": ["scripts/lean-risk-classify.mjs", "scripts/lean-risk-classify.test.mjs"],
+    "dependsOn": [],
+    "usedBy": ["skills"],
+    "notes": "Pure function, no I/O. Risk-surface rules cover: bin/, hooks/, mcp/ paths; shell spawn, fs write, auth/crypto, network, schema changes."
+  },
+  {
+    "id": "commands",
+    "name": "Commands",
+    "description": "Remaining slash commands (doctor, hello) that haven't migrated to skills.",
+    "paths": ["commands/"],
+    "dependsOn": [],
+    "usedBy": [],
+    "notes": "Most commands migrated to skills/. Only doctor.md and hello.md remain."
+  }
+]

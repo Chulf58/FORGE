@@ -1,0 +1,481 @@
+{
+  "todos": [
+    {
+      "id": "docs-folder-consolidation",
+      "priority": "low",
+      "text": "CLEANUP: Consolidate plugin docs/ folder. Remove or merge stale docs carried over from Electron era. Ensure docs/ contains only what the plugin needs. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1743019200000,
+      "tags": [
+        "needs-detail",
+        "docs",
+        "cleanup"
+      ],
+      "title": "Consolidate plugin docs/ folder",
+      "summary": "Remove or merge stale docs carried over from Electron era. Ensure docs/ contains only what the plugin needs."
+    },
+    {
+      "id": "competitive-evaluation-external-perspective",
+      "priority": "medium",
+      "text": "DISCUSS: Pretend you are the developer of a competing AI dev tool (e.g. get-shit-done, aider, cursor, or similar) evaluating FORGE for the first time. Give an honest external assessment: (1) STRENGTHS — what would genuinely impress you compared to your own tool? Think: gate system, pipeline structure, specialised agents, signal protocol, wave execution, skills system, the fact that FORGE develops itself; (2) WEAKNESSES — what would make you uncomfortable or unconvinced? Think: token cost, pipeline complexity, orchestrator reliability, onboarding friction for new users, dependency on Claude CLI, no test automation, single-user focus; (3) MISSING — what features does your tool have that FORGE clearly lacks? (4) OVER-ENGINEERED — what would you call unnecessarily complex for the value it delivers? (5) VERDICT — would you be worried about FORGE as a competitor, and why or why not? Be harsh. The goal is to find real gaps and blind spots before real users do.",
+      "done": false,
+      "addedAt": 1743019200000,
+      "tags": [
+        "discuss",
+        "strategy",
+        "competitive",
+        "evaluation"
+      ],
+      "title": "Pretend you are the developer of a",
+      "summary": "get-shit-done, aider, cursor, or similar) evaluating FORGE for the first time."
+    },
+    {
+      "id": "one-chat-capability-audit-post-launch",
+      "priority": "medium",
+      "text": "DESIGN: Multi-step request chaining — natural language requests that require multiple pipeline steps (e.g. \"mark this done and add a follow-up task\", \"plan this then implement it\"). Decide whether /forge:chat handles chaining or if a separate orchestration layer is needed. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1774895366744,
+      "tags": [
+        "needs-detail",
+        "orchestration",
+        "one-chat"
+      ],
+      "title": "Multi-step request chaining",
+      "summary": "\"mark this done and add a follow-up task\", \"plan this then implement it\")."
+    },
+    {
+      "id": "azure-endpoint-documentation",
+      "priority": "low",
+      "text": "DOCS: Document enterprise backend compatibility. Plugin runs wherever Claude Code runs — if Claude Code supports Azure/Bedrock/Vertex, FORGE inherits it. Write FAQ for enterprise users. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1744070400000,
+      "tags": [
+        "needs-detail",
+        "docs",
+        "enterprise"
+      ],
+      "title": "Document enterprise backend",
+      "summary": "Plugin runs wherever Claude Code runs — if Claude Code supports Azure/Bedrock/Vertex, FORGE inherits it."
+    },
+    {
+      "id": "scope-guardian-check",
+      "priority": "medium",
+      "text": "FEATURE: Scope guardian — add a scope-creep check to the gotcha-checker or as a new lightweight agent. Asks: is this plan trying to do too much? Does the scope match the original request? Catches oversized plans before they enter the review cycle. Inspired by Compound Engineering scope-guardian-reviewer.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "pipeline",
+        "agents"
+      ],
+      "title": "Scope guardian",
+      "summary": "Asks: is this plan trying to do too much? Does the scope match the original request?"
+    },
+    {
+      "id": "session-history-search",
+      "priority": "medium",
+      "text": "FEATURE: Past session search — search run history for patterns and solutions. Have we seen this error before? What worked last time? Store run history in ${CLAUDE_PLUGIN_DATA}, searchable by agents during plan/debug. Inspired by Compound Engineering session-historian. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "needs-detail",
+        "knowledge",
+        "history"
+      ],
+      "title": "Past session search",
+      "summary": "Have we seen this error before? What worked last time? Store run history in ${CLAUDE_PLUGIN_DATA}, searchable by agents during plan/debug."
+    },
+    {
+      "id": "context7-integration",
+      "priority": "low",
+      "text": "[PARKED] FEATURE: Context7 MCP integration — add @upstash/context7-mcp as a tool available to researcher and coder agents for live framework documentation lookup. Covers 1000+ libraries. Free, no API key. Replaces unreliable WebSearch for framework-specific questions. Spawn as MCP server process or call REST API directly. NOTE: 1000 calls/day shared IP limit — defer until dedicated endpoint or self-hosted option available.",
+      "done": false,
+      "addedAt": 1775741662740,
+      "tags": [
+        "knowledge",
+        "tools",
+        "mcp",
+        "parked"
+      ],
+      "title": "[PARKED] FEATURE",
+      "summary": "Covers 1000+ libraries. Free, no API key. Replaces unreliable WebSearch for framework-specific questions."
+    },
+    {
+      "id": "add-plugin-settings",
+      "priority": "low",
+      "text": "FEATURE: Add settings.json to plugin root. RESEARCH FINDING (2026-04-19): Plugin settings.json only supports two keys — `agent` (activates a custom agent as main thread) and `subagentStatusLine`. It does NOT support permissions/tool-allowlists — those live in project/user `.claude/settings.json` only and cannot be set by plugins. Original scope (pre-approve Read/Glob/Grep for agents) is not possible via this mechanism. Remaining scope: (1) evaluate whether `agent` field should activate a default FORGE agent on session start, (2) evaluate `subagentStatusLine` for pipeline agent status display, (3) consider shipping a recommended `.claude/settings.json` snippet via `/forge:init` templates for tool permissions.",
+      "done": false,
+      "addedAt": 1775848039903,
+      "tags": [
+        "feature",
+        "settings",
+        "permissions"
+      ],
+      "title": "Add settings.json to plugin root",
+      "summary": "RESEARCH FINDING (2026-04-19): Plugin settings.json only supports two keys — `agent` (activates a custom agent as main thread) and `subagentStatusLine`."
+    },
+    {
+      "id": "add-user-config",
+      "priority": "low",
+      "text": "FEATURE: Add userConfig to plugin.json for user-configurable values prompted at install time. Candidates: default pipeline mode (LEAN/STANDARD/FULL), preferred model for heavy agents (opus vs sonnet), API keys for multi-engine routing (future). Values become ${user_config.key} in MCP/hook configs and CLAUDE_PLUGIN_OPTION_KEY env vars. Not needed for initial launch but important for multi-engine routing later.",
+      "done": false,
+      "addedAt": 1775848039903,
+      "tags": [
+        "feature",
+        "config",
+        "plugin",
+        "future"
+      ],
+      "title": "Add userConfig to plugin.json for",
+      "summary": "Candidates: default pipeline mode (LEAN/STANDARD/FULL), preferred model for heavy agents (opus vs sonnet), API keys for multi-engine routing (future)."
+    },
+    {
+      "id": "add-plugin-data-usage",
+      "priority": "medium",
+      "text": "FEATURE: Use ${CLAUDE_PLUGIN_DATA} for persistent plugin state. Valid uses: (1) pipeline run history for session-history-search, (2) knowledge compound index across projects, (3) cost tracking data. Do NOT use for prompt caching — Claude Code native auto-compaction handles context management.",
+      "done": false,
+      "addedAt": 1775848039903,
+      "tags": [
+        "feature",
+        "plugin-data",
+        "persistence"
+      ],
+      "title": "Use ${CLAUDE_PLUGIN_DATA} for",
+      "summary": "Valid uses: (1) pipeline run history for session-history-search, (2) knowledge compound index across projects, (3) cost tracking data."
+    },
+    {
+      "id": "plugin-project-references",
+      "priority": "medium",
+      "text": "FEATURE: Project references — store URLs, docs, and local files as persistent project knowledge in docs/references/. Implement as a skill that uses native WebFetch for URLs and Read for local files, NOT as an MCP tool. Claude Code already has WebFetch built in. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "knowledge",
+        "references"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Project references",
+      "summary": "Implement as a skill that uses native WebFetch for URLs and Read for local files, NOT as an MCP tool."
+    },
+    {
+      "id": "plugin-project-json-versioning",
+      "priority": "medium",
+      "text": "FEATURE: project.json version field and migration logic. Auto-migrate project config when schema changes. Was in shared.ts in Electron — needs implementation in MCP server or hook. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "config",
+        "migration"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "project.json version field and",
+      "summary": "Auto-migrate project config when schema changes. Was in shared.ts in Electron — needs implementation in MCP server or hook."
+    },
+    {
+      "id": "plugin-false-positive-block-audit",
+      "priority": "low",
+      "text": "FEATURE: Audit trail for false positive reviewer BLOCKs. When a reviewer blocks incorrectly, capture why so the agent-optimizer can improve prompts. Was audit-log.jsonl in Electron — needs new approach in plugin. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "pipeline",
+        "quality"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Audit trail for false positive",
+      "summary": "When a reviewer blocks incorrectly, capture why so the agent-optimizer can improve prompts."
+    },
+    {
+      "id": "pipeline-stage-restart",
+      "priority": "medium",
+      "text": "FEATURE: Restart pipeline from a specific stage. \"The coder finished, reviewers crashed, restart from reviewers.\" Currently you re-run everything. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "pipeline",
+        "resilience"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Restart pipeline from a specific",
+      "summary": "\"The coder finished, reviewers crashed, restart from reviewers.\" Currently you re-run everything."
+    },
+    {
+      "id": "evaluation-harness-replay",
+      "priority": "medium",
+      "text": "FEATURE: Evaluation harness — replay past pipeline runs for testing and quality measurement. Measure: did the reviewer catch the bug? Did the planner scope correctly? Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "quality",
+        "testing"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Evaluation harness",
+      "summary": "Measure: did the reviewer catch the bug? Did the planner scope correctly? Scope TBD after restructure."
+    },
+    {
+      "id": "pipeline-data-flow-display",
+      "priority": "medium",
+      "text": "FEATURE: Data flow preview before pipeline runs — show which files will be touched and what changes in each. Formalize the assessment format we use in conversation. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "pipeline",
+        "ux"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Data flow preview before pipeline",
+      "summary": "Formalize the assessment format we use in conversation. Scope TBD after restructure."
+    },
+    {
+      "id": "folder-structure-cleanup",
+      "priority": "medium",
+      "text": "CLEANUP: Separate ephemeral pipeline artefacts from permanent project files. Temp/working files live alongside permanent docs — hard to tell what is transient vs what matters. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "cleanup",
+        "architecture"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Separate ephemeral pipeline",
+      "summary": "Temp/working files live alongside permanent docs — hard to tell what is transient vs what matters."
+    },
+    {
+      "id": "dynamic-pipeline-construction",
+      "priority": "low",
+      "text": "VISION: Evolve from fixed pipeline modes (LEAN/STANDARD/FULL) to dynamic pipeline construction. Orchestrator builds the agent sequence per-task based on signals, not mode presets. Requires significant usage data first. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "pipeline",
+        "vision",
+        "future"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Evolve from fixed pipeline modes",
+      "summary": "Orchestrator builds the agent sequence per-task based on signals, not mode presets."
+    },
+    {
+      "id": "distribution-ip-protection",
+      "priority": "low",
+      "text": "STRATEGY: IP protection for commercial distribution. Evaluate cloud hybrid model or obfuscation for protecting FORGE agent prompts and pipeline logic when distributing to paying users. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "distribution",
+        "strategy",
+        "future"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "IP protection for commercial",
+      "summary": "Evaluate cloud hybrid model or obfuscation for protecting FORGE agent prompts and pipeline logic when distributing to paying users."
+    },
+    {
+      "id": "signal-timeline",
+      "priority": "medium",
+      "text": "FEATURE: Signal timeline — visualize the sequence of signals from the last pipeline run. Shows agent flow, reviewer verdicts, health warnings in order. Could be /forge:status output or web dashboard feature. Scope TBD after restructure.",
+      "tags": [
+        "needs-detail",
+        "dashboard",
+        "signals"
+      ],
+      "done": false,
+      "addedAt": 0,
+      "title": "Signal timeline",
+      "summary": "Shows agent flow, reviewer verdicts, health warnings in order. Could be /forge:status output or web dashboard feature."
+    },
+    {
+      "id": "worktree-dependency-analysis",
+      "priority": "medium",
+      "text": "FEATURE: Dependency analysis before parallel execution. Analyze which tasks touch which files, build dependency graph, group into waves. Wave 1: independent tasks run in parallel. Wave 2: tasks dependent on wave 1. Prevents conflicts when multiple sessions modify the same files. GSD pattern. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1775851888690,
+      "tags": [
+        "worktree",
+        "parallel",
+        "needs-detail"
+      ],
+      "title": "Dependency analysis before parallel",
+      "summary": "Analyze which tasks touch which files, build dependency graph, group into waves."
+    },
+    {
+      "id": "worktree-crash-recovery",
+      "priority": "medium",
+      "text": "FEATURE: Crash recovery with session forensics. Lock file tracks current unit in run-active.json. On resume, synthesize recovery briefing from surviving tool calls and file state. Use Claude Code native --resume where possible. GSD pattern. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1775851888690,
+      "tags": [
+        "worktree",
+        "resilience",
+        "needs-detail"
+      ],
+      "title": "Crash recovery with session",
+      "summary": "Lock file tracks current unit in run-active.json. On resume, synthesize recovery briefing from surviving tool calls and file state."
+    },
+    {
+      "id": "worktree-atomic-commits",
+      "priority": "medium",
+      "text": "FEATURE: Atomic git commit per completed task. Each micro-task produces one traceable commit. Enables git bisect to pinpoint exact failing task and clean single-task reverts. Part of git-integration-epic. GSD pattern. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1775851888690,
+      "tags": [
+        "worktree",
+        "git",
+        "needs-detail"
+      ],
+      "title": "Atomic git commit per completed task",
+      "summary": "Each micro-task produces one traceable commit. Enables git bisect to pinpoint exact failing task and clean single-task reverts."
+    },
+    {
+      "id": "worktree-cost-tracking",
+      "priority": "medium",
+      "text": "FEATURE: Per-session, per-agent token and cost tracking. Track input/output tokens per agent invocation, running totals per pipeline run, cost projections. Budget ceilings that can pause execution. Dashboard visibility. GSD pattern. Scope TBD after restructure.",
+      "done": false,
+      "addedAt": 1775851888690,
+      "tags": [
+        "worktree",
+        "cost",
+        "needs-detail"
+      ],
+      "title": "Per-session, per-agent token and",
+      "summary": "Track input/output tokens per agent invocation, running totals per pipeline run, cost projections."
+    },
+    {
+      "id": "dual-distribution-npm-plugin",
+      "priority": "low",
+      "text": "EXPLORE: Dual distribution — npm package + marketplace plugin. Compound Engineering does both (@every-env/compound-plugin on npm + marketplace). npm gives cross-runtime support (Codex, Windsurf, Copilot). Plugin gives MCP auto-spawn, CLAUDE_PLUGIN_DATA, skills loading. Evaluate effort to support both. GSD is npm-only (npx get-shit-done-cc, 9 runtimes). Research at docs/RESEARCH/compound-distribution.md and docs/RESEARCH/gsd-distribution.md.",
+      "done": false,
+      "addedAt": 1744358400000,
+      "tags": [
+        "explore",
+        "distribution",
+        "competitive"
+      ],
+      "title": "Dual distribution",
+      "summary": "Compound Engineering does both (@every-env/compound-plugin on npm + marketplace). npm gives cross-runtime support (Codex, Windsurf, Copilot)."
+    },
+    {
+      "id": "f6fff350",
+      "priority": "high",
+      "text": "VALIDATION: Test marketplace-installed FORGE in a fresh session without --plugin-dir. The install flow works (marketplace add + plugin install both succeed, installed_plugins.json is correct), but the /plugin UI showed \"No plugins\" during the test session — likely because the test ran inside a --plugin-dir session. Need to verify: (1) start a fresh Claude Code session with NO --plugin-dir flag, (2) confirm FORGE loads automatically from the marketplace install at user scope, (3) confirm MCP tools, skills, hooks, and agents are all available, (4) confirm /plugin UI shows FORGE as installed. If it works, the self-hosted marketplace distribution path is fully validated end-to-end.",
+      "done": false,
+      "addedAt": 1776181274722,
+      "tags": [
+        "validation",
+        "distribution",
+        "marketplace",
+        "e2e"
+      ],
+      "title": "Test marketplace-installed FORGE in",
+      "summary": "The install flow works (marketplace add + plugin install both succeed, installed_plugins.json is correct), but the /plugin UI showed \"No plugins\" during the test session — likely because the test ran inside a --plugin-dir session."
+    },
+    {
+      "id": "68ec233a",
+      "priority": "medium",
+      "text": "CLEANUP: Audit and remove legacy Electron/JS clutter from the plugin repo. FORGE was originally built by copying the old Electron application and building the plugin from there. The repo still contains Electron-era files, config artifacts, and general JavaScript clutter that are not needed for the pure Claude Code plugin. Audit the repo root and all directories for: (1) files carried over from the Electron app that serve no plugin purpose (e.g. .editorconfig, .prettierrc.yaml, .prettierignore, .vscode/, old config files), (2) docs or research files that reference the Electron era and are no longer relevant, (3) any stale pipeline state or test fixtures that should not be distributed. Remove or archive what is not needed. Keep the repo lean for marketplace distribution.",
+      "done": false,
+      "addedAt": 1776197194487,
+      "tags": [
+        "cleanup",
+        "legacy",
+        "distribution",
+        "plugin"
+      ],
+      "title": "Audit and remove legacy Electron/JS",
+      "summary": "FORGE was originally built by copying the old Electron application and building the plugin from there."
+    },
+    {
+      "id": "6e6dacb2",
+      "priority": "medium",
+      "text": "FEATURE: Add Dataverse MCP to Power Platform project template. When /forge:init is run for a Power Automate/Power Platform project, prompt for the Dataverse org URL and write it into the project's .mcp.json so Dataverse MCP tools are available automatically. Template location: templates/power-automate/. Dataverse MCP remote URL format: https://{org}.crm.dynamics.com/api/mcp. Requires Azure AD auth — document in template CLAUDE.md. Tools exposed: create_record, describe_table, list_tables, read_query, update_record, Search, Fetch and more. Official Microsoft, GA, supports Claude Code natively.",
+      "done": false,
+      "addedAt": 1776500143250,
+      "tags": [
+        "feature",
+        "mcp",
+        "power-platform",
+        "dataverse",
+        "template"
+      ],
+      "title": "Add Dataverse MCP to Power Platform",
+      "summary": "When /forge:init is run for a Power Automate/Power Platform project, prompt for the Dataverse org URL and write it into the project's .mcp.json so Dataverse MCP tools are available automatically."
+    },
+    {
+      "id": "3835132d",
+      "priority": "medium",
+      "text": "FEATURE: Project specs panel in TUI. Show the active project's configuration in the TUI/observer, including: (1) tech stack from .pipeline/project.json, (2) pipeline mode, (3) connected MCP servers from the project's .mcp.json, (4) test command if set. Design decision needed: persistent panel vs on-demand toggle vs /forge:info command. Specs data is static per session — read once at startup and cached. Avoids token cost of asking the model for project state every time. Complements active runs + gates view with project context.",
+      "done": false,
+      "addedAt": 1776500146056,
+      "tags": [
+        "feature",
+        "tui",
+        "dashboard",
+        "project",
+        "mcp"
+      ],
+      "title": "Project specs panel in TUI",
+      "summary": "Show the active project's configuration in the TUI/observer, including: (1) tech stack from .pipeline/project.json, (2) pipeline mode, (3) connected MCP servers from the project's .mcp.json, (4) test command if set."
+    },
+    {
+      "id": "3ad6216e",
+      "priority": "high",
+      "text": "ANTI-SPECULATION HARDENING — Stages 2–4 remaining.\n\n**Stage 1 — SHIPPED (2026-04-18):**\n- ✅ `hooks/anti-speculation-inject.js` (UserPromptSubmit) — injects citation rule every turn\n- ✅ Anti-speculation rule moved to top of CLAUDE.md (lines 1–3)\n- ✅ Memory file updated with incident examples\n\n**Stage 2 — Auditor extension (next):**\n- RESEARCH: can a SubagentStop or PostCompact hook log assistant turn text to audit JSONL?\n- If viable: extend `agents/tool-call-auditor.md` with `NL-CLAIM-WITHOUT-EVIDENCE` anti-pattern\n- If not viable: document limitation in `docs/RESEARCH/anti-speculation-limits.md`\n\n**Stage 3 — CLAUDE.md slim: SUPERSEDED by task `ba8a01a9`.**\nThe CLAUDE.md audit and trim is now its own task with a ready-made audit doc. When `ba8a01a9` ships, Stage 3 closes automatically.\n\n**Stage 4 — Auditor-driven prompt optimization:**\n- Depends on Stage 2 (auditor extension)\n- agent-optimizer targets CLAUDE.md and memory files for anti-speculation rule strengthening\n- Self-improving loop: incidents → auditor → optimizer → user approves → rule updated",
+      "done": false,
+      "addedAt": 1776546589569,
+      "tags": [
+        "quality",
+        "speculation",
+        "hardening",
+        "hooks",
+        "claude-md",
+        "auditor"
+      ],
+      "title": "ANTI-SPECULATION HARDENING",
+      "summary": "**Stage 1 — SHIPPED (2026-04-18):** - ✅ `hooks/anti-speculation-inject.js` (UserPromptSubmit) — injects citation rule every turn - ✅ Anti-speculation rule moved to top of CLAUDE.md (lines 1–3) - ✅ Memory file updated with incident examples **Stage 2 — Auditor extension (next):** - RESEARCH: can a SubagentStop or PostCompact hook log assistant turn text to audit JSONL? - If viable: extend `agents/tool-call-auditor.md` with `NL-CLAIM-WITHOUT-EVIDENCE` anti-pattern - If not viable: document limitation in `docs/RESEARCH/anti-speculation-limits.md` **Stage 3 — CLAUDE.md slim: SUPERSEDED by task `ba8a01a9`.** The CLAUDE.md audit and trim is now its own task with a ready-made audit doc."
+    },
+    {
+      "id": "08854ae7",
+      "priority": "high",
+      "text": "Harden bash-guard pipeline bypass: the active-run bypass currently lets any git commit/push through while run-active.json exists — including non-pipeline commits on main (e.g. pre-merge cleanup). Mechanical fix needed: bash-guard should distinguish worktree commits (legitimate pipeline ops) from main-branch commits during an active run. Proposed: check if the git -C target or cwd matches the run's worktreePath — allow if yes, require approval token if no. Supervisor involvement required — this is a mechanical guard change, not a rule/prompt fix.",
+      "done": false,
+      "addedAt": 1776667091564,
+      "tags": [
+        "hooks",
+        "security",
+        "bash-guard"
+      ],
+      "title": "Harden bash-guard pipeline bypass",
+      "summary": "pre-merge cleanup)."
+    },
+    {
+      "id": "094aaab3",
+      "priority": "medium",
+      "text": "UX: Surface actionable message when MCP tools are unavailable. Skills currently call forge_read_project and silently fail when MCP is down. Detect MCP unavailability and emit: \"[forge] MCP server not running. Run /forge:doctor to diagnose, or restart Claude Code.\" Affects all skills that fall back from MCP to direct file reads.",
+      "done": false,
+      "addedAt": 1776681532005,
+      "tags": [
+        "ux",
+        "mcp",
+        "install",
+        "error-handling"
+      ],
+      "title": "Surface actionable message when MCP",
+      "summary": "Skills currently call forge_read_project and silently fail when MCP is down. Detect MCP unavailability and emit: \"[forge] MCP server not running."
+    },
+    {
+      "id": "workflow-guard-failopen-gap",
+      "priority": "high",
+      "text": "BUG: workflow-guard apply enforcement silently bypassed when run-active.json is absent. checkApplyGateAndHandoff (workflow-guard.js:147) reads run-active.json to detect apply runs. If MCP is down, run-active.json can't be created (direct writes blocked at line 267), so the guard returns null at line 159 — skipping gate2/handoff/worktree-path enforcement on all source writes. Fix: also check .pipeline/runs/ for an active apply run when run-active.json is absent.",
+      "done": false,
+      "addedAt": 1776973200000,
+      "tags": [
+        "security",
+        "workflow-guard",
+        "mcp-fallback"
+      ],
+      "title": "workflow-guard apply enforcement",
+      "summary": "checkApplyGateAndHandoff (workflow-guard.js:147) reads run-active.json to detect apply runs."
+    }
+  ],
+  "planned": []
+}

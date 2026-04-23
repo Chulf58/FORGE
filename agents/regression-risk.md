@@ -27,14 +27,14 @@ Read `docs/context/handoff.md`. Extract all file paths mentioned in the handoff 
 
 ## Step 3 — Match modules
 
-For each module in modules.json, check whether any of the extracted handoff file paths contain the module's id as a substring, OR whether the module's `notes` field references any of the handoff file paths. A module is "touched" if at least one handoff file path matches.
+For each module in modules.json, check whether any of the extracted handoff file paths start with any of the module's `paths` entries. A module is "touched" if at least one handoff file path matches. Path matching is prefix-based — a module path of `hooks/` matches any file under `hooks/`.
 
 ## Step 4 — Classify risk
 
 For each touched module, classify as **high-risk** if any of the following apply:
-- The module id contains any of: `handler`, `store`, `shared`, `session`, `runner`, `hook`, `core`
-- The module has 3 or more capabilities listed
-- The module's notes describe it as used by multiple other modules
+- The module has a non-empty `usedBy` array (other modules depend on it)
+- The module's `dependsOn` array overlaps with another touched module (cross-module change)
+- The module id contains any of: `hook`, `core`, `server`, `registry`
 
 All other touched modules are **medium-risk**.
 
