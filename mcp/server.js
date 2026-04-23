@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from "./lib/config-store.js";
@@ -10,7 +10,7 @@ import { recommendModel } from "./lib/router.js";
 import { callOpenAI } from "./lib/openai-adapter.js";
 import { callGemini } from "./lib/gemini-adapter.js";
 import { addModelToConfig, updateModelInConfig } from "./lib/model-validation.js";
-import { createRun, getRun, listRuns, updateRun, createWorktree } from "../packages/forge-core/src/runs/index.js";
+import { createRun, getRun, listRuns, updateRun, createWorktree, rebuildIndex } from "../packages/forge-core/src/runs/index.js";
 import { buildDashboardState } from "./lib/dashboard-state.js";
 import { sanitizeFeatureName } from "./lib/sanitize.js";
 
@@ -1460,6 +1460,34 @@ server.registerTool(
   },
 );
 
+// -- Run pruning -------------------------------------------------------------
+
+const MAX_TERMINAL_RUNS = 10;
+const PRUNE_STATUSES = new Set(["completed", "failed", "discarded"]);
+
+function pruneTerminalRuns(projectDir) {
+  try {
+    const all = listRuns(projectDir);
+    const terminal = all
+      .filter(e => PRUNE_STATUSES.has(e.status))
+      .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    if (terminal.length <= MAX_TERMINAL_RUNS) return;
+
+    const toPrune = terminal.slice(MAX_TERMINAL_RUNS);
+    const runsBase = join(projectDir, ".pipeline", "runs");
+
+    for (const entry of toPrune) {
+      const dir = join(runsBase, entry.runId);
+      try { rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+    }
+
+    rebuildIndex(projectDir);
+    console.error("[forge] pruned " + toPrune.length + " old runs, kept " + MAX_TERMINAL_RUNS);
+  } catch (err) {
+    console.error("[forge] prune failed: " + err.message);
+  }
+}
+
 // -- Tool: forge_create_run --------------------------------------------------
 
 server.registerTool(
@@ -1534,6 +1562,8 @@ server.registerTool(
 
       const runActivePath = join(projectDir, ".pipeline", "run-active.json");
       writeJsonSafe(runActivePath, runActiveData);
+
+      pruneTerminalRuns(projectDir);
 
       return textResult(started);
     } catch (err) {
