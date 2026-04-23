@@ -3,6 +3,7 @@
 //
 // Run:  node scripts/forge-observer.mjs   (or use observer.bat)
 // Quit: q / Ctrl+C  |  Navigate: ↑↓ / j k / scroll  |  Click: expand  |  Refresh: r
+// Tabs: 1=Sessions  2=TODOs  3=Notes  4=Usage
 
 import { createRequire } from 'node:module';
 import { resolve, dirname, join } from 'node:path';
@@ -37,8 +38,6 @@ const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const REFRESH_MS = 2000;
 
 // ── ANSI helpers for buffer-based rendering ─────────────────────────────
-// We compose the entire frame as a string, then write once — zero flicker.
-
 const ESC = '\x1b[';
 const RESET = ESC + '0m';
 const BOLD = ESC + '1m';
@@ -53,19 +52,48 @@ const COLOR = {
   blue:    ESC + '34m',
 };
 const BG_BLUE = ESC + '44m';
+const BG_GRAY = ESC + '100m';
 
 function c(color, text) { return (COLOR[color] || '') + text + RESET; }
 function cb(color, text) { return BOLD + (COLOR[color] || '') + text + RESET; }
 function cd(color, text) { return DIM + (COLOR[color] || '') + text + RESET; }
 
+// ── Tabs ───────────────────────────────────────────────────────────────
+const TABS = [
+  { key: '1', label: 'Sessions' },
+  { key: '2', label: 'TODOs' },
+  { key: '3', label: 'Notes' },
+  { key: '4', label: 'Usage' },
+];
+let currentTab = 0;
+
 // ── Data helpers ────────────────────────────────────────────────────────
 
-function loadOpenTodos(projectDir) {
+function loadAllTodos(projectDir) {
   try {
     const raw = readFileSync(join(projectDir, '.pipeline', 'board.json'), 'utf8');
     const data = JSON.parse(raw);
-    return Array.isArray(data.todos) ? data.todos.filter(t => t && t.done !== true) : [];
+    return Array.isArray(data.todos) ? data.todos : [];
   } catch (_) { return []; }
+}
+
+function loadOpenTodos(projectDir) {
+  return loadAllTodos(projectDir).filter(t => t && t.done !== true);
+}
+
+function loadNotes(projectDir) {
+  try {
+    const raw = readFileSync(join(projectDir, '.pipeline', 'notes.json'), 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data.notes) ? data.notes : [];
+  } catch (_) { return []; }
+}
+
+function loadUsage(projectDir) {
+  try {
+    const raw = readFileSync(join(projectDir, '.pipeline', 'usage.json'), 'utf8');
+    return JSON.parse(raw);
+  } catch (_) { return null; }
 }
 
 function loadFullRun(projectDir, runId) {
@@ -415,6 +443,8 @@ const BANNER = buildBanner();
 
 let state = null;
 let todos = [];
+let notes = [];
+let usage = null;
 let workers = [];
 let completed = [];
 let orderedIds = [];
@@ -447,13 +477,14 @@ function refresh() {
   try {
     state = buildDashboardState(PROJECT_DIR);
     todos = loadOpenTodos(PROJECT_DIR);
+    notes = loadNotes(PROJECT_DIR);
+    usage = loadUsage(PROJECT_DIR);
     heartbeats = loadHeartbeats(PROJECT_DIR);
     escalations = loadEscalations(PROJECT_DIR);
 
     const gates = (state.activeRuns || []).filter(r => r.status === 'gate-pending');
     const active = (state.activeRuns || []).filter(r => r.status !== 'gate-pending');
 
-    // Unacknowledged research runs stay in active list even when completed
     const unackResearch = (state.recentCompleted || [])
       .map(r => loadFullRun(PROJECT_DIR, r.runId) || r)
       .filter(isUnacknowledgedResearch);
@@ -462,20 +493,20 @@ function refresh() {
     workers = mergeOrder(freshWorkers, orderedIds);
     orderedIds = workers.map(w => w.runId);
 
-    // Completed list excludes unacknowledged research (they're in workers)
     const unackIds = new Set(unackResearch.map(r => r.runId));
     completed = (state.recentCompleted || []).filter(r => !unackIds.has(r.runId));
 
-    const total = workers.length + completed.length;
-    if (expandedIdx >= total) expandedIdx = -1;
-    if (selectedIdx >= total) selectedIdx = Math.max(0, total - 1);
+    if (currentTab === 0) {
+      const total = workers.length + completed.length;
+      if (expandedIdx >= total) expandedIdx = -1;
+      if (selectedIdx >= total) selectedIdx = Math.max(0, total - 1);
+    }
 
-    // Flash + bell for newly completed research
     for (const r of unackResearch) {
       if (!notifiedDone.has(r.runId)) {
         notifiedDone.add(r.runId);
         flash('Research done: ' + (r.feature || r.runId));
-        process.stdout.write('\x07'); // terminal bell
+        process.stdout.write('\x07');
       }
     }
   } catch (err) {
@@ -484,8 +515,6 @@ function refresh() {
 }
 
 // ── Frame buffer rendering ──────────────────────────────────────────────
-// Build entire frame as array of padded lines, then flush to terminal
-// in a single process.stdout.write(). Zero flicker.
 
 const BOX = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
 const BOX_SEL = { tl: '█', tr: '█', bl: '█', br: '█', h: '█', v: '█' };
@@ -495,6 +524,21 @@ let scrollOffset = 0;
 
 function stripAnsi(str) {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+function buildTabBar(cols) {
+  let line = '  ';
+  for (let i = 0; i < TABS.length; i++) {
+    const tab = TABS[i];
+    const label = ' ' + tab.key + ' ' + tab.label + ' ';
+    if (i === currentTab) {
+      line += BOLD + BG_BLUE + COLOR.white + label + RESET;
+    } else {
+      line += DIM + COLOR.gray + label + RESET;
+    }
+    if (i < TABS.length - 1) line += ' ';
+  }
+  return line;
 }
 
 function buildHeader(cols) {
@@ -508,20 +552,24 @@ function buildHeader(cols) {
   const activeCount = (state.activeRuns || []).filter(r => r.status === 'running').length;
   const gateCount = (state.gatesAwaiting || []).length;
   const attentionCount = (state.activeRuns || []).filter(r => r.actionNeeded).length;
-  const doneCount = (state.recentCompleted || []).length;
 
   for (const line of BANNER) lines.push(line);
   let statusParts = [];
   if (activeCount > 0) statusParts.push(c('green', '● ' + activeCount));
   if (gateCount > 0) statusParts.push(c('yellow', '! ' + gateCount));
   if (attentionCount > 0) statusParts.push(c('yellow', '⏸ ' + attentionCount));
-  if (doneCount > 0) statusParts.push(c('gray', '○ ' + doneCount));
+  if (todos.length > 0) statusParts.push(c('cyan', '☐ ' + todos.length));
   if (statusParts.length === 0) statusParts.push(c('gray', 'idle'));
   lines.push('  ' + statusParts.join('  '));
+  lines.push('');
+  lines.push(buildTabBar(cols));
+  lines.push(c('gray', '─'.repeat(cols)));
   return lines;
 }
 
-function buildBody(cols) {
+// ── Tab 1: Sessions ─────────────────────────────────────────────────────
+
+function buildSessionsTab(cols) {
   const inner = Math.max(20, cols - 4);
   const lines = [];
   const regions = [];
@@ -548,9 +596,7 @@ function buildBody(cols) {
 
   if (!state) return { lines, regions };
 
-  // ── Workers ──
   if (workers.length > 0) {
-    sep('Workers');
     for (let i = 0; i < workers.length; i++) {
       const run = workers[i];
       const isSelected = selectedIdx === i;
@@ -603,13 +649,14 @@ function buildBody(cols) {
   }
 
   if (workers.length === 0 && completed.length === 0) {
-    push(c('gray', '  (no active workers)'));
+    blank();
+    push(c('gray', '  No active sessions'));
+    push(c('gray', '  Start work in Claude Code — sessions appear here automatically'));
   }
 
-  // ── Recent ──
   if (completed.length > 0) {
     blank();
-    sep('Recent');
+    sep('Completed');
     for (let i = 0; i < completed.length; i++) {
       const gi = workers.length + i;
       const run = completed[i];
@@ -617,36 +664,166 @@ function buildBody(cols) {
       const s = statusOf(run);
       const time = fmtRel(run.updatedAt);
       const type = (run.pipelineType || '').padEnd(10);
-      const feature = trunc(run.feature || '', Math.max(6, cols - 20 - time.length));
+      const dur = fmtDuration(run.createdAt, run.updatedAt);
+      const feature = trunc(run.feature || '', Math.max(6, cols - 26 - time.length - dur.length));
       regions.push({ idx: gi, bodyLine: lines.length, h: 1, type: 'completed' });
       if (isSelected) {
-        push(BG_BLUE + ESC + '37m' + ' ❯' + RESET + c(s.color, s.dot + ' ') + type + ' ' + cd('gray', feature) + '  ' + cd('gray', time));
+        push(BG_BLUE + ESC + '37m' + ' ❯' + RESET + c(s.color, s.dot + ' ') + type + ' ' + cd('gray', feature) + '  ' + cd('gray', dur) + '  ' + cd('gray', time));
       } else {
-        push('  ' + c(s.color, s.dot + ' ') + cd('gray', type + ' ') + cd('gray', feature) + '  ' + cd('gray', time));
+        push('  ' + c(s.color, s.dot + ' ') + cd('gray', type + ' ') + cd('gray', feature) + '  ' + cd('gray', dur) + '  ' + cd('gray', time));
       }
-    }
-  }
-
-  // ── TODOs ──
-  if (todos.length > 0) {
-    blank();
-    sep('TODOs (' + todos.length + ')');
-    const limit = 3;
-    const shown = todos.slice(0, limit);
-    for (const t of shown) {
-      const hi = t.priority === 'high';
-      const prefix = hi ? c('red', ' ! ') : c('gray', ' · ');
-      push(prefix + cd('gray', trunc(typeof t.text === 'string' ? t.text : '', cols - 6)));
-    }
-    if (todos.length > limit) {
-      push(cd('gray', '   ↓ ' + (todos.length - limit) + ' more'));
     }
   }
 
   return { lines, regions };
 }
 
+// ── Tab 2: TODOs ────────────────────────────────────────────────────────
+
+function buildTodosTab(cols) {
+  const lines = [];
+  const allTodos = loadAllTodos(PROJECT_DIR);
+  const open = allTodos.filter(t => t && t.done !== true);
+  const done = allTodos.filter(t => t && t.done === true);
+
+  if (open.length === 0 && done.length === 0) {
+    lines.push('');
+    lines.push(c('gray', '  No TODOs yet'));
+    lines.push(c('gray', '  Use /forge:todo or forge_add_todo to add items'));
+    return { lines, regions: [] };
+  }
+
+  if (open.length > 0) {
+    lines.push('');
+    for (let i = 0; i < open.length; i++) {
+      const t = open[i];
+      const pri = t.priority === 'high' ? cb('red', '!!') : t.priority === 'medium' ? c('yellow', ' !') : c('gray', '  ');
+      const text = typeof t.text === 'string' ? t.text : '';
+      const tags = Array.isArray(t.tags) && t.tags.length > 0
+        ? ' ' + c('cyan', t.tags.map(tag => '#' + tag).join(' '))
+        : '';
+      const age = t.createdAt ? cd('gray', ' ' + fmtRel(t.createdAt)) : '';
+      lines.push('  ' + pri + ' ' + c('white', '☐ ') + trunc(text, Math.max(10, cols - 20)) + tags + age);
+    }
+  }
+
+  if (done.length > 0) {
+    lines.push('');
+    lines.push(cd('gray', '  ── Done (' + done.length + ') ──'));
+    const limit = 5;
+    for (let i = 0; i < Math.min(done.length, limit); i++) {
+      const t = done[i];
+      const text = typeof t.text === 'string' ? t.text : '';
+      lines.push(cd('gray', '  ☑ ' + trunc(text, cols - 8)));
+    }
+    if (done.length > limit) {
+      lines.push(cd('gray', '    +' + (done.length - limit) + ' more'));
+    }
+  }
+
+  return { lines, regions: [] };
+}
+
+// ── Tab 3: Notes ────────────────────────────────────────────────────────
+
+function buildNotesTab(cols) {
+  const lines = [];
+
+  if (notes.length === 0) {
+    lines.push('');
+    lines.push(c('gray', '  No notes yet'));
+    lines.push(c('gray', '  Use /forge:note or forge_add_note to capture knowledge'));
+    return { lines, regions: [] };
+  }
+
+  lines.push('');
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i];
+    const text = typeof n.text === 'string' ? n.text : '';
+    const tags = Array.isArray(n.tags) && n.tags.length > 0
+      ? c('cyan', n.tags.map(tag => '#' + tag).join(' ')) + ' '
+      : '';
+    const age = n.createdAt ? cd('gray', fmtRel(n.createdAt)) : '';
+    const firstLine = text.split('\n')[0];
+
+    lines.push('  ' + c('yellow', '▸') + ' ' + cb('white', trunc(firstLine, Math.max(10, cols - 20))) + '  ' + age);
+    if (tags) lines.push('    ' + tags);
+
+    const rest = text.split('\n').slice(1).filter(l => l.trim());
+    for (let j = 0; j < Math.min(rest.length, 2); j++) {
+      lines.push('    ' + cd('gray', trunc(rest[j].trim(), cols - 8)));
+    }
+    if (rest.length > 2) {
+      lines.push(cd('gray', '    ...' + (rest.length - 2) + ' more lines'));
+    }
+
+    if (i < notes.length - 1) lines.push('');
+  }
+
+  return { lines, regions: [] };
+}
+
+// ── Tab 4: Usage ────────────────────────────────────────────────────────
+
+function buildUsageTab(cols) {
+  const lines = [];
+  lines.push('');
+
+  if (!usage) {
+    lines.push(c('gray', '  No usage data available'));
+    lines.push(c('gray', '  Usage tracking activates during pipeline runs'));
+    return { lines, regions: [] };
+  }
+
+  if (usage.sessions) {
+    const s = usage.sessions;
+    lines.push('  ' + cb('cyan', 'Session'));
+    if (s.totalRuns !== undefined) lines.push('    ' + c('gray', 'Runs:   ') + c('white', String(s.totalRuns)));
+    if (s.totalAgents !== undefined) lines.push('    ' + c('gray', 'Agents: ') + c('white', String(s.totalAgents)));
+    lines.push('');
+  }
+
+  if (usage.tokens) {
+    const t = usage.tokens;
+    lines.push('  ' + cb('cyan', 'Tokens'));
+    if (t.input !== undefined) lines.push('    ' + c('gray', 'Input:  ') + c('white', Number(t.input).toLocaleString()));
+    if (t.output !== undefined) lines.push('    ' + c('gray', 'Output: ') + c('white', Number(t.output).toLocaleString()));
+    if (t.total !== undefined) lines.push('    ' + c('gray', 'Total:  ') + cb('white', Number(t.total).toLocaleString()));
+    lines.push('');
+  }
+
+  if (usage.cost) {
+    lines.push('  ' + cb('cyan', 'Cost'));
+    if (usage.cost.estimated !== undefined) {
+      lines.push('    ' + c('gray', 'Est:    ') + cb('yellow', '$' + Number(usage.cost.estimated).toFixed(2)));
+    }
+  }
+
+  if (Object.keys(usage).length === 0 || (!usage.sessions && !usage.tokens && !usage.cost)) {
+    lines.push(c('gray', '  Usage data format not recognized'));
+    lines.push(c('gray', '  Raw keys: ' + Object.keys(usage).join(', ')));
+  }
+
+  return { lines, regions: [] };
+}
+
+// ── Build body (dispatches to active tab) ───────────────────────────────
+
+function buildBody(cols) {
+  switch (currentTab) {
+    case 0: return buildSessionsTab(cols);
+    case 1: return buildTodosTab(cols);
+    case 2: return buildNotesTab(cols);
+    case 3: return buildUsageTab(cols);
+    default: return { lines: [], regions: [] };
+  }
+}
+
 function autoScroll(bodyLines, regions, viewportH) {
+  if (currentTab !== 0) {
+    scrollOffset = 0;
+    return;
+  }
   let targetStart = -1, targetEnd = -1;
   for (const r of regions) {
     if (r.idx === selectedIdx) {
@@ -677,32 +854,28 @@ function draw() {
 
   autoScroll(body.length, regions, viewportH);
 
-  // Map body regions to terminal rows for hit-testing and animation
   cardRegions = [];
   for (const r of regions) {
     const screenLine = r.bodyLine - scrollOffset;
     if (screenLine + r.h <= 0 || screenLine >= viewportH) continue;
     cardRegions.push({
       idx: r.idx,
-      y: headerH + screenLine + 1, // 1-based terminal row
+      y: headerH + screenLine + 1,
       h: r.h,
       type: r.type,
     });
   }
 
-  // Build single output buffer
   const out = [];
   out.push(ESC + 'H');
   out.push(ESC + '?25l');
 
-  // Header (pinned)
   for (let i = 0; i < headerH; i++) {
     const vis = stripAnsi(header[i]);
     out.push(header[i] + ' '.repeat(Math.max(0, cols - vis.length)));
     out.push('\r\n');
   }
 
-  // Body viewport (scrollable)
   for (let i = 0; i < viewportH; i++) {
     const bodyIdx = scrollOffset + i;
     if (bodyIdx < body.length) {
@@ -714,15 +887,22 @@ function draw() {
     out.push('\r\n');
   }
 
-  // Footer (pinned)
   let footerText;
   if (flashMessage) {
     footerText = BOLD + COLOR.green + ' ✓ ' + flashMessage + RESET;
   } else {
-    const hints = expandedIdx >= 0
-      ? '[↑↓] select  [⏎] toggle  [R] resume  [ESC] close  [r] refresh  [q] quit'
-      : '[↑↓] select  [⏎] open  [R] resume  [r] refresh  [q] quit';
-    footerText = DIM + COLOR.gray + trunc(hints, cols) + RESET;
+    const tabHints = '[1-4] tabs';
+    let modeHints;
+    if (currentTab === 0) {
+      modeHints = expandedIdx >= 0
+        ? '[↑↓] select  [⏎] toggle  [R] resume  [ESC] close'
+        : '[↑↓] select  [⏎] open  [R] resume';
+    } else {
+      modeHints = '';
+    }
+    const globalHints = '[r] refresh  [q] quit';
+    const allHints = [tabHints, modeHints, globalHints].filter(Boolean).join('  ');
+    footerText = DIM + COLOR.gray + trunc(allHints, cols) + RESET;
   }
   const footerVis = stripAnsi(footerText);
   out.push(footerText + ' '.repeat(Math.max(0, cols - footerVis.length)));
@@ -742,14 +922,17 @@ function signalSelection() {
 }
 
 function selectPrev() {
+  if (currentTab !== 0) return;
   if (selectedIdx > 0) { selectedIdx--; signalSelection(); draw(); }
 }
 
 function selectNext() {
+  if (currentTab !== 0) return;
   if (selectedIdx < totalItems() - 1) { selectedIdx++; signalSelection(); draw(); }
 }
 
 function toggleExpand(idx) {
+  if (currentTab !== 0) return;
   if (idx === undefined) idx = selectedIdx;
   if (idx < 0 || idx >= totalItems()) return;
   if (expandedIdx === idx) {
@@ -764,6 +947,13 @@ function toggleExpand(idx) {
 
 function collapseExpand() {
   if (expandedIdx >= 0) { expandedIdx = -1; draw(); }
+}
+
+function switchTab(idx) {
+  if (idx === currentTab) return;
+  currentTab = idx;
+  scrollOffset = 0;
+  draw();
 }
 
 function getSelectedRun() {
@@ -816,14 +1006,8 @@ function flash(msg) {
   draw();
 }
 
-function sendToChat() {
-  const run = getSelectedRun();
-  if (!run) return;
-  writeObserverSignal(run);
-  flash('Context sent → type in Claude Code');
-}
-
 function resumeWorker() {
+  if (currentTab !== 0) return;
   const run = getSelectedRun();
   if (!run || !run.runId) return;
   const workerName = 'worker-' + run.runId;
@@ -864,8 +1048,8 @@ function hitTest(termY) {
   return -1;
 }
 
-// Lightweight animation: only update icon characters via single write
 function drawAnimOnly() {
+  if (currentTab !== 0) return;
   animFrame++;
   const parts = [];
   for (const region of cardRegions) {
@@ -874,7 +1058,6 @@ function drawAnimOnly() {
     if (!run) continue;
     const s = statusOf(run);
     const icon = animIcon(run, animFrame);
-    // region.y = box top border row (1-based); icon is one row below
     parts.push(ESC + (region.y + 1) + ';3H' + (COLOR[s.color] || '') + icon + RESET);
   }
   if (parts.length > 0) {
@@ -884,13 +1067,17 @@ function drawAnimOnly() {
 
 // ── Main ────────────────────────────────────────────────────────────────
 
-process.stdout.write(ESC + '?1049h'); // enter alternate screen buffer
-process.stdout.write(ESC + '?25l');   // hide cursor
+process.stdout.write(ESC + '?1049h');
+process.stdout.write(ESC + '?25l');
 term.grabInput({ mouse: 'button', focus: true });
 
 term.on('key', (name) => {
   switch (name) {
     case 'q': case 'Q': case 'CTRL_C': quit(); break;
+    case '1': switchTab(0); break;
+    case '2': switchTab(1); break;
+    case '3': switchTab(2); break;
+    case '4': switchTab(3); break;
     case 'UP': case 'k': selectPrev(); break;
     case 'DOWN': case 'j': selectNext(); break;
     case 'ENTER': toggleExpand(); break;
@@ -903,9 +1090,9 @@ term.on('key', (name) => {
 term.on('mouse', (name, data) => {
   switch (name) {
     case 'MOUSE_LEFT_BUTTON_PRESSED': {
-      const idx = hitTest(data.y);
-      if (idx >= 0) {
-        toggleExpand(idx);
+      if (currentTab === 0) {
+        const idx = hitTest(data.y);
+        if (idx >= 0) toggleExpand(idx);
       }
       break;
     }
@@ -924,15 +1111,9 @@ term.on('mouse', (name, data) => {
   }
 });
 
-// Initial load + draw
 refresh();
 draw();
 
-// Periodic data refresh + full redraw
 setInterval(() => { refresh(); draw(); }, REFRESH_MS);
-
-// Animation tick (icons only — single write, no full redraw)
 setInterval(drawAnimOnly, 150);
-
-// Terminal resize
 term.on('resize', () => { draw(); });
