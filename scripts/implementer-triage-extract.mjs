@@ -296,6 +296,80 @@ function buildDependencyContext(task, allTasks, handoffSections) {
 
 const UNIVERSAL_SHARED_RE = /\b(all\s+(modified\s+)?files|every\s+file|each\s+file|across\s+all)\b/i;
 
+function splitIntoBlocks(text) {
+  const lines = text.split('\n');
+  const blocks = [];
+  let current = [];
+  let inCodeBlock = false;
+
+  for (const line of lines) {
+    if (/^```/.test(line.trim())) {
+      inCodeBlock = !inCodeBlock;
+      current.push(line);
+      continue;
+    }
+    if (inCodeBlock) {
+      current.push(line);
+      continue;
+    }
+    if (line.trim() === '' || line.trim() === '---') {
+      if (current.length > 0) {
+        blocks.push(current.join('\n').trim());
+        current = [];
+      }
+    } else {
+      current.push(line);
+    }
+  }
+
+  if (current.length > 0) {
+    blocks.push(current.join('\n').trim());
+  }
+
+  return blocks.filter(b => b.length > 0);
+}
+
+function validateSharedChanges(sharedChanges, waveTasks) {
+  if (!sharedChanges || !sharedChanges.trim()) return { ok: true };
+
+  const blocks = splitIntoBlocks(sharedChanges);
+  if (blocks.length === 0) return { ok: true };
+
+  const taskPaths = new Set();
+  const taskDirs = new Set();
+  for (const task of waveTasks) {
+    if (task.targetFile) {
+      taskPaths.add(task.targetFile);
+      const dir = task.targetFile.split('/')[0];
+      if (dir) taskDirs.add(dir + '/');
+    }
+  }
+
+  for (const block of blocks) {
+    if (UNIVERSAL_SHARED_RE.test(block)) continue;
+
+    let assignable = false;
+    for (const p of taskPaths) {
+      if (block.includes(p)) { assignable = true; break; }
+    }
+    if (!assignable) {
+      for (const d of taskDirs) {
+        if (block.includes(d)) { assignable = true; break; }
+      }
+    }
+
+    if (!assignable) {
+      const preview = block.split('\n')[0].slice(0, 80);
+      return {
+        ok: false,
+        reason: `shared changes block not assignable to any task — fallback to agent: "${preview}"`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
 function sharedChangesAffectsFile(sharedChanges, targetFile) {
   if (!sharedChanges) return false;
   if (sharedChanges.includes(targetFile)) return true;
@@ -411,6 +485,11 @@ export function runImplementerTriageExtract(root) {
         reason: `task ${task.id} target file "${task.targetFile}" has no matching handoff section — fallback to agent`,
       };
     }
+  }
+
+  const sharedValidation = validateSharedChanges(sharedChanges, waveTasks);
+  if (!sharedValidation.ok) {
+    return { ok: false, reason: sharedValidation.reason };
   }
 
   const skillsPath = path.join(root, 'docs', 'gotchas', 'SKILLS.md');
