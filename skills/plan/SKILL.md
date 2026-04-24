@@ -65,7 +65,7 @@ Call `forge_update_run` with the `runId` from Step 1 and `mode`: the mode you de
 
 1. **Planner:** reads brainstorm doc (if exists), GENERAL.md, codebase. Writes `docs/PLAN.md`. The planner does NOT ask questions.
 2. **Conditional researcher:** read `### Research needed` in PLAN.md. Skip if absent/empty.
-3. **Gotcha-checker** (STANDARD/FULL only): check plan against pitfalls.
+3. **Gotcha-checker + Researcher (STANDARD/FULL — concurrent when both needed):** In STANDARD and FULL modes, if both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially. In LEAN mode, gotcha-checker is skipped and researcher runs alone (sequential, unchanged).
 4. **Reviewer-triage → reviewers:** dispatch based on mode decided in Step 3.
 5. **Gate #1:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate1"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`

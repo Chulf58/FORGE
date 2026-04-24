@@ -69,6 +69,8 @@ Then skip Steps 5 and 6 entirely. Continue with all other steps (CHANGELOG, ARCH
 - `archUpdate: true` → set `needs_architecture_update = true`; `archUpdate: false` → set `needs_architecture_update = false`
 - `decision: true` → set `needs_decisions_entry = true`; `decision: false` → set `needs_decisions_entry = false`
 
+Additionally, if the sidecar contains a non-empty `feature` string, use it as the feature name instead of parsing the handoff header. If it contains a non-empty `filesTouched` array, use those paths for Step 5d module matching instead of re-parsing handoff file headings. Before using any `filesTouched` path, validate it is relative and safe: reject any path that is absolute (starts with `/` or matches `[A-Za-z]:\\`) or contains `../` traversal segments. Skip invalid entries silently.
+
 If the file exists and both flags are readable, skip Step d1b and d2 entirely.
 
 **Step d1b — Check for `## Doc hints` section (fallback):** If `docs/context/coder-status.json` is absent or malformed, scan the handoff content you already read for a `## Doc hints` section. If present, read the flag values directly from it:

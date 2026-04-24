@@ -71,7 +71,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
 
 1. **Coder-scout** (skip in LEAN): writes `<worktreePath>/docs/context/scout.json`
 2. **Coder:** writes draft to `<worktreePath>/docs/context/handoff.md`
-3. **Completeness-checker** (skip in LEAN): verifies plan coverage
+3. **Completeness-checker + Reviewer-triage (STANDARD/FULL — concurrent):** In STANDARD and FULL modes, spawn completeness-checker and reviewer-triage in a single concurrent Agent dispatch (one tool call, two agents). Gate #2 waits for both to finish before proceeding. In LEAN mode, skip completeness-checker and proceed to step 4 with reviewer-triage alone (sequential, unchanged).
 4. **LEAN-lite reviewer gate** — **LEAN mode only**. In STANDARD and FULL, skip this step entirely and proceed to step 5.
    - Run via Bash: `node scripts/lean-risk-classify.mjs --handoff=<worktreePath>/docs/context/handoff.md`. Append the flag `--force-review` to the command if the operator's original `$ARGUMENTS` (or the current user prompt in this session) contains the literal token `[force-review]`.
    - Capture the stdout JSON (shape: `{ "skipReviewers": <bool>, "reasons": [...], "triggeredRules": [...] }`) and write it to `<worktreePath>/docs/context/lean-gate.json` for post-run auditability.

@@ -16,6 +16,16 @@ You run after the coder writes `docs/context/handoff.md`, before reviewer-triage
 
 Read `docs/PLAN.md` and `docs/context/handoff.md` exactly once each at the start. Do NOT re-read either file during your analysis. You have the content in context after the first read — use it from memory. Re-reading wastes tokens and adds no value.
 
+## Step 0 — Read coder-status.json sidecar (fast path)
+
+Before reading the handoff, try to read `docs/context/coder-status.json`. If it exists and contains valid JSON with integer arrays `tasksCovered` and `tasksDeferred`:
+
+- Use `tasksCovered` and `tasksDeferred` directly for Step 3 coverage matching — skip reading `docs/context/handoff.md` entirely.
+- Still read `docs/PLAN.md` (Step 1) to get task titles and `Verify:` criteria for the verdict output.
+- Go directly to Step 4 (Emit verdict) after Step 1, using the sidecar arrays as your coverage data.
+
+If `docs/context/coder-status.json` is absent, unreadable, or does not contain both `tasksCovered` and `tasksDeferred` as arrays: fall back to the full handoff read — proceed to Step 1 as normal, then Steps 2–4.
+
 ## Step 1 — Read the plan (active section only)
 
 Read `docs/PLAN.md`. Find the most recent `### Feature:` section. For each unchecked `[ ]` task, read the full task block: title line (with task number, file paths, wave annotation), `Intent:` line, `Depends:` line (if present), and `Verify:` line. Stop at `### Approach summary` or `### Research needed`. Do NOT read completed `[x]` tasks or any other `### Feature:` section.

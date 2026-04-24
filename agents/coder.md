@@ -204,14 +204,28 @@ Before emitting the suggest signal, write `docs/context/coder-status.json`:
 ```json
 {
   "archUpdate": <true|false>,
-  "decision": <true|false>
+  "decision": <true|false>,
+  "feature": "<feature name string>",
+  "filesTouched": ["path/to/modified-file.ts"],
+  "filesCreated": ["path/to/new-file.ts"],
+  "tasksCovered": [1, 2, 3],
+  "tasksDeferred": [],
+  "verificationClean": <true|false>,
+  "hasBlockers": <true|false>
 }
 ```
 
 - `archUpdate`: true when the handoff creates a new module, API endpoint, integration, or major component; false otherwise.
 - `decision`: true when the handoff contains any `**Decision:**` bullet; false otherwise.
+- `feature`: the feature name from the `# Handoff: <name>` heading (strip the prefix). Sanitize the value before writing: strip `"`, `\`, `` ` ``, `$`, `\n`, `\r`, and control characters (U+0000–U+001F). The feature name is user-controlled and must not be stored raw.
+- `filesTouched`: all file paths listed under `## Files to modify` headings (not created files).
+- `filesCreated`: all file paths listed under `## Files to create` headings.
+- `tasksCovered`: array of integer task IDs that the handoff addresses (from `(task N)` tags).
+- `tasksDeferred`: array of integer task IDs from the active plan that the handoff does NOT address.
+- `verificationClean`: true when `## Verification` contains only the literal line `pre-flight clean`; false when it lists fix bullets.
+- `hasBlockers`: true when `## Blockers` section is present and non-empty; false otherwise.
 
-These values must match what you write in `## Doc hints`. The documenter reads this file to skip unnecessary doc updates.
+These values must match what you write in `## Doc hints`. Downstream agents read this file to skip redundant handoff reads.
 
 Then emit, as your entire text output, exactly two lines — nothing before, nothing after:
 

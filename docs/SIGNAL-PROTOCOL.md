@@ -29,19 +29,19 @@ Agent output signals use `[signal-name]` format. This is the canonical reference
 **Consumer:** Orchestrating Claude reads these and calls `forge_add_todo` to create board entries.
 **Value:** MEDIUM — creates persistent tasks. The LLM bridges signal to MCP tool call.
 
-## Deprecated Signals
+## Removed Signals
 
-### `[health]` — DEPRECATED
-**Format:** `[health] <file>|<aspect>|<severity>|<note>`
-**Emitters:** architect, integrity-checker, regression-risk, reviewer-logic
-**Consumer:** None. No hook parses it. No persistent store. Not displayed in observer or TUI.
-**Status:** Token waste. The `/forge:health` skill tries to find these in `docs/context/` but they're never written there. Agents should stop emitting these. Use `[todo]` for actionable findings instead.
+These signals have no consumers and must not be emitted. Agents that previously emitted them should stop entirely.
 
-### `[module]` — DEPRECATED
-**Format:** `[module] <module-id>`
-**Emitters:** planner
-**Consumer:** Was read by documenter to update modules.json. Documenter now uses path-prefix matching — this signal is unused.
-**Status:** Remove from planner. Module assignment is automatic via path matching.
+### `[health]` — REMOVED
+**Format (historical):** `[health] <file>|<aspect>|<severity>|<note>`
+**Previously emitted by:** architect, integrity-checker, regression-risk, reviewer-logic
+**Reason removed:** No hook consumer, no persistent store, not displayed anywhere. Use `[todo]` for actionable findings instead.
+
+### `[module]` — REMOVED
+**Format (historical):** `[module] <module-id>`
+**Previously emitted by:** planner
+**Reason removed:** Documenter now uses path-prefix matching for module assignment — this signal was never read after that change.
 
 ## Low-Value Signals (keep but simplify)
 
@@ -70,6 +70,22 @@ Agent output signals use `[signal-name]` format. This is the canonical reference
 **Emitters:** documenter
 **Consumer:** None (stderr logging only). Documents what happened during board updates.
 **Value:** Diagnostic. Zero token cost to remove but harmless.
+
+## Structured Metadata Sidecar
+
+`docs/context/coder-status.json` is the authoritative post-coder metadata hub. Downstream agents (completeness-checker, documenter) read it to avoid redundant handoff parses. Fields:
+
+| Field | Type | Consumer |
+|-------|------|----------|
+| `archUpdate` | bool | documenter step d1 |
+| `decision` | bool | documenter step d1 |
+| `feature` | string | documenter step d1, completeness-checker feature name |
+| `filesTouched` | string[] | documenter step 5d module matching |
+| `filesCreated` | string[] | documenter step 5d module matching |
+| `tasksCovered` | int[] | completeness-checker step 0 fast path |
+| `tasksDeferred` | int[] | completeness-checker step 0 fast path |
+| `verificationClean` | bool | lean-risk-classify.mjs |
+| `hasBlockers` | bool | lean-risk-classify.mjs |
 
 ## Design Principles
 
