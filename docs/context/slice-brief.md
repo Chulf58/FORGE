@@ -1,40 +1,34 @@
-# Slice Brief: Signal protocol optimization — Slice 1 (Wave 1)
+# Slice Brief: Extract Documenter Lifecycle — Slice 1 (Wave 1)
 
 ## Slice goal
-Remove all `[health]` and `[module]` signal emissions from the five agent files that produce them, replacing each with the appropriate plain-text or `[todo]` alternative.
+Bump maxTurns on 7 agents, strip lifecycle steps from documenter, and create the standalone post-apply-lifecycle script — leaving only the skill wiring (task 5) for wave 2.
 
 ## Why this slice, why this order
-Wave 1 tasks (1-5) are pure deletion/replacement in five independent agent markdown files with no dependencies on each other or on any downstream agent. Completing wave 1 first ensures wave 2 (coder-status.json expansion, parallelization) and wave 3 (consumer updates) land on a clean signal surface. No hooks, schemas, or runtime code are touched, so system behaviour is unaffected between slices.
+The 7 maxTurns bumps are independent one-line frontmatter edits with no coupling risk and land first. Stripping documenter before creating the replacement script ensures the script is written knowing exactly what was removed. The new script is the most complex addition and must come last so its logic is grounded in the freshly-stripped documenter steps.
 
 ## In scope
-- `agents/architect.md` — remove all `[health]` emission instructions; replace HEALTH-mode output with plain-text observations (task 1)
-- `agents/integrity-checker.md` — replace all ~23 `[health]` references with `[todo]` emissions using ideator priority format (`[todo] HIGH/MEDIUM/LOW: title — description`); convert summary line to plain-text print (task 2)
-- `agents/reviewer-logic.md` — remove all `[health]` emission instructions; express dead-code observations as REVISE warnings in the reviewer verdict instead (task 3)
-- `agents/reviewer-triage.md` — remove the single `[health]` emission instruction; express coupling concerns through existing triage output channels (task 4)
-- `agents/planner.md` — delete Step 4 module assignment block and all `[module]` signal emission instructions (task 5)
+- `agents/coder-scout.md` — bump `maxTurns` from 5 to 8 (task 3)
+- `agents/gotcha-checker.md` — bump `maxTurns` from 10 to 15 (task 4)
+- `agents/reviewer-boundary.md` — bump `maxTurns` from 10 to 15 (task 6)
+- `agents/reviewer-logic.md` — bump `maxTurns` from 10 to 15 (task 7)
+- `agents/reviewer-performance.md` — bump `maxTurns` from 10 to 15 (task 8)
+- `agents/reviewer-safety.md` — bump `maxTurns` from 10 to 15 (task 9)
+- `agents/reviewer-style.md` — bump `maxTurns` from 10 to 15 (task 10)
+- `agents/documenter.md` — remove Steps 6, 7, 8, 8b; leave Steps 0–5d and 8c intact (task 2)
+- `scripts/post-apply-lifecycle.mjs` — create new ESM script: accepts feature name as `process.argv[2]`, runs 5 I/O jobs (reviewer archival, sidecar deletion, TESTING.md archival, CHANGELOG.md archival, RESEARCH file deletion), individual try/catch per job, logs to stderr, always exits 0 (task 1)
 
 ## Out of scope — do not touch
-- `agents/coder.md` — wave 2 task 6; depends on wave 1 landing stable first, and its consumers (tasks 7-8) must follow it in slice 2
-- `agents/completeness-checker.md` — wave 3 task 7; depends on coder.md changes from task 6
-- `agents/documenter.md` — wave 3 task 8; depends on coder.md changes from task 6
-- `skills/implement/SKILL.md` — wave 2 task 9; independent of wave 1 but belongs in slice 2 to keep this slice under 5 files
-- `skills/plan/SKILL.md` — wave 2 task 10; same reason
-- `docs/SIGNAL-PROTOCOL.md` — wave 2 task 11; must reflect all removals as complete before updating; slice 2
+- `skills/apply/SKILL.md` — task 5 (wave 2); wiring the invocation depends on this slice's script being stable and reviewed first
 
 ## Dependency order
-1. `agents/architect.md` — no dependencies; straightforward deletion
-2. `agents/integrity-checker.md` — no dependencies; largest change (~23 references); use ideator priority format for `[todo]` emissions
-3. `agents/reviewer-logic.md` — no dependencies; straightforward deletion with REVISE-warning redirect
-4. `agents/reviewer-triage.md` — no dependencies; single `[health]` line removal
-5. `agents/planner.md` — no dependencies; delete module assignment block and `[module]` emission line
+1. Bump maxTurns in all 7 agent files (tasks 3, 4, 6–10) — self-contained frontmatter edits; no ordering between them; complete all 7 before touching documenter
+2. Strip Steps 6, 7, 8, 8b from `agents/documenter.md` (task 2) — read the full file first to confirm exact step headings; Step 8c must remain intact
+3. Create `scripts/post-apply-lifecycle.mjs` (task 1) — implement last; the stripped documenter steps are the authoritative spec for what the script must replicate; follow `scripts/reviewer-dispatch.mjs` ESM pattern
 
 ## Success criteria
-- `agents/architect.md` contains zero occurrences of `[health]`
-- `agents/integrity-checker.md` contains zero occurrences of `[health]`; all severity-graded findings emit `[todo] HIGH/MEDIUM/LOW: ...`
-- `agents/reviewer-logic.md` contains zero occurrences of `[health]`
-- `agents/reviewer-triage.md` contains zero occurrences of `[health]`
-- `agents/planner.md` contains zero occurrences of `[module]`
+- All 7 agent files have the correct `maxTurns` value stated per task
+- `agents/documenter.md` contains no reference to Step 6, Step 7, Step 8, or Step 8b; Steps 0–5d and 8c are present and unmodified
+- `scripts/post-apply-lifecycle.mjs` exists, is valid ESM, accepts feature name via `process.argv[2]`, wraps each of the 5 jobs in its own try/catch, writes all progress to stderr, and always calls `process.exit(0)`
 
 ## Risks and mitigations
-- integrity-checker [todo] format: use `[todo] HIGH: title — description` (ideator priority format) per research finding — not the planner's numbered list format; this matches board.json ingestion for severity-graded items
-- slice 2 is required to complete this feature: tasks 6-11 (coder.md expansion, skill parallelization, SIGNAL-PROTOCOL.md update) are out of scope here and must follow in a subsequent slice-brief
+- Step 8 vs Step 8b vs Step 8c: read `agents/documenter.md` fully before editing — stripping "Step 8" with a broad match would silently delete 8c (which must be preserved); target each heading precisely
