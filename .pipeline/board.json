@@ -475,6 +475,138 @@
       ],
       "title": "workflow-guard apply enforcement",
       "summary": "checkApplyGateAndHandoff (workflow-guard.js:147) reads run-active.json to detect apply runs."
+    },
+    {
+      "id": "8b034dc6",
+      "priority": "medium",
+      "text": "Remove [health] signal from agents/architect.md",
+      "title": "Remove [health] signal from",
+      "summary": "agents/architect.md",
+      "done": false,
+      "addedAt": 1777012911534,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "3126db49",
+      "priority": "medium",
+      "text": "Convert [health] signals to [todo] signals in agents/integrity-checker.md",
+      "title": "Convert [health] signals to [todo]",
+      "summary": "signals in agents/integrity-checker.md",
+      "done": false,
+      "addedAt": 1777012912451,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "a59abd84",
+      "priority": "medium",
+      "text": "Remove [health] signal from agents/reviewer-logic.md",
+      "title": "Remove [health] signal from",
+      "summary": "agents/reviewer-logic.md",
+      "done": false,
+      "addedAt": 1777012913007,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "a573a20f",
+      "priority": "medium",
+      "text": "Remove [health] signal from agents/reviewer-triage.md",
+      "title": "Remove [health] signal from",
+      "summary": "agents/reviewer-triage.md",
+      "done": false,
+      "addedAt": 1777012913867,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "570199cd",
+      "priority": "medium",
+      "text": "Remove [module] signal from agents/planner.md",
+      "title": "Remove [module] signal from",
+      "summary": "agents/planner.md",
+      "done": false,
+      "addedAt": 1777012914820,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "a9d57a6f",
+      "priority": "medium",
+      "text": "Expand coder-status.json output fields in agents/coder.md",
+      "title": "Expand coder-status.json output",
+      "summary": "fields in agents/coder.md",
+      "done": false,
+      "addedAt": 1777012915746,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "048e6a9b",
+      "priority": "medium",
+      "text": "Update completeness-checker to read tasksCovered/tasksDeferred from coder-status.json",
+      "title": "Update completeness-checker to read",
+      "summary": "tasksCovered/tasksDeferred from coder-status.json",
+      "done": false,
+      "addedAt": 1777012917222,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "70f1457a",
+      "priority": "medium",
+      "text": "Update documenter to read feature name and filesTouched from coder-status.json",
+      "title": "Update documenter to read feature",
+      "summary": "name and filesTouched from coder-status.json",
+      "done": false,
+      "addedAt": 1777012918187,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "bdbb56b1",
+      "priority": "medium",
+      "text": "Parallelize completeness-checker and reviewer-triage in skills/implement/SKILL.md",
+      "title": "Parallelize completeness-checker and",
+      "summary": "reviewer-triage in skills/implement/SKILL.md",
+      "done": false,
+      "addedAt": 1777012919159,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "a867e858",
+      "priority": "medium",
+      "text": "Parallelize researcher and gotcha-checker in skills/plan/SKILL.md",
+      "title": "Parallelize researcher and",
+      "summary": "gotcha-checker in skills/plan/SKILL.md",
+      "done": false,
+      "addedAt": 1777012920121,
+      "tags": [
+        "signal-protocol-opt"
+      ]
+    },
+    {
+      "id": "6e4926de",
+      "priority": "medium",
+      "text": "Update docs/SIGNAL-PROTOCOL.md to mark [health] and [module] as removed",
+      "title": "Update docs/SIGNAL-PROTOCOL.md to",
+      "summary": "mark [health] and [module] as removed",
+      "done": false,
+      "addedAt": 1777012920924,
+      "tags": [
+        "signal-protocol-opt"
+      ]
     }
   ],
   "planned": []
