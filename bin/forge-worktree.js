@@ -149,7 +149,9 @@ function merge() {
       .filter(Boolean)
       .map((l) => l.slice(3).trim());
     const filteredDirtyFiles = dirtyFiles.filter(
-      (f) => !f.startsWith('.worktrees/') && !f.startsWith('.pipeline/'),
+      (f) => !f.startsWith('.worktrees/') && !f.startsWith('.worktrees\\')
+        && !f.startsWith('.pipeline/') && !f.startsWith('.pipeline\\')
+        && !f.startsWith('docs/') && !f.startsWith('docs\\'),
     );
     if (filteredDirtyFiles.length > 0) {
       console.error(JSON.stringify({
@@ -161,18 +163,23 @@ function merge() {
     }
   }
 
-  // Reject uncommitted changes in the worktree — the apply skill (Step 8) is
-  // responsible for committing. Auto-committing here would silently include
-  // unreviewed files (a compromised agent could plant arbitrary content).
+  // Reject uncommitted tracked changes in the worktree — the apply skill (Step 8)
+  // is responsible for committing. Untracked files (pipeline artifacts like
+  // slice-brief.md, triage-dispatch.json) are harmless and should not block.
   const wtStatus = run('git', ['-C', wtPath, 'status', '--porcelain'], { allowFail: true });
   if (wtStatus) {
-    const uncommittedFiles = wtStatus.split('\n').filter(Boolean).map(l => l.trim());
-    console.error(JSON.stringify({
-      ok: false,
-      error: 'Worktree has uncommitted changes — the apply skill should have committed in Step 8.',
-      uncommittedFiles,
-    }));
-    process.exit(1);
+    const trackedChanges = wtStatus
+      .split('\n')
+      .filter(Boolean)
+      .filter((l) => !l.startsWith('??'));
+    if (trackedChanges.length > 0) {
+      console.error(JSON.stringify({
+        ok: false,
+        error: 'Worktree has uncommitted tracked changes — the apply skill should have committed in Step 8.',
+        uncommittedFiles: trackedChanges.map(l => l.trim()),
+      }));
+      process.exit(1);
+    }
   }
 
   // Single-pass merge — no auto-resolution with -X theirs.

@@ -172,17 +172,17 @@ export function createWorktree(projectRoot, runId) {
     }
   }
 
-  // Copy .pipeline/ so the worktree has board, modules, project config, and runs
+  // Merge-copy directories: git checkout may have created these from tracked files,
+  // but gitignored files (PLAN.md, board.json, etc.) still need copying from main.
   const pipelineSrc = join(absRoot, '.pipeline');
   const pipelineDst = join(wtPath, '.pipeline');
-  if (existsSync(pipelineSrc) && !existsSync(pipelineDst)) {
+  if (existsSync(pipelineSrc)) {
     copyDirSync(pipelineSrc, pipelineDst);
   }
 
-  // Copy docs/ so the worktree has PLAN.md, handoff, gotchas
   const docsSrc = join(absRoot, 'docs');
   const docsDst = join(wtPath, 'docs');
-  if (existsSync(docsSrc) && !existsSync(docsDst)) {
+  if (existsSync(docsSrc)) {
     copyDirSync(docsSrc, docsDst);
   }
 
