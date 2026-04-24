@@ -35,9 +35,9 @@ Set per project in `.pipeline/project.json` (`pipelineMode` field):
 | Mode | When | Effect |
 |------|------|--------|
 | SPRINT | Easy task, trust yourself | Core agent only, no reviewers |
-| LEAN | Everyday (default) | Core + reviewer-safety + reviewer |
-| STANDARD | Multi-file, state or cross-cutting | Core + completeness-checker + reviewer-triage + triage-dispatched reviewers |
-| FULL | High-stakes, nothing skipped | Core + completeness-checker + reviewer-triage + all 5 reviewers |
+| LEAN | Everyday (default) | Core + script-dispatched reviewers (risk-surface match only) |
+| STANDARD | Multi-file, state or cross-cutting | Core + completeness-checker + script-dispatched reviewers |
+| FULL | High-stakes, nothing skipped | Core + completeness-checker + all 5 reviewers |
 
 The 5 reviewers: `reviewer-boundary`, `reviewer-safety`, `reviewer-logic`, `reviewer-style`, `reviewer-performance`.
 

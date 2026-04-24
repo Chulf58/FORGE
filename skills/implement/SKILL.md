@@ -71,14 +71,14 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
 
 1. **Coder-scout** (skip in LEAN): writes `<worktreePath>/docs/context/scout.json`
 2. **Coder:** writes draft to `<worktreePath>/docs/context/handoff.md`
-3. **Completeness-checker + Reviewer-triage (STANDARD/FULL — concurrent):** In STANDARD and FULL modes, spawn completeness-checker and reviewer-triage in a single concurrent Agent dispatch (one tool call, two agents). Gate #2 waits for both to finish before proceeding. In LEAN mode, skip completeness-checker and proceed to step 4 with reviewer-triage alone (sequential, unchanged).
-4. **LEAN-lite reviewer gate** — **LEAN mode only**. In STANDARD and FULL, skip this step entirely and proceed to step 5.
-   - Run via Bash: `node scripts/lean-risk-classify.mjs --handoff=<worktreePath>/docs/context/handoff.md`. Append the flag `--force-review` to the command if the operator's original `$ARGUMENTS` (or the current user prompt in this session) contains the literal token `[force-review]`.
-   - Capture the stdout JSON (shape: `{ "skipReviewers": <bool>, "reasons": [...], "triggeredRules": [...] }`) and write it to `<worktreePath>/docs/context/lean-gate.json` for post-run auditability.
-   - Log a single stderr line: `[lean-gate] skip=<bool> reasons=[<comma-joined>] triggered=[<comma-joined>]`.
-   - Decision: if `skipReviewers` is `true`, skip step 5 entirely (no reviewer-triage, no reviewer dispatch) and proceed directly to step 6 (Gate #2). If `skipReviewers` is `false`, proceed to step 5 as normal.
-   - The policy this enforces is documented in `CLAUDE.md` under "LEAN-lite skip rule" and "Risk surface". Do not override the classifier's verdict — if a reviewer pass is genuinely desired on a non-risk LEAN change, the operator re-invokes with `[force-review]`.
-5. **Reviewer-triage → reviewers:** dispatch based on mode. Skipped when step 4 set `skipReviewers: true`.
+3. **Completeness-checker** (STANDARD/FULL only, skip in LEAN): verifies plan coverage.
+4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script. This replaces the reviewer-triage agent.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --handoff=<worktreePath>/docs/context/handoff.md --mode=<MODE> --stage=implement`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
+   - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`). Write it to `<worktreePath>/docs/context/lean-gate.json` for auditability.
+   - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
+   - If `reviewers` is empty: skip step 5 entirely and proceed directly to step 6 (Gate #2).
+   - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers. Do NOT add or remove reviewers — the script output is authoritative.
+5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
 5b. **Reviewer verdict handling** (only when step 5 ran):
 
    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
@@ -92,7 +92,7 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
 
 5c. **Re-run reviewers after coder revision** (only when step 5b triggered the `N < 2` re-invoke path):
 
-   After the revised coder output is written to `<worktreePath>/docs/context/handoff.md`: call `forge_update_run` with `currentStep: "reviewer-revision-N"` (replace N with the current value). Re-run reviewer-triage and the dispatched reviewers (same mode as step 5). Collect their `[reviewer-verdict]` signals. Return to step 5b verdict handling with the updated `N`.
+   After the revised coder output is written to `<worktreePath>/docs/context/handoff.md`: call `forge_update_run` with `currentStep: "reviewer-revision-N"` (replace N with the current value). Re-run the dispatcher script (step 4) and dispatch the resulting reviewers (step 5). Collect their `[reviewer-verdict]` signals. Return to step 5b verdict handling with the updated `N`.
 
    > Note: the LEAN-lite gate (step 4) is NOT re-run on revision passes. A REVISE verdict already proves reviewer scrutiny is warranted, so the classifier is bypassed and reviewers always run in the revision loop regardless of mode.
 

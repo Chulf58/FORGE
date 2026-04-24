@@ -47,13 +47,13 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "refa
 > Do NOT read or write files in the main project root.
 
 1. **Refactor agent:** analyzes the target file or area, writes refactor plan to `<worktreePath>/docs/context/handoff.md`
-2. **LEAN-lite reviewer gate** — **LEAN mode only**. In STANDARD and FULL, skip this step entirely and proceed to step 3.
-   - Run via Bash: `node scripts/lean-risk-classify.mjs --handoff=<worktreePath>/docs/context/handoff.md`. Append the flag `--force-review` to the command if the operator's original `$ARGUMENTS` (or the current user prompt in this session) contains the literal token `[force-review]`.
-   - Capture the stdout JSON (shape: `{ "skipReviewers": <bool>, "reasons": [...], "triggeredRules": [...] }`) and write it to `<worktreePath>/docs/context/lean-gate.json` for post-run auditability.
-   - Log a single stderr line: `[lean-gate] skip=<bool> reasons=[<comma-joined>] triggered=[<comma-joined>]`.
-   - Decision: if `skipReviewers` is `true`, skip all reviewers in step 3 **except `reviewer-style`** (which always runs for refactors — see below) and proceed to Gate #2 after `reviewer-style` completes. If `skipReviewers` is `false`, proceed to step 3 as normal with all dispatched reviewers.
-   - The policy this enforces is documented in `CLAUDE.md` under "LEAN-lite skip rule" and "Risk surface". Do not override the classifier's verdict — if a reviewer pass is genuinely desired on a non-risk LEAN change, the operator re-invokes with `[force-review]`.
-3. **Reviewer-triage → reviewers:** dispatch based on mode. **Always include `reviewer-style`** regardless of mode — refactors change code structure, and style consistency must be verified even in LEAN mode. When step 2 set `skipReviewers: true`, dispatch only `reviewer-style` and skip all others.
+2. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --handoff=<worktreePath>/docs/context/handoff.md --mode=<MODE> --stage=implement --pipeline=refactor`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
+   - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`). Write it to `<worktreePath>/docs/context/lean-gate.json` for auditability.
+   - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
+   - The script always includes `reviewer-style` for refactor pipelines. If no other risk-surface rules triggered, `reviewer-style` is the only reviewer dispatched.
+   - If `reviewers` is non-empty: proceed to step 3 with exactly those reviewers.
+3. **Reviewers:** dispatch exactly the reviewers listed in step 2's `reviewers[]` output. No reviewer-triage agent.
 4. **Gate #2:** First update the run, then write gate state:
    - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<refactor summary>","createdAt":"<now ISO>"}`
    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<refactor summary>","status":"pending","applyKeyword":"apply refactor: <refactor summary>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
