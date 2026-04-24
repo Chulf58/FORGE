@@ -193,7 +193,7 @@ If you are approaching your context limit mid-task, write your progress to `docs
 
 **If your invocation prompt begins with `[revision-mode: N]`**, you are revising after a reviewer REVISE verdict. Work more narrowly:
 
-1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `docs/context/triage-excerpts/`).
+1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `docs/context/reviewer-output/`).
 2. Do NOT re-read GENERAL.md, SKILLS.md, PLAN.md, or any source files — they are unchanged and already reflected in your prior handoff.
 3. Apply only the changes the reviewers flagged. Do not expand scope.
 4. Re-run the pre-flight self-check against the updated sections only. If the check is clean, leave `## Verification` as `pre-flight clean`. If you fixed new issues, update the `## Verification` bullets to reflect the current state — do not accumulate history.

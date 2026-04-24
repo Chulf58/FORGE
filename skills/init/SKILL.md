@@ -229,10 +229,9 @@ Copy these files from the scaffold into the project. For each file, use Read to 
 3. `docs/gotchas/GENERAL.md` → project `docs/gotchas/GENERAL.md`
 4. `docs/gotchas/SKILLS.md` → project `docs/gotchas/SKILLS.md` (if exists in scaffold)
 5. `.claude/agents/documenter.md` → project `.claude/agents/documenter.md` (if exists in scaffold)
-6. `.claude/agents/tool-call-auditor.md` → project `.claude/agents/tool-call-auditor.md` (if exists in scaffold)
-7. `.claude/agents/nyquist-auditor.md` → project `.claude/agents/nyquist-auditor.md` (if exists in scaffold)
-8. `.claude/agents/skills-generator.md` → project `.claude/agents/skills-generator.md` (if exists in scaffold)
-9. `.claude/agents/integrity-checker.md` → project `.claude/agents/integrity-checker.md` (if exists in scaffold)
+6. `.claude/agents/nyquist-auditor.md` → project `.claude/agents/nyquist-auditor.md` (if exists in scaffold)
+7. `.claude/agents/skills-generator.md` → project `.claude/agents/skills-generator.md` (if exists in scaffold)
+8. `.claude/agents/integrity-checker.md` → project `.claude/agents/integrity-checker.md` (if exists in scaffold)
 
 For each file in the list above:
 1. Use Read to check if the destination already exists in the project. If it does, skip it.

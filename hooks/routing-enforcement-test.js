@@ -218,14 +218,13 @@ async function test() {
     const tmp = mkdtempSync(join(tmpdir(), 're-test-'));
     mkdirSync(join(tmp, '.pipeline'), { recursive: true }); // no log file
     const pipelineAgents = [
-      'agent-optimizer', 'architect', 'brainstormer', 'cleanup', 'coder',
+      'architect', 'brainstormer', 'cleanup', 'coder',
       'coder-scout', 'completeness-checker', 'compound-refresh', 'debug',
       'documenter', 'gotcha-checker', 'ideator', 'implementation-architect',
       'implementer', 'implementer-triage', 'integrity-checker', 'planner',
-      'refactor', 'regression-risk', 'researcher', 'researcher-triage',
+      'refactor', 'researcher',
       'reviewer-boundary', 'reviewer-logic', 'reviewer-performance',
       'reviewer-safety', 'reviewer-style', 'reviewer-triage', 'skills-generator',
-      'tool-call-auditor',
     ];
     let blockedCount = 0;
     for (const agent of pipelineAgents) {
