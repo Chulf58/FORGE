@@ -18,13 +18,13 @@ Pipeline **types** (the slash command) determine which agents run. Pipeline **mo
 
 | Type | Command | Agent set | Gate |
 |------|---------|-----------|------|
-| Plan feature | `/forge:plan` | planner, researcher, gotcha-checker, reviewer-triage, reviewers | #1 |
-| Implement feature | `/forge:implement` | coder, completeness-checker, reviewer-triage, reviewers | #2 |
-| Implement feature (scoped) | `/forge:implement` | implementation-architect, coder, completeness-checker, reviewer-triage, reviewers | #2 |
+| Plan feature | `/forge:plan` | planner, researcher, gotcha-checker, script-dispatched reviewers | #1 |
+| Implement feature | `/forge:implement` | coder, completeness-checker, script-dispatched reviewers | #2 |
+| Implement feature (scoped) | `/forge:implement` | implementation-architect, coder, completeness-checker, script-dispatched reviewers | #2 |
 | Apply feature | `/forge:apply` | implementer, documenter | none |
-| Debug | `/forge:debug` | debug, reviewer-triage, reviewers | #2 |
+| Debug | `/forge:debug` | debug, script-dispatched reviewers | #2 |
 | Apply debug | `/forge:apply` | implementer, documenter | none |
-| Refactor | `/forge:refactor` | refactor, reviewer-triage, reviewers | #2 |
+| Refactor | `/forge:refactor` | refactor, script-dispatched reviewers | #2 |
 | Apply refactor | `/forge:apply` | implementer, documenter | none |
 | Architect | (direct) | architect, reviewer-logic | #1 |
 
@@ -54,32 +54,25 @@ Understand what the task involves: which files, what complexity, what risk.
 ### Step 3 — Decide the agent team
 Based on the assessment, determine which agents are needed. The pipeline and mode follow from this.
 
-**Mandatory agents** — always included when a source change touches the **risk surface** (see below). Non-negotiable regardless of mode.
+**Reviewer dispatch** — `scripts/reviewer-dispatch.mjs` determines which reviewers to invoke. It replaces the reviewer-triage agent. The script maps risk-surface rules to specific reviewers deterministically — no LLM needed.
 
-| Agent | Role |
-|-------|------|
-| `reviewer-safety` | Security check |
-| `reviewer-boundary` | Boundary correctness |
+**Risk surface** — the classifier (`scripts/lean-risk-classify.mjs`) scans handoff code blocks for these patterns and the dispatch script maps each to the appropriate reviewer:
 
-**Risk surface** — a change is risk-surface when any of the following hold:
+| Risk pattern | Reviewer |
+|---|---|
+| Shell / `child_process` / process spawning | `reviewer-safety` |
+| `fs` writes or deletes outside `.pipeline/` | `reviewer-safety` |
+| Auth / crypto / secret / credential handling | `reviewer-safety` |
+| Security-sensitive path / env-var resolution | `reviewer-safety` |
+| Network boundaries (HTTP, fetch, servers) | `reviewer-safety` + `reviewer-boundary` |
+| New MCP tools, hook scripts, commands | `reviewer-safety` + `reviewer-boundary` |
+| Schema / contract changes | `reviewer-boundary` |
+| Signal format changes | `reviewer-boundary` |
+| Merge / apply / worktree boundary code | `reviewer-safety` + `reviewer-boundary` |
 
-- Shell / `child_process` / process spawning.
-- `fs` writes or deletes outside `.pipeline/`.
-- Auth / crypto / secret / credential handling.
-- Network boundaries — HTTP clients, server handlers, `fetch`, `http.createServer`.
-- New MCP tools, hook scripts, commands, or public handlers.
-- Schema / contract changes — tool schemas, signal formats, persisted `.pipeline/*` shape, model/config schema.
-- Security-sensitive path, import, or environment-variable resolution.
-- Merge / apply / worktree boundary code.
+When the classifier cannot confirm safety (missing verification, blockers present, unclean) but no specific rules trigger, the script falls back to `reviewer-safety` + `reviewer-boundary`.
 
-**LEAN-lite skip rule** — in **LEAN mode only**, reviewer dispatch is skipped when **all** of the following hold:
-
-- `coder` emitted `## Verification: pre-flight clean`.
-- `coder` emitted no `## Blockers` bullets.
-- The handoff diff matches none of the risk-surface rules above.
-- The operator did not include the literal token `[force-review]` in the invocation.
-
-The classifier that enforces this lives at `scripts/lean-risk-classify.mjs`. STANDARD and FULL modes always dispatch reviewers.
+For plan-stage dispatch, the script keyword-scans active task lines and maps to reviewers (safety, boundary, logic, performance) based on domain keywords.
 
 **Contextual agents** — see `docs/FORGE-REFERENCE.md` section 4 for the full dispatch table (implementation-architect, researcher, gotcha-checker, reviewer-logic, reviewer-performance, reviewer-style).
 

@@ -38,6 +38,19 @@ const RULE_TO_REVIEWERS = {
 
 // --- Plan-stage keyword mapping ----------------------------------------------
 const PLAN_REVIEWER_KEYWORDS = {
+  'reviewer-safety': [
+    'shell', 'exec', 'spawn', 'child_process', 'auth', 'token',
+    'credential', 'secret', 'password', 'crypto', 'hash', 'jwt',
+    'fs.write', 'fs.unlink', 'fs.rm', 'readfile', 'writefile',
+    'user input', 'injection', 'sanitiz', 'webhook', 'endpoint',
+    'http', 'fetch', 'request', 'api key', 'env var', 'process.env',
+  ],
+  'reviewer-boundary': [
+    'boundary', 'module', 'contract', 'interface', 'cross-module',
+    'public api', 'export', 'schema', 'migration', 'rename across',
+    'shared state', 'store', 'handler', 'route', 'mcp', 'hook',
+    'plugin', 'tool', 'signal',
+  ],
   'reviewer-logic': [
     'async', 'await', 'state mutation', 'event handler', 'conditional',
     're-entrancy', 'race', 'debounce', 'throttle', 'guard', 'reactive',
@@ -129,8 +142,8 @@ function dispatchForPlanStage(planContent, mode) {
     .filter((l) => /^\s*-\s*\[ \]/.test(l))
     .map((l) => l.toLowerCase());
 
-  const reviewerSet = new Set(['reviewer-boundary', 'reviewer-safety']);
-  const reasons = ['boundary-and-safety-always-for-plans'];
+  const reviewerSet = new Set();
+  const reasons = [];
 
   for (const [reviewer, keywords] of Object.entries(PLAN_REVIEWER_KEYWORDS)) {
     for (const keyword of keywords) {
