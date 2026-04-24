@@ -14,7 +14,7 @@ Immediately call `forge_create_run` with:
 - `mode`: read mode from `.pipeline/project.json` `pipelineMode` field (or `"LEAN"` if unavailable)
 - `feature`: the feature name from `$ARGUMENTS`, or read from `docs/PLAN.md` first heading
 
-Save the returned `runId` and `feature` from the run object. The `feature` field has been mechanically sanitized (shell-unsafe characters stripped) by `forge_create_run`. Use this sanitized `feature` value — not raw `$ARGUMENTS` — in Steps 5, 7, and 8 when constructing git commit messages and PR titles.
+Save the returned `runId` and `feature` from the run object. The `feature` field has been mechanically sanitized (shell-unsafe characters stripped) by `forge_create_run`. Use this sanitized `feature` value — not raw `$ARGUMENTS` — in Steps 5, 6b, 7, and 8 when constructing git commit messages, script arguments, and PR titles.
 
 Then call `forge_update_run` with that `runId` and `status: "running"`, `currentStep: "setup"`.
 
@@ -97,8 +97,14 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - If pre-commit hooks fail: log the error output and continue. Do NOT use `--no-verify`.
    - Never amend, never force, never skip hooks
 
-6. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution, cleans artefacts.
-   After documenter completes: call `forge_update_run` with the `runId` and `status: "completed"`, `currentStep: "done"`.
+6. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution.
+   After documenter completes, proceed to step 6b.
+
+6b. **Post-apply lifecycle cleanup** (always runs, not gated by gitIntegration):
+   - Run via Bash: `node scripts/post-apply-lifecycle.mjs "<safe-feature>"` (use the sanitized `feature` from Step 1). Set `timeout: 30000`.
+   - On exit 0: log `[lifecycle] cleanup done`.
+   - On non-zero exit: log `[lifecycle] cleanup failed: <stderr output>` and continue. Do NOT retry. This is non-blocking.
+   - Then call `forge_update_run` with the `runId` and `status: "completed"`, `currentStep: "done"`.
 
 7. **Auto-PR** (opt-in — only if `gitIntegration.autoPR`):
    - Check `gh --version` first. If gh is not installed, log "[git-integration] gh CLI not found — skipping PR creation" and continue.
