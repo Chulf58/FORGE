@@ -152,7 +152,7 @@ When invoked after an architect run, perform the following checks instead of the
 
 ### Dead-code verification
 
-For each `[health]` finding in the terminal output that mentions a dead-code, unused export, or unreferenced symbol finding:
+For each dead-code, unused export, or unreferenced symbol observation in the architect output:
 
 1. Run four Grep checks against `src/` for the reported symbol name:
    - The channel name as a string literal (e.g. `'my-channel'`)
@@ -160,11 +160,9 @@ For each `[health]` finding in the terminal output that mentions a dead-code, un
    - The type or interface name
    - The prop name (if it is a component prop)
 2. If any of those four checks returns one or more callers, the finding is a **false positive**.
-3. For each confirmed false positive, emit a `[health]` signal:
-   ```
-   [health] <file>|integrity|high|False positive dead-code: <symbol> is referenced at <caller location>
-   ```
-4. If no false positives are found, emit nothing for that finding.
+3. For each confirmed false positive, add a REVISE warning to your `### Issues` section:
+   `REVISE: False positive dead-code — <symbol> in <file> is referenced at <caller location>`
+4. If no false positives are found, note the observation as verified in `### Verified`.
 
 ### Verdict
 

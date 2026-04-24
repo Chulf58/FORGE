@@ -38,8 +38,7 @@ Before emitting any terminal output, execute the following steps in order:
 **Step 2b — Regression-risk analysis.** Read `.pipeline/modules.json` (if it exists). Extract all file paths from the handoff. For each module, check if any handoff file path starts with any of the module's `paths` entries (prefix match). Classify touched modules:
 - **High-risk** if module has a non-empty `usedBy` array, or its `dependsOn` overlaps with another touched module.
 - **Medium-risk** otherwise.
-For each high-risk module, emit: `[health] <module-id>|coupling|medium|touched by this handoff — verify no unintended side effects`
-Include the risk summary in your dispatch output (after the dispatch list). If modules.json is missing or empty, skip this step silently.
+Include the risk summary in your dispatch output (after the dispatch list) as plain-text: list each high-risk module by ID and note "touched by this handoff — verify no unintended side effects". If modules.json is missing or empty, skip this step silently.
 
 **Step 3 — Write excerpt files.** For each reviewer you dispatch, write one file to `docs/context/triage-excerpts/<reviewer>.md`.
 

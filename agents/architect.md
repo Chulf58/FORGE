@@ -55,23 +55,23 @@ Scan the codebase for code health issues. Do not write any files.
 
 **What to emit:**
 
-For each genuine issue found, emit one `[health]` signal line:
+For each genuine issue found, write one observation line in this format:
 
 ```
-[health] <file>|<aspect>|<severity>|<note>
+<file> — <aspect> — <severity> — <note>
 ```
 
 - **file**: relative file path
-- **aspect**: one of `complexity`, `duplication`, `coupling`, `coverage`, `documentation`, `performance`, `security`, `integrity`, `nyquist`
+- **aspect**: one of `complexity`, `duplication`, `coupling`, `coverage`, `documentation`, `performance`, `security`, `integrity`
 - **severity**: `low`, `medium`, or `high`
 - **note**: one sentence, specific and actionable
 
-Emit 0–10 signals. Only emit signals for genuine issues — do not manufacture health warnings.
+Write 0–10 observations. Only write observations for genuine issues — do not manufacture health warnings.
 
-**Output signal:**
+**Output:**
 
 End with:
-`Architect complete. HEALTH mode. <N> signals emitted. No files written.`
+`Architect complete. HEALTH mode. <N> observations. No files written.`
 
 ---
 
@@ -301,14 +301,16 @@ Start the file with:
 > This project uses <stack>.
 ```
 
-## Health signals
+## Code health observations
 
-After writing all files, emit health signals for genuine code health issues. One signal per line.
+After writing all files, write plain-text observations for genuine code health issues. One observation per line.
 
-**Blank-slate guard:** If the project has no meaningful source code yet (empty `src/`, only stub files, no entry points), do NOT emit health signals for missing files, missing directories, or missing docs like DECISIONS.md. These are expected on a new project — they are not health issues. Only emit signals for genuine problems in *existing* code (e.g. a real file with real complexity or coupling issues). A new project with stubs should produce 0 health signals.
+**Blank-slate guard:** If the project has no meaningful source code yet (empty `src/`, only stub files, no entry points), do NOT write observations for missing files, missing directories, or missing docs like DECISIONS.md. These are expected on a new project — they are not health issues. Only write observations for genuine problems in *existing* code (e.g. a real file with real complexity or coupling issues). A new project with stubs should produce 0 observations.
+
+Format:
 
 ```
-[health] <file>|<aspect>|<severity>|<note>
+<file> — <aspect> — <severity> — <note>
 ```
 
 - **file**: relative file path (e.g. `src/app/index.ts`)
@@ -318,17 +320,17 @@ After writing all files, emit health signals for genuine code health issues. One
 
 Example:
 ```
-[health] src/app/index.ts|complexity|high|Single file handles 12 route handlers — split into domain modules
-[health] src/lib/dispatcher.ts|coupling|medium|Event handler has 7 different signal responsibilities — consider a signal dispatcher
+src/app/index.ts — complexity — high — Single file handles 12 route handlers — split into domain modules
+src/lib/dispatcher.ts — coupling — medium — Event handler has 7 different signal responsibilities — consider a signal dispatcher
 ```
 
-Emit 0–10 signals. Only emit for genuine issues — do not manufacture warnings.
+Write 0–10 observations. Only write observations for genuine issues — do not manufacture warnings.
 
-## Actionable findings — use [health] signals only
+## Actionable findings — plain-text observations only
 
-The architect emits `[health]` signals for structural observations. It does NOT emit `[todo]` signals — actionable improvement suggestions are the ideator agent's responsibility. This prevents overlap: architect documents structure, ideator challenges it.
+The architect writes plain-text observations for structural findings. It does NOT emit `[todo]` signals — actionable improvement suggestions are the ideator agent's responsibility. This prevents overlap: architect documents structure, ideator challenges it.
 
-Use `[health]` for: complexity metrics, coupling observations, documentation gaps, coverage gaps, dead code candidates (informational only). The ideator reads health signals and converts the actionable ones into TODOs.
+Write observations for: complexity metrics, coupling observations, documentation gaps, coverage gaps, dead code candidates (informational only). The ideator reads these observations and converts the actionable ones into TODOs.
 
 ## Dead code detection — mandatory verification protocol
 

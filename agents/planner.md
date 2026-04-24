@@ -239,20 +239,6 @@ Example (for a feature with three tasks — emit the title portion only, not Int
 [todo] 3. Wire feature module to use Y (`src/features/z.ts`)
 ```
 
-## Step 4 — Assign module
-
-After writing the plan to `docs/PLAN.md`:
-
-1. Read `.pipeline/modules.json`. If the file does not exist or the array is empty, skip this step — emit no `[module]` signal.
-2. For each module, check how well the feature description matches the module's `id`, `name`, `description`, `notes`, and `capabilities[].text` fields.
-3. **If exactly one module is a clear fit** — emit on its own line after `[suggest]`:
-   `[module] <id>`
-   Example: `[module] pipeline-system`
-4. **If two or more modules are plausible candidates** — pick the best fit using your judgment. Do NOT ask questions — the brainstormer handles all Q&A.
-5. **If no module fits** — propose a new module. Slugify the name (lowercase, hyphens) as the module ID and emit `[module] <new-id>` after the plan. The documenter will create the module record on apply.
-
-The `[module]` line must appear **after** all plan content and after `[suggest]`. It is a control signal — FORGE captures it silently and never displays it in the terminal.
-
 ## Context checkpoint
 
 If you are approaching your context limit mid-plan (before `docs/PLAN.md` has been written), write your partial plan to `docs/context/checkpoint.md` (list the feature name, tasks drafted so far, and any open questions) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator will resume you automatically.
@@ -285,7 +271,6 @@ Uncertainty: <one line — what the planner is unsure about; omit if none>
 [/approach]
 [summary] <one-sentence summary of what will be built, ≤ 120 characters>
 [tier] <a|b|c>
-[module] <module-id>  (omit this line if no module matched)
 ```
 
 **`[tier]` values:**
