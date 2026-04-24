@@ -13,6 +13,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractActiveFeatureSection } from './lib/plan-utils.mjs';
 
 function log(msg) {
   process.stderr.write(`[completeness-check] ${msg}\n`);
@@ -46,30 +47,7 @@ function dirExists(dirPath) {
 
 // --- Plan parsing -----------------------------------------------------------
 
-function extractActiveFeatureSection(planContent) {
-  const lines = planContent.split('\n');
-  let featureStart = -1;
-  let featureEnd = lines.length;
-  let featureName = 'unknown';
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^### Feature:/.test(lines[i])) {
-      const section = lines.slice(i, featureEnd);
-      if (section.some(l => /^- \[ \]/.test(l))) {
-        featureStart = i;
-        featureName = lines[i].replace(/^### Feature:\s*/, '').trim();
-        break;
-      }
-      featureEnd = i;
-    }
-  }
-
-  if (featureStart === -1) return { tasks: [], featureName };
-  return {
-    tasks: lines.slice(featureStart, featureEnd),
-    featureName,
-  };
-}
+// extractActiveFeatureSection imported from ./lib/plan-utils.mjs
 
 function extractActiveTaskIds(sectionLines) {
   const tasks = [];
@@ -94,7 +72,10 @@ function extractActiveTaskIds(sectionLines) {
   }
 
   if (tasks.length < uncheckedLines.length) {
-    return { tasks: [], error: `${uncheckedLines.length - tasks.length} unchecked task line(s) have no parseable task number — fallback to agent` };
+    const parsedIds = new Set(tasks.map(t => t.id));
+    const firstBad = uncheckedLines.find(l => !TASK_NUM_RE.test(l));
+    const preview = firstBad ? firstBad.slice(0, 80) : '(unknown)';
+    return { tasks: [], error: `${uncheckedLines.length - tasks.length} unchecked task line(s) have no parseable task number — first: "${preview}" — fallback to agent` };
   }
 
   const ids = tasks.map(t => t.id);
@@ -170,7 +151,7 @@ function buildVerdict(featureName, activeTasks, coverage) {
     summaryLines.push(`WARN: Task ${task.id} deferred — "${task.title}"`);
   }
 
-  const signal = `[reviewer-verdict] {"agent":"completeness-checker","verdict":"${verdict}","blockers":${blockers},"warnings":${warnings},"feature":"${featureName}","model":"claude-haiku-4-5-20251001"}`;
+  const signal = `[reviewer-verdict] {"agent":"completeness-checker","verdict":"${verdict}","blockers":${blockers},"warnings":${warnings},"feature":"${featureName}","model":"deterministic-script"}`;
 
   return {
     verdict,
@@ -202,7 +183,7 @@ export function runCompletenessCheck(root) {
     return { ok: false, reason: 'coder-status.json missing, malformed, or lacks tasksCovered/tasksDeferred arrays — fallback to agent' };
   }
 
-  const { tasks: sectionLines, featureName } = extractActiveFeatureSection(planContent);
+  const { lines: sectionLines, featureName } = extractActiveFeatureSection(planContent);
   const { tasks: activeTasks, error: parseError } = extractActiveTaskIds(sectionLines);
 
   if (parseError) {

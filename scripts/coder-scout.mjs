@@ -14,6 +14,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractActiveFeatureSection } from './lib/plan-utils.mjs';
 
 function log(msg) {
   process.stderr.write(`[coder-scout] ${msg}\n`);
@@ -48,26 +49,6 @@ function dirExists(dirPath) {
 
 // --- Plan parsing -----------------------------------------------------------
 
-function extractActiveFeatureSection(planContent) {
-  const lines = planContent.split('\n');
-  let featureStart = -1;
-  let featureEnd = lines.length;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^### Feature:/.test(lines[i])) {
-      const section = lines.slice(i, featureEnd);
-      if (section.some(l => /^- \[ \]/.test(l))) {
-        featureStart = i;
-        break;
-      }
-      featureEnd = i;
-    }
-  }
-
-  if (featureStart === -1) return [];
-  return lines.slice(featureStart, featureEnd);
-}
-
 function extractActiveTasks(sectionLines) {
   const tasks = [];
   for (const line of sectionLines) {
@@ -94,10 +75,7 @@ function extractCandidates(taskLines) {
 
     BACKTICK_PATH_RE.lastIndex = 0;
     while ((match = BACKTICK_PATH_RE.exec(line)) !== null) {
-      const p = match[1];
-      if (p.includes('/') || p.includes('\\')) {
-        paths.push(p.replace(/\\/g, '/'));
-      }
+      paths.push(match[1].replace(/\\/g, '/'));
     }
 
     const actionMatch = ACTION_VERB_RE.exec(line);
@@ -248,7 +226,7 @@ export function runCoderScout(root) {
     return { ok: false, reason: 'PLAN.md missing or unreadable', scout: null };
   }
 
-  const featureSection = extractActiveFeatureSection(planContent);
+  const { lines: featureSection } = extractActiveFeatureSection(planContent);
   if (featureSection.length === 0) {
     return { ok: false, reason: 'no active feature section with unchecked tasks', scout: null };
   }

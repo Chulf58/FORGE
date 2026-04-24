@@ -18,23 +18,21 @@ When invoking ANY subagent, include `Working directory: <absolute project folder
 
 ## Common patterns (referenced by pipeline sections below)
 
-### Triage → reviewer dispatch
+### Reviewer dispatch
 
-1. Invoke **reviewer-triage** (for plan-stage, prefix with `[plan-stage mode]`).
-2. Read `docs/context/triage-dispatch.json` — use its `reviewers` array as the authoritative list. If absent/malformed, parse the `### Invoke` section of triage output.
-3. For each reviewer, verify `docs/context/triage-excerpts/<reviewer>.md` exists and is non-empty. If any missing, re-run triage.
-4. Read `confidence` from `triage-dispatch.json` (default `"HIGH"`). Invoke each reviewer with prefix `"[triage-confidence: <VALUE>]\n"`. Plan-stage reviewers also get `"[plan-stage review — no handoff.md exists yet, do not read it]\n"` prefix. Reviewers read their own excerpt file — do not pass content inline.
+Reviewer selection is handled by `scripts/reviewer-dispatch.mjs` — a deterministic script that maps risk patterns to specific reviewers. No LLM triage agent needed.
 
-**Count-based triage gate:** If 3+ reviewers and mode is not FULL, always invoke reviewer-triage before dispatching.
+- **Implement/debug/refactor stage:** the script scans `docs/context/handoff.md` for risk patterns (shell/spawn, fs writes, auth/crypto, network, schema changes, etc.) and returns the matching reviewer list.
+- **Plan stage:** the script keyword-scans active task lines in `docs/PLAN.md` and maps domain keywords to reviewers.
+- **FULL mode:** all 5 reviewers always run regardless of pattern matching.
 
 ### Revision loops
 
 All revision loops share this pattern:
 1. Initialize counter to 0. Increment after each cycle.
-2. The revising agent reads **only the blocking reviewer's output** directly (never via sub-agent) and revises the target doc.
-3. Re-run **reviewer-triage** against the revised doc. Validate excerpts. Re-run mandatory reviewers with fresh excerpts.
+2. The revising agent reads **only the blocking reviewer's output** from `docs/context/reviewer-output/` and revises the target doc.
+3. Re-run the reviewer dispatch script and re-invoke the dispatched reviewers against the revised doc.
 4. **Stop conditions** (check before each cycle): counter reached limit (3 for plan, 2 for coder/debug/refactor); same BLOCK reason returned unchanged (circuit breaker); all verdicts are REVISE with 0 BLOCKs (early exit — warnings don't gate).
-5. **Triage-missing special case:** If the only REVISE is "re-run reviewer-triage", do so directly without invoking the revising agent. Does not count toward counter.
 
 ---
 
@@ -45,8 +43,8 @@ All revision loops share this pattern:
 0. If `"specAgent": true` in `project.json` → invoke **spec-agent** first. If `.claude/agents/domain-context.md` exists → invoke **domain-context**, pass output as `[domain-context output]...[/domain-context output]` prefix.
 0.5. **brainstormer** (conditional) — skip if input has acceptance criteria, file paths, technical approach, "Affected areas:", enriched TODO description, or urgency. If brainstormer emits `[questions]`, echo the block verbatim and **stop**. FORGE re-invokes with `[answers]`.
 1. **planner** — writes `docs/PLAN.md`. If `### Research needed` section has items → proceed to step 2, else skip to step 3.
-2. **researcher-triage** → dispatch **researcher**(s) concurrently → **planner** re-reads research and revises plan.
-3. **gotcha-checker** → **triage → reviewer dispatch** (see common pattern above).
+2. **researcher** — investigates technical unknowns, writes to `docs/RESEARCH/`.
+3. **gotcha-checker** → **reviewer dispatch** (see common pattern above).
 4. Apply **plan revision loop** if any reviewer BLOCKs/REVISEs.
 5. Emit `[summary] <one sentence>` → Gate #1.
 
@@ -55,30 +53,29 @@ All revision loops share this pattern:
 0. If `"tddAgent": true` → invoke **tdd-agent** first.
 0.5. **coder-scout** — writes `docs/context/scout.json`. Skip in LEAN/SPRINT.
 1. **coder** — writes `docs/context/handoff.md`. Run sequentially (never parallelize).
-1b. **regression-risk** — skip if `modules.json` absent.
-1c. **completeness-checker** — skip in LEAN mode.
-2. **Triage → reviewer dispatch** (see common pattern).
+1b. **completeness-checker** — skip in LEAN mode.
+2. **Reviewer dispatch** (see common pattern).
 3. Apply **coder revision loop** if any mandatory reviewer BLOCKs.
 4. Emit `[summary] <one sentence>` → Gate #2.
 
 ### `debug: <description>` / `failed test: <description>`
 
 1. **debug** — may emit `[questions]` (handle same as brainstormer). Writes `docs/context/handoff.md`.
-2. **Triage → reviewer dispatch** → revision loop if blocked.
+2. **Reviewer dispatch** → revision loop if blocked.
 3. Emit `[summary]` → Gate #2. Apply via `apply debug:`.
 
 ### `refactor: <file or area>`
 
 1. **refactor** → writes `docs/context/handoff.md`.
-2. **Triage → reviewer dispatch** — always include reviewer-style regardless of triage output.
+2. **Reviewer dispatch** — always includes reviewer-style for refactor pipelines.
 3. Revision loop if blocked → `[summary]` → Gate #2. Apply via `apply refactor:`.
 
 ### `apply feature:` / `apply debug:` / `apply refactor:`
 
 **Do not read source files or make edits yourself.** Spawn each agent as a Task.
 1. **implementer** — applies `docs/context/handoff.md`. If plan has `(wave: N)` annotations, follow wave execution rules (see FORGE-REFERENCE.md).
-2. **documenter** — updates CHANGELOG, ARCHITECTURE, archives plan section, cleans up.
-3. **tool-call-auditor** — if `[auditor-recurring]` → **agent-optimizer** → Gate #2 → **implementer** for agent fixes.
+2. **documenter** — updates CHANGELOG, ARCHITECTURE, archives plan section, captures solution.
+3. **post-apply-lifecycle** — cleans up pipeline artifacts, archives completed work.
 
 ---
 
@@ -107,24 +104,24 @@ When absent, use LEAN. **These tables are binding** — do not add/substitute ag
 | Mode | Agents |
 |------|--------|
 | SPRINT | planner → Gate #1 |
-| LEAN | planner → researcher? → reviewer-safety → reviewer → Gate #1 |
-| STANDARD | planner → researcher? → gotcha-checker → triage → dispatched reviewers → Gate #1 |
+| LEAN | planner → researcher? → dispatched reviewers → Gate #1 |
+| STANDARD | planner → researcher? → gotcha-checker → dispatched reviewers → Gate #1 |
 | FULL | planner → researcher → gotcha-checker → all 5 reviewers → Gate #1 |
 
 ### implement feature:
 | Mode | Agents |
 |------|--------|
 | SPRINT | coder → Gate #2 |
-| LEAN | scout → coder → completeness → reviewer-safety → reviewer → Gate #2 |
-| STANDARD | scout → coder → completeness → triage → dispatched reviewers → Gate #2 |
+| LEAN | coder → dispatched reviewers → Gate #2 |
+| STANDARD | scout → coder → completeness → dispatched reviewers → Gate #2 |
 | FULL | scout → coder → completeness → all 5 reviewers → Gate #2 |
 
 ### debug: / refactor:
 | Mode | Agents |
 |------|--------|
 | SPRINT | agent only → Gate #2 |
-| LEAN | agent → reviewer-safety → reviewer → Gate #2 |
-| STANDARD | agent → triage → dispatched reviewers → Gate #2 |
+| LEAN | agent → dispatched reviewers → Gate #2 |
+| STANDARD | agent → dispatched reviewers → Gate #2 |
 | FULL | agent → all 5 reviewers → Gate #2 |
 
 ---
@@ -141,7 +138,6 @@ Before each agent invocation, call `forge_get_model_recommendation` with the age
 | `docs/PLAN.md` | planner | Active plan |
 | `docs/RESEARCH/<feature>.md` | researcher | Technical findings |
 | `docs/context/handoff.md` | coder / debug / refactor | Implementation draft |
-| `docs/context/triage-dispatch.json` | reviewer-triage | Machine-readable reviewer list |
 | `docs/context/scout.json` | coder-scout | Files/functions the coder needs |
 | `docs/CHANGELOG.md` | documenter | Shipped changes |
 | `docs/ARCHITECTURE.md` | documenter | Module structure |

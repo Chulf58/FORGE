@@ -16,6 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractActiveFeatureSection } from './lib/plan-utils.mjs';
 
 function log(msg) {
   process.stderr.write(`implementer-triage: ${msg}\n`);
@@ -39,29 +40,12 @@ function dirExists(dirPath) {
   }
 }
 
-// --- Plan parsing -----------------------------------------------------------
-
-function extractActiveFeatureSection(planContent) {
-  const lines = planContent.split('\n');
-  let featureStart = -1;
-  let featureEnd = lines.length;
-  let featureName = 'unknown';
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^### Feature:/.test(lines[i])) {
-      const section = lines.slice(i, featureEnd);
-      if (section.some(l => /^- \[ \]/.test(l))) {
-        featureStart = i;
-        featureName = lines[i].replace(/^### Feature:\s*/, '').trim();
-        break;
-      }
-      featureEnd = i;
-    }
-  }
-
-  if (featureStart === -1) return { lines: [], featureName };
-  return { lines: lines.slice(featureStart, featureEnd), featureName };
+function sanitizeTargetFile(p) {
+  if (/^[/\\]|^[A-Za-z]:[/\\]|\.\.[\\/]/.test(p)) return null;
+  return p;
 }
+
+// --- Plan parsing -----------------------------------------------------------
 
 function parseAllTasks(sectionLines) {
   const tasks = [];
@@ -113,7 +97,7 @@ function parseAllTasks(sectionLines) {
       id: taskId,
       checked,
       titleLine: line,
-      targetFile: fileMatch ? fileMatch[1].replace(/\\/g, '/') : null,
+      targetFile: fileMatch ? sanitizeTargetFile(fileMatch[1].replace(/\\/g, '/')) : null,
       wave: waveMatch ? parseInt(waveMatch[1], 10) : null,
       intent,
       depends,
@@ -506,6 +490,9 @@ export function runImplementerTriageExtract(root) {
 
   const generalPath = path.join(root, 'docs', 'gotchas', 'GENERAL.md');
   const generalContent = readFileSafe(generalPath);
+  if (!generalContent) {
+    log('GENERAL.md absent — gotcha injection skipped for all briefs');
+  }
   const gotchaSections = generalContent ? parseGotchaSections(generalContent) : [];
 
   const waveMap = new Map();

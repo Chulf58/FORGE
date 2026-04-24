@@ -26,9 +26,7 @@ Invoke agents in sequence:
 2. **researcher** — investigates technical unknowns from the plan, writes to `docs/RESEARCH/`
 3. **Review stage** — invoke in order:
    a. **gotcha-checker** — always invoke first
-   b. **reviewer-triage** — always invoke with the literal prompt prefix `[plan-stage mode]`, e.g.: "invoke reviewer-triage with: '[plan-stage mode] Read docs/PLAN.md and output an explicit plan-stage dispatch list'". The orchestrator must use this exact prefix — reviewer-triage uses it as the primary signal to switch into plan-stage mode.
-
-   The orchestrator must follow the dispatch list returned by reviewer-triage exactly for all conditional plan-stage reviewers. Do not make your own reviewer invocation decisions.
+   b. **Reviewer dispatch** — run `scripts/reviewer-dispatch.mjs --stage=plan` to deterministically select which reviewers to invoke based on plan task keywords.
 
    Plan-stage reviewers read `docs/PLAN.md` and `docs/RESEARCH/` — not `handoff.md`.
 
@@ -41,19 +39,16 @@ Instructional projects do not have an apply step — the pipeline ends after Gat
 ### `implement feature: <description>`
 Invoke agents in this order:
 1. **coder** — writes full implementation draft to `docs/context/handoff.md` (no source edits)
-2. **reviewer-triage** — reads `handoff.md` and outputs an explicit dispatch list naming which reviewers to invoke, with file/line citations. The orchestrator must follow this dispatch list exactly — do not make your own reviewer invocation decisions.
-3. **Invoke reviewers named by triage** — always includes reviewer and reviewer-safety; conditionally includes reviewer-logic, reviewer-style, and reviewer-performance per the dispatch list.
-4. **tool-call-auditor** — audits tool-call patterns from the session against `docs/audit-log.jsonl`
-   - If `[auditor-clean]` is emitted: pipeline ends.
-   - If `[auditor-recurring] <count>` is emitted: invoke **agent-optimizer** → agent-optimizer writes proposed agent prompt fixes to `docs/context/handoff.md` → Gate #2 is shown for user approval → if approved, invoke **implementer** to apply agent `.md` changes.
+2. **Reviewer dispatch** — run `scripts/reviewer-dispatch.mjs --stage=implement` to deterministically select reviewers based on handoff risk patterns.
+3. **Invoke dispatched reviewers** — the script returns the exact reviewer list; invoke each one.
 
-After all invoked reviewers complete and the auditor runs, the pipeline ends unless agent-optimizer is triggered. Instructional projects have no Gate #2 and no apply step unless `[auditor-recurring]` causes one.
+After all invoked reviewers complete, the pipeline ends. Instructional projects have no Gate #2 and no apply step.
 
 ### `debug: <description>`
 Invoke agents in this order:
 1. **debug** — traces root cause, writes fix plan to `docs/context/handoff.md`
-2. **reviewer-triage** — reads `handoff.md`, outputs dispatch list. Follow it exactly.
-3. **Invoke reviewers named by triage** — always includes reviewer and reviewer-safety; conditionally includes others per dispatch.
+2. **Reviewer dispatch** — run `scripts/reviewer-dispatch.mjs --stage=implement` to select reviewers.
+3. **Invoke dispatched reviewers** based on the script's output.
 
 ---
 
