@@ -607,6 +607,20 @@
       "tags": [
         "signal-protocol-opt"
       ]
+    },
+    {
+      "id": "b071e432",
+      "priority": "high",
+      "text": "Clean up dead triage-excerpt references in all 5 reviewer agents — remove primary triage-excerpts read path (dead since dispatch script replaced triage), skip knowledge enforcement for plan-stage reviews, remove confidence handling section (no triage = no confidence prefix). Saves 2-3 wasted turns per reviewer per run.",
+      "title": "Clean up dead triage-excerpt",
+      "summary": "Saves 2-3 wasted turns per reviewer per run.",
+      "done": false,
+      "addedAt": 1777025361829,
+      "tags": [
+        "agents",
+        "truncation",
+        "cleanup"
+      ]
     }
   ],
   "planned": []
