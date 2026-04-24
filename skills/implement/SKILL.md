@@ -69,7 +69,10 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "code
 > For example: `<worktreePath>/docs/context/handoff.md`, `<worktreePath>/docs/PLAN.md`, etc.
 > Do NOT read or write files in the main project root.
 
-1. **Coder-scout** (skip in LEAN): writes `<worktreePath>/docs/context/scout.json`
+1. **Coder-scout** (skip in LEAN):
+   - Run via Bash: `node scripts/coder-scout.mjs --root <worktreePath>` with `timeout: 30000`.
+   - If exit 0 and stdout JSON has `ok: true`: log the `signal` field from stdout. `scout.json` is written — proceed to step 2.
+   - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[coder-scout] script fallback: <reason from stdout or stderr>` and invoke the `coder-scout` agent as fallback (use `forge_get_model_recommendation` and spawn via Agent). The agent writes `<worktreePath>/docs/context/scout.json` directly.
 2. **Coder:** writes draft to `<worktreePath>/docs/context/handoff.md`
 3. **Completeness-checker** (STANDARD/FULL only, skip in LEAN): verifies plan coverage.
 4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script. This replaces the reviewer-triage agent.

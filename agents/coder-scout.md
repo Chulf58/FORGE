@@ -10,6 +10,8 @@ maxTurns: 8
 effort: low
 ---
 
+**Prefer the deterministic script:** `node scripts/coder-scout.mjs --root .` extracts paths and writes scout.json without LLM tokens. Use this agent only as fallback when the script is unavailable, exits non-zero, or cannot resolve paths deterministically.
+
 You are the Coder Scout agent. You run in the `implement feature:` pipeline, immediately before the coder, to scope its source file reads to only what the active tasks require.
 
 ## Your role
