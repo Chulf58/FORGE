@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 function log(msg) {
-  process.stderr.write(`[implementer-triage] ${msg}\n`);
+  process.stderr.write(`implementer-triage: ${msg}\n`);
 }
 
 // --- Helpers ----------------------------------------------------------------
@@ -292,6 +292,19 @@ function buildDependencyContext(task, allTasks, handoffSections) {
   return depContext;
 }
 
+// --- Shared changes relevance -----------------------------------------------
+
+const UNIVERSAL_SHARED_RE = /\b(all\s+(modified\s+)?files|every\s+file|each\s+file|across\s+all)\b/i;
+
+function sharedChangesAffectsFile(sharedChanges, targetFile) {
+  if (!sharedChanges) return false;
+  if (sharedChanges.includes(targetFile)) return true;
+  const dir = targetFile.split('/')[0];
+  if (dir && sharedChanges.includes(dir + '/')) return true;
+  if (UNIVERSAL_SHARED_RE.test(sharedChanges)) return true;
+  return false;
+}
+
 // --- Brief construction -----------------------------------------------------
 
 function buildTaskBrief(task, waveSeq, handoffContent, sharedChanges, depContext, gotchaLines) {
@@ -312,7 +325,7 @@ function buildTaskBrief(task, waveSeq, handoffContent, sharedChanges, depContext
   lines.push('Handoff section:');
   lines.push(handoffContent);
 
-  if (sharedChanges) {
+  if (sharedChangesAffectsFile(sharedChanges, task.targetFile)) {
     lines.push('');
     lines.push('## Shared changes');
     lines.push(sharedChanges);
@@ -396,6 +409,18 @@ export function runImplementerTriageExtract(root) {
       return {
         ok: false,
         reason: `task ${task.id} target file "${task.targetFile}" has no matching handoff section — fallback to agent`,
+      };
+    }
+  }
+
+  const skillsPath = path.join(root, 'docs', 'gotchas', 'SKILLS.md');
+  const skillsContent = readFileSafe(skillsPath);
+  if (skillsContent) {
+    const hasTriageSection = /^## Implementer-Triage/m.test(skillsContent);
+    if (hasTriageSection) {
+      return {
+        ok: false,
+        reason: 'SKILLS.md has ## Implementer-Triage section — semantic mapping requires agent fallback',
       };
     }
   }
