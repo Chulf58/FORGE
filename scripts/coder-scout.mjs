@@ -189,38 +189,24 @@ const KNOWN_HOOK_EVENTS = new Set([
   'SubagentStart', 'SubagentStop',
 ]);
 
-const QUOTED_STRING_RE = /['"`](\w+)['"`]/g;
-const FORGE_COMMAND_RE = /['"`](\/forge:\w+)['"`]/g;
-const BARE_FORGE_RE = /['"`](forge:\w+)['"`]/g;
+const QUOTED_TOKEN_RE = /['"`](\/?\w[\w:-]*)['"`]/g;
 
 function extractHookEvents(taskLines) {
   const seen = new Set();
   const events = [];
 
-  function add(name) {
-    if (!seen.has(name)) {
-      seen.add(name);
-      events.push(name);
-    }
-  }
-
   for (const line of taskLines) {
-    FORGE_COMMAND_RE.lastIndex = 0;
+    QUOTED_TOKEN_RE.lastIndex = 0;
     let match;
-    while ((match = FORGE_COMMAND_RE.exec(line)) !== null) {
-      add(match[1]);
-    }
+    while ((match = QUOTED_TOKEN_RE.exec(line)) !== null) {
+      const token = match[1];
+      if (seen.has(token)) continue;
 
-    BARE_FORGE_RE.lastIndex = 0;
-    while ((match = BARE_FORGE_RE.exec(line)) !== null) {
-      add(match[1]);
-    }
-
-    QUOTED_STRING_RE.lastIndex = 0;
-    while ((match = QUOTED_STRING_RE.exec(line)) !== null) {
-      const name = match[1];
-      if (KNOWN_HOOK_EVENTS.has(name)) {
-        add(name);
+      if (KNOWN_HOOK_EVENTS.has(token) ||
+          /^\/forge:[a-z0-9-]+$/.test(token) ||
+          /^forge:[a-z0-9-]+$/.test(token)) {
+        seen.add(token);
+        events.push(token);
       }
     }
   }
