@@ -181,9 +181,38 @@ function trimToLimit(resolved, limit) {
   return { filesToRead: kept, trimmed, newFiles };
 }
 
+// --- Hook event extraction --------------------------------------------------
+
+const KNOWN_HOOK_EVENTS = new Set([
+  'SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse',
+  'UserPromptSubmit', 'Stop', 'PostCompact', 'FileChanged',
+  'SubagentStart', 'SubagentStop',
+]);
+
+const QUOTED_STRING_RE = /['"`](\w+)['"`]/g;
+
+function extractHookEvents(taskLines) {
+  const seen = new Set();
+  const events = [];
+
+  for (const line of taskLines) {
+    QUOTED_STRING_RE.lastIndex = 0;
+    let match;
+    while ((match = QUOTED_STRING_RE.exec(line)) !== null) {
+      const name = match[1];
+      if (KNOWN_HOOK_EVENTS.has(name) && !seen.has(name)) {
+        seen.add(name);
+        events.push(name);
+      }
+    }
+  }
+
+  return events;
+}
+
 // --- Scout JSON construction ------------------------------------------------
 
-function buildScoutJson(filesToRead, trimmedFiles, newFiles) {
+function buildScoutJson(filesToRead, trimmedFiles, newFiles, hookEvents) {
   const functionsToModify = {};
   for (const f of filesToRead) {
     if (f.functions.length > 0) {
@@ -195,7 +224,7 @@ function buildScoutJson(filesToRead, trimmedFiles, newFiles) {
     files_to_read: filesToRead.map(f => f.path),
     functions_to_modify: functionsToModify,
     new_files: newFiles.map(f => f.path),
-    hook_events: [],
+    hook_events: hookEvents,
   };
 
   if (trimmedFiles.length > 0) {
@@ -239,7 +268,8 @@ export function runCoderScout(root) {
   }
 
   const { filesToRead, trimmed, newFiles } = trimToLimit(resolved, 5);
-  const scout = buildScoutJson(filesToRead, trimmed, newFiles);
+  const hookEvents = extractHookEvents(taskLines);
+  const scout = buildScoutJson(filesToRead, trimmed, newFiles, hookEvents);
 
   const scoutDir = path.join(root, 'docs', 'context');
   const scoutPath = path.join(scoutDir, 'scout.json');
