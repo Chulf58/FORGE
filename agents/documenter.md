@@ -208,43 +208,6 @@ If no modules match: `[board] modules touched: none`
 
 Do NOT modify modules.json — the module registry uses directory-based paths that stay current without maintenance.
 
-## Step 6 — Pipeline artefact cleanup
-
-Wipe artefacts left over from the completed pipeline run. These bash commands are safe to run even if the targets don't exist.
-
-**Archive and wipe reviewer output:**
-```bash
-REVIEW_TS=$(node -e "process.stdout.write(String(Date.now()))")
-ARCHIVE_DIR=".pipeline/review-archive/$REVIEW_TS"
-mkdir -p "$ARCHIVE_DIR"
-cp docs/context/reviewer-output/*.md "$ARCHIVE_DIR/" 2>/dev/null || true
-rm -f docs/context/reviewer-output/*.md
-(cd .pipeline/review-archive 2>/dev/null && ls -1d */ 2>/dev/null | sort -n | head -n -20 | xargs rm -rf 2>/dev/null) || true
-```
-
-**Delete inter-agent sidecar files:**
-```bash
-rm -f docs/context/triage-dispatch.json docs/context/researcher-status.json docs/context/coder-status.json docs/context/scout.json docs/context/run-metrics.json
-```
-
-Do not log anything for this step.
-
-## Step 7 — TESTING.md archival
-
-Grep `docs/TESTING.md` (`output_mode: "count"`, pattern `.*`). If ≤ 400 lines, skip. Confirm `docs/archive/` exists via Glob — if absent, emit `[archival] WARNING: docs/archive/ not found — TESTING.md archival skipped` and skip.
-
-Read the file. **Header block** = everything before the first `^## Test:` line. **Entries** = each `^## Test:` block to the next (or EOF); includes trailing `---` and blank lines. `entries[0]` = oldest. **Keep set** = last 3 entries. **Archive set** = all earlier entries, oldest-first. If N ≤ 3, skip — nothing to archive.
-
-**Write `docs/archive/TESTING_HISTORY.md`:** prepend archive set immediately after the `---` header line (create file with `# FORGE — Testing History\n\nTest entries archived from docs/TESTING.md when the file exceeds 400 lines.\n\n---` if absent). **Rewrite `docs/TESTING.md`:** header block + blank line + keep set in original order. Note N_archived.
-
-## Step 8 — CHANGELOG.md archival
-
-Same pattern as Step 7 but: file = `docs/CHANGELOG.md`, threshold = 200 lines, split on `^## \[` headings, keep set = last 5 entries, archive to `docs/archive/CHANGELOG_HISTORY.md` (create with `# FORGE — Changelog History\n\nChangelog entries archived from docs/CHANGELOG.md when the file exceeds 200 lines.\n\n---` if absent). Note N_archived.
-
-## Step 8b — Cleanup (formerly separate cleanup agent)
-
-**RESEARCH file deletion:** Derive a slug from the feature name (lowercase, spaces → hyphens, non-alphanumeric removed). Use Glob to check if `docs/RESEARCH/<slug>.md` exists. If so, delete it via Bash `rm`. If not found, skip silently.
-
 ## Step 8c — Knowledge compounding (solution capture)
 
 **Skip if:** handoff missing, feature name empty, trivial single-file change, or debug/refactor with obvious root cause.

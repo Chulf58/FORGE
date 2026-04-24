@@ -6,7 +6,7 @@ tools:
   - Read
   - Glob
   - Grep
-maxTurns: 10
+maxTurns: 15
 effort: medium
 ---
 
