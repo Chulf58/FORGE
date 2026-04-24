@@ -390,7 +390,13 @@ server.registerTool(
         board.todos = todos.filter(t => t.id !== id);
         board.planned = planned.filter(t => t.id !== id);
         writeJsonSafe(boardPath, board);
-        return textResult({ ...task, done: true, doneAt: Date.now(), removed: true });
+        const remaining = board.todos || [];
+        const nextTask = remaining.length > 0 ? remaining[0] : null;
+        return textResult({
+          ...task, done: true, doneAt: Date.now(), removed: true,
+          nextPending: nextTask ? { id: nextTask.id, title: nextTask.title, text: nextTask.text, priority: nextTask.priority } : null,
+          pendingCount: remaining.length,
+        });
       }
 
       if (done === false) {
