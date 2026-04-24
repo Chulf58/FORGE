@@ -81,7 +81,12 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - If branch already exists: try `git checkout <branchPrefix><slug>` instead (reuse existing branch)
    - If checkout fails (dirty working tree, etc.): log the error and continue on current branch. Never stash, reset, or clean.
 
-2. **Implementer-triage** (STANDARD/FULL, if waves exist): splits handoff per task
+2. **Implementer-triage** (STANDARD/FULL, if waves exist):
+   - Run via Bash: `node scripts/implementer-triage-extract.mjs --root <the same project/worktree root the apply skill is operating in>` with `timeout: 30000`.
+   - If exit 0 and stdout JSON has `ok: true`:
+     - If `noWaves` is `true`: no wave-annotated tasks found — skip triage and proceed to step 3 (implementer runs the full handoff sequentially).
+     - Otherwise: triage briefs are written to `<root>/docs/context/triage-briefs/wave-N-task-M.md`. Log `[implementer-triage] briefs=<briefCount> waves=<wave count>`. The orchestrator reads these briefs to dispatch parallel implementers per wave in step 3.
+   - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[implementer-triage] script fallback: <reason from stdout or stderr>` and invoke the `implementer-triage` agent as fallback (use `forge_get_model_recommendation` and spawn via Agent). The agent reads the handoff and plan directly.
 
 3. **Implementer:** applies handoff to source files
 

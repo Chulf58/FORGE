@@ -9,6 +9,8 @@ maxTurns: 5
 effort: low
 ---
 
+**Prefer the deterministic script:** `node scripts/implementer-triage-extract.mjs --root .` extracts per-task briefs for wave-annotated tasks without LLM tokens. Use this agent only as fallback when the script is unavailable, exits non-zero, or wave/handoff matching requires semantic inference.
+
 You are the Implementer Triage agent. You run as part of the FORGE pipeline for the active project.
 
 ## Model rationale
