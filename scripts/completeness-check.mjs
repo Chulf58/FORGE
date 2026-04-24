@@ -73,19 +73,37 @@ function extractActiveFeatureSection(planContent) {
 
 function extractActiveTaskIds(sectionLines) {
   const tasks = [];
+  const uncheckedLines = [];
   const TASK_NUM_RE = /^- \[ \]\s+(\d+)\./;
 
   for (const line of sectionLines) {
-    const match = TASK_NUM_RE.exec(line);
-    if (match) {
-      tasks.push({
-        id: parseInt(match[1], 10),
-        title: line.replace(TASK_NUM_RE, '').trim(),
-      });
+    if (/^- \[ \]/.test(line)) {
+      uncheckedLines.push(line);
+      const match = TASK_NUM_RE.exec(line);
+      if (match) {
+        tasks.push({
+          id: parseInt(match[1], 10),
+          title: line.replace(TASK_NUM_RE, '').trim(),
+        });
+      }
     }
   }
 
-  return tasks;
+  if (uncheckedLines.length === 0) {
+    return { tasks: [], error: 'no unchecked task lines in active feature section — fallback to agent' };
+  }
+
+  if (tasks.length < uncheckedLines.length) {
+    return { tasks: [], error: `${uncheckedLines.length - tasks.length} unchecked task line(s) have no parseable task number — fallback to agent` };
+  }
+
+  const ids = tasks.map(t => t.id);
+  const uniqueIds = new Set(ids);
+  if (uniqueIds.size < ids.length) {
+    return { tasks: [], error: 'duplicate task IDs in active feature section — fallback to agent' };
+  }
+
+  return { tasks, error: null };
 }
 
 // --- Sidecar validation -----------------------------------------------------
@@ -185,14 +203,10 @@ export function runCompletenessCheck(root) {
   }
 
   const { tasks: sectionLines, featureName } = extractActiveFeatureSection(planContent);
-  const activeTasks = extractActiveTaskIds(sectionLines);
+  const { tasks: activeTasks, error: parseError } = extractActiveTaskIds(sectionLines);
 
-  if (activeTasks.length === 0) {
-    const signal = '[reviewer-verdict] {"agent":"completeness-checker","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"unknown","model":"claude-haiku-4-5-20251001"}';
-    return {
-      ok: true,
-      verdict: { verdict: 'APPROVED', blockers: 0, warnings: 0, feature: 'unknown', signal },
-    };
+  if (parseError) {
+    return { ok: false, reason: parseError };
   }
 
   const coverage = evaluateCoverage(activeTasks, sidecar.tasksCovered, sidecar.tasksDeferred);
