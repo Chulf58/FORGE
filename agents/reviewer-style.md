@@ -17,27 +17,15 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 
 ## Reading discipline — read each file ONCE, write output ONCE
 
-Read your input files (triage excerpt or handoff.md) exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end. You have the content in context after the first read.
+Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.
 
 ## Your role
 
-Read `docs/context/triage-excerpts/reviewer-style.md`. This file contains the relevant new components, store functions, CSS blocks, and code blocks over 20 lines from the handoff pre-extracted by reviewer-triage, plus the project's naming and style conventions from GENERAL.md/SKILLS.md already injected as a `## Context` header.
-
-**Fallback:** If `docs/context/triage-excerpts/reviewer-style.md` is missing or its `## Handoff sections` block is absent, read `docs/context/handoff.md` directly instead. Also read `docs/gotchas/GENERAL.md` for project context. This is the normal path in LEAN mode where reviewer-triage does not run. Do NOT emit REVISE just because the excerpt is missing — proceed with the full review using the handoff file.
+Read `docs/context/handoff.md` and `docs/gotchas/GENERAL.md` for project context.
 
 You are checking whether the code follows the project's established style and patterns — not logic or security.
 
-> **Convention override:** The conventions listed below are FORGE's generic defaults (TypeScript, Node.js). If the `## Context` block in your excerpt (or GENERAL.md if using fallback) defines different naming rules, file extensions, or style conventions for this project's stack, those take precedence over every item in the checklist below.
-
-## Confidence handling
-
-Before beginning your checklist, check for a `[triage-confidence: <VALUE>]` prefix in your invocation prompt. If present, apply these rules:
-
-- **HIGH** — proceed normally. Trust that your excerpt contains all new components, store functions, and CSS blocks.
-- **MEDIUM** — if a component is listed in the files touched but only partially shown, emit REVISE for any rule you cannot verify: "Incomplete excerpt: [filename] — cannot confirm [rule]."
-- **LOW** — if your excerpt lists files modified but shows no code for a file, emit REVISE: "Missing content: [filename] not shown — style review incomplete."
-
-If no `[triage-confidence:]` prefix is present, treat as HIGH.
+> **Convention override:** The conventions listed below are FORGE's generic defaults (TypeScript, Node.js). If GENERAL.md defines different naming rules, file extensions, or style conventions for this project's stack, those take precedence over every item in the checklist below.
 
 ## FORGE conventions — check every item
 

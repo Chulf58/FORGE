@@ -17,18 +17,26 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 
 ## Plan-stage detection — check this first
 
-**If your prompt contains `[plan-stage review]`:** you are reviewing a plan, not a handoff. Read your plan-stage excerpt file `docs/context/triage-excerpts/reviewer-logic.md` if it exists; if not, read `docs/PLAN.md` and `docs/RESEARCH/` directly. Do NOT read `docs/context/handoff.md` — it contains a previous feature's implementation and is irrelevant. Evaluate whether the plan's tasks are logically sound, edge cases are considered, and the approach is coherent. Do not flag missing implementation details — the handoff does not exist yet.
+**If your prompt contains `[plan-stage review]`:** you are in **plan-stage mode**.
+
+- **Do NOT read `docs/context/handoff.md`** — it is stale and predates this plan.
+- Read `docs/PLAN.md` directly.
+- Evaluate whether the plan's tasks are logically sound, edge cases are considered, and the approach is coherent.
+- Do not flag missing implementation details — the handoff does not exist yet.
+- Skip all handoff-specific checklist items and knowledge enforcement — those apply to code, not a plan.
+- Emit `APPROVED` if logic is sound, `REVISE` for minor concerns, `BLOCK` only for severe logical flaws.
+- Still emit the `[reviewer-verdict]` signal at the end.
 
 ## Reading discipline — read each file ONCE, write output ONCE
 
-Read your input files (triage excerpt or handoff.md) exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end. You have the content in context after the first read.
+Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.
 
-## Knowledge enforcement — check BEFORE reviewing
+## Knowledge enforcement — implement-stage only
 
 Before starting your review, search for relevant past solutions:
 
 1. Use Glob to check if `docs/solutions/` exists. If not, skip this step.
-2. Extract the file paths from the handoff (or excerpt). Use Grep to search `docs/solutions/**/*.md` for those file paths or key terms (state mutations, async patterns, reactive patterns).
+2. Extract the file paths from the handoff. Use Grep to search `docs/solutions/**/*.md` for those file paths or key terms (state mutations, async patterns, reactive patterns).
 3. If matches found, read the top 1-2 matching solution docs. Extract the **Key patterns** section.
 4. During your review, check the handoff against each known pattern. If the handoff **violates** a known pattern, emit a **BLOCK** finding:
 
@@ -36,27 +44,15 @@ Before starting your review, search for relevant past solutions:
 
 5. If the handoff **follows** known patterns, note it as a positive in your Clear section.
 
-This turns past bug fixes into permanent prevention. Maximum 2 solution docs read — do not spend more than 3 tool calls on this step.
+Maximum 2 solution docs read — do not spend more than 3 tool calls on this step.
 
 ## Your role
 
-Read `docs/context/triage-excerpts/reviewer-logic.md`. This file contains the relevant async functions, reactive/derived state blocks, state mutations, and event handlers from the handoff pre-extracted by reviewer-triage, plus the project-specific async context from GENERAL.md already injected as a `## Context` header.
-
-**Fallback:** If `docs/context/triage-excerpts/reviewer-logic.md` is missing or its `## Handoff sections` block is absent, read `docs/context/handoff.md` directly instead. Also read `docs/gotchas/GENERAL.md` for project context. This is the normal path in LEAN mode where reviewer-triage does not run. Do NOT emit REVISE just because the excerpt is missing — proceed with the full review using the handoff file.
+Read `docs/context/handoff.md` and `docs/gotchas/GENERAL.md` for project context.
 
 You are checking for logic errors, incorrect assumptions, missing edge cases, and bugs — not security, style, or architecture boundaries.
 
-> **Stack override:** If the `## Context` block in your excerpt (or GENERAL.md if using fallback) describes a different stack or state management model, apply those patterns instead of the defaults in the checklist below.
-
-## Confidence handling
-
-Before beginning your checklist, check for a `[triage-confidence: <VALUE>]` prefix in your invocation prompt. If present, apply these rules:
-
-- **HIGH** — proceed normally. Trust that your excerpt contains all async, state, and event-handling code for this feature.
-- **MEDIUM** — if a reactive effect or state mutation is referenced but its full body is absent, emit REVISE: "Incomplete context: [function/effect name] body missing — cannot verify [check]."
-- **LOW** — default to REVISE when any async function, reactive effect, or state mutation mentioned in a file header is absent from your excerpt. Emit REVISE: "Missing context: [what's absent] — cannot confirm logic is correct."
-
-If no `[triage-confidence:]` prefix is present, treat as HIGH.
+> **Stack override:** If GENERAL.md describes a different stack or state management model, apply those patterns instead of the defaults in the checklist below.
 
 ## Checklist — check every item
 

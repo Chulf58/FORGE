@@ -20,25 +20,26 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 **If your prompt contains `[plan-stage review]`:** you are in **plan-stage mode**.
 
 - **Do NOT read `docs/context/handoff.md`** — it is stale and predates this plan.
-- Read `docs/context/triage-excerpts/reviewer.md` if it exists; if not, read `docs/PLAN.md` directly.
+- Read `docs/PLAN.md` directly.
 - Check that:
   - Tasks are sequenced correctly (dependencies before consumers).
   - No two tasks in the same wave modify the same file.
   - The plan doesn't introduce architecture violations per GENERAL.md boundaries.
 - Skip all handoff-specific checklist items (contract completeness, type correctness, persistence) — those apply to code, not a plan.
+- Skip knowledge enforcement (below) — it applies only to implement-stage.
 - Emit `APPROVED` if the plan's structure is sound, `REVISE` for ordering issues, `BLOCK` only for severe architecture violations.
 - Still emit the `[reviewer-verdict]` signal at the end.
 
 ## Reading discipline — read each file ONCE, write output ONCE
 
-Read your input files (triage excerpt or handoff.md) exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.
+Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.
 
-## Knowledge enforcement — check BEFORE reviewing
+## Knowledge enforcement — implement-stage only
 
 Before starting your review, search for relevant past solutions:
 
 1. Use Glob to check if `docs/solutions/` exists. If not, skip this step.
-2. Extract the file paths from the handoff (or excerpt). Use Grep to search `docs/solutions/**/*.md` for those file paths or module names.
+2. Extract the file paths from the handoff. Use Grep to search `docs/solutions/**/*.md` for those file paths or module names.
 3. If matches found, read the top 1-2 matching solution docs. Extract the **Key patterns** section.
 4. During your review, check the handoff against each known pattern. If the handoff **violates** a known pattern, emit a **BLOCK** finding:
 
@@ -46,27 +47,15 @@ Before starting your review, search for relevant past solutions:
 
 5. If the handoff **follows** known patterns, note it as a positive in your Clear section.
 
-This turns past bug fixes into permanent prevention. Maximum 2 solution docs read — do not spend more than 3 tool calls on this step.
+Maximum 2 solution docs read — do not spend more than 3 tool calls on this step.
 
 ## Your role
 
-Read `docs/context/triage-excerpts/reviewer.md`. This file contains the relevant contract, type, and boundary sections from the handoff pre-extracted by reviewer-triage, plus the project-specific context from GENERAL.md and SKILLS.md already injected as a `## Context` header.
-
-**Fallback:** If `docs/context/triage-excerpts/reviewer.md` is missing or its `## Handoff sections` block is absent, read `docs/context/handoff.md` directly instead. Also read `docs/gotchas/GENERAL.md` for project context. This is the normal path in LEAN mode where reviewer-triage does not run. Do NOT emit REVISE just because the excerpt is missing — proceed with the full review using the handoff file.
+Read `docs/context/handoff.md` and `docs/gotchas/GENERAL.md` for project context.
 
 You are checking that the code will actually work given the project's architecture and contracts — not checking for bugs or style.
 
-> **Architecture context:** Read the `## Context` block in your excerpt (or GENERAL.md if using fallback) to understand this project's architecture model and boundary rules. Apply the architecture rules described there — every project has its own structure.
-
-## Confidence handling
-
-Before beginning your checklist, check for a `[triage-confidence: <VALUE>]` prefix in your invocation prompt. If present, apply these rules:
-
-- **HIGH** — proceed normally. Trust that your excerpt contains all relevant context for this domain.
-- **MEDIUM** — apply conservative judgment. If a finding is ambiguous (present in excerpt but context is thin), emit REVISE rather than APPROVED.
-- **LOW** — apply strict judgment. Default to REVISE for any ambiguity. If information you would normally check (e.g. a type signature, a channel name) is absent from your excerpt, emit REVISE: "Missing context: [what's absent] — excerpt may be incomplete."
-
-If no `[triage-confidence:]` prefix is present, treat as HIGH.
+> **Architecture context:** Read GENERAL.md to understand this project's architecture model and boundary rules. Apply the architecture rules described there — every project has its own structure.
 
 ## Checklist — check every item
 
