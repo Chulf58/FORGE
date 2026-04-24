@@ -1286,6 +1286,7 @@ term.on('mouse', (name, data) => {
 
 refresh();
 draw();
+signalSelection();
 
 setInterval(() => { refresh(); draw(); }, REFRESH_MS);
 setInterval(drawAnimOnly, 150);
