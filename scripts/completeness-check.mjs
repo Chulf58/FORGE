@@ -166,6 +166,62 @@ function buildVerdict(featureName, activeTasks, coverage) {
   };
 }
 
+// --- Diff coverage check ----------------------------------------------------
+// Reads git-diff.txt when present and emits a warning for each file in
+// filesTouched/filesCreated that does not appear in the diff's changed-file list.
+// Always returns an array (empty when no issues or when git-diff.txt is absent).
+// Never throws — all failures are treated as skips (fail-open).
+
+function parseDiffFilePaths(diffContent) {
+  const seen = new Set();
+  const re = /^\+\+\+\s+b\/(.+)$/gm;
+  let m;
+  while ((m = re.exec(diffContent)) !== null) {
+    const p = m[1].trim().replace(/\\/g, '/');
+    if (p) seen.add(p);
+  }
+  return seen;
+}
+
+function checkDiffCoverage(root, sidecar) {
+  try {
+    const diffPath = path.join(root, 'docs', 'context', 'git-diff.txt');
+    let diffContent;
+    try {
+      diffContent = fs.readFileSync(diffPath, 'utf8');
+    } catch {
+      // git-diff.txt absent or unreadable — skip silently (fail-open)
+      return [];
+    }
+
+    const diffPaths = parseDiffFilePaths(diffContent);
+    const claimedFiles = [
+      ...(Array.isArray(sidecar.filesTouched) ? sidecar.filesTouched : []),
+      ...(Array.isArray(sidecar.filesCreated) ? sidecar.filesCreated : []),
+    ];
+
+    const warnings = [];
+    for (const claimed of claimedFiles) {
+      const normalized = (claimed || '').replace(/\\/g, '/');
+      if (!normalized) continue;
+      // Match by suffix: diff paths are repo-relative; claimed paths may be absolute
+      // or use a different root prefix. Check if any diff path ends with the claimed
+      // path, or the claimed path ends with a diff path.
+      const inDiff = diffPaths.size > 0 && (
+        diffPaths.has(normalized) ||
+        Array.from(diffPaths).some(dp => normalized.endsWith('/' + dp) || normalized === dp || dp.endsWith('/' + normalized))
+      );
+      if (!inDiff) {
+        warnings.push(`file claimed in coder-status but absent from git diff: ${claimed}`);
+      }
+    }
+    return warnings;
+  } catch {
+    // Any unexpected error: fail-open, return no warnings
+    return [];
+  }
+}
+
 // --- Main export ------------------------------------------------------------
 
 export function runCompletenessCheck(root) {
@@ -193,7 +249,12 @@ export function runCompletenessCheck(root) {
   const coverage = evaluateCoverage(activeTasks, sidecar.tasksCovered, sidecar.tasksDeferred);
   const verdict = buildVerdict(featureName, activeTasks, coverage);
 
-  return { ok: true, verdict };
+  // --- Soft file-verification step (fail-open) ---
+  // Cross-check filesTouched/filesCreated against git-diff changed-file list.
+  // Missing or unreadable git-diff.txt does NOT change exit code or verdict.
+  const diffWarnings = checkDiffCoverage(root, sidecar);
+
+  return { ok: true, verdict, diffWarnings };
 }
 
 // --- CLI wrapper ------------------------------------------------------------
@@ -226,9 +287,15 @@ function main() {
 
   log(result.verdict.summary.split('\n')[0]);
   log(result.verdict.signal);
+  if (result.diffWarnings && result.diffWarnings.length > 0) {
+    for (const w of result.diffWarnings) {
+      log(`diff-coverage warning: ${w}`);
+    }
+  }
   process.stdout.write(JSON.stringify({
     ok: true,
     verdict: result.verdict,
+    diffWarnings: result.diffWarnings || [],
   }, null, 2) + '\n');
   process.exit(0);
 }

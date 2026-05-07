@@ -17,7 +17,8 @@ const path = require('path');
  * Never throws or returns an untrusted path.
  *
  * @param {object} payload - parsed hook stdin payload
- * @returns {string} safe project directory (always equals process.cwd())
+ * @returns {string} safe project directory — equals process.cwd() for non-worktree sessions,
+ *   or the main project root when process.cwd() is inside a .worktrees/r-<id> subdirectory.
  */
 function resolveProjectDir(payload) {
   const actual = process.cwd();
@@ -42,6 +43,15 @@ function resolveProjectDir(payload) {
     );
     return actual;
   }
+
+  // FORGE worktrees live at <projectRoot>/.worktrees/r-[a-zA-Z0-9]+
+  // When a hook fires inside a worktree session, process.cwd() and payload.cwd
+  // both equal the worktree path — the validation above passes but the result
+  // is wrong. Strip the suffix so all callers receive the main project root,
+  // which is where .pipeline/ state always lives.
+  const normalized = fromPayload.replace(/[/\\]+$/, '');
+  const wtMatch = normalized.match(/^(.+)[/\\]\.worktrees[/\\]r-[a-zA-Z0-9]+$/i);
+  if (wtMatch) return path.normalize(wtMatch[1]);
 
   return fromPayload;
 }
@@ -148,6 +158,17 @@ function getForgeAgentSet() {
     const agentsDir = path.join(pluginRoot, 'agents');
     const entries = require('fs').readdirSync(agentsDir);
     const names = entries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));
+    // Also include agents/_archived/ — archived agents can still be spawned
+    // as fallbacks (e.g. completeness-checker when the deterministic script
+    // exits non-zero) and must remain trackable by the hook system.
+    const archivedDir = path.join(agentsDir, '_archived');
+    try {
+      const archivedEntries = require('fs').readdirSync(archivedDir);
+      const archivedNames = archivedEntries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));
+      names.push(...archivedNames);
+    } catch (_) {
+      // _archived dir absent or unreadable — proceed with main agents only
+    }
     if (names.length === 0) { _forgeAgents = null; return _forgeAgents; }
     _forgeAgents = new Set(names);
     return _forgeAgents;
@@ -193,8 +214,85 @@ function readRunStatus(projectDir, runId) {
   }
 }
 
+// -- Feature matching (shared between workflow-guard and gate-sync) ------------
+
+// Generic filler words stripped before comparison — these add no
+// feature-identifying signal and cause false mismatches.
+const FILLER_WORDS = new Set([
+  'feature', 'features', 'the', 'a', 'an', 'for', 'and', 'of', 'in',
+  'to', 'with', 'from', 'this', 'that', 'fix', 'add', 'update',
+]);
+
+function normalizeFeature(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function toMeaningfulWords(normalized) {
+  return normalized.split(/\s+/).filter(w => w && !FILLER_WORDS.has(w));
+}
+
+// Strip trailing 's' for simple singular/plural tolerance.
+function stemWord(word) {
+  if (word.length > 3 && word.endsWith('s')) return word.slice(0, -1);
+  return word;
+}
+
+/**
+ * Returns true when a and b refer to the same feature.
+ *
+ * Strategy:
+ *   1. Normalise both: lowercase, collapse non-alphanumeric to spaces.
+ *   2. Strip filler words (the, a, feature, fix, add, …).
+ *   3. Stem remaining words (simple trailing-s removal).
+ *   4. Every word in the shorter set must appear in the longer set.
+ *
+ * This is the authoritative implementation — used by workflow-guard (gate/handoff
+ * comparison) and gate-sync (gate/run lookup). Both callers must use this
+ * function so they can never disagree on whether two feature strings match.
+ *
+ * @param {string} a - first feature string
+ * @param {string} b - second feature string
+ * @returns {boolean}
+ */
+function featuresMatch(a, b) {
+  const ga = normalizeFeature(a);
+  const gb = normalizeFeature(b);
+  if (!ga || !gb) return false;
+  if (ga === gb) return true;
+
+  const aWords = toMeaningfulWords(ga);
+  const bWords = toMeaningfulWords(gb);
+  if (aWords.length === 0 || bWords.length === 0) return false;
+
+  const shorter = aWords.length <= bWords.length ? aWords : bWords;
+  const longerStems = new Set(
+    (aWords.length <= bWords.length ? bWords : aWords).map(stemWord)
+  );
+
+  return shorter.every(w => longerStems.has(stemWord(w)));
+}
+
+/**
+ * Returns true when the project has been initialized (i.e. .pipeline/project.json
+ * exists). Used by guards to skip control-file protection during /forge:init,
+ * when the project directory has not yet been bootstrapped.
+ *
+ * @param {string} [projectDir] - project directory (defaults to process.cwd())
+ * @returns {boolean}
+ */
+function isProjectInitialized(projectDir) {
+  const fs = require('fs');
+  try {
+    return fs.existsSync(path.join(projectDir || process.cwd(), '.pipeline', 'project.json'));
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
   resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken,
-  getForgeAgentSet, isForgeAgent,
+  getForgeAgentSet, isForgeAgent, isProjectInitialized,
   STDIN_TIMEOUT_LONG, STDIN_TIMEOUT_SHORT, TERMINAL_STATUSES, readRunStatus,
+  normalizeFeature, toMeaningfulWords, stemWord, featuresMatch,
 };

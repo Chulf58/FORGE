@@ -1,7 +1,7 @@
 // storage.js — File I/O for run registry
 // All paths are derived from projectRoot. No global state, no caching.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function runsDir(projectRoot) {
@@ -36,5 +36,31 @@ export function readJson(filePath) {
 }
 
 export function writeJson(filePath, data) {
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+  const tmp = filePath + '.tmp.' + process.pid;
+  writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+  renameSync(tmp, filePath);
+}
+
+export function withIndexLock(projectRoot, fn) {
+  const lockPath = indexPath(projectRoot) + '.lock';
+  const maxAttempts = 10;
+  const retryMs = 50;
+  let fd;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      fd = openSync(lockPath, 'wx');
+      break;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      if (i === maxAttempts - 1) throw new Error('index.json lock timeout after ' + (maxAttempts * retryMs) + 'ms');
+      const start = Date.now();
+      while (Date.now() - start < retryMs) { /* spin */ }
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    closeSync(fd);
+    try { unlinkSync(lockPath); } catch (_) {}
+  }
 }

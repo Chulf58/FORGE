@@ -67,9 +67,9 @@ async function main(rawInput) {
     const data = JSON.parse(raw);
     if (Array.isArray(data.agents) && data.agents.length > 0) {
       const hasDocumenter = data.agents.some(a => a.agent_type === 'forge:documenter' && a.completedAt);
-      const hasImplementer = data.agents.some(a => a.agent_type === 'forge:implementer' && a.completedAt);
-      if (hasImplementer && !hasDocumenter) {
-        warnings.push('Source files were modified (implementer ran) but the documenter agent has not run. Run the documenter before ending the session.');
+      const hasCoder = data.agents.some(a => a.agent_type === 'forge:coder' && a.completedAt);
+      if (hasCoder && !hasDocumenter) {
+        warnings.push('Source files were modified (coder ran) but the documenter agent has not run. Run the documenter before ending the session.');
       }
     }
   } catch (_) { /* file missing or unreadable — skip */ }

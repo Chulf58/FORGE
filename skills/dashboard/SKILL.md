@@ -12,7 +12,7 @@ This skill renders the in-chat snapshot for the current session — no terminal 
 
 Call the MCP tool `forge_dashboard_state` with no arguments. It returns a single object with four top-level groups, all read directly from `.pipeline/runs/` and `.pipeline/board.json` — no background worker, no live push, no HTTP:
 
-- `activeRuns`: non-terminal runs (`running`, `gate-pending`, `created`), each with `{ runId, pipelineType, mode, feature, status, currentStep, stageLabel, gateState, worktreePath, currentUnit, updatedAt }`. The `currentUnit` field is populated only on the row whose `runId` matches `run-active.json`; it names the FORGE agent in flight when the prior session ended mid-agent.
+- `activeRuns`: non-terminal runs (`running`, `gate-pending`, `created`), each with `{ runId, pipelineType, feature, status, stageLabel, gateState, worktreePath, currentUnit, updatedAt }`. The `currentUnit` field is populated only on the row whose `runId` matches `run-active.json`; it names the FORGE agent in flight when the prior session ended mid-agent.
 - `gatesAwaiting`: subset of `activeRuns` whose `gateState.status === "pending"`, slimmed to `{ runId, pipelineType, feature, gateState, updatedAt }`.
 - `recentCompleted`: bounded list (≤5) of terminal runs (`completed`/`failed`/`discarded`) sorted by `updatedAt` desc, each `{ runId, pipelineType, feature, status, updatedAt }`.
 - `boardSummary`: `{ todoCount, plannedCount, blockedTodoCount, topPriorityTodos }` — `topPriorityTodos` is a bounded list (≤5) of open high-priority items, each `{ id, priority, text }`.
@@ -30,7 +30,7 @@ Header line: `Active runs (<activeRuns.length>):`
 Then one line per entry:
 
 ```
-  <runId> · <pipelineType> · <feature (truncate to ~50 chars)> · <status> · at <stageLabel ?? currentStep ?? "starting">
+  <runId> · <pipelineType> · <feature (truncate to ~50 chars)> · <status> · at <stageLabel ?? "starting">
 ```
 
 Append these suffixes when the corresponding fields are present:

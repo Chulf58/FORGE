@@ -37,6 +37,7 @@ function runHook(payload, projectDir) {
 function makeTmp() {
   const tmp = mkdtempSync(join(tmpdir(), 'ctrl-guard-'));
   mkdirSync(join(tmp, '.pipeline'), { recursive: true });
+  writeFileSync(join(tmp, '.pipeline', 'project.json'), '{"name":"test"}', 'utf8');
   return tmp;
 }
 
@@ -69,7 +70,7 @@ async function test() {
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'run-active.json');
-    const content = JSON.stringify({ runId: 'r-test', mode: 'LEAN', pipelineType: 'plan' });
+    const content = JSON.stringify({ runId: 'r-test', pipelineType: 'plan' });
     const { code, stdout } = await runHook({
       tool_name: 'Write',
       tool_input: { file_path: filePath, content },
@@ -87,7 +88,7 @@ async function test() {
     const filePath = join(tmp, '.pipeline', 'run-active.json');
     const { code } = await runHook({
       tool_name: 'Edit',
-      tool_input: { file_path: filePath, old_string: '"LEAN"', new_string: '"SPRINT"' },
+      tool_input: { file_path: filePath, old_string: '"implement"', new_string: '"plan"' },
     }, tmp);
     assert(code === 2, 'Edit run-active.json → exit 2');
     rmSync(tmp, { recursive: true, force: true });
@@ -98,7 +99,7 @@ async function test() {
     const tmp = makeTmp();
     writeApprovalToken(tmp, ['gate-approve', 'commit', 'push'], 120000);
     const filePath = join(tmp, '.pipeline', 'run-active.json');
-    const content = JSON.stringify({ runId: 'r-test', mode: 'LEAN' });
+    const content = JSON.stringify({ runId: 'r-test' });
     const { code } = await runHook({
       tool_name: 'Write',
       tool_input: { file_path: filePath, content },
@@ -270,7 +271,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 16. Write to .pipeline/project.json → unaffected
+  // 16. Write to .pipeline/project.json → blocked (managed by MCP tools)
   {
     const tmp = makeTmp();
     const filePath = join(tmp, '.pipeline', 'project.json');
@@ -278,7 +279,7 @@ async function test() {
       tool_name: 'Write',
       tool_input: { file_path: filePath, content: '{}' },
     }, tmp);
-    assert(code === 0, 'Write project.json → exit 0 (unaffected)');
+    assert(code === 2, 'Write project.json → exit 2 (blocked, use forge_update_config)');
     rmSync(tmp, { recursive: true, force: true });
   }
 
@@ -326,6 +327,20 @@ async function test() {
       tool_input: { file_path: filePath, content: '{}' },
     }, tmp);
     assert(code === 2, 'Write run-active.json (OS path) → exit 2');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 21. Init-mode bypass: .pipeline/ exists but NO project.json → write allowed
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ctrl-guard-init-'));
+    mkdirSync(join(tmp, '.pipeline'), { recursive: true });
+    // deliberately no project.json — simulates uninitialized project
+    const filePath = join(tmp, '.pipeline', 'run-active.json');
+    const { code } = await runHook({
+      tool_name: 'Write',
+      tool_input: { file_path: filePath, content: '{}' },
+    }, tmp);
+    assert(code === 0, 'Init mode (no project.json) → exit 0 (bypass active)');
     rmSync(tmp, { recursive: true, force: true });
   }
 

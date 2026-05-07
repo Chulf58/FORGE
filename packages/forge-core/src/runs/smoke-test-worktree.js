@@ -40,7 +40,6 @@ try {
     projectRoot: tmp,
     sessionId: 'wt-test',
     pipelineType: 'implement',
-    mode: 'LEAN',
     feature: 'Worktree test feature',
   });
   console.log('Created run:', run.runId);

@@ -5,7 +5,7 @@
 // run.json files before returning results.
 
 import { RunIndex } from './schemas.js';
-import { indexPath, runsDir, readJson } from './storage.js';
+import { indexPath, runsDir, runPath, readJson } from './storage.js';
 import { rebuildIndex } from './rebuildIndex.js';
 import { readdirSync } from 'node:fs';
 
@@ -42,6 +42,20 @@ export function listRuns(projectRoot, filters = {}) {
       entries = rebuildIndex(projectRoot);
     }
   }
+
+  // Supplement stale index entries with live status from run.json.
+  // updateRun no longer syncs status back to index.json (that was the race
+  // source). Each run.json is owned by a single session — safe to read
+  // concurrently from here.
+  entries = entries.map(entry => {
+    try {
+      const live = readJson(runPath(projectRoot, entry.runId));
+      if (!live) return entry;
+      return { ...entry, status: live.status, updatedAt: live.updatedAt };
+    } catch (_) {
+      return entry;
+    }
+  });
 
   if (filters.status) {
     entries = entries.filter(e => e.status === filters.status);

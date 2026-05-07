@@ -32,10 +32,14 @@ function lastStderr() { return stderrLines[stderrLines.length - 1] || ''; }
 
 console.log('\n── hook-utils-test.js ───────────────────────────────────────────────────');
 
-// 1. Matching absolute cwd is accepted, returned as-is
+// 1. Matching absolute cwd is accepted; worktree suffix stripped when present
 {
   const result = resolveProjectDir({ cwd: actual });
-  assert(result === actual, 'matching absolute cwd: returned as-is');
+  // If running from a worktree, result is the project root (parent of .worktrees/r-<id>)
+  // If running from a non-worktree, result is actual (unchanged)
+  const wtMatch = actual.replace(/[/\\]+$/, '').match(/^(.+)[/\\]\.worktrees[/\\]r-[a-zA-Z0-9]+$/i);
+  const expected = wtMatch ? path.normalize(wtMatch[1]) : actual;
+  assert(result === expected, 'matching absolute cwd: returns project root (strips worktree suffix if present)');
 }
 
 // 2. Missing cwd falls back to process.cwd() silently
@@ -81,6 +85,58 @@ console.log('\n── hook-utils-test.js ─────────────
   const result = resolveProjectDir({ cwd: actual + '/../../../etc' });
   assert(result === actual, 'path traversal attempt: falls back to process.cwd()');
   assert(lastStderr().includes('mismatch'), 'path traversal attempt: stderr warning emitted');
+}
+
+// ── worktree strip regex ──────────────────────────────────────────────────────
+// resolveProjectDir() can't be called with a worktree-shaped path in a test
+// runner (process.cwd() won't match), so we test the stripping regex directly.
+
+{
+  console.log('\n── worktree strip regex ─────────────────────────────────────────────────');
+
+  // The regex used inside resolveProjectDir for worktree detection:
+  function extractProjectRoot(p) {
+    const normalized = p.replace(/[/\\]+$/, '');
+    const m = normalized.match(/^(.+)[/\\]\.worktrees[/\\]r-[a-zA-Z0-9]+$/i);
+    return m ? require('path').normalize(m[1]) : null;
+  }
+
+  // 18. Unix-style worktree path stripped to project root
+  assert(
+    extractProjectRoot('/home/user/myproject/.worktrees/r-abc123') === require('path').normalize('/home/user/myproject'),
+    'worktree strip: unix path → project root'
+  );
+
+  // 19. Windows-style path (forward slashes) — platform-aware
+  {
+    const result = extractProjectRoot('C:/Users/cuj/forge-plugin/.worktrees/r-a3f11c90');
+    const expected = require('path').normalize('C:/Users/cuj/forge-plugin');
+    assert(result === expected, 'worktree strip: windows path with forward slashes → project root');
+  }
+
+  // 20. Non-worktree path returns null (no stripping)
+  assert(
+    extractProjectRoot('/home/user/myproject') === null,
+    'worktree strip: non-worktree path → null (not stripped)'
+  );
+
+  // 21. Path containing .worktrees but with invalid run ID format not stripped
+  assert(
+    extractProjectRoot('/home/user/myproject/.worktrees/not-a-run-id') === null,
+    'worktree strip: invalid run ID format → null (not stripped)'
+  );
+
+  // 22. Trailing slash on worktree path stripped cleanly
+  assert(
+    extractProjectRoot('/home/user/myproject/.worktrees/r-abc123/') === require('path').normalize('/home/user/myproject'),
+    'worktree strip: trailing slash handled'
+  );
+
+  // 23. Nested project root — only innermost worktree stripped
+  assert(
+    extractProjectRoot('/projects/.worktrees/r-outer/subproject/.worktrees/r-abc123') === require('path').normalize('/projects/.worktrees/r-outer/subproject'),
+    'worktree strip: nested worktrees — strips innermost only'
+  );
 }
 
 // ── resolvePluginRoot() tests ─────────────────────────────────────────────────

@@ -185,7 +185,7 @@
     "gotcha-checker": {
       "requiredCapabilities": ["code", "analysis"]
     },
-    "ideator": {
+    "critic": {
       "requiredCapabilities": ["reasoning"]
     },
     "implementation-architect": {

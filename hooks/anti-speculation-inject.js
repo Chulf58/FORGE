@@ -28,7 +28,10 @@ const ANTI_SPECULATION_RULE =
   'cite file:line from a Read/Grep you called THIS turn, or answer "I don\'t know, checking." ' +
   'and call the tool. No "appears to", "likely", "probably", "I assume", "seems to have been", ' +
   '"I think it was". If you don\'t have evidence in this turn\'s tool calls, you don\'t know — ' +
-  'say so and check.';
+  'say so and check.\n' +
+  'Provenance rule: before stating when something was created, who changed it, or which era/version ' +
+  'it belongs to — cite git log or git blame output from THIS turn. Filenames, folder structure, ' +
+  'and content style are NOT evidence of age or origin.';
 
 async function main(rawInput) {
   // Parse stdin to satisfy the hook contract; no fields are inspected.

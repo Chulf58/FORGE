@@ -1,5 +1,5 @@
 {
-  "description": "FORGE pipeline hooks — context tracking, workflow guard, and banner. SessionStart order matters: ctx-session-start cleans stale state (incl. .worker-session marker), then worker-task-inject may recreate the marker for worker sessions.",
+  "description": "FORGE pipeline hooks — context tracking, workflow guard, and banner. SessionStart order matters: ctx-session-start cleans stale state (incl. .worker-session marker), then worker-task-inject may recreate the marker for worker sessions. NOTE: PreToolUse now fires for the Agent tool (changed after 2026-04-24). Agent matchers for routing-enforcement and gate-enforcement were removed — they caused false blocks. Enforcement comes from skill-level checks. SubagentStart cannot block (no deny capability). The Agent PreToolUse matcher is used by agent-loop-guard.js to hard-stop stuck loops (3rd+ dispatch of same agent_type per run).",
   "hooks": {
     "SessionStart": [
       {
@@ -54,14 +54,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-autosplit.js\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/worker-task-inject.js\""
           }
         ]
@@ -73,6 +65,14 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/module-coverage-check.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-autosplit.js\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -81,6 +81,14 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/anti-speculation-inject.js\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/conductor-prompt-inject.js\""
           }
         ]
       },
@@ -116,16 +124,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/ctx-post-tool.js\""
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/worker-heartbeat.js\"",
-            "async": true
           }
         ]
       },
@@ -214,6 +212,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-stop.js\""
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/audit-trigger.js\""
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -267,25 +274,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/conductor-agent-guard.js\""
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/routing-enforcement.js\""
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gate-enforcement.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-loop-guard.js\""
           }
         ]
       }

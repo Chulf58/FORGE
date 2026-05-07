@@ -44,7 +44,7 @@ function makeRun(tmp, runId, status) {
   writeFileSync(join(tmp, '.pipeline', 'runs', runId, 'run.json'), JSON.stringify({
     runId, sessionId: 'test', projectRoot: tmp,
     worktreePath: null, branchName: null,
-    pipelineType: 'plan', mode: 'LEAN', feature: 'test feature',
+    pipelineType: 'plan', feature: 'test feature',
     status, createdAt: now, updatedAt: now,
     currentStep: 'planner', gateState: null, agents: [],
     artifacts: { plan: null, handoff: null, scout: null },
@@ -295,7 +295,7 @@ async function test() {
     writeFileSync(join(tmp, '.pipeline', 'runs', runId, 'run.json'), JSON.stringify({
       runId, sessionId: 'test', projectRoot: tmp,
       worktreePath: null, branchName: null,
-      pipelineType: 'implement', mode: 'LEAN', feature: 'worktree test',
+      pipelineType: 'implement', feature: 'worktree test',
       status: 'running', createdAt: now, updatedAt: now,
       currentStep: 'coder', gateState: null, agents: [],
       artifacts: { plan: null, handoff: null, scout: null },
@@ -370,7 +370,7 @@ async function test() {
     writeFileSync(join(tmp, '.pipeline', 'runs', runId, 'run.json'), JSON.stringify({
       runId, sessionId: 'test', projectRoot: tmp,
       worktreePath: join(tmp, '.worktrees', runId), branchName: 'forge/' + runId,
-      pipelineType: 'implement', mode: 'LEAN', feature: 'existing wt',
+      pipelineType: 'implement', feature: 'existing wt',
       status: 'running', createdAt: now, updatedAt: now,
       currentStep: 'coder', gateState: null, agents: [],
       artifacts: { plan: null, handoff: null, scout: null },

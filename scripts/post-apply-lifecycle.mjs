@@ -89,6 +89,9 @@ function archiveReviewerOutput() {
 function deleteSidecars() {
   try {
     const sidecars = [
+      'docs/context/handoff.md',
+      'docs/context/slice-brief.md',
+      'docs/context/supervisor-brief.md',
       'docs/context/triage-dispatch.json',
       'docs/context/researcher-status.json',
       'docs/context/coder-status.json',
@@ -304,6 +307,202 @@ function deleteResearchFile() {
   }
 }
 
+// --- Job 6: Plan.md section removal ------------------------------------------
+function removePlanSection() {
+  try {
+    if (!featureName) {
+      log('plan-cleanup: no feature name provided, skipping');
+      return;
+    }
+
+    const planPath = path.join(projectDir, 'docs', 'PLAN.md');
+    let content;
+    try {
+      content = fs.readFileSync(planPath, 'utf8');
+    } catch {
+      log('plan-cleanup: docs/PLAN.md absent, skipping');
+      return;
+    }
+
+    // Find the ### Feature: heading that includes the feature name.
+    // Use indexOf/includes (not RegExp) to avoid regex injection from feature names.
+    const lines = content.split('\n');
+    let sectionStart = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('### Feature:') && lines[i].toLowerCase().includes(featureName.toLowerCase())) {
+        sectionStart = i;
+        break;
+      }
+    }
+
+    if (sectionStart === -1) {
+      log(`plan-cleanup: no matching "### Feature:" section found for "${featureName}", skipping`);
+      return;
+    }
+
+    // Find end: next '---' separator line after the section start, or EOF.
+    let sectionEnd = lines.length; // default: through EOF
+    for (let i = sectionStart + 1; i < lines.length; i++) {
+      if (lines[i].trim() === '---') {
+        sectionEnd = i + 1; // include the separator
+        break;
+      }
+    }
+
+    const before = lines.slice(0, sectionStart);
+    const after = lines.slice(sectionEnd);
+
+    // Trim trailing blank lines from `before` to avoid double-blank gaps
+    while (before.length > 0 && before[before.length - 1].trim() === '') {
+      before.pop();
+    }
+    // Trim vestigial --- separator (was between this and the removed last section)
+    if (before.length > 0 && before[before.length - 1].trim() === '---') {
+      before.pop();
+      // Trim any additional trailing blanks above the removed separator
+      while (before.length > 0 && before[before.length - 1].trim() === '') {
+        before.pop();
+      }
+    }
+
+    const newContent = (before.length > 0 ? before.join('\n') + '\n' : '') +
+      (after.length > 0 ? (before.length > 0 ? '\n' : '') + after.join('\n') : '');
+
+    try {
+      fs.writeFileSync(planPath, newContent, 'utf8');
+      log(`plan-cleanup: removed section for "${featureName}"`);
+    } catch (err) {
+      log(`plan-cleanup: write failed: ${err.message}`);
+    }
+  } catch (err) {
+    log(`plan-cleanup: unexpected error: ${err.message}`);
+  }
+}
+
+// --- Job 7: Board cleanup ----------------------------------------------------
+function cleanupBoard() {
+  try {
+    if (!featureName || featureName.length <= 3) {
+      log('board-cleanup: feature name absent or too short (<=3 chars), skipping');
+      return;
+    }
+
+    const boardPath = path.join(projectDir, '.pipeline', 'board.json');
+    let board;
+    try {
+      board = JSON.parse(fs.readFileSync(boardPath, 'utf8'));
+    } catch {
+      log('board-cleanup: board.json absent or unreadable, skipping');
+      return;
+    }
+
+    let changed = false;
+    const now = new Date().toISOString();
+    // Compute once — used in every iteration below to avoid per-item allocation.
+    const featureLower = featureName.toLowerCase();
+
+    // Remove planned[] items whose text contains featureName (case-insensitive)
+    if (Array.isArray(board.planned)) {
+      const before = board.planned.length;
+      board.planned = board.planned.filter(
+        (item) => !(typeof item.text === 'string' && item.text.toLowerCase().includes(featureLower)),
+      );
+      if (board.planned.length !== before) {
+        log(`board-cleanup: removed ${before - board.planned.length} item(s) from planned[]`);
+        changed = true;
+      }
+    }
+
+    // Mark todos[] items done whose text contains featureName (case-insensitive)
+    if (Array.isArray(board.todos)) {
+      for (const item of board.todos) {
+        if (typeof item.text === 'string' && item.text.toLowerCase().includes(featureLower) && !item.done) {
+          item.done = true;
+          item.doneAt = now;
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) {
+      log(`board-cleanup: no matching items found for "${featureName}"`);
+      return;
+    }
+
+    try {
+      fs.writeFileSync(boardPath, JSON.stringify(board, null, 2), 'utf8');
+      log(`board-cleanup: board.json updated for "${featureName}"`);
+    } catch (err) {
+      log(`board-cleanup: write failed: ${err.message}`);
+    }
+  } catch (err) {
+    log(`board-cleanup: unexpected error: ${err.message}`);
+  }
+}
+
+// --- Job 8: Module touch logging ---------------------------------------------
+function logModulesTouched() {
+  try {
+    const coderStatusPath = path.join(projectDir, 'docs', 'context', 'coder-status.json');
+    let coderStatus;
+    try {
+      coderStatus = JSON.parse(fs.readFileSync(coderStatusPath, 'utf8'));
+    } catch {
+      log('module-touch: coder-status.json absent or unreadable, skipping');
+      return;
+    }
+
+    const modulesPath = path.join(projectDir, '.pipeline', 'modules.json');
+    let modulesData;
+    try {
+      modulesData = JSON.parse(fs.readFileSync(modulesPath, 'utf8'));
+    } catch {
+      log('module-touch: modules.json absent or unreadable, skipping');
+      return;
+    }
+
+    const touchedFiles = [
+      ...(Array.isArray(coderStatus.filesTouched) ? coderStatus.filesTouched : []),
+      ...(Array.isArray(coderStatus.filesCreated) ? coderStatus.filesCreated : []),
+    ];
+
+    if (touchedFiles.length === 0) {
+      log('module-touch: no files in coder-status.json, skipping');
+      return;
+    }
+
+    // modules.json can be an array of module objects or an object keyed by id.
+    // Normalise to array of { id, path } entries.
+    let modules = [];
+    if (Array.isArray(modulesData)) {
+      modules = modulesData;
+    } else if (modulesData && typeof modulesData === 'object') {
+      modules = Object.entries(modulesData).map(([id, val]) => ({
+        id,
+        path: typeof val === 'string' ? val : val.path || '',
+      }));
+    }
+
+    for (const file of touchedFiles) {
+      const normalizedFile = file.replace(/\\/g, '/');
+      const matched = modules
+        .filter((m) => {
+          const mPath = (m.path || '').replace(/\\/g, '/');
+          return mPath && normalizedFile.includes(mPath);
+        })
+        .map((m) => m.id);
+
+      if (matched.length > 0) {
+        process.stderr.write(`[lifecycle] module-touch: ${file} -> [${matched.join(', ')}]\n`);
+      } else {
+        process.stderr.write(`[lifecycle] module-touch: ${file} -> (no module match)\n`);
+      }
+    }
+  } catch (err) {
+    log(`module-touch: unexpected error: ${err.message}`);
+  }
+}
+
 // --- Main --------------------------------------------------------------------
 function main() {
   log(`starting for feature: "${featureName}"`);
@@ -313,6 +512,9 @@ function main() {
   archiveTesting();
   archiveChangelog();
   deleteResearchFile();
+  removePlanSection();
+  cleanupBoard();
+  logModulesTouched();
 
   log('done');
   process.exit(0);

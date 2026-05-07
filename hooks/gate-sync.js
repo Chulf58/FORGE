@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot, STDIN_TIMEOUT_SHORT, featuresMatch } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -31,7 +31,7 @@ async function main(rawInput) {
   const filePath = (payload.tool_input && (payload.tool_input.file_path || payload.tool_input.path)) || '';
   if (!filePath) { exitOk(); return; }
 
-  // Only act on gate-pending.json
+  // Only act on gate-pending.json — endsWith filter is a cheap guard only, no I/O.
   const normalized = filePath.replace(/\\/g, '/');
   if (!normalized.endsWith('.pipeline/gate-pending.json')) { exitOk(); return; }
 
@@ -39,10 +39,32 @@ async function main(rawInput) {
   // which could be attacker-controlled via a crafted tool_input.file_path.
   const projectRoot = resolveProjectDir(payload);
 
+  // Construct canonical gate path from the trusted projectRoot.
+  // filePath passed the endsWith filter above but must NOT be used for I/O —
+  // a crafted path like ../../evil/.pipeline/gate-pending.json would pass the
+  // filter but resolve outside the project. Always use the canonical path.
+  const canonicalGatePath = path.join(projectRoot, '.pipeline', 'gate-pending.json');
+
+  // When the write target is inside a worktree, read from the worktree path instead.
+  // Security: the worktree path is validated to be under the project root before
+  // any I/O, preventing path traversal via a crafted tool_input.file_path.
+  let actualGatePath = canonicalGatePath;
+  if (normalized.includes('.worktrees/')) {
+    const worktreeMatch = normalized.match(/(.+\/\.worktrees\/r-[a-zA-Z0-9]+)\//);
+    if (worktreeMatch) {
+      const wtBase = worktreeMatch[1].replace(/\//g, path.sep);
+      const wtGatePath = path.join(wtBase, '.pipeline', 'gate-pending.json');
+      // Only trust if the resolved worktree path is under the project root
+      if (path.resolve(wtGatePath).startsWith(path.resolve(projectRoot) + path.sep)) {
+        actualGatePath = wtGatePath;
+      }
+    }
+  }
+
   // Read the gate file that was just written
   let gateData = null;
   try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    const raw = fs.readFileSync(actualGatePath, 'utf-8');
     gateData = JSON.parse(raw);
   } catch (_) {
     // File empty, deleted, or malformed — treat as discard
@@ -71,7 +93,7 @@ async function main(rawInput) {
 
   try {
     if (gateData && gateData.status === 'pending') {
-      const gateFeature = (gateData.feature || '').toLowerCase().trim();
+      const gateFeature = (gateData.feature || '').trim();
       let active = null;
 
       // Prefer explicit runId from the gate file — deterministic O(1) targeting.
@@ -84,18 +106,17 @@ async function main(rawInput) {
       }
 
       // Fallback: find the most recent running/created run that matches this feature.
-      // Match rule: the run's feature must contain the gate feature or vice versa
-      // (handles "Price alert feature" vs "Price alert feature — notify when...")
-      // If no feature match, do not attach to a stale unrelated run.
+      // Uses the shared featuresMatch() from hook-utils — same normalisation as
+      // workflow-guard so the two hooks never disagree on a match.
       if (!active) {
         const allRuns = listRuns(projectRoot, {});
         active = allRuns
           .filter(r => {
             if (r.status !== 'running' && r.status !== 'created') return false;
             if (!gateFeature) return true; // no feature to match — accept any
-            const runFeature = (r.feature || '').toLowerCase().trim();
+            const runFeature = (r.feature || '').trim();
             if (!runFeature) return true; // run has no feature — accept (it was auto-created)
-            return runFeature.includes(gateFeature) || gateFeature.includes(runFeature);
+            return featuresMatch(gateFeature, runFeature);
           })
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
       }
@@ -103,16 +124,15 @@ async function main(rawInput) {
       // If no matching run exists, auto-create one from the gate data
       if (!active) {
         const gate = gateData.gate || 'gate1';
-        const pipelineType = gate === 'gate1' ? 'plan' : gate === 'gate2' ? 'implement' : 'plan';
+        const pipelineType = gate === 'gate1' ? 'plan' : gate === 'gate2' ? 'implement' : gate === 'commit' ? 'apply' : 'plan';
         const run = createRun({
           projectRoot,
           sessionId: payload.session_id || 'auto',
           pipelineType,
-          mode: 'LEAN',
           feature: gateData.feature || '',
         });
         // createRun returns status 'created', update to running first
-        updateRun(projectRoot, run.runId, { status: 'running', currentStep: 'auto-created' });
+        updateRun(projectRoot, run.runId, { status: 'running' });
         active = { runId: run.runId };
         console.error('[gate-sync] Auto-created run ' + run.runId + ' for ' + pipelineType);
       }
@@ -123,9 +143,11 @@ async function main(rawInput) {
       const canonicalRun = getRun(projectRoot, active.runId);
       const canonicalFeature = (canonicalRun && canonicalRun.feature) || gateData.feature || '';
 
-      updateRun(projectRoot, active.runId, {
+      // Canonical gate → stage key map (locked vocabulary)
+      const GATE_TO_STAGE = { gate1: 'plan', gate2: 'code', commit: 'commit' };
+
+      const runPatch = {
         status: 'gate-pending',
-        currentStep: gateData.gate || 'gate',
         gateState: {
           gate: gateData.gate || 'gate1',
           status: 'pending',
@@ -133,7 +155,19 @@ async function main(rawInput) {
           createdAt: gateData.createdAt || now,
           approvedAt: null,
         },
-      });
+      };
+
+      // Dual-write stages status only when the run has a stages field (non-null).
+      const pendingRun = getRun(projectRoot, active.runId);
+      if (pendingRun && pendingRun.stages != null) {
+        const stageKey = GATE_TO_STAGE[gateData.gate || 'gate1'];
+        if (stageKey && pendingRun.stages[stageKey] !== undefined) {
+          const stagesPatch = { [stageKey]: { status: 'gate-pending' } };
+          runPatch.stages = stagesPatch;
+        }
+      }
+
+      updateRun(projectRoot, active.runId, runPatch);
       console.error('[gate-sync] Run ' + active.runId + ' → gate-pending');
 
       // Repair gate-pending.json on disk:
@@ -145,13 +179,29 @@ async function main(rawInput) {
         try {
           const repaired = { ...gateData, runId: active.runId };
           if (needsFeatureRepair) repaired.feature = canonicalFeature;
-          fs.writeFileSync(filePath, JSON.stringify(repaired, null, 2) + '\n', 'utf-8');
+          fs.writeFileSync(canonicalGatePath, JSON.stringify(repaired, null, 2) + '\n', 'utf-8');
           const actions = [];
           if (needsRunIdStamp) actions.push('stamped runId=' + active.runId);
           if (needsFeatureRepair) actions.push('feature drift "' + gateData.feature + '" → "' + canonicalFeature + '"');
           console.error('[gate-sync] Repaired gate-pending.json: ' + actions.join(', '));
         } catch (repairErr) {
           console.error('[gate-sync] Failed to repair gate file: ' + repairErr.message);
+        }
+      }
+
+      // Defense-in-depth dual-write: when the gate file was read from a worktree
+      // path, also copy the (possibly repaired) data to the canonical main-root
+      // path. This ensures forge_check_gate can find the gate even without the
+      // primary worktree-aware fix, and avoids stale data in the main root.
+      if (actualGatePath !== canonicalGatePath) {
+        try {
+          const dataToSync = (needsRunIdStamp || needsFeatureRepair)
+            ? { ...gateData, runId: active.runId, ...(needsFeatureRepair ? { feature: canonicalFeature } : {}) }
+            : gateData;
+          fs.writeFileSync(canonicalGatePath, JSON.stringify(dataToSync, null, 2) + '\n', 'utf-8');
+          console.error('[gate-sync] Dual-wrote worktree gate to canonical main-root path');
+        } catch (dualWriteErr) {
+          console.error('[gate-sync] Dual-write to canonical path failed: ' + dualWriteErr.message);
         }
       }
 
@@ -164,7 +214,7 @@ async function main(rawInput) {
       // createWorktree copies docs/ and .pipeline/ into the worktree, so the
       // coder's handoff.md (written in the main tree) lands in the worktree
       // automatically. The implementer can then read it from the worktree.
-      if ((gateData.gate || 'gate1') === 'gate2') {
+      if ((gateData.gate || 'gate1') === 'gate2' || (gateData.gate || 'gate1') === 'code') {
         try {
           const currentRun = getRun(projectRoot, active.runId);
           if (currentRun && !currentRun.worktreePath) {
@@ -197,9 +247,11 @@ async function main(rawInput) {
         const canonicalRun = getRun(projectRoot, runEntry.runId);
         const canonicalFeature = (canonicalRun && canonicalRun.feature) || gateData.feature || '';
 
-        updateRun(projectRoot, runEntry.runId, {
+        // Canonical gate → stage key map (locked vocabulary)
+        const GATE_TO_STAGE_APPROVED = { gate1: 'plan', gate2: 'code', commit: 'commit' };
+
+        const approvedPatch = {
           status: 'completed',
-          currentStep: (gateData.gate || 'gate') + '-approved',
           gateState: {
             gate: gateData.gate || 'gate1',
             status: 'approved',
@@ -207,7 +259,19 @@ async function main(rawInput) {
             createdAt: gateData.createdAt || runEntry.createdAt,
             approvedAt: gateData.approvedAt || now,
           },
-        });
+        };
+
+        // Dual-write stages status only when run has a stages field (non-null).
+        const approvedRun = getRun(projectRoot, runEntry.runId);
+        if (approvedRun && approvedRun.stages != null) {
+          const stageKey = GATE_TO_STAGE_APPROVED[gateData.gate || 'gate1'];
+          if (stageKey && approvedRun.stages[stageKey] !== undefined) {
+            const stagesPatch = { [stageKey]: { status: 'completed' } };
+            approvedPatch.stages = stagesPatch;
+          }
+        }
+
+        updateRun(projectRoot, runEntry.runId, approvedPatch);
         console.error('[gate-sync] Run ' + runEntry.runId + ' → completed');
 
         // Repair gate-pending.json on disk: stamp runId if missing, fix feature drift.
@@ -217,7 +281,7 @@ async function main(rawInput) {
           try {
             const repaired = { ...gateData, runId: runEntry.runId };
             if (needsFeatureRepair) repaired.feature = canonicalFeature;
-            fs.writeFileSync(filePath, JSON.stringify(repaired, null, 2) + '\n', 'utf-8');
+            fs.writeFileSync(canonicalGatePath, JSON.stringify(repaired, null, 2) + '\n', 'utf-8');
             console.error('[gate-sync] Repaired approved gate-pending.json: runId=' + runEntry.runId);
           } catch (repairErr) {
             console.error('[gate-sync] Failed to repair gate file: ' + repairErr.message);
@@ -226,13 +290,26 @@ async function main(rawInput) {
       }
     } else {
       // File empty/malformed/deleted — treat as discard
+      const GATE_TO_STAGE_DISCARD = { gate1: 'plan', gate2: 'code', commit: 'commit' };
       const pending = listRuns(projectRoot, { status: 'gate-pending' });
       const run = pending.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
       if (run) {
-        updateRun(projectRoot, run.runId, {
+        const discardPatch = {
           status: 'discarded',
-          currentStep: 'discarded',
-        });
+        };
+
+        // Dual-write stages status only when run has a stages field (non-null).
+        const discardRun = getRun(projectRoot, run.runId);
+        if (discardRun && discardRun.stages != null) {
+          // Derive current stage from gateState.gate
+          const gateKey = (discardRun.gateState && discardRun.gateState.gate) || null;
+          const stageKey = GATE_TO_STAGE_DISCARD[gateKey] || null;
+          if (stageKey && discardRun.stages[stageKey] !== undefined) {
+            discardPatch.stages = { [stageKey]: { status: 'skipped' } };
+          }
+        }
+
+        updateRun(projectRoot, run.runId, discardPatch);
         console.error('[gate-sync] Run ' + run.runId + ' → discarded');
       }
     }

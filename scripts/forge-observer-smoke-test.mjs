@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Smoke test: forge-observer.mjs must load its deps (ink + react +
+// Smoke test: forge-observer.mjs must load its deps (terminal-kit +
 // dashboard-state), detect non-TTY stdio, emit the expected fallback
 // message, and exit cleanly with code 0.
 //
@@ -47,7 +47,7 @@ async function main() {
   }
 
   console.log('[forge-observer-smoke] PASS');
-  console.log('  deps loaded (ink + react + dashboard-state)');
+  console.log('  deps loaded (terminal-kit + dashboard-state)');
   console.log('  non-TTY detected, fallback path took effect');
   console.log('  exit code 0');
 }

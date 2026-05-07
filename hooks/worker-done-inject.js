@@ -63,6 +63,9 @@ async function main(rawInput) {
     if (n.researchFile) lines.push('  Findings: ' + safe(n.researchFile));
     if (n.pipelineType === 'research') {
       lines.push('  Discuss the findings with the user. After you do, call forge_update_run(' + safe(n.runId) + ', { acknowledged: true }) to clear the card from the observer.');
+    } else if (n.pipelineType === 'ideate') {
+      lines.push('  Critic findings: docs/context/critic-verified.json (verified) or docs/context/critic-findings.json (raw)');
+      lines.push('  Review the findings with the user. After you do, call forge_update_run(' + safe(n.runId) + ', { acknowledged: true }) to clear the card from the observer.');
     }
   }
 

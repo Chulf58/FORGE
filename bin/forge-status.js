@@ -5,7 +5,7 @@
 //
 // Derives display state from existing FORGE files only (no new state):
 //   .pipeline/runs/index.json           — authoritative list of all runs
-//   .pipeline/runs/<runId>/run.json     — full run state (currentStep, gateState)
+//   .pipeline/runs/<runId>/run.json     — full run state (stages, gateState)
 //   .pipeline/run-active.json           — current session marker (fallback)
 //   .pipeline/gate-pending.json         — pending gate state
 //
@@ -21,9 +21,9 @@ const STALE_MS            = 30 * 60 * 1000; // 30 minutes
 const MAX_VISIBLE_RUNS    = 2;              // before "+N more"
 const BAR_CELLS           = 4;              // width of each progress bar
 
-// ─── Pipeline step → progress stage mapping ─────────────────────────────
-// Each entry maps currentStep substrings to (stage, totalStages, label).
-// Step names from forge_update_run / skill orchestration.
+// ─── Pipeline stageLabel → progress stage mapping ───────────────────────
+// Each entry maps stageLabel values to (stage, totalStages, label).
+// Stage labels derived from run.stages via stageLabelFromStages().
 
 const PIPELINE_STAGES = {
   plan: {
@@ -31,14 +31,8 @@ const PIPELINE_STAGES = {
     totalStages: 5,
     label: 'planning',
     steps: {
-      'started':                 { stage: 1, label: 'starting' },
-      'brainstormer-decision':   { stage: 1, label: 'brainstorming' },
-      'planner':                 { stage: 2, label: 'planner' },
-      'researcher':              { stage: 3, label: 'researcher' },
-      'gotcha-checker':          { stage: 3, label: 'gotcha-check' },
-      'reviewer-triage':         { stage: 4, label: 'reviewers' },
-      'reviewer-boundary':       { stage: 4, label: 'reviewers' },
-      'gate1':                   { stage: 5, label: 'gate1' },
+      'planning':    { stage: 2, label: 'planning' },
+      'reviewing':   { stage: 4, label: 'reviewers' },
     },
   },
   implement: {
@@ -46,31 +40,16 @@ const PIPELINE_STAGES = {
     totalStages: 6,
     label: 'implementing',
     steps: {
-      'started':                 { stage: 1, label: 'starting' },
-      'setup':                   { stage: 1, label: 'setup' },
-      'implementation-architect':{ stage: 2, label: 'scoping slice' },
-      'coder-scout':             { stage: 3, label: 'scout' },
-      'coder':                   { stage: 3, label: 'coder' },
-      'completeness-checker':    { stage: 4, label: 'completeness' },
-      'reviewer-triage':         { stage: 5, label: 'reviewers' },
-      'reviewer-boundary':       { stage: 5, label: 'reviewers' },
-      'gate2':                   { stage: 6, label: 'gate2' },
+      'implementing': { stage: 3, label: 'implementing' },
+      'reviewing':    { stage: 5, label: 'reviewers' },
     },
   },
   apply: {
     icon: '🚀',
-    totalStages: 6,
+    totalStages: 4,
     label: 'applying',
     steps: {
-      'started':                 { stage: 1, label: 'starting' },
-      'setup':                   { stage: 1, label: 'setup' },
-      'implementer-triage':      { stage: 2, label: 'triage' },
-      'implementer':             { stage: 2, label: 'implementer' },
-      'testing':                 { stage: 3, label: 'tests' },
-      'documenter':              { stage: 4, label: 'documenter' },
-      'worktree-commit':         { stage: 5, label: 'wt-commit' },
-      'merge-back':              { stage: 6, label: 'merge-back' },
-      'done':                    { stage: 6, label: 'done' },
+      'applying':   { stage: 2, label: 'applying' },
     },
   },
   debug: {
@@ -78,11 +57,8 @@ const PIPELINE_STAGES = {
     totalStages: 4,
     label: 'debugging',
     steps: {
-      'started':                 { stage: 1, label: 'starting' },
-      'debug':                   { stage: 2, label: 'tracing' },
-      'reviewer-triage':         { stage: 3, label: 'reviewers' },
-      'reviewer-boundary':       { stage: 3, label: 'reviewers' },
-      'gate2':                   { stage: 4, label: 'gate2' },
+      'debugging':  { stage: 2, label: 'debugging' },
+      'reviewing':  { stage: 3, label: 'reviewers' },
     },
   },
   refactor: {
@@ -90,11 +66,8 @@ const PIPELINE_STAGES = {
     totalStages: 4,
     label: 'refactoring',
     steps: {
-      'started':                 { stage: 1, label: 'starting' },
-      'refactor':                { stage: 2, label: 'analyzing' },
-      'reviewer-triage':         { stage: 3, label: 'reviewers' },
-      'reviewer-boundary':       { stage: 3, label: 'reviewers' },
-      'gate2':                   { stage: 4, label: 'gate2' },
+      'refactoring': { stage: 2, label: 'refactoring' },
+      'reviewing':   { stage: 3, label: 'reviewers' },
     },
   },
   research: {
@@ -102,12 +75,28 @@ const PIPELINE_STAGES = {
     totalStages: 2,
     label: 'researching',
     steps: {
-      'started':                 { stage: 1, label: 'starting' },
-      'researcher':              { stage: 2, label: 'researching' },
-      'done':                    { stage: 2, label: 'done' },
+      'researching': { stage: 2, label: 'researching' },
     },
   },
 };
+
+// ─── Stage label derivation (CJS inline — mirrors mcp/lib/stage-labels.js) ──
+
+const STAGE_DISPLAY = {
+  plan: 'planning', implement: 'implementing', review: 'reviewing',
+  apply: 'applying', debug: 'debugging', refactor: 'refactoring', research: 'researching',
+};
+
+function stageLabelFromStages(stages) {
+  if (!stages || typeof stages !== 'object') return null;
+  for (const [key, val] of Object.entries(stages)) {
+    if (val && val.status === 'running') return STAGE_DISPLAY[key] || key;
+  }
+  for (const [key, val] of Object.entries(stages)) {
+    if (val && val.status === 'completed') return STAGE_DISPLAY[key] || key;
+  }
+  return null;
+}
 
 // ─── IO ─────────────────────────────────────────────────────────────────
 
@@ -137,25 +126,9 @@ process.stdin.on('end', finalize);
 // render with process.cwd() fallback after the timeout rather than hanging.
 setTimeout(finalize, STDIN_TIMEOUT_MS);
 
-// ─── "Requires attention" detection ─────────────────────────────────────
-// A completed run with an approved gate still needs the user to advance it
-// to the next pipeline step. These are not truly terminal.
+// ─── Terminal status detection ──────────────────────────────────────────
 
-const NEXT_STEP_MAP = {
-  plan:      { gate: 'gate1', next: '/forge:implement' },
-  implement: { gate: 'gate2', next: '/forge:apply' },
-  debug:     { gate: 'gate2', next: '/forge:apply' },
-  refactor:  { gate: 'gate2', next: '/forge:apply' },
-};
-
-function needsNextStep(run) {
-  if (run.status !== 'completed') return null;
-  const mapping = NEXT_STEP_MAP[run.pipelineType];
-  if (!mapping) return null;
-  const gs = run.gateState;
-  if (gs && gs.gate === mapping.gate && gs.status === 'approved') return mapping.next;
-  return null;
-}
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
 
 // ─── Derivation: read state from source-of-truth files ──────────────────
 
@@ -180,28 +153,10 @@ function loadProjectState(projectDir) {
         .filter(e => e.status === 'gate-pending' || e.status === 'completed' || !isStale(e.updatedAt, now))
         .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
-      // Only the latest run per feature can need attention. Earlier runs in
-      // the same chain are superseded regardless of gate state.
-      const latestByFeature = new Map();
-      const fullIndex = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-      for (const e of (fullIndex.runs || [])) {
-        const key = (e.feature || '').toLowerCase();
-        const prev = latestByFeature.get(key);
-        if (!prev || (e.updatedAt || '') > (prev.updatedAt || '')) {
-          latestByFeature.set(key, e);
-        }
-      }
-
       for (const entry of entries) {
         const run = readRun(projectDir, entry.runId);
         if (!run) continue;
-        if (run.status === 'completed') {
-          const next = needsNextStep(run);
-          if (!next) continue;
-          const key = (run.feature || '').toLowerCase();
-          const latest = latestByFeature.get(key);
-          if (!latest || latest.runId !== run.runId) continue;
-        }
+        if (TERMINAL_STATUSES.has(run.status)) continue;
         activeRuns.push(run);
       }
     } catch {}
@@ -230,7 +185,7 @@ function loadProjectState(projectDir) {
               canSynthesize = registered.status === 'running' || registered.status === 'gate-pending';
               if (canSynthesize) {
                 // If registry has the run in an active state, use its truth
-                // (includes real currentStep, gateState) rather than synthesizing.
+                // (includes real stageLabel, gateState) rather than synthesizing.
                 activeRuns.push(registered);
                 return { projectName, activeRuns };
               }
@@ -242,7 +197,7 @@ function loadProjectState(projectDir) {
               pipelineType: data.pipelineType || 'implement',
               feature: data.feature || projectName,
               status: 'running',
-              currentStep: null,
+              stageLabel: null,
               gateState: null,
             });
           }
@@ -259,16 +214,19 @@ function readRun(projectDir, runId) {
   if (!fs.existsSync(p)) return null;
   try {
     const r = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (r === null || typeof r !== 'object') {
+      return { runId, pipelineType: 'unknown', feature: '<unreadable>', status: 'running', stageLabel: null, gateState: null, degraded: true };
+    }
     return {
       runId: r.runId,
       pipelineType: r.pipelineType,
       feature: r.feature || '',
       status: r.status,
-      currentStep: r.currentStep || null,
+      stageLabel: stageLabelFromStages(r.stages),
       gateState: r.gateState || null,
     };
   } catch {
-    return null;
+    return { runId, pipelineType: 'unknown', feature: '<unreadable>', status: 'running', stageLabel: null, gateState: null, degraded: true };
   }
 }
 
@@ -284,10 +242,9 @@ function isStale(isoString, now) {
 function runToSegment(run) {
   const shortId = (run.runId || '').slice(0, 10);
 
-  // Completed with approved gate — requires user to advance
-  const next = needsNextStep(run);
-  if (next) {
-    return `⏸  ${shortId} · run ${next}`;
+  // Degraded sentinel — run.json exists but could not be parsed
+  if (run.degraded === true) {
+    return '⚠ ' + shortId + ' · state unreadable';
   }
 
   // Gate pending — highlight clearly
@@ -302,14 +259,14 @@ function runToSegment(run) {
     return `⏸  ${shortId} · approval needed`;
   }
 
-  // Active run — map currentStep to stage
+  // Active run — map stageLabel to progress stage
   const config = PIPELINE_STAGES[run.pipelineType];
   if (!config) {
     return `⚙  ${shortId} · ${run.pipelineType || 'running'}`;
   }
 
-  const stepInfo = (run.currentStep && config.steps[run.currentStep])
-    || { stage: 1, label: run.currentStep || config.label };
+  const stepInfo = (run.stageLabel && config.steps[run.stageLabel])
+    || { stage: 1, label: run.stageLabel || config.label };
 
   const bar = renderBar(stepInfo.stage, config.totalStages);
   return `${config.icon} ${shortId} ${bar} ${stepInfo.label}`;

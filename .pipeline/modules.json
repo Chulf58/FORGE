@@ -2,11 +2,11 @@
   {
     "id": "pipeline-agents",
     "name": "Pipeline Agents",
-    "description": "31 agent definitions forming the multi-stage pipeline. Each is a Markdown file with YAML frontmatter.",
+    "description": "19 agent definitions forming the multi-stage pipeline. Each is a Markdown file with YAML frontmatter.",
     "paths": ["agents/"],
     "dependsOn": ["mcp-server"],
     "usedBy": ["skills"],
-    "notes": "Agent sequence: brainstormer → planner → researcher → gotcha-checker → reviewers (plan), coder → completeness-checker → reviewers (implement), implementer → documenter (apply). Debug/refactor have own paths."
+    "notes": "Agent sequence: brainstormer → planner → researcher → gotcha-checker → reviewers (plan), coder → completeness-checker → reviewers (implement), documenter (apply). Debug/refactor have own paths. Cleanup merged into documenter Step 8b."
   },
   {
     "id": "skills",
@@ -15,16 +15,16 @@
     "paths": ["skills/"],
     "dependsOn": ["pipeline-agents", "mcp-server"],
     "usedBy": [],
-    "notes": "Each skill orchestrates MCP tool calls and agent dispatches. Routing: every agent invocation preceded by forge_get_model_recommendation."
+    "notes": "Each skill orchestrates MCP tool calls and agent dispatches. Routing: every agent invocation preceded by forge_get_model_recommendation. Notable: forge:commit skill handles commit+merge (split from forge:approve in wave 3); forge:plan and forge:implement call forge_classify_risk before creating the run."
   },
   {
     "id": "mcp-server",
     "name": "MCP Server",
-    "description": "The forge-pipeline MCP server exposing ~30 forge_* tools for pipeline state, model routing, and external provider calls.",
+    "description": "The forge-pipeline MCP server exposing 35 forge_* tools for pipeline state, model routing, and external provider calls.",
     "paths": ["mcp/"],
     "dependsOn": ["run-registry"],
     "usedBy": ["skills", "hooks"],
-    "notes": "Entry point: mcp/server.js (ESM). Separate mcp/package.json with type:module. Includes router, config-store, usage-store, adapters, dashboard-state, stage-labels, sanitize, model-validation."
+    "notes": "Entry point: mcp/server.js (ESM). Separate mcp/package.json with type:module. Includes router, config-store, usage-store, adapters, dashboard-state, stage-labels, sanitize, model-validation, classify-risk, constraints, patterns, learning. stage-labels now uses stageLabelFromStages() (stages-only, no pipelineMode/currentStep)."
   },
   {
     "id": "run-registry",
@@ -42,7 +42,7 @@
     "paths": ["hooks/"],
     "dependsOn": ["run-registry"],
     "usedBy": ["mcp-server"],
-    "notes": "CJS. 27 scripts declared in hooks/hooks.json. Shared utils in hook-utils.js (resolveProjectDir, stripAnsi, approval tokens, timeout constants, agent allowlist)."
+    "notes": "CJS. 29 scripts declared in hooks/hooks.json across 10 event types: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostCompact, Stop, SessionEnd, FileChanged, SubagentStart, SubagentStop. Shared utils in hook-utils.js (resolveProjectDir, stripAnsi, approval tokens, timeout constants, agent allowlist)."
   },
   {
     "id": "observer",
@@ -56,8 +56,8 @@
   {
     "id": "parallel-sessions",
     "name": "Parallel Sessions",
-    "description": "Git worktree isolation for concurrent pipeline runs. Each implement run gets its own worktree, branch, and .pipeline/ copy.",
-    "paths": ["bin/forge-worktree.js", "bin/forge-spawn-worker.js", "bin/forge-status.js"],
+    "description": "Git worktree isolation for concurrent pipeline runs. Each pipeline run (plan, implement, debug, refactor) gets its own worktree, branch, and .pipeline/ copy.",
+    "paths": ["bin/forge-worktree.js", "bin/forge-status.js", "mcp/forge-worker.mjs"],
     "dependsOn": ["run-registry"],
     "usedBy": ["skills", "hooks"],
     "notes": "Windows-only worker spawning via wt.exe. gate-enforcement.js is worktree-aware. Worktree creation also in packages/forge-core/src/runs/createWorktree.js."
@@ -96,6 +96,6 @@
     "paths": ["commands/"],
     "dependsOn": [],
     "usedBy": [],
-    "notes": "Most commands migrated to skills/. Only doctor.md and hello.md remain."
+    "notes": "Most commands migrated to skills/. Only ping.md remains; doctor.md and hello.md were removed."
   }
 ]

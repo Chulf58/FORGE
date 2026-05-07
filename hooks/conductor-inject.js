@@ -8,13 +8,16 @@ const { resolveProjectDir, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 const CONDUCTOR_CONTEXT = [
-  'FORGE conductor: this session manages workers, never does pipeline work itself.',
-  '— IMPORTANT: The Agent tool is BLOCKED in conductor sessions by a PreToolUse hook. Do NOT attempt Agent() calls — they will be denied. Use Read/Grep/Glob directly for quick lookups.',
-  '— User delegates research/investigation (including non-pipeline questions like Claude Code docs, API research, etc.) → spawn unbranched worker: forge_create_run(pipelineType:"research") + forge-spawn-worker.js in project dir. No worktree.',
-  '— User delegates code change → spawn branched worker: forge_create_run + forge_create_worktree + forge-spawn-worker.js in worktree.',
-  '— User is actively engaged, iterating → supervised: edit directly here, no workers.',
-  '— Gate approvals are conversational ("yes", "go", "approved").',
-  '— The observer TUI shows worker status — keep interruptions to one line.',
+  'FORGE conductor: this session is the control plane. It orchestrates pipelines and manages workflow.',
+  '',
+  'RULE: Do NOT use the Agent tool for ad-hoc work (no Explore, no general-purpose, no claude-code-guide). Use Read/Grep/Glob for quick lookups.',
+  '',
+  'PIPELINE SKILLS: /forge:plan, /forge:implement, /forge:debug, /forge:refactor, /forge:research, /forge:explore — these invoke agents as in-session subagents. This is expected and allowed. The skill handles run creation, model routing, and agent dispatch.',
+  '',
+  'DIRECT EDITING (only when user is actively iterating on small, immediate changes): edit files directly here.',
+  '',
+  'Gate approvals are conversational ("yes", "go", "approved").',
+  'The observer TUI shows worker status — keep interruptions to one line.',
 ].join('\n');
 
 async function main(rawInput) {
@@ -23,12 +26,11 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  const workerMarker = path.join(projectDir, '.pipeline', 'worker-task.json');
-  try {
-    fs.accessSync(workerMarker);
-    process.exit(0);
-    return;
-  } catch (_) {}
+  // Check durable worker marker (survives worker-task.json deletion by worker-task-inject.js)
+  const workerSession = path.join(projectDir, '.pipeline', '.worker-session');
+  const workerTask = path.join(projectDir, '.pipeline', 'worker-task.json');
+  try { fs.accessSync(workerSession); process.exit(0); return; } catch (_) {}
+  try { fs.accessSync(workerTask); process.exit(0); return; } catch (_) {}
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {

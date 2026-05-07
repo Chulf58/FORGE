@@ -120,7 +120,6 @@ function handleGateAction(projectDir, run, action) {
     const gateCreatedAt = (run.gateState && run.gateState.createdAt) || now;
     updateRun(projectDir, run.runId, {
       status: "completed",
-      currentStep: gate + "-approved",
       gateState: {
         gate,
         status: "approved",
@@ -143,7 +142,6 @@ function handleGateAction(projectDir, run, action) {
     // Update the run registry.
     updateRun(projectDir, run.runId, {
       status: "discarded",
-      currentStep: "discarded",
     });
     return { ok: true, message: "Gate discarded." };
   }
@@ -210,7 +208,6 @@ function handleMergeDiscard(projectDir, run) {
   updateRun(projectDir, runId, {
     mergeBlocked: null,
     status: "discarded",
-    currentStep: "discarded",
   });
   return { ok: true, message: "Merge-blocked run discarded. Worktree and branch removed." };
 }
@@ -325,7 +322,7 @@ function renderActiveRuns(arr) {
   $("ar-count").textContent = "(" + arr.length + ")";
   if (!arr.length) { renderEmpty($("activeRuns"), "No active runs."); return; }
   $("activeRuns").innerHTML = arr.map(r => {
-    const stage = r.stageLabel || r.currentStep || "starting";
+    const stage = r.stageLabel || "starting";
     const wt = r.worktreePath ? ' <span class="muted">· wt=' + esc(r.worktreePath) + '</span>' : '';
     const inflight = r.currentUnit && r.currentUnit.agent
       ? ' <span class="muted">· in-flight: ' + esc(r.currentUnit.agent) + '</span>'
@@ -545,7 +542,7 @@ const server = createServer(async (req, res) => {
             detail: "No .pipeline/ at " + projectDir + ". Run /forge:init first.",
           });
         }
-        const state = buildDashboardState(projectDir);
+        const state = await buildDashboardState(projectDir);
         // Add project identity for UI display and future mismatch detection.
         let projectName = projectDir;
         try {

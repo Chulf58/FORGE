@@ -1,18 +1,23 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, renameSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, renameSync, rmSync, openSync, closeSync, readdirSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFileSync, spawn as nodeSpawn } from "node:child_process";
+import { randomUUID, randomBytes } from "node:crypto";
 import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from "./lib/config-store.js";
 import { readUsage, writeUsage, markQuotaExhausted, markModelQuotaExhausted, recordUsage } from "./lib/usage-store.js";
 import { recommendModel } from "./lib/router.js";
 import { callOpenAI } from "./lib/openai-adapter.js";
 import { callGemini } from "./lib/gemini-adapter.js";
 import { addModelToConfig, updateModelInConfig } from "./lib/model-validation.js";
-import { createRun, getRun, listRuns, updateRun, createWorktree, rebuildIndex } from "../packages/forge-core/src/runs/index.js";
+import { createRun, getRun, listRuns, updateRun, createWorktree, removeWorktree, rebuildIndex, getRunActivePath, writeRunActive } from "../packages/forge-core/src/runs/index.js";
 import { buildDashboardState } from "./lib/dashboard-state.js";
 import { sanitizeFeatureName } from "./lib/sanitize.js";
+import { searchConstraints, searchPatterns, appendSolutionDoc } from "./lib/knowledge-store.js";
+import { workerLogPath, killPillPath } from "./lib/worker-paths.js";
+import { sweepStalePids } from "./lib/worker-pids.js";
 
 // -- Shared Zod schemas ------------------------------------------------------
 
@@ -33,13 +38,31 @@ const runIdOrBareSchema = z.string().regex(
 
 // -- Helpers -----------------------------------------------------------------
 
+/**
+ * Returns the MAIN project root, even when this MCP server is running inside
+ * a worktree (e.g. spawned by a worker via mcp/forge-worker.mjs:307 with
+ * cwd=worktree path).
+ *
+ * Why: all run-state operations (forge_update_run, forge_get_run,
+ * forge_create_run, forge_advance_stage, etc.) operate on
+ * <projectRoot>/.pipeline/runs/<runId>/run.json. That file MUST live in main's
+ * .pipeline/, not worktree's, so the conductor and worker see the same state.
+ * Without this resolution, worker writes go to <worktree>/.pipeline/runs/...
+ * (because createWorktree's copyDirSync seeded the worktree with a snapshot of
+ * .pipeline/) and main's stays stale — observed in r-61c6a00a where the worker
+ * wrote gate-pending state to its worktree's run.json but the conductor read
+ * main's empty one.
+ *
+ * Worktree-local needs (gate-pending.json, reset-pill) are handled by
+ * runId-aware lookups (forge_check_gate uses run.worktreePath) or explicit
+ * path helpers in mcp/lib/worker-paths.js — not by this resolver.
+ *
+ * The conductor's MCP server doesn't run inside a worktree, so the gitdir
+ * check is a no-op for it and behavior is unchanged.
+ */
 function resolveProjectDir() {
-  return resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
-}
-
-function resolveMainProjectDir() {
-  const projectDir = resolveProjectDir();
-  const gitFile = join(projectDir, ".git");
+  const cwdOrEnv = resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  const gitFile = join(cwdOrEnv, ".git");
   try {
     const content = readFileSync(gitFile, "utf8").trim();
     if (content.startsWith("gitdir:")) {
@@ -53,7 +76,13 @@ function resolveMainProjectDir() {
       console.error("[forge-mcp] .git read failed: " + err.message);
     }
   }
-  return projectDir;
+  return cwdOrEnv;
+}
+
+// Alias retained for callers that want to be explicit about wanting main's
+// project root. Returns the same value as resolveProjectDir() now.
+function resolveMainProjectDir() {
+  return resolveProjectDir();
 }
 
 function readJsonSafe(filePath) {
@@ -70,6 +99,20 @@ function writeJsonSafe(filePath, data) {
   const tmp = filePath + ".tmp." + process.pid;
   writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf-8");
   renameSync(tmp, filePath);
+}
+
+function readCriteria(runDir) {
+  const criteriaPath = join(runDir, 'criteria.json');
+  try {
+    return JSON.parse(readFileSync(criteriaPath, 'utf8'));
+  } catch {
+    return { criteria: [] };
+  }
+}
+
+function writeCriteria(runDir, data) {
+  const criteriaPath = join(runDir, 'criteria.json');
+  writeJsonSafe(criteriaPath, data);
 }
 
 function errorResult(msg) {
@@ -102,33 +145,6 @@ function hasGateApprovalToken(projectDir) {
   }
 }
 
-// -- Mode-hardening validation ------------------------------------------------
-// Prevents SPRINT from being used on tasks whose pipeline type or feature
-// description implies risk-surface work that needs reviewer coverage.
-// Enforced at both forge_create_run and forge_resume_run.
-// Note: SUPERVISED mode (direct edits by conductor) doesn't create runs at all,
-// so it never reaches this validation.
-
-const RISK_KEYWORDS = /\b(hook|hooks|mcp|security|auth|crypto|secret|credential|token|spawn|child_process|migration|schema|contract|network|fetch|http|inject|xss|csrf|permission|guard|enforcement|worktree|merge)\b/i;
-
-function validateModeForRisk(pipelineType, mode, feature) {
-  if (mode !== 'SPRINT') return null;
-
-  // SPRINT: blocked for source-mutating pipelines when feature description
-  // contains risk-surface keywords. plan/apply don't produce unreviewed mutations.
-  const SOURCE_MUTATING = new Set(['implement', 'debug', 'refactor']);
-  if (mode === 'SPRINT' && SOURCE_MUTATING.has(pipelineType) && feature && RISK_KEYWORDS.test(feature)) {
-    const match = feature.match(RISK_KEYWORDS);
-    return (
-      'FORGE: Mode SPRINT is not allowed when the feature description indicates ' +
-      'risk-surface work (matched: "' + (match ? match[0] : '') + '"). ' +
-      'SPRINT skips all reviewers. Use LEAN or higher for this task.'
-    );
-  }
-
-  return null;
-}
-
 // Case-insensitive on Windows; absolute-path equality after slash normalization.
 // Used by forge_resume_run to verify the run's projectRoot matches the current project.
 function pathsEqual(a, b) {
@@ -137,7 +153,18 @@ function pathsEqual(a, b) {
   return process.platform === "win32" ? A.toLowerCase() === B.toLowerCase() : A === B;
 }
 
-import { stageLabelFor } from "./lib/stage-labels.js";
+// Returns the full path of the first worker-task-<runId>.json found under
+// dir/.pipeline/, or null if none exists. Used by recursive-spawn guards.
+function findWorkerTaskFile(dir) {
+  const pipelineDir = join(dir, ".pipeline");
+  try {
+    const entries = readdirSync(pipelineDir);
+    const match = entries.find((e) => /^worker-task-.+\.json$/.test(e));
+    return match ? join(pipelineDir, match) : null;
+  } catch {
+    return null;
+  }
+}
 
 // -- Server ------------------------------------------------------------------
 
@@ -384,16 +411,16 @@ server.registerTool(
         return errorResult("Task not found: " + id);
       }
 
-      // Mark done — remove from board before applying other mutations
-      // so text/priority changes don't persist on a removed task.
+      // Mark done — stamp the task in-place so completion history
+      // and doneAt are preserved on the board.
       if (done === true && !task.done) {
-        board.todos = todos.filter(t => t.id !== id);
-        board.planned = planned.filter(t => t.id !== id);
+        task.done = true;
+        task.doneAt = new Date().toISOString();
         writeJsonSafe(boardPath, board);
-        const remaining = board.todos || [];
+        const remaining = (board.todos || []).filter(t => !t.done);
         const nextTask = remaining.length > 0 ? remaining[0] : null;
         return textResult({
-          ...task, done: true, doneAt: Date.now(), removed: true,
+          ...task,
           nextPending: nextTask ? { id: nextTask.id, title: nextTask.title, text: nextTask.text, priority: nextTask.priority } : null,
           pendingCount: remaining.length,
         });
@@ -579,7 +606,7 @@ server.registerTool(
 
 // -- Tool: forge_update_config -----------------------------------------------
 
-const ALLOWED_CONFIG_KEYS = ["pipelineMode", "techStacks", "techStackLabels", "description", "testCommand", "gitIntegration"];
+const ALLOWED_CONFIG_KEYS = ["techStacks", "techStackLabels", "description", "testCommand", "gitIntegration"];
 
 server.registerTool(
   "forge_update_config",
@@ -599,21 +626,13 @@ server.registerTool(
       }
 
       // Per-key type validation
-      const STRING_KEYS = ["pipelineMode", "description", "testCommand"];
+      const STRING_KEYS = ["description", "testCommand"];
       const ARRAY_KEYS = ["techStacks", "techStackLabels"];
       if (STRING_KEYS.includes(key) && typeof value !== "string") {
         return errorResult("Invalid type for " + key + ": expected string, got " + typeof value);
       }
       if (ARRAY_KEYS.includes(key) && !Array.isArray(value)) {
         return errorResult("Invalid type for " + key + ": expected array, got " + typeof value);
-      }
-
-      // Enum validation for pipelineMode
-      if (key === "pipelineMode") {
-        const VALID_MODES = ["SPRINT", "LEAN", "STANDARD", "FULL"];
-        if (!VALID_MODES.includes(value)) {
-          return errorResult("Invalid pipelineMode: '" + value + "'. Must be one of: " + VALID_MODES.join(", "));
-        }
       }
 
       const projectDir = resolveProjectDir();
@@ -641,25 +660,61 @@ server.registerTool(
   "forge_get_active_run",
   {
     title: "FORGE Get Active Run",
-    description: "Returns the current active pipeline run state, or null if no run is active",
-    inputSchema: z.object({}),
+    description: "Returns the current active pipeline run state, or null if no run is active. When runId is provided, returns that run's per-run active file directly.",
+    inputSchema: z.object({
+      runId: runIdSchema.optional().describe("When provided, reads that run's per-run active file (.pipeline/runs/<runId>/run-active.json) and returns it directly."),
+    }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
   },
-  async () => {
+  async ({ runId } = {}) => {
     try {
       const projectDir = resolveProjectDir();
       const check = requirePipeline(projectDir);
       if (!check.ok) return check.result;
 
-      const runPath = join(check.pipelineDir, "run-active.json");
-      if (!existsSync(runPath)) {
+      // When runId provided: read per-run file directly, no fallback to singleton.
+      if (runId) {
+        let perRunPath;
+        try {
+          perRunPath = getRunActivePath(projectDir, runId);
+        } catch (pathErr) {
+          return errorResult("Invalid runId: " + pathErr.message);
+        }
+        if (!existsSync(perRunPath)) {
+          return textResult(null);
+        }
+        const read = readJsonSafe(perRunPath);
+        if (!read.ok) return errorResult("Failed to read per-run active file: " + read.error);
+        return textResult(read.data);
+      }
+
+      // No runId: read singleton to discover currentRunId, then prefer per-run file.
+      const singletonPath = join(check.pipelineDir, "run-active.json");
+      if (!existsSync(singletonPath)) {
         return textResult(null);
       }
 
-      const read = readJsonSafe(runPath);
-      if (!read.ok) return errorResult("Failed to read run-active.json: " + read.error);
+      const singletonRead = readJsonSafe(singletonPath);
+      if (!singletonRead.ok) return errorResult("Failed to read run-active.json: " + singletonRead.error);
 
-      return textResult(read.data);
+      const singletonData = singletonRead.data;
+      const currentRunId = singletonData && typeof singletonData.runId === 'string' ? singletonData.runId : null;
+
+      // If we have a valid runId from the singleton, prefer the per-run file when present.
+      if (currentRunId) {
+        try {
+          const perRunPath = getRunActivePath(projectDir, currentRunId);
+          if (existsSync(perRunPath)) {
+            const perRunRead = readJsonSafe(perRunPath);
+            if (perRunRead.ok) return textResult(perRunRead.data);
+          }
+        } catch (_) {
+          // Invalid runId stored in singleton — fall through to singleton data
+        }
+      }
+
+      // Fall back to singleton data (per-run file absent or runId missing/invalid).
+      return textResult(singletonData);
     } catch (err) {
       return errorResult("Failed to read active run: " + err.message);
     }
@@ -672,25 +727,83 @@ server.registerTool(
   "forge_check_gate",
   {
     title: "FORGE Check Gate",
-    description: "Returns the current pending gate state (gate1 or gate2), or null if no gate is pending",
-    inputSchema: z.object({}),
+    description: "Returns the current pending gate state (gate1 or gate2), or null if no gate is pending. Pass runId to target a specific run's gate file instead of the shared main-root file.",
+    inputSchema: z.object({
+      runId: runIdSchema.optional().describe("Target a specific run's gate file. When omitted, returns the main-root gate (legacy behavior)."),
+    }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
   },
-  async () => {
+  async ({ runId }) => {
     try {
       const projectDir = resolveProjectDir();
       const check = requirePipeline(projectDir);
       if (!check.ok) return check.result;
 
-      const gatePath = join(check.pipelineDir, "gate-pending.json");
-      if (!existsSync(gatePath)) {
+      // When runId is provided, look up that run's gate file directly —
+      // avoids the singleton race where parallel runs overwrite each other.
+      if (runId) {
+        const targetRun = getRun(projectDir, runId);
+        if (targetRun && targetRun.worktreePath) {
+          const wtGatePath = join(targetRun.worktreePath, '.pipeline', 'gate-pending.json');
+          if (existsSync(wtGatePath)) {
+            const wtRead = readJsonSafe(wtGatePath);
+            if (wtRead.ok) return textResult(wtRead.data);
+          }
+        }
+        // Fall back to main-root file filtered by runId
+        const mainGatePath = join(check.pipelineDir, "gate-pending.json");
+        if (existsSync(mainGatePath)) {
+          const read = readJsonSafe(mainGatePath);
+          if (read.ok && read.data && read.data.runId === runId) return textResult(read.data);
+        }
         return textResult(null);
       }
 
-      const read = readJsonSafe(gatePath);
-      if (!read.ok) return errorResult("Failed to read gate-pending.json: " + read.error);
+      // Legacy path: no runId — read main-root gate file
+      const mainGatePath = join(check.pipelineDir, "gate-pending.json");
+      let mainGate = null;
+      if (existsSync(mainGatePath)) {
+        const read = readJsonSafe(mainGatePath);
+        if (read.ok) mainGate = read.data;
+      }
 
-      return textResult(read.data);
+      // Check worktree-backed runs for a gate file the main root may not have.
+      // Workers write gate-pending.json to their worktree path; forge_set_gate
+      // dual-writes but direct writes bypass it entirely.
+      let worktreeGate = null;
+      try {
+        let candidates = listRuns(projectDir, { status: 'gate-pending' });
+        if (!candidates.length) {
+          // Also check running runs — gate may have just been written
+          candidates = listRuns(projectDir, {}).filter(
+            r => r.status === 'running'
+          );
+        }
+        const sorted = candidates.sort(
+          (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')
+        );
+        // Only check the first few to avoid performance issues on large run sets
+        const limit = Math.min(sorted.length, 5);
+        for (let i = 0; i < limit; i++) {
+          const run = getRun(projectDir, sorted[i].runId);
+          if (run && run.worktreePath) {
+            const wtGatePath = join(run.worktreePath, '.pipeline', 'gate-pending.json');
+            if (existsSync(wtGatePath)) {
+              const wtRead = readJsonSafe(wtGatePath);
+              if (wtRead.ok) {
+                worktreeGate = wtRead.data;
+                break;
+              }
+            }
+          }
+        }
+      } catch (_) {
+        // Run lookup failure — proceed with mainGate only
+      }
+
+      // Prefer worktree gate when main root is empty or stale
+      const result = worktreeGate || mainGate;
+      return textResult(result);
     } catch (err) {
       return errorResult("Failed to check gate: " + err.message);
     }
@@ -706,9 +819,9 @@ server.registerTool(
   "forge_set_gate",
   {
     title: "FORGE Set Gate",
-    description: "Creates or updates a pending gate (gate1 or gate2). Also syncs run registry automatically.",
+    description: "Creates or updates a pending gate (gate1, gate2, or commit). Also syncs run registry automatically.",
     inputSchema: z.object({
-      gate: z.enum(["gate1", "gate2"]).describe("Which gate"),
+      gate: z.enum(["gate1", "gate2", "commit"]).describe("Which gate"),
       feature: z.string().describe("Feature name"),
       status: z.enum(["pending", "approved"]).default("pending").describe("Gate status"),
       runId: runIdSchema.optional().describe("Run ID this gate belongs to. If omitted, the tool resolves it by status."),
@@ -722,8 +835,6 @@ server.registerTool(
       if (!check.ok) return check.result;
 
       // Gate self-approval guard: "approved" requires a valid approval token
-      // from the user's current turn (written by approval-token.js when the
-      // user says "approve" or invokes /forge:approve).
       if (status === "approved") {
         if (!hasGateApprovalToken(projectDir)) {
           return errorResult(
@@ -736,15 +847,14 @@ server.registerTool(
       }
 
       const now = new Date().toISOString();
-      const gatePath = join(check.pipelineDir, "gate-pending.json");
+      // gatePath resolved after runId is determined (worktree-aware — see below)
 
       // On approval, preserve the original pending gate's createdAt AND runId.
-      // Read the existing gate file first — if it has a createdAt/runId from the
-      // pending write, carry them forward. Fall back to now / resolved only if missing.
+      // Read the main-root gate file first for the preserved fields.
       let originalCreatedAt = now;
       let resolvedRunId = runId || null;
       if (status === "approved") {
-        const existing = readJsonSafe(gatePath);
+        const existing = readJsonSafe(join(check.pipelineDir, "gate-pending.json"));
         if (existing.ok && existing.data) {
           if (existing.data.createdAt) originalCreatedAt = existing.data.createdAt;
           if (!resolvedRunId && existing.data.runId) resolvedRunId = existing.data.runId;
@@ -761,13 +871,42 @@ server.registerTool(
         if (best) resolvedRunId = best.runId;
       }
 
+      // Worktree-aware gate path resolution: for worktree-backed runs
+      // (implement/debug/refactor), the worker polls
+      // <worktreePath>/.pipeline/gate-pending.json. Default to main project root.
+      // Gate path components are assembled via path.join from known bases only —
+      // no user-controlled strings reach the filesystem call.
+      let gatePath = join(check.pipelineDir, "gate-pending.json");
+      if (resolvedRunId) {
+        try {
+          const targetRun = getRun(projectDir, resolvedRunId);
+          if (targetRun && targetRun.worktreePath) {
+            const wtPipelineDir = join(targetRun.worktreePath, '.pipeline');
+            if (existsSync(wtPipelineDir)) {
+              gatePath = join(wtPipelineDir, 'gate-pending.json');
+            }
+          }
+        } catch (_) {
+          // Fall back to project root — never block the gate operation on run lookup failure
+        }
+      }
+
       const data = { gate, feature, status, createdAt: originalCreatedAt };
       if (resolvedRunId) data.runId = resolvedRunId;
       if (status === "approved") {
         data.approvedAt = now;
       }
 
+      // Write to the authoritative location (worktree or main root)
       writeJsonSafe(gatePath, data);
+
+      // Also write a copy to main project root so forge_check_gate always finds
+      // the gate regardless of whether a worktree is involved. No-op when
+      // gatePath is already the main root path.
+      const mainGatePath = join(check.pipelineDir, "gate-pending.json");
+      if (gatePath !== mainGatePath) {
+        writeJsonSafe(mainGatePath, data);
+      }
 
       // Consume the approval token after successful gate approval to prevent
       // replay attacks — one user "approve" authorizes exactly one gate.
@@ -782,7 +921,6 @@ server.registerTool(
         if (status === "pending" && resolvedRunId) {
           updateRun(projectDir, resolvedRunId, {
             status: "gate-pending",
-            currentStep: gate,
             gateState: { gate, status: "pending", feature, createdAt: now, approvedAt: null },
           });
         } else if (status === "approved" && resolvedRunId) {
@@ -791,14 +929,26 @@ server.registerTool(
           const gateCreatedAt = (existingRun && existingRun.gateState && existingRun.gateState.createdAt)
             || originalCreatedAt;
           updateRun(projectDir, resolvedRunId, {
-            status: "completed",
-            currentStep: gate + "-approved",
             gateState: { gate, status: "approved", feature, createdAt: gateCreatedAt, approvedAt: now },
           });
         }
       } catch (_syncErr) {
         // Run registry sync is best-effort — log but don't fail the gate operation
         console.error("[forge_set_gate] run registry sync failed: " + _syncErr.message);
+      }
+
+      // Clear gate-pending.json after a commit gate is approved — the file has
+      // served its purpose once the run registry is updated to "completed".
+      // gate1/gate2 approvals are intentionally NOT cleared here because the
+      // approve skill (Step 2) and the apply skill (Step 1a) re-read the file
+      // to resolve the runId and verify the gate before spawning the next stage.
+      // Only the commit gate is terminal — nothing reads the file afterwards.
+      if (status === "approved" && gate === "commit") {
+        try { unlinkSync(gatePath); } catch (_) { /* already gone */ }
+        // Also clear the main-root copy when a worktree-backed path was the primary.
+        if (gatePath !== mainGatePath) {
+          try { unlinkSync(mainGatePath); } catch (_) { /* already gone */ }
+        }
       }
 
       return textResult(data);
@@ -1454,6 +1604,16 @@ function pruneTerminalRuns(projectDir) {
     const runsBase = join(projectDir, ".pipeline", "runs");
 
     for (const entry of toPrune) {
+      // Clean up the git worktree first, before deleting the run directory.
+      // The run.json (which holds worktreePath) lives inside the run dir —
+      // we must read it before rmSync obliterates it.
+      try {
+        const run = getRun(projectDir, entry.runId);
+        if (run) {
+          removeWorktree(projectDir, entry.runId, run.worktreePath || null);
+        }
+      } catch (_) {}
+
       const dir = join(runsBase, entry.runId);
       try { rmSync(dir, { recursive: true, force: true }); } catch (_) {}
     }
@@ -1471,30 +1631,86 @@ server.registerTool(
   "forge_create_run",
   {
     title: "FORGE Create Run",
-    description: "Creates a new pipeline run. Returns the full run object with a generated runId.",
+    description: "Creates a new pipeline run. Returns the full run object with a generated runId. When spawnWorker is true, also opens a new terminal tab with an autonomous Claude Code worker session — use this in conductor sessions instead of the Agent tool.",
     inputSchema: z.object({
       sessionId: z.string().describe("Claude session ID"),
-      pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor", "research"]).describe("Pipeline type"),
-      mode: z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]).describe("Pipeline mode"),
+      pipelineType: z.string().describe("Pipeline type: plan, implement, apply, debug, refactor, research, explore, ideate"),
       feature: z.string().default("").describe("Feature name or description"),
+      spawnWorker: z.boolean().default(false).describe("Spawn an autonomous Claude Code worker in a new terminal tab"),
+      useWorktree: z.boolean().default(false).describe("Create an isolated git worktree for the worker (only used when spawnWorker is true)"),
+      parentRunId: runIdSchema.optional().describe("Run ID of the originating run, for chained pipelines (e.g. plan → implement)"),
+      stages: z.record(z.string(), z.object({
+        agents: z.array(z.enum([
+          'planner', 'researcher', 'gotcha-checker', 'coder', 'coder-scout',
+          'debug', 'refactor', 'completeness-checker', 'implementation-architect',
+          'documenter', 'reviewer-safety', 'reviewer-boundary', 'reviewer-logic',
+          'reviewer-style', 'reviewer-performance',
+        ])).default([]),
+        status: z.enum(['pending', 'running', 'completed', 'skipped']).default('pending'),
+      })).nullable().optional().describe("Initial stage map — keys are stage names, values are per-stage objects with agents array and status"),
+      classificationId: z.string().nullable().optional().describe("Risk classification ID from forge_classify_risk"),
+      reviewerOverrides: z.array(z.string()).optional().describe("Explicit reviewer list overriding classification-derived reviewers. Valid values: 'reviewer-safety', 'reviewer-boundary', 'reviewer-logic', 'reviewer-style', 'reviewer-performance'"),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
-  async ({ sessionId, pipelineType, mode, feature }) => {
+  async ({ sessionId, pipelineType, feature, spawnWorker, useWorktree, parentRunId, stages, classificationId, reviewerOverrides }) => {
     try {
       const projectDir = resolveProjectDir();
       // Sanitize feature name at ingestion — strips shell-injection chars before
       // the value is stored in run.json or returned to skills for git/PR usage.
       const safeFeature = sanitizeFeatureName(feature);
 
-      // Mode-hardening: block under-scoped modes for risky work
-      const modeError = validateModeForRisk(pipelineType, mode, safeFeature);
-      if (modeError) return errorResult(modeError);
+      // Validate that a plan exists before allowing an implement run.
+      // Debug and refactor pipelines have their own entry points and do not require a plan.
+      if (pipelineType === "implement") {
+        let planFound = false;
+        try {
+          const planRuns = listRuns(projectDir, { pipelineType: "plan" });
+          planFound = planRuns.some((entry) => {
+            try {
+              const planRun = getRun(projectDir, entry.runId);
+              return planRun?.gateState?.gate === "gate1" && planRun?.gateState?.status === "approved";
+            } catch (_) {
+              return false;
+            }
+          });
+        } catch (_) {
+          // listRuns failure — fall through to PLAN.md check
+        }
+        if (!planFound) {
+          planFound = existsSync(join(projectDir, "docs", "PLAN.md"));
+        }
+        if (!planFound) {
+          return errorResult("implement pipeline requires a completed plan (gate1 approved) or docs/PLAN.md. Run /forge:plan first.");
+        }
+      }
 
-      const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, mode, feature: safeFeature });
+      // Guard: prevent duplicate apply when source worker is still alive.
+      // After gate2 approval, the existing worker resumes and handles apply
+      // (documenter, lifecycle, commit gate). /forge:apply is manual recovery
+      // only — block if the source worker should still be alive.
+      if (pipelineType === "apply") {
+        const gatePendingRuns = listRuns(projectDir, { status: "gate-pending" });
+        const aliveSource = gatePendingRuns.find(entry => {
+          try {
+            const r = getRun(projectDir, entry.runId);
+            return r && !r.failureReason
+              && r.gateState?.gate === "gate2"
+              && r.gateState?.status === "approved";
+          } catch (_) { return false; }
+        });
+        if (aliveSource) {
+          return errorResult(
+            "Apply blocked: source run " + aliveSource.runId + " has gate2 approved and should be resuming automatically. "
+            + "Wait for the commit gate. Only use /forge:apply if the worker is confirmed dead (status: failed/discarded)."
+          );
+        }
+      }
+
+      const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, feature: safeFeature, parentRunId: parentRunId ?? null, stages: stages ?? null, classificationId: classificationId ?? null, reviewerOverrides: reviewerOverrides ?? [] });
       // Immediately mark as running — the model reliably calls forge_create_run
       // but skips the follow-up forge_update_run to set status: "running".
-      const started = updateRun(projectDir, run.runId, { status: "running", currentStep: "started" });
+      const started = updateRun(projectDir, run.runId, { status: "running" });
 
       // Initialize run-active.json — the lightweight pipeline marker read by
       // workflow-guard.js (needs startedAt), forge-status.js (needs startedAt +
@@ -1505,10 +1721,12 @@ server.registerTool(
         startedAt: Date.now(),
         runId: started.runId,
         pipelineType,
-        mode,
         feature: safeFeature,
         agents: [],
       };
+      if (started.stages != null) {
+        runActiveData.stages = started.stages;
+      }
 
       // For apply runs: resolve the exact worktree from the approved gate2 run.
       // Canonical identity is run.feature (not gate-pending.json.feature, which
@@ -1540,9 +1758,148 @@ server.registerTool(
       const runActivePath = join(projectDir, ".pipeline", "run-active.json");
       writeJsonSafe(runActivePath, runActiveData);
 
+      // Write per-run active file alongside singleton (AC-3).
+      try {
+        writeRunActive(projectDir, started.runId, runActiveData);
+      } catch (perRunErr) {
+        console.error("[forge_create_run] per-run active write failed (non-fatal): " + perRunErr.message);
+      }
+
       pruneTerminalRuns(projectDir);
 
-      return textResult(started);
+      if (!spawnWorker) return textResult(started);
+
+      // Guard: prevent recursive spawning — if this MCP server is running inside
+      // a worker process, never spawn another worker. The worker's MCP server is
+      // started by mcp/forge-worker.mjs with FORGE_WORKER_SESSION='1' in its env;
+      // the conductor's MCP server does not have this var, so its guard never fires.
+      // Env-var check is race-free vs. the previous file-system check, which was
+      // observed to false-positive when sibling workers' worker-task-<runId>.json
+      // files were still on disk before their SessionStart hook consumed them.
+      if (process.env.FORGE_WORKER_SESSION === '1') {
+        console.error("[forge_create_run] FORGE_WORKER_SESSION is set — skipping spawn (already inside a worker)");
+        return textResult(started);
+      }
+
+      // Sweep stale PID files before collision guard so zombie "running" entries
+      // do not falsely block new spawns.
+      const mainProjectDir = resolveMainProjectDir();
+      const sweepResult = sweepStalePids(mainProjectDir);
+      if (sweepResult.swept > 0) {
+        console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
+      }
+
+      // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
+      //
+      // The new run's intent at this point is captured by `useWorktree`:
+      //   - useWorktree === true  → createWorktree() will assign unique paths
+      //                             (`.worktrees/<runId>/` and `forge/<runId>`),
+      //                             so worktree/branch collisions are impossible.
+      //   - useWorktree === false → main-root slot; collides only with other
+      //                             main-root running runs in the same project.
+      //
+      // Predicate (block when ANY existing running run b matches a):
+      //   (a.worktreePath && a.worktreePath === b.worktreePath) ||
+      //   (a.branchName   && a.branchName   === b.branchName)   ||
+      //   (a.worktreePath === null && b.worktreePath === null && a.projectRoot === b.projectRoot)
+      const runningRuns = listRuns(projectDir, { status: "running" }).filter(r => r.runId !== started.runId);
+      if (!useWorktree) {
+        // New run will use the main-root slot — block only main-root runs in the same project.
+        const conflicts = runningRuns.filter(b => b.worktreePath == null && b.projectRoot === projectDir);
+        if (conflicts.length > 0) {
+          const conflicting = conflicts.map(r => r.runId).join(", ");
+          return errorResult(
+            "Worker collision blocked: run(s) " + conflicting + " already running in the same main-root slot. Wait for them to finish or mark them failed/discarded before spawning a new worker in the main project root.",
+          );
+        }
+      }
+      // useWorktree === true: createWorktree assigns unique worktreePath/branchName per runId — no collision possible.
+
+      // --- Worker spawning (headless) ---
+      let workDir = projectDir;
+      if (useWorktree) {
+        const wtRun = createWorktree(projectDir, started.runId);
+        workDir = wtRun.worktreePath;
+      }
+
+      const taskDir = join(workDir, ".pipeline");
+      if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
+      const taskFilePath = join(taskDir, "worker-task-" + started.runId + ".json");
+      writeFileSync(
+        taskFilePath,
+        JSON.stringify({ runId: started.runId, feature: safeFeature, pipelineType, createdAt: new Date().toISOString() }, null, 2) + "\n",
+        "utf-8",
+      );
+
+      const workerScriptPath = join(dirname(fileURLToPath(import.meta.url)), 'forge-worker.mjs');
+      const workerName = "worker-" + started.runId;
+      const logFile = workerLogPath(projectDir, started.runId);
+      const logDir = join(projectDir, ".pipeline", "worker-logs");
+      if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+      const logFd = openSync(logFile, "a");
+      let child;
+      try {
+        child = nodeSpawn(process.execPath, [workerScriptPath], {
+          cwd: workDir,
+          detached: process.platform !== "win32",
+          windowsHide: true,
+          stdio: ["ignore", logFd, logFd],
+        });
+        const pidDir = join(projectDir, ".pipeline", "worker-pids");
+        mkdirSync(pidDir, { recursive: true });
+        const pidFile = join(pidDir, started.runId + ".json");
+        writeJsonSafe(pidFile, { runId: started.runId, pid: child.pid, startedAt: new Date().toISOString() });
+        child.on("error", (err) => {
+          console.error("[forge_create_run] worker spawn failed: " + err.message);
+          try { unlinkSync(taskFilePath); } catch (_) {}
+          try { unlinkSync(pidFile); } catch (_) {}
+          // Mark run as failed so conductor can see the spawn failure
+          try {
+            const runFilePath = join(projectDir, ".pipeline", "runs", started.runId, "run.json");
+            const raw = readFileSync(runFilePath, "utf-8");
+            const runData = JSON.parse(raw);
+            if (runData.status === "running") {
+              runData.status = "failed";
+              runData.failureReason = "worker spawn error: " + err.message;
+              runData.updatedAt = new Date().toISOString();
+              writeJsonSafe(runFilePath, runData);
+            }
+          } catch (updateErr) {
+            console.error("[forge_create_run] error handler failed to update run status: " + updateErr.message);
+          }
+        });
+        child.on("exit", (code) => {
+          try { closeSync(logFd); } catch (_) {}
+          try { unlinkSync(pidFile); } catch (_) {}
+          try {
+            const runFilePath = join(projectDir, ".pipeline", "runs", started.runId, "run.json");
+            const raw = readFileSync(runFilePath, "utf-8");
+            const runData = JSON.parse(raw);
+            if (runData.status === "running") {
+              runData.status = "failed";
+              runData.failureReason = "worker process exited with code " + code;
+              runData.updatedAt = new Date().toISOString();
+              writeJsonSafe(runFilePath, runData);
+            }
+          } catch (exitErr) {
+            console.error("[forge_create_run] exit handler failed to update run status: " + exitErr.message);
+          }
+        });
+        child.unref();
+      } catch (spawnErr) {
+        try { closeSync(logFd); } catch (_) {}
+        throw spawnErr;
+      }
+
+      return textResult({
+        ...started,
+        workerSpawned: true,
+        workerName,
+        workDir,
+        useWorktree,
+        logFile,
+        message: "Worker spawned headlessly: " + safeFeature,
+      });
     } catch (err) {
       return errorResult("forge_create_run failed: " + err.message);
     }
@@ -1578,25 +1935,21 @@ server.registerTool(
   "forge_list_runs",
   {
     title: "FORGE List Runs",
-    description: "Lists runs from the index, optionally filtered and field-projected. Use `filter` for the newer/ergonomic path with array-aware status/pipelineType/mode matching; legacy flat `status`/`pipelineType` fields remain for backward compatibility but are superseded when `filter` is present. Use `fields` to slim each item to a subset of top-level keys; requesting a key not on the lightweight index entry triggers a full hydration via getRun.",
+    description: "Lists runs from the index, optionally filtered and field-projected. Use `filter` for the newer/ergonomic path with array-aware status/pipelineType matching; legacy flat `status`/`pipelineType` fields remain for backward compatibility but are superseded when `filter` is present. Use `fields` to slim each item to a subset of top-level keys; requesting a key not on the lightweight index entry triggers a full hydration via getRun.",
     inputSchema: z.object({
       status: z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]).optional().describe("Filter by run status (legacy — prefer `filter.status`, which accepts arrays). Ignored when `filter` is present."),
-      pipelineType: z.enum(["plan", "implement", "apply", "debug", "refactor"]).optional().describe("Filter by pipeline type (legacy — prefer `filter.pipelineType`, which accepts arrays). Ignored when `filter` is present."),
+      pipelineType: z.string().optional().describe("Filter by pipeline type (legacy — prefer `filter.pipelineType`, which accepts arrays). Ignored when `filter` is present."),
       filter: z.object({
         status: z.union([
           z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]),
           z.array(z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]))
         ]).optional().describe("Match status — single value or any-of array."),
         pipelineType: z.union([
-          z.enum(["plan", "implement", "apply", "debug", "refactor"]),
-          z.array(z.enum(["plan", "implement", "apply", "debug", "refactor"]))
+          z.string(),
+          z.array(z.string())
         ]).optional().describe("Match pipeline type — single value or any-of array."),
-        mode: z.union([
-          z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]),
-          z.array(z.enum(["SPRINT", "LEAN", "STANDARD", "FULL"]))
-        ]).optional().describe("Match pipeline mode — single value or any-of array. NOTE: mode is not on lightweight index entries, so this filter forces hydration of each candidate via getRun.")
-      }).strict().optional().describe("Structured filter object. Supersedes legacy `status`/`pipelineType` when present. Applies `status` → `pipelineType` → `mode`, AND-combined."),
-      fields: z.array(z.string()).optional().describe("Top-level keys to include per returned run. Omit for full objects (index-entry shape by default; full hydrated shape when `filter.mode` is used or when `fields` requests a non-index key). Keys not present on an item are silently dropped for that item.")
+      }).strict().optional().describe("Structured filter object. Supersedes legacy `status`/`pipelineType` when present. Applies `status` → `pipelineType`, AND-combined."),
+      fields: z.array(z.string()).optional().describe("Top-level keys to include per returned run. Omit for full objects (index-entry shape by default; full hydrated shape when `fields` requests a non-index key). Keys not present on an item are silently dropped for that item.")
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   },
@@ -1612,7 +1965,7 @@ server.registerTool(
       let entries;
 
       if (filter) {
-        // New path — pull all entries, then apply status → pipelineType → mode in order.
+        // New path — pull all entries, then apply status → pipelineType in order.
         // Supersedes legacy flat status/pipelineType so users on the new path get
         // predictable behaviour with full array-matching support.
         entries = listRuns(projectDir, {});
@@ -1624,24 +1977,6 @@ server.registerTool(
         if (filter.pipelineType !== undefined) {
           const allowed = Array.isArray(filter.pipelineType) ? filter.pipelineType : [filter.pipelineType];
           entries = entries.filter(e => allowed.includes(e.pipelineType));
-        }
-        if (filter.mode !== undefined) {
-          // Mode lives on the full Run schema, not the lightweight index entry,
-          // so we must hydrate every remaining candidate to evaluate it.
-          // Hydrated runs replace the index-entry shape from this point on.
-          const allowed = Array.isArray(filter.mode) ? filter.mode : [filter.mode];
-          const hydrated = [];
-          for (const e of entries) {
-            try {
-              const full = getRun(projectDir, e.runId);
-              if (full && allowed.includes(full.mode)) {
-                hydrated.push(full);
-              }
-            } catch (_) {
-              // Skip unhydratable runs (corrupt run.json, missing dir, etc.).
-            }
-          }
-          entries = hydrated;
         }
       } else {
         // Legacy path — preserved verbatim for backward compatibility.
@@ -1655,7 +1990,7 @@ server.registerTool(
         const needsHydration = fields.some(k => !INDEX_KEYS.has(k));
         if (needsHydration) {
           entries = entries.map(e => {
-            // Already-hydrated entries from filter.mode path will have non-index keys.
+            // Already-hydrated entries (e.g. from a prior pass) will have non-index keys.
             const alreadyHydrated = Object.keys(e).some(k => !INDEX_KEYS.has(k));
             if (alreadyHydrated) return e;
             try {
@@ -1699,17 +2034,41 @@ server.registerTool(
     inputSchema: z.object({
       runId: runIdSchema.describe("Run ID to update"),
       status: z.enum(["created", "running", "gate-pending", "completed", "failed", "discarded"]).optional().describe("New status"),
-      currentStep: z.string().optional().describe("Current pipeline step (e.g. 'planner', 'gate1')"),
       worktreePath: z.string().optional().describe("Worktree path if assigned"),
       branchName: z.string().optional().describe("Branch name if assigned"),
       gateState: z.object({
-        gate: z.enum(["gate1", "gate2"]),
+        gate: z.enum(["gate1", "gate2", "commit"]),
         status: z.enum(["pending", "approved", "discarded"]),
         feature: z.string(),
         createdAt: z.string(),
         approvedAt: z.string().nullable().default(null),
       }).optional().describe("Gate state update"),
       acknowledged: z.boolean().optional().describe("Mark research run as acknowledged (findings discussed). Clears the observer card."),
+      failureReason: z.string().optional().describe("Why the run failed — set when status is 'failed'"),
+      stages: z.record(z.string(), z.object({
+        agents: z.array(z.enum([
+          'planner', 'researcher', 'gotcha-checker', 'coder', 'coder-scout',
+          'debug', 'refactor', 'completeness-checker', 'implementation-architect',
+          'documenter', 'reviewer-safety', 'reviewer-boundary', 'reviewer-logic',
+          'reviewer-style', 'reviewer-performance',
+        ])).default([]),
+        status: z.enum(['pending', 'running', 'completed', 'skipped']).default('pending'),
+      })).optional().describe("Stage entries to merge into the run's stages map — existing keys are preserved; new keys are added; provided keys are overwritten; completed/skipped stages cannot have status rolled back"),
+      agents: z.array(z.object({
+        agentId: z.string(),
+        agentType: z.string().nullable().default(null),
+        startedAt: z.number(),
+        completedAt: z.number().nullable().default(null),
+        durationMs: z.number().nullable().default(null),
+        outcome: z.string().nullable().default(null),
+      })).optional().describe("Agent dispatch records to merge into the run's agents array — entries are merged by agentId (upsert: insert if absent, last-write-wins on collision); existing records whose agentId is not in the payload are preserved; a null/absent stored agents array is initialised from this value"),
+      phases: z.array(z.object({
+        index: z.number().int().describe("Phase index (0-based)"),
+        label: z.string().describe("Phase label from plan heading"),
+        status: z.enum(["pending", "running", "completed", "skipped", "blocked"]).describe("Phase execution status"),
+        committedAt: z.string().nullable().default(null).describe("ISO timestamp of worktree commit, or null"),
+        reviewerVerdict: z.enum(["approved", "revise", "blocked"]).nullable().default(null).describe("Final reviewer verdict for this phase"),
+      })).optional().describe("Phase entries to merge into the run phases array — entries are merged by index field (last-write-wins on collision); null stored phases are initialised from this value"),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   },
@@ -1719,15 +2078,81 @@ server.registerTool(
       // Strip undefined values so the core function only sees actual changes
       const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([_, v]) => v !== undefined));
 
+      // Stages merge: spread existing stages first so incoming entries overlay
+      // without discarding unrelated keys. A null existing stages is treated as
+      // an empty object — the first patch initialises the map.
+      // Forward-only guard: status may not roll back from completed/skipped.
+      if (cleanPatch.stages !== undefined) {
+        const existingRun = getRun(projectDir, runId);
+        const existingStages = (existingRun && existingRun.stages) ? existingRun.stages : {};
+        const terminalStatuses = new Set(['completed', 'skipped']);
+        const mergedStages = { ...existingStages };
+        for (const [key, incoming] of Object.entries(cleanPatch.stages)) {
+          const existing = existingStages[key];
+          if (existing && terminalStatuses.has(existing.status) && incoming.status && incoming.status !== existing.status) {
+            console.error(`[forge_update_run] WARN: backward stage transition blocked for "${key}": ${existing.status} -> ${incoming.status}`);
+            // Merge agents but preserve terminal status
+            mergedStages[key] = { ...existing, ...incoming, status: existing.status };
+          } else {
+            mergedStages[key] = { ...existing, ...incoming };
+          }
+        }
+        cleanPatch.stages = mergedStages;
+      }
+
+      // Phases merge: incoming phase entries are merged by index field.
+      // last-write-wins on index collision. A null stored phases array is
+      // initialised from the incoming value. No forward-only guard — phases
+      // can transition freely during the per-phase execution loop.
+      if (cleanPatch.phases !== undefined) {
+        const existingRunForPhases = getRun(projectDir, runId);
+        const existingPhases = (existingRunForPhases && existingRunForPhases.phases) ? existingRunForPhases.phases : [];
+        // Build a map from index -> entry for existing entries
+        const phaseMap = new Map();
+        for (const entry of existingPhases) {
+          phaseMap.set(entry.index, entry);
+        }
+        // Merge incoming entries by index (last-write-wins)
+        for (const entry of cleanPatch.phases) {
+          const existing = phaseMap.get(entry.index);
+          phaseMap.set(entry.index, existing ? { ...existing, ...entry } : entry);
+        }
+        // Reconstruct sorted array from map
+        cleanPatch.phases = Array.from(phaseMap.values()).sort((a, b) => a.index - b.index);
+      }
+
+      // Agents merge: incoming agent records are merged by agentId (upsert).
+      // Last-write-wins on agentId collision. A null/absent existing agents
+      // array is initialised from the incoming value. Records with agentIds
+      // not in the incoming payload are preserved unchanged. Insertion order
+      // is preserved: existing records keep their position; new records
+      // append. Mirrors the stages and phases merge patterns above.
+      if (cleanPatch.agents !== undefined) {
+        const existingRunForAgents = getRun(projectDir, runId);
+        const existingAgents = (existingRunForAgents && Array.isArray(existingRunForAgents.agents)) ? existingRunForAgents.agents : [];
+        const agentMap = new Map();
+        for (const entry of existingAgents) {
+          agentMap.set(entry.agentId, entry);
+        }
+        for (const entry of cleanPatch.agents) {
+          const existing = agentMap.get(entry.agentId);
+          agentMap.set(entry.agentId, existing ? { ...existing, ...entry } : entry);
+        }
+        cleanPatch.agents = Array.from(agentMap.values());
+      }
+
       // Gate-pending status guard: block transitions out of gate-pending to
       // completed/running without a gate approval token. The model cannot skip
       // gates by calling forge_update_run({ status: 'completed' }) directly.
-      // forge_set_gate (which has its own token check) calls updateRun() core
-      // function directly, so this guard does not interfere with legitimate approvals.
+      // forge_set_gate calls updateRun() core function directly, bypassing this
+      // handler, so this guard does not interfere with legitimate approvals.
+      // Exception: if the gate is already approved, user consent is proven —
+      // allow the transition to completed (commit+merge follow-up).
       if (cleanPatch.status && cleanPatch.status !== 'failed' && cleanPatch.status !== 'discarded') {
         const existing = getRun(projectDir, runId);
         if (existing && existing.status === 'gate-pending') {
-          if (!hasGateApprovalToken(projectDir)) {
+          const gateAlreadyApproved = existing.gateState && existing.gateState.status === 'approved';
+          if (!hasGateApprovalToken(projectDir) && !gateAlreadyApproved) {
             return errorResult(
               "FORGE: Cannot transition run from gate-pending to '" + cleanPatch.status +
               "' without user approval. Use /forge:approve or /forge:discard."
@@ -1759,16 +2184,24 @@ server.registerTool(
         }
       }
 
+      // Auto-null gateState when transitioning to a terminal status.
+      // Prevents stale "Action needed" cards in the observer.
+      const TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
+      if (cleanPatch.status && TERMINAL_STATUSES.has(cleanPatch.status)) {
+        cleanPatch.gateState = null;
+      }
+
       const run = updateRun(projectDir, runId, cleanPatch);
       const mainDir = resolveMainProjectDir();
 
-      // Write completion signal when a research run finishes
-      if (cleanPatch.status === "completed" && run.pipelineType === "research") {
+      // Write completion signal when a research or ideate run finishes
+      const REVIEWABLE_TYPES = new Set(["research", "ideate"]);
+      if (cleanPatch.status === "completed" && REVIEWABLE_TYPES.has(run.pipelineType)) {
         const doneDir = join(mainDir, ".pipeline", "worker-done");
         if (!existsSync(doneDir)) mkdirSync(doneDir, { recursive: true });
         const doneFile = join(doneDir, runId + ".json");
         const signal = {
-          runId, feature: run.feature || "", pipelineType: "research",
+          runId, feature: run.feature || "", pipelineType: run.pipelineType,
           completedAt: new Date().toISOString(),
         };
         writeFileSync(doneFile, JSON.stringify(signal, null, 2) + "\n", "utf8");
@@ -1780,9 +2213,154 @@ server.registerTool(
         try { unlinkSync(doneFile); } catch (_) {}
       }
 
+      // Clean up heartbeat file when run reaches a terminal status.
+      if (cleanPatch.status && TERMINAL_STATUSES.has(cleanPatch.status)) {
+        const hbFile = join(mainDir, ".pipeline", "heartbeats", runId + ".json");
+        try { unlinkSync(hbFile); } catch (_) {}
+      }
+
       return textResult(run);
     } catch (err) {
       return errorResult("forge_update_run failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_classify_risk -----------------------------------------------
+
+// In-process cache of classification results — keyed by classificationId.
+// Survives the lifetime of the MCP server process; not persisted to disk.
+// No TTL — entries are small (< 1 KB each). Cap at 500 entries: when the limit
+// is reached the oldest entry is evicted before inserting the new one. This
+// prevents unbounded growth in long-running MCP server processes.
+const classificationCache = new Map();
+
+// Risk classification constants.
+// Source of truth: scripts/lean-risk-classify.mjs. Inlined per plan decision (Wave 3 consolidates).
+const RISK_PATH_PATTERNS = [
+  { pattern: /child_process|spawn|exec/i, rule: 'shell' },
+  { pattern: /\.env|credentials|secrets?|auth/i, rule: 'auth' },
+  { pattern: /hooks\//i, rule: 'hook' },
+  { pattern: /mcp\//i, rule: 'mcp' },
+  { pattern: /\/scripts\//i, rule: 'script' },
+  { pattern: /schema|contract/i, rule: 'schema' },
+  { pattern: /worktree|merge|apply/i, rule: 'merge' },
+  { pattern: /server\.|router\.|fetch|http/i, rule: 'network' },
+];
+
+const RISK_CONTENT_PATTERNS = [
+  { pattern: /child_process|execFile|spawnSync/i, rule: 'shell' },
+  { pattern: /writeFile|unlink|rmSync|rmdir/i, rule: 'fs-write' },
+  { pattern: /password|secret|token|apiKey|credentials/i, rule: 'auth' },
+  { pattern: /process\.env/i, rule: 'env' },
+  { pattern: /fetch\(|http\.request|axios/i, rule: 'network' },
+  { pattern: /registerTool|server\.tool/i, rule: 'mcp' },
+  { pattern: /z\.object|z\.string|RunIndex|RunIndexEntry/i, rule: 'schema' },
+  { pattern: /worktreePath|branchName|merge\(/i, rule: 'merge' },
+];
+
+const RULE_TO_REVIEWERS = {
+  shell:     ['reviewer-safety'],
+  'fs-write': ['reviewer-safety'],
+  auth:      ['reviewer-safety'],
+  env:       ['reviewer-safety'],
+  hook:      ['reviewer-safety', 'reviewer-boundary'],
+  mcp:       ['reviewer-safety', 'reviewer-boundary'],
+  script:    ['reviewer-safety', 'reviewer-boundary'],
+  schema:    ['reviewer-boundary'],
+  merge:     ['reviewer-safety', 'reviewer-boundary'],
+  network:   ['reviewer-safety', 'reviewer-boundary'],
+};
+
+server.registerTool(
+  'forge_classify_risk',
+  {
+    title: 'FORGE Classify Risk',
+    description: 'Classifies the risk surface of a planned change. Returns a classificationId, advisories, suggested reviewers, and suggested agents. Use before forge_create_run to pre-populate classificationId and reviewerOverrides.',
+    inputSchema: z.object({
+      feature: z.string().describe('Feature name or short description of the change'),
+      filePaths: z.array(z.string()).describe('List of files that will be created or modified'),
+      content: z.string().optional().describe('Optional handoff or patch content to scan for risk patterns'),
+      forceReview: z.boolean().optional().default(false).describe('Force high risk level and all 5 reviewers regardless of pattern matches'),
+    }),
+    annotations: { readOnlyHint: true },
+  },
+  async ({ feature, filePaths, content, forceReview }) => {
+    try {
+      const classificationId = 'cls-' + randomBytes(3).toString('hex');
+
+      if (forceReview) {
+        const result = {
+          classificationId,
+          riskLevel: 'high',
+          planStageReview: true,
+          advisories: ['forceReview: all reviewers required'],
+          reviewers: ['reviewer-safety', 'reviewer-boundary', 'reviewer-logic', 'reviewer-style', 'reviewer-performance'],
+          suggestedAgents: ['completeness-checker', 'implementation-architect'],
+        };
+        if (classificationCache.size >= 500) classificationCache.delete(classificationCache.keys().next().value);
+        classificationCache.set(classificationId, result);
+        return textResult(result);
+      }
+
+      const triggeredRules = new Set();
+      const advisories = [];
+
+      // Scan file paths
+      for (const fp of filePaths) {
+        for (const { pattern, rule } of RISK_PATH_PATTERNS) {
+          if (pattern.test(fp)) {
+            triggeredRules.add(rule);
+            advisories.push('path:' + rule + ' (' + fp + ')');
+          }
+        }
+      }
+
+      // Scan content if provided
+      if (content) {
+        for (const { pattern, rule } of RISK_CONTENT_PATTERNS) {
+          if (pattern.test(content)) {
+            triggeredRules.add(rule);
+            advisories.push('content:' + rule);
+          }
+        }
+      }
+
+      // Collect unique reviewers from triggered rules
+      const reviewerSet = new Set();
+      for (const rule of triggeredRules) {
+        const mapped = RULE_TO_REVIEWERS[rule];
+        if (mapped) {
+          for (const r of mapped) reviewerSet.add(r);
+        }
+      }
+
+      // Derive risk level: high if safety or boundary triggered, medium if any rule, low otherwise
+      let riskLevel = 'low';
+      if (reviewerSet.has('reviewer-safety') || reviewerSet.has('reviewer-boundary')) {
+        riskLevel = 'high';
+      } else if (triggeredRules.size > 0) {
+        riskLevel = 'medium';
+      }
+
+      const reviewers = Array.from(reviewerSet);
+      const suggestedAgents = [];
+      if (filePaths.length > 5) suggestedAgents.push('completeness-checker');
+      if (riskLevel === 'high') suggestedAgents.push('implementation-architect');
+
+      const result = {
+        classificationId,
+        riskLevel,
+        planStageReview: riskLevel === 'high',
+        advisories,
+        reviewers,
+        suggestedAgents,
+      };
+      if (classificationCache.size >= 500) classificationCache.delete(classificationCache.keys().next().value);
+      classificationCache.set(classificationId, result);
+      return textResult(result);
+    } catch (err) {
+      return errorResult('forge_classify_risk failed: ' + err.message);
     }
   },
 );
@@ -1844,7 +2422,7 @@ server.registerTool(
 // -- Tool: forge_resume_run --------------------------------------------------
 //
 // Restores steering context for a paused or in-progress run. Does NOT mutate
-// the run's status, currentStep, gateState, or agents — resume only updates
+// the run's status, gateState, or agents — resume only updates
 // run-active.json so the current Claude conversation is pointed at this run,
 // and returns the structured state the future /forge:resume skill needs to
 // render its output. Refuses cleanly on terminal status, unknown runId, wrong
@@ -1900,16 +2478,6 @@ server.registerTool(
         );
       }
 
-      // Precondition 5: mode floor — reject resume if the run's mode would be
-      // blocked by validateModeForRisk (same check as forge_create_run).
-      const modeError = validateModeForRisk(run.pipelineType, run.mode, run.feature);
-      if (modeError) {
-        return errorResult(
-          modeError + " Run " + normalizedId + " was created with mode " + run.mode +
-          " which is now below the enforcement floor. Discard this run and create a new one with LEAN or higher."
-        );
-      }
-
       // Report-only recovery primitive: read the previous run-active.json's
       // `currentUnit` BEFORE overwriting. If it is non-null, the prior session
       // ended while a FORGE agent was in flight (SubagentStop never fired).
@@ -1948,17 +2516,19 @@ server.registerTool(
       }
 
       // Success effect: overwrite run-active.json steering pointer.
-      // We do NOT mutate run.status, currentStep, gateState, or agents — those are
+      // We do NOT mutate run.status, gateState, or agents — those are
       // owned by the pipeline skills; resume only restores the per-session pointer.
       const runActiveData = {
         startedAt: Date.now(),
         runId: run.runId,
         pipelineType: run.pipelineType,
-        mode: run.mode,
         feature: run.feature,
         agents: [],
       };
       if (run.worktreePath) runActiveData.worktreePath = run.worktreePath;
+      if (run.stages != null) {
+        runActiveData.stages = run.stages;
+      }
 
       try {
         writeJsonSafe(runActivePath, runActiveData);
@@ -1968,15 +2538,20 @@ server.registerTool(
         );
       }
 
+      // Write per-run active file alongside singleton (AC-4).
+      // Non-fatal: stale-unit suppression logic above is unchanged regardless.
+      try {
+        writeRunActive(projectDir, run.runId, runActiveData);
+      } catch (perRunErr) {
+        console.error("[forge_resume_run] per-run active write failed (non-fatal): " + perRunErr.message);
+      }
+
       // Return structured fields for the future /forge:resume skill to render.
       return textResult({
         runId: run.runId,
         pipelineType: run.pipelineType,
-        mode: run.mode,
         feature: run.feature,
         status: run.status,
-        currentStep: run.currentStep || null,
-        stageLabel: stageLabelFor(run.pipelineType, run.currentStep),
         gateState: run.gateState || null,
         worktreePath: run.worktreePath || null,
         branchName: run.branchName || null,
@@ -1984,6 +2559,213 @@ server.registerTool(
       });
     } catch (err) {
       return errorResult("forge_resume_run failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_advance_stage -----------------------------------------------
+//
+// Advances a run to a named pipeline stage: validates the run is non-terminal,
+// verifies no other stage is currently running, marks the target stage as
+// "running", then spawns a headless forge-worker.mjs in the run's working dir.
+// Models on forge_create_run (spawn block) and forge_resume_run (validation).
+
+server.registerTool(
+  "forge_advance_stage",
+  {
+    title: "FORGE Advance Stage",
+    description: "Advances a run to the named pipeline stage. Validates the run is non-terminal and no other stage is currently running, marks the target stage as 'running', then spawns a headless forge-worker.mjs worker.",
+    inputSchema: z.object({
+      runId: runIdSchema.describe("Run ID (e.g. r-a1b2c3d4)"),
+      targetStage: z.string().min(1).describe("Stage name to advance to (e.g. 'implement', 'review')"),
+      agents: z.array(z.string()).optional().describe("Agent list to store in stages[targetStage].agents. When omitted, defaults to []."),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ runId, targetStage, agents }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const check = requirePipeline(projectDir);
+      if (!check.ok) return check.result;
+
+      // Validate run exists
+      const run = getRun(projectDir, runId);
+      if (!run) {
+        return errorResult("Run " + runId + " not found in registry");
+      }
+
+      // Validate run is non-terminal
+      const TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
+      if (TERMINAL_STATUSES.has(run.status)) {
+        return errorResult(
+          "Run " + runId + " is " + run.status + "; cannot advance a terminal run",
+        );
+      }
+
+      // Validate no other stage is currently running
+      const stages = run.stages || {};
+      const runningStage = Object.entries(stages).find(
+        ([name, s]) => s.status === "running" && name !== targetStage,
+      );
+      if (runningStage) {
+        return errorResult(
+          "Stage `" + runningStage[0] + "` is still running — complete it before advancing",
+        );
+      }
+
+      // Mark target stage as running
+      const stagesPatch = {
+        ...stages,
+        [targetStage]: { status: "running", agents: Array.isArray(agents) ? agents : [] },
+      };
+      const updatedRun = updateRun(projectDir, runId, { stages: stagesPatch, status: "running" });
+
+      // Refresh run-active.json stages so subagent hooks see the updated allowlist.
+      // Note: forge_update_run does not touch run-active.json by design; only
+      // forge_create_run, forge_resume_run, and forge_advance_stage do. If the
+      // conductor calls forge_update_run({ stages: ... }) mid-run to add a reviewer
+      // agent, run-active.json won't reflect it until next resume — the allowlist
+      // warning may fire spuriously for that agent. Acceptable limitation.
+      // Fail-open: if run-active.json is absent or belongs to a different run, skip.
+      const runActivePath = join(projectDir, ".pipeline", "run-active.json");
+      try {
+        const rawActive = readFileSync(runActivePath, "utf8");
+        const activeData = JSON.parse(rawActive);
+        if (activeData && activeData.runId === runId) {
+          activeData.stages = updatedRun.stages ?? null;
+          writeJsonSafe(runActivePath, activeData);
+        }
+      } catch (_) {
+        // run-active.json absent or belongs to a different run — skip silently
+      }
+
+      // Update per-run active file stages alongside singleton (AC-5).
+      // Fail-open: if per-run file is absent, skip silently.
+      try {
+        const perRunActivePath = getRunActivePath(projectDir, runId);
+        const rawPerRun = readFileSync(perRunActivePath, "utf8");
+        const perRunData = JSON.parse(rawPerRun);
+        if (perRunData && typeof perRunData === 'object') {
+          perRunData.stages = updatedRun.stages ?? null;
+          writeRunActive(projectDir, runId, perRunData);
+        }
+      } catch (_) {
+        // Per-run active file absent or unreadable — skip silently (fail-open)
+      }
+
+      // Guard: prevent recursive spawning inside a worker process. Env-var check
+      // (set by mcp/forge-worker.mjs when spawning the worker's MCP server) is
+      // race-free vs. the previous file-system check; see forge_create_run for
+      // the full rationale.
+      if (process.env.FORGE_WORKER_SESSION === '1') {
+        console.error("[forge_advance_stage] FORGE_WORKER_SESSION is set — skipping spawn (already inside a worker)");
+        return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
+      }
+
+      // Sweep stale PID files before collision guard so zombie "running" entries
+      // do not falsely block this advance path.
+      const mainProjectDirAdv = resolveMainProjectDir();
+      const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
+      if (sweepResultAdv.swept > 0) {
+        console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
+      }
+
+      // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
+      //
+      // At this point `run` has its final worktreePath/branchName. Apply the
+      // predicate against other running runs:
+      //   (a.worktreePath && a.worktreePath === b.worktreePath) ||
+      //   (a.branchName   && a.branchName   === b.branchName)   ||
+      //   (a.worktreePath === null && b.worktreePath === null && a.projectRoot === b.projectRoot)
+      const runningForCollision = listRuns(projectDir, { status: "running" }).filter(r => r.runId !== runId);
+      const collidingRuns = runningForCollision.filter((b) => {
+        if (run.worktreePath && run.worktreePath === b.worktreePath) return true;
+        if (run.branchName && run.branchName === b.branchName) return true;
+        if (run.worktreePath == null && b.worktreePath == null && run.projectRoot === b.projectRoot) return true;
+        return false;
+      });
+      if (collidingRuns.length > 0) {
+        const conflicting = collidingRuns.map(r => r.runId).join(", ");
+        return errorResult(
+          "Worker collision blocked: run(s) " + conflicting + " conflict with this run's worktree, branch, or main-root slot. Wait for them to finish or mark them failed/discarded before advancing.",
+        );
+      }
+
+      // Write worker-task-<runId>.json in the run's working directory
+      const workDir = run.worktreePath || projectDir;
+      const taskDir = join(workDir, ".pipeline");
+      if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
+      const safeFeature = sanitizeFeatureName(run.feature || "");
+      const taskFilePath = join(taskDir, "worker-task-" + runId + ".json");
+      writeFileSync(
+        taskFilePath,
+        JSON.stringify(
+          { runId, feature: safeFeature, pipelineType: targetStage, originalPipelineType: run.pipelineType, targetStage, createdAt: new Date().toISOString() },
+          null,
+          2,
+        ) + "\n",
+        "utf-8",
+      );
+
+      // Spawn forge-worker.mjs headlessly (same pattern as forge_create_run)
+      const workerScriptPath = join(dirname(fileURLToPath(import.meta.url)), "forge-worker.mjs");
+      const logFile = workerLogPath(projectDir, runId);
+      const logDir = join(projectDir, ".pipeline", "worker-logs");
+      if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+      const logFd = openSync(logFile, "a");
+      let child;
+      try {
+        child = nodeSpawn(process.execPath, [workerScriptPath], {
+          cwd: workDir,
+          detached: process.platform !== "win32",
+          windowsHide: true,
+          stdio: ["ignore", logFd, logFd],
+        });
+        child.on("error", (err) => {
+          console.error("[forge_advance_stage] worker spawn failed: " + err.message);
+          try { unlinkSync(taskFilePath); } catch (_) {}
+          // Mark run as failed so conductor can see the spawn failure
+          try {
+            const runFilePath = join(projectDir, ".pipeline", "runs", runId, "run.json");
+            const raw = readFileSync(runFilePath, "utf-8");
+            const runData = JSON.parse(raw);
+            if (runData.status === "running") {
+              runData.status = "failed";
+              runData.failureReason = "worker spawn error (advance_stage): " + err.message;
+              runData.updatedAt = new Date().toISOString();
+              writeJsonSafe(runFilePath, runData);
+            }
+          } catch (updateErr) {
+            console.error("[forge_advance_stage] error handler failed to update run status: " + updateErr.message);
+          }
+        });
+        child.on("exit", (code) => {
+          try { closeSync(logFd); } catch (_) {}
+          if (code !== 0 && code !== null) {
+            try {
+              const runFilePath = join(projectDir, ".pipeline", "runs", runId, "run.json");
+              const raw = readFileSync(runFilePath, "utf-8");
+              const runData = JSON.parse(raw);
+              if (runData.status === "running") {
+                runData.status = "failed";
+                runData.failureReason = "worker process exited with code " + code + " (advance_stage)";
+                runData.updatedAt = new Date().toISOString();
+                writeJsonSafe(runFilePath, runData);
+              }
+            } catch (exitErr) {
+              console.error("[forge_advance_stage] exit handler failed to update run status: " + exitErr.message);
+            }
+          }
+        });
+        child.unref();
+      } catch (spawnErr) {
+        try { closeSync(logFd); } catch (_) {}
+        throw spawnErr;
+      }
+
+      return textResult({ runId, targetStage, workerSpawned: true, logFile });
+    } catch (err) {
+      return errorResult("forge_advance_stage failed: " + err.message);
     }
   },
 );
@@ -2013,9 +2795,330 @@ server.registerTool(
       const projectDir = resolveProjectDir();
       const check = requirePipeline(projectDir);
       if (!check.ok) return check.result;
-      return textResult(buildDashboardState(projectDir));
+      return textResult(await buildDashboardState(projectDir));
     } catch (err) {
       return errorResult("forge_dashboard_state failed: " + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_get_constraints --------------------------------------------
+
+server.registerTool(
+  'forge_get_constraints',
+  {
+    title: 'FORGE Get Constraints',
+    description:
+      'Search docs/gotchas/ for sections matching a keyword. Returns at most 5 matching h2/h3 sections (heading + body). Returns empty array when no matches. Use to look up project-specific gotchas and rules before writing code.',
+    inputSchema: z.object({
+      keyword: z.string().min(1).describe('Keyword to search for (case-insensitive) in section headings and bodies.'),
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ keyword }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const results = searchConstraints(projectDir, keyword);
+      return textResult(results);
+    } catch (err) {
+      return errorResult('forge_get_constraints failed: ' + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_get_patterns -----------------------------------------------
+
+server.registerTool(
+  'forge_get_patterns',
+  {
+    title: 'FORGE Get Patterns',
+    description:
+      'Search docs/solutions/index.json for past solution patterns matching a keyword and/or tags. Returns at most 5 matches with title, file path, and a summary (first text paragraph, ≤200 chars). At least one of keyword or tags must be provided.',
+    inputSchema: z
+      .object({
+        keyword: z.string().optional().describe('Keyword to match against entry titles and keywords (case-insensitive).'),
+        tags: z.array(z.string()).optional().describe('Tags to match against entry tags (any-of semantics).'),
+      })
+      .refine(
+        (v) => !!(v.keyword || (v.tags && v.tags.length > 0)),
+        { message: 'keyword or tags required' },
+      ),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ keyword, tags }) => {
+    try {
+      const projectDir = resolveProjectDir();
+      const results = searchPatterns(projectDir, keyword, tags);
+      return textResult(results);
+    } catch (err) {
+      return errorResult('forge_get_patterns failed: ' + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_add_learning -----------------------------------------------
+
+server.registerTool(
+  'forge_add_learning',
+  {
+    title: 'FORGE Add Learning',
+    description:
+      'Persist a new gotcha or solution to the knowledge store. For type "gotcha": appends a new section to docs/gotchas/GENERAL.md. For type "solution": writes a new .md file under docs/solutions/ and updates docs/solutions/index.json.',
+    inputSchema: z.object({
+      type: z.enum(['gotcha', 'solution']).describe('Learning type: "gotcha" appends to GENERAL.md; "solution" creates a new solution doc and updates index.'),
+      title: z.string().min(1).describe('Section heading for gotcha, or document title for solution.'),
+      content: z.string().min(1).describe('Body content. For gotcha: markdown prose. For solution: full document body (without frontmatter).'),
+      tags: z.array(z.string()).describe('Tags for indexing and future search.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ type, title, content, tags }) => {
+    try {
+      const projectDir = resolveProjectDir();
+
+      // Sanitize all user-supplied strings before any write
+      // title: strip newlines to prevent heading injection
+      const safeTitle = title.replace(/[\r\n]/g, ' ').trim();
+      // content: strip only control characters (preserve newlines for multi-paragraph)
+      // eslint-disable-next-line no-control-regex
+      const safeContent = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+      // tags: strip newlines from each item
+      const safeTags = Array.isArray(tags)
+        ? tags.map((t) => String(t).replace(/[\r\n]/g, ' ').trim())
+        : [];
+
+      if (type === 'gotcha') {
+        const generalMdPath = join(projectDir, 'docs', 'gotchas', 'GENERAL.md');
+        let existing = '';
+        try {
+          existing = readFileSync(generalMdPath, 'utf8');
+        } catch (err) {
+          return errorResult('forge_add_learning: failed to read GENERAL.md — ' + err.message);
+        }
+
+        const appendSection = `\n\n## ${safeTitle}\n\n${safeContent}\n`;
+        const updated = existing + appendSection;
+
+        const tmpPath = generalMdPath + '.tmp.' + process.pid;
+        try {
+          writeFileSync(tmpPath, updated, 'utf8');
+          renameSync(tmpPath, generalMdPath);
+        } catch (err) {
+          return errorResult('forge_add_learning: failed to write GENERAL.md — ' + err.message);
+        }
+
+        // Cross-write: also index as a solution doc so forge_get_patterns can find gotchas by keyword/tag
+        try {
+          appendSolutionDoc(projectDir, {
+            title: safeTitle,
+            content: safeContent,
+            tags: ['gotcha', ...safeTags],
+          });
+        } catch (_) {
+          // Non-fatal — GENERAL.md is the primary store
+        }
+
+        const lineCount = updated.split('\n').length;
+        const messages = [`Gotcha "${safeTitle}" appended to docs/gotchas/GENERAL.md and indexed in docs/solutions/.`];
+        if (lineCount > 200) {
+          messages.push(
+            `⚠ GENERAL.md is now ${lineCount} lines (threshold: 200). Consider promoting some gotchas to FORGE-REFERENCE.md.`,
+          );
+        }
+        return { content: [{ type: 'text', text: messages.join('\n') }] };
+      }
+
+      if (type === 'solution') {
+        let result;
+        try {
+          result = appendSolutionDoc(projectDir, {
+            title: safeTitle,
+            content: safeContent,
+            tags: safeTags,
+          });
+        } catch (err) {
+          // appendSolutionDoc throws when index update fails (orphaned doc)
+          return errorResult('forge_add_learning: ' + err.message);
+        }
+        return { content: [{ type: 'text', text: `Solution "${safeTitle}" written to ${result.file} and index updated.` }] };
+      }
+
+      // Should never reach here — Zod enum guards type
+      return errorResult('forge_add_learning: unknown type');
+    } catch (err) {
+      return errorResult('forge_add_learning failed: ' + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_kill_worker -------------------------------------------------
+
+server.registerTool(
+  'forge_kill_worker',
+  {
+    title: 'FORGE Kill Worker',
+    description:
+      'Request graceful shutdown of a running worker. Writes a poison-pill sentinel file that the worker detects within 1 s and uses to stop itself, then optionally sends SIGTERM if the PID sidecar exists. The worker updates run status to "discarded" on pill detection — do not update run status here.',
+    inputSchema: z.object({
+      runId: runIdSchema.describe('Run ID of the worker to kill.'),
+    }),
+    annotations: { destructiveHint: true, idempotentHint: true },
+  },
+  async ({ runId }) => {
+    try {
+      const projectDir = resolveProjectDir();
+
+      // (a) Write poison-pill sentinel file
+      const pillPath = killPillPath(projectDir, runId);
+      mkdirSync(join(projectDir, '.pipeline', 'worker-kill'), { recursive: true });
+      // Overwrite silently if it already exists (idempotent)
+      writeFileSync(pillPath, '', 'utf-8');
+
+      // (b) Send SIGTERM if PID sidecar exists and contains a valid numeric PID
+      let pidSignaled = false;
+      let pid = null;
+      const pidFile = join(projectDir, '.pipeline', 'worker-pids', runId + '.json');
+      if (existsSync(pidFile)) {
+        try {
+          const pidData = JSON.parse(readFileSync(pidFile, 'utf-8'));
+          if (typeof pidData.pid === 'number' && Number.isFinite(pidData.pid)) {
+            pid = pidData.pid;
+            try {
+              process.kill(pid, 'SIGTERM');
+              pidSignaled = true;
+            } catch (killErr) {
+              // fail-open: process may have already exited; log but do not throw
+              console.error('[forge_kill_worker] SIGTERM failed for pid ' + pid + ': ' + killErr.message);
+            }
+          }
+        } catch (readErr) {
+          // fail-open: PID sidecar unreadable — pill file is sufficient
+          console.error('[forge_kill_worker] failed to read PID sidecar: ' + readErr.message);
+        }
+      }
+
+      return textResult({ ok: true, poisonPillWritten: true, pidSignaled, pid });
+    } catch (err) {
+      return errorResult('forge_kill_worker failed: ' + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_read_criteria -----------------------------------------------
+
+server.registerTool(
+  'forge_read_criteria',
+  {
+    title: 'FORGE Read Criteria',
+    description: 'Returns the per-criterion acceptance tracking data for a run. Returns an empty criteria array if the file does not exist yet.',
+    inputSchema: z.object({
+      runId: runIdSchema.describe('Run ID (e.g. r-a1b2c3d4)'),
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ runId }) => {
+    try {
+      if (!runId) return errorResult('runId is required');
+      const projectDir = resolveProjectDir();
+      const runDirectory = join(projectDir, '.pipeline', 'runs', runId);
+      if (!existsSync(runDirectory)) {
+        return errorResult('Run not found: ' + runId);
+      }
+      const data = readCriteria(runDirectory);
+      return textResult({ criteria: data.criteria });
+    } catch (err) {
+      return errorResult('forge_read_criteria failed: ' + err.message);
+    }
+  },
+);
+
+// -- Tool: forge_write_criteria ----------------------------------------------
+
+server.registerTool(
+  'forge_write_criteria',
+  {
+    title: 'FORGE Write Criteria',
+    description: 'Writes per-criterion acceptance tracking data for a run. Overwrites the full criteria array.',
+    inputSchema: z.object({
+      runId: runIdSchema.describe('Run ID (e.g. r-a1b2c3d4)'),
+      criteria: z.array(z.object({
+        id: z.string(),
+        task: z.string().optional(),
+        text: z.string(),
+        status: z.string(),
+        reviewer: z.string().optional(),
+        reason: z.string().optional(),
+      })).describe('Full criteria array to persist'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ runId, criteria }) => {
+    try {
+      if (!runId) return errorResult('runId is required');
+      const projectDir = resolveProjectDir();
+      const runDirectory = join(projectDir, '.pipeline', 'runs', runId);
+      if (!existsSync(runDirectory)) {
+        return errorResult('Run not found: ' + runId);
+      }
+      writeCriteria(runDirectory, { criteria });
+
+      // Create board TODOs for deferred criteria (task 8)
+      const deferred = criteria.filter(c => c.status === 'deferred');
+      if (deferred.length > 0) {
+        const check = requirePipeline(projectDir);
+        if (check.ok) {
+          const boardPath = join(check.pipelineDir, 'board.json');
+          const boardRead = readJsonSafe(boardPath);
+          if (boardRead.ok) {
+            const board = boardRead.data;
+            if (!board.todos) board.todos = [];
+
+            // Resolve feature name from run registry for TODO text
+            let featureName = '';
+            try {
+              const run = getRun(projectDir, runId);
+              if (run && run.feature) featureName = run.feature;
+            } catch (_) {
+              // feature name is optional — continue without it
+            }
+
+            let added = 0;
+            for (const c of deferred) {
+              const todoText = featureName
+                ? `[deferred ${c.id}] ${c.text} (feature: ${featureName})`
+                : `[deferred ${c.id}] ${c.text}`;
+
+              // Duplicate detection: skip if a TODO with same AC-ID tag already exists
+              const alreadyExists = board.todos.some(t =>
+                Array.isArray(t.tags) && t.tags.includes('deferred-criterion') &&
+                t.text && t.text.includes(`[deferred ${c.id}]`)
+              );
+              if (alreadyExists) continue;
+
+              const { title, summary } = generateTodoTitleAndSummary(todoText);
+              board.todos.push({
+                id: randomUUID().slice(0, 8),
+                priority: 'medium',
+                text: todoText,
+                title,
+                summary,
+                done: false,
+                addedAt: Date.now(),
+                tags: ['deferred-criterion'],
+              });
+              added++;
+            }
+
+            if (added > 0) {
+              writeJsonSafe(boardPath, board);
+            }
+          }
+        }
+      }
+
+      return textResult({ ok: true, written: criteria.length });
+    } catch (err) {
+      return errorResult('forge_write_criteria failed: ' + err.message);
     }
   },
 );

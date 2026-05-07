@@ -6,76 +6,137 @@ allowed-tools: "Read Write Glob Grep Agent"
 model: claude-sonnet-4-6
 ---
 
-## STEP 1 — Create run (MANDATORY — do this FIRST, before anything else)
-
-Immediately call `forge_create_run` with:
-- `sessionId`: your session ID (or `"unknown"` if unavailable)
-- `pipelineType`: `"plan"`
-- `mode`: `"LEAN"` (will be updated after mode decision in Step 3)
-- `feature`: a short summary derived from the user's input below
-
-Save the returned `runId`. You MUST reference it in later steps.
-
-Then call `forge_update_run` with that `runId` and `status: "running"`, `currentStep: "brainstormer-decision"`.
-
-Do NOT skip this step. Do NOT check for existing runs first. Every /forge:plan invocation creates exactly one new run.
-
-## STEP 2 — Brainstormer decision
+## STEP 1 — Assess input and optional brainstormer (conductor)
 
 Read the feature request below. Check these signals:
 
-**Skip brainstormer when ANY of these are true:**
+**Input is detailed when ANY of these are true:**
 - Input has numbered acceptance criteria (e.g. "(1) does X, (2) handles Y")
 - Input names specific file paths
 - Input has "Affected areas:" section
 - Input specifies the technical approach
 - Input is longer than 200 words with clear deliverables
 
-**Invoke brainstormer when:**
-- Input is short and vague
-- Input describes a goal without specifics
+**Input is vague when:**
+- Input is short and lacks specifics
+- Input describes a goal without concrete requirements
 - Input uses exploratory language ("something like", "maybe", "make it")
 
-If brainstormer needed: invoke the **brainstormer** agent. It asks questions via [questions] signal. After answers, it writes a requirements doc to `docs/brainstorms/`. Then continue to Step 3.
+### If input is detailed — dispatch worker directly
 
-If brainstormer skipped: continue to Step 3 directly.
+**Before creating the run**, call `forge_classify_risk` with:
+- `feature`: the short feature summary derived from the user's input
+- `filePaths`: `[]` (no files known at plan stage)
+- `forceReview`: `true` if the input contains the literal token `[force-review]`, otherwise `false`
 
-## STEP 3 — Decide pipeline mode (AFTER brainstormer)
+Present the classification result to the user:
+```
+Risk classification:
+  Risk level:        <riskLevel>
+  Triggered rules:   <advisories joined by ", " or "none">
+  Plan-stage review: <planStageReview>
+  Suggested reviewers: <reviewers joined by ", " or "none">
+```
 
-Now that you have full context (either from the brainstorm doc or from the detailed input), assess the scope:
+Present the resolved agent team to the user before proceeding:
+```
+Agent team for this run:
+  Core agents:  planner, gotcha-checker[, researcher — if research needed]
+  Reviewers:    <reviewers from forge_classify_risk, or "none">
+```
+Waiting for approval — type 'go' or 'approve' to proceed, or describe changes to the team
 
-Prefer MCP tool `forge_read_project` for the project's `pipelineMode` setting. Fall back to reading `.pipeline/project.json` if MCP unavailable. The mode is the **floor** — you can escalate but not go below it.
+Call `forge_create_run` (only after user approves) with:
+- `sessionId`: your session ID (or `"unknown"` if unavailable)
+- `pipelineType`: `"plan"`
+- `feature`: a short summary derived from the user's input
+- `spawnWorker`: `true`
+- `useWorktree`: `true`
+- `classificationId`: the `classificationId` value from the `forge_classify_risk` result
+- `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
 
-Assess based on what you now know:
-- **LEAN** — simple change, few files, low risk, clear approach
-- **STANDARD** — multiple files, some complexity, cross-module state changes
-- **FULL** — high risk, security-sensitive, architectural impact
+Report to the user:
+- Run ID: `<runId>`
+- Log file: `<logFile>` (tail with `tail -f <logFile>` to follow progress)
+- "Gate #1 will pause the worker. Use /forge:approve when ready."
 
-Present: "Pipeline: plan feature | Mode: <MODE> | <agent list>"
+Exit — do not proceed to further steps.
 
-If the user already approved in a prior message, proceed. Otherwise wait for approval.
+### If input is vague — brainstorm in-session first
 
-> See **Model routing** in CLAUDE.md.
+The brainstormer MUST run in the conductor session because it needs interactive Q&A with the user. Workers cannot relay questions back.
 
-## STEP 4 — Update run with final mode
+1. Use `forge_get_model_recommendation` with agent name `brainstormer` to get the model.
+2. Invoke the **brainstormer** agent in-session via `Agent(subagent_type="brainstormer", model=<family>)`. It emits `[questions]` for the user to answer, then writes a requirements doc to `docs/brainstorms/`.
+3. After the brainstormer completes and the requirements doc exists, **call `forge_classify_risk`** with:
+   - `feature`: a short summary derived from the brainstorm doc
+   - `filePaths`: `[]`
+   - `forceReview`: `true` if the original user input contained `[force-review]`, otherwise `false`
 
-Call `forge_update_run` with the `runId` from Step 1 and `mode`: the mode you decided in Step 3. Also set `currentStep: "planner"`.
+   Present the classification result to the user:
+   ```
+   Risk classification:
+     Risk level:        <riskLevel>
+     Triggered rules:   <advisories joined by ", " or "none">
+     Plan-stage review: <planStageReview>
+     Suggested reviewers: <reviewers joined by ", " or "none">
+   ```
 
-## STEP 5 — Run planner pipeline
+   Present the resolved agent team to the user before proceeding:
+   ```
+   Agent team for this run:
+     Core agents:  planner, gotcha-checker[, researcher — if research needed]
+     Reviewers:    <reviewers from forge_classify_risk, or "none">
+   ```
+   Waiting for approval — type 'go' or 'approve' to proceed, or describe changes to the team
 
-1. **Planner:** reads brainstorm doc (if exists), GENERAL.md, codebase. Writes `docs/PLAN.md`. The planner does NOT ask questions.
+4. Dispatch the worker (only after user approves):
+
+Call `forge_create_run` with:
+- `sessionId`: your session ID (or `"unknown"` if unavailable)
+- `pipelineType`: `"plan"`
+- `feature`: a short summary derived from the brainstorm doc
+- `spawnWorker`: `true`
+- `useWorktree`: `true`
+- `classificationId`: the `classificationId` value from the `forge_classify_risk` result
+- `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
+
+Report to the user:
+- Run ID: `<runId>`
+- Log file: `<logFile>` (tail with `tail -f <logFile>` to follow progress)
+- "Gate #1 will pause the worker. Use /forge:approve when ready."
+
+Exit — do not proceed to further steps.
+
+<!-- Step 2 below is executed by the autonomous worker process.
+     The conductor session exits after Step 1. -->
+
+## STEP 2 — Run planner pipeline (worker)
+
+**Before dispatching agents:**
+
+1. Call `forge_get_run` with the `runId` from the run creation. Extract `stages.plan.agents` — this is the list of agents to dispatch for the plan stage.
+2. Dispatch exactly the agents listed in `stages.plan.agents`.
+
+**Agent execution:**
+
+1. **Planner:** reads brainstorm doc (if exists), GENERAL.md, codebase. Writes `docs/PLAN.md`. The planner does NOT ask questions. The worker's cwd is the run's worktree (`<worktreePath>`) — `docs/PLAN.md` resolves relative to the worktree, not the main project root.
+
+1b. **Commit PLAN.md to the worktree branch:** After the planner finishes, commit the plan so the worktree branch has a real commit at gate1 time (not just uncommitted edits). Run via Bash: `git -C <worktreePath> add docs/PLAN.md && git -C <worktreePath> commit -m "plan(forge): <feature> [<runId>]"`. If git fails or there's nothing new to commit, log `[plan] commit skipped: <reason>` and continue. This step exists to preserve a clean multi-commit branch (plan → phases → apply) and to make parallel-plan PLAN.md merges 3-way-resolvable.
+
 2. **Conditional researcher:** read `### Research needed` in PLAN.md. Skip if absent/empty.
-3. **Gotcha-checker + Researcher (STANDARD/FULL — concurrent when both needed):** In STANDARD and FULL modes, if both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially. In LEAN mode, gotcha-checker is skipped and researcher runs alone (sequential, unchanged).
-4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=docs/PLAN.md --mode=<MODE> --stage=plan`.
+4. **Gotcha-checker + Researcher (concurrent when both needed):** If both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially.
+5. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
+   - **Clear stale reviewer output first.** Delete every `*.md` file under `docs/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash from the project root: `find docs/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || del /q docs\context\reviewer-output\*.md 2>nul` — first command for POSIX shells, second for Windows. Either succeeding (or both being no-ops on an empty directory) is acceptable; do not block on the cleanup.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=docs/PLAN.md --stage=plan`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`).
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
-5. **Gate #1:** First update the run, then write gate state:
-   - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate1"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
-   - Write `.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"docs/PLAN.md"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
-   - Present the plan summary to the user
-   - Ask user to type /forge:approve or /forge:discard
+6. **Gate #1:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
+   - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md"}` (absolute path so the user can locate the worktree's PLAN.md unambiguously).
+   - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
+   - Present the plan summary to the user; include the absolute path `<worktreePath>/docs/PLAN.md` so they know which file to review (each plan run lives in its own worktree).
+   - Ask user to type /forge:approve or /forge:discard — the implement worker will start automatically on approval
 
 ## Feature request
 $ARGUMENTS

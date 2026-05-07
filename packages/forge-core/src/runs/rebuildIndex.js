@@ -9,7 +9,7 @@
 
 import { readdirSync } from 'node:fs';
 import { Run, RunIndex, RunIndexEntry } from './schemas.js';
-import { runsDir, indexPath, runPath, readJson, writeJson, ensureDir } from './storage.js';
+import { runsDir, indexPath, runPath, readJson, writeJson, ensureDir, withIndexLock } from './storage.js';
 
 /**
  * Scans r-* directories under .pipeline/runs/, reads each run.json,
@@ -42,6 +42,8 @@ export function rebuildIndex(projectRoot) {
         status: run.status,
         createdAt: run.createdAt,
         updatedAt: run.updatedAt,
+        parentRunId: run.parentRunId,
+        classificationId: run.classificationId ?? null,
       });
       indexEntries.push(entry);
     } catch (_) {
@@ -49,11 +51,13 @@ export function rebuildIndex(projectRoot) {
     }
   }
 
-  // Write the rebuilt index
+  // Write the rebuilt index (locked to prevent racing with createRun)
   const idxPath = indexPath(projectRoot);
   ensureDir(idxPath.replace(/[/\\][^/\\]+$/, '')); // ensure parent dir
-  const index = RunIndex.parse({ runs: indexEntries });
-  writeJson(idxPath, index);
+  withIndexLock(projectRoot, () => {
+    const index = RunIndex.parse({ runs: indexEntries });
+    writeJson(idxPath, index);
+  });
 
   return indexEntries;
 }

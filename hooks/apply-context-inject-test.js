@@ -52,7 +52,7 @@ function makeImplementRun(tmp, runId, worktreePath, branchName) {
   writeFileSync(join(tmp, '.pipeline', 'runs', runId, 'run.json'), JSON.stringify({
     runId, sessionId: 'test', projectRoot: tmp,
     worktreePath, branchName,
-    pipelineType: 'implement', mode: 'LEAN', feature: 'test feature',
+    pipelineType: 'implement', feature: 'test feature',
     status: 'completed', createdAt: now, updatedAt: now,
     currentStep: 'gate2-approved', gateState: null, agents: [],
     artifacts: { plan: null, handoff: null, scout: null },
@@ -61,8 +61,8 @@ function makeImplementRun(tmp, runId, worktreePath, branchName) {
 }
 
 async function test() {
-  // Test 1: implementer gets worktree context injected
-  console.log('\n--- Test 1: implementer + worktree run → context injected ---');
+  // Test 1: documenter gets worktree context injected
+  console.log('\n--- Test 1: documenter + worktree run → context injected ---');
   {
     const tmp = mkdtempSync(join(tmpdir(), 'aci-test-'));
 
@@ -76,8 +76,8 @@ async function test() {
     writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [entry] }));
 
     const { code, stdout, stderr } = await runHook({
-      agent_type: 'implementer',
-      agent_id: 'test-impl-1',
+      agent_type: 'documenter',
+      agent_id: 'test-doc-0',
       cwd: tmp,
     });
 
@@ -170,8 +170,8 @@ async function test() {
     writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [] }));
 
     const { stdout, stderr } = await runHook({
-      agent_type: 'implementer',
-      agent_id: 'test-impl-2',
+      agent_type: 'documenter',
+      agent_id: 'test-doc-2',
       cwd: tmp,
     });
 
@@ -193,8 +193,8 @@ async function test() {
     writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [entry] }));
 
     const { stdout, stderr } = await runHook({
-      agent_type: 'implementer',
-      agent_id: 'test-impl-3',
+      agent_type: 'documenter',
+      agent_id: 'test-doc-3',
       cwd: tmp,
     });
 
@@ -205,7 +205,7 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // Test 6: implement run WITHOUT worktree (SPRINT mode) → no context
+  // Test 6: implement run WITHOUT worktree → no context
   console.log('\n--- Test 6: implement run without worktree → no context ---');
   {
     const tmp = mkdtempSync(join(tmpdir(), 'aci-test-'));
@@ -213,8 +213,8 @@ async function test() {
     writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [entry] }));
 
     const { stdout, stderr } = await runHook({
-      agent_type: 'implementer',
-      agent_id: 'test-impl-4',
+      agent_type: 'documenter',
+      agent_id: 'test-doc-4',
       cwd: tmp,
     });
 

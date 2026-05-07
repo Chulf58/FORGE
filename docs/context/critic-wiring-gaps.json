@@ -1,0 +1,64 @@
+{
+  "runId": "r-823fdfc5",
+  "focus": "declared-but-not-wired",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "category": "agent",
+      "title": "coder-scout archived but referenced as active agent in CLAUDE.md",
+      "declared_at": "CLAUDE.md:17, CLAUDE.md:31",
+      "evidence": "agents/coder-scout.md does not exist. Only agents/_archived/coder-scout.md and scripts/coder-scout.mjs. CLAUDE.md line 17 hardcodes it in gate1 approve.",
+      "recommendation": "Remove coder-scout from CLAUDE.md agent-dispatch tables. Document as script-only step."
+    },
+    {
+      "severity": "HIGH",
+      "category": "agent",
+      "title": "completeness-checker archived but referenced as active agent in CLAUDE.md",
+      "declared_at": "CLAUDE.md:17, CLAUDE.md:31, CLAUDE.md:32",
+      "evidence": "agents/completeness-checker.md does not exist. Only agents/_archived/completeness-checker.md and scripts/completeness-check.mjs.",
+      "recommendation": "Remove completeness-checker from CLAUDE.md agent-dispatch tables. Document as script-only step."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "hook",
+      "title": "gate-enforcement.js exists but intentionally unwired - dead code",
+      "declared_at": "hooks/gate-enforcement.js",
+      "evidence": "hooks.json description explains removal: caused false blocks. GENERAL.md line 88 confirms.",
+      "recommendation": "Delete or archive hooks/gate-enforcement.js."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "hook",
+      "title": "routing-enforcement.js exists but intentionally unwired - dead code",
+      "declared_at": "hooks/routing-enforcement.js",
+      "evidence": "hooks.json description explains removal. File exists with full logic but never loaded.",
+      "recommendation": "Delete or archive hooks/routing-enforcement.js."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "hook",
+      "title": "conductor-agent-guard.js exists but not wired in hooks.json",
+      "declared_at": "hooks/conductor-agent-guard.js",
+      "evidence": "hooks.json SubagentStart lists only subagent-start.js and apply-context-inject.js.",
+      "recommendation": "Wire into hooks.json SubagentStart, or delete if prompt-level enforcement is sufficient."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "doc",
+      "title": "CLAUDE.md gate1 inline-approve hardcodes agent list instead of reading from run stages",
+      "declared_at": "CLAUDE.md:17",
+      "evidence": "Hardcodes [coder-scout, coder, completeness-checker] rather than reading run.stages.implement.agents.",
+      "recommendation": "Read agent list from run stages map instead of hardcoding."
+    },
+    {
+      "severity": "LOW",
+      "category": "hook",
+      "title": "file-changed.js probes four payload field names - unconfirmed schema",
+      "declared_at": "hooks/file-changed.js",
+      "evidence": "Probes payload.file, payload.path, payload.filePath, payload.file_path. Silently exits if none match.",
+      "recommendation": "Verify actual FileChanged payload schema from Claude Code docs."
+    }
+  ],
+  "summary": "7 findings: 2 HIGH (archived agents referenced as active), 4 MEDIUM (3 dead hook files, 1 hardcoded agent list), 1 LOW (unconfirmed hook payload)",
+  "analyzedAt": "2026-05-04"
+}

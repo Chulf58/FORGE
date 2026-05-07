@@ -65,7 +65,7 @@ Example surfacing:
 
 ### If the call returns success
 
-The response contains: `runId`, `pipelineType`, `mode`, `feature`, `status`, `currentStep`, `stageLabel`, `gateState`, `worktreePath`, `branchName`, `currentUnit`.
+The response contains: `runId`, `pipelineType`, `feature`, `status`, `stageLabel`, `gateState`, `worktreePath`, `branchName`, `currentUnit`.
 
 Print the success block in this exact order:
 
@@ -76,19 +76,19 @@ Print the success block in this exact order:
 
 2. **Identity line:**
    ```
-   <pipelineType> · <feature> · mode=<mode>
+   <pipelineType> · <feature>
    ```
 
 3. **Status line — choose exactly one based on `status`:**
-   - `gate-pending` (gateState.gate is `gate1` or `gate2`):
+   - `gate-pending` (gateState.gate is `gate1`, `gate2`, or `commit`):
      ```
-     Status: paused at <gate1|gate2> (awaiting your approval)
+     Status: paused at <gate1|gate2|commit> (awaiting your approval)
      ```
    - `running`:
      ```
      Status: in progress · previously at <stageLabel>
      ```
-     If `stageLabel` is null/empty, fall back to `currentStep` raw, or omit the trailing `· previously at …` clause entirely.
+     If `stageLabel` is null/empty, omit the trailing `· previously at …` clause entirely.
    - `created`:
      ```
      Status: created · not yet started.
@@ -117,6 +117,10 @@ Print the success block in this exact order:
      ```
      Next: review docs/context/handoff.md, then run /forge:approve to accept the implementation or /forge:discard to drop it.
      ```
+   - `gate-pending` + `gateState.gate === "commit"`:
+     ```
+     Next: review the applied changes, then run /forge:approve to commit and merge or /forge:discard to abandon.
+     ```
    - `running`:
      ```
      Next: re-invoke /forge:<pipelineType> in this conversation to continue from "<stageLabel>".
@@ -131,7 +135,7 @@ Print the success block in this exact order:
 
 ## Wording rules
 
-- **Use:** "paused at gate1/gate2", "previously at \<step\>", "in this conversation", "awaiting your approval", "re-invoke", "review …, then run …".
+- **Use:** "paused at gate1/gate2/commit", "previously at \<step\>", "in this conversation", "awaiting your approval", "re-invoke", "review …, then run …".
 - **Avoid:** "running in background", "working in another session", "resuming work elsewhere", "in the background", "the agent is currently …", "auto-resume", "scheduling".
 - Past tense (`previously at`) for the run's prior step — never imply the run is advancing on its own.
 - Imperative voice for the Next line — address the user directly.

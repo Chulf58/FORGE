@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, isForgeAgent, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -24,21 +24,48 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
+  const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
 
-  // Read existing run-active.json. Identity (runId / pipelineType / mode /
-  // feature / startedAt) is owned exclusively by forge_create_run and
-  // forge_resume_run — if run-active.json is missing or unparseable, there is
-  // no authoritative pointer for this hook to amend, so exit silently rather
-  // than scaffolding a partial identity-less file that poisons downstream
-  // consumers (forge_get_active_run, statusline, workflow-guard).
-  let data;
+  // Read the singleton first to discover the runId (steering pointer).
+  // If absent or unparseable, there is no authoritative pointer for this hook
+  // to amend — exit silently rather than scaffolding a partial identity-less
+  // file that poisons downstream consumers.
+  let singletonData;
   try {
-    const raw = await fs.promises.readFile(runActivePath, 'utf8');
-    data = JSON.parse(raw);
+    const raw = await fs.promises.readFile(singletonPath, 'utf8');
+    singletonData = JSON.parse(raw);
   } catch (_) {
     exitOk();
     return;
+  }
+
+  // Resolve per-run path when a valid runId is present.
+  // Validate against ^r-[a-zA-Z0-9]+$ before constructing the path.
+  const rawRunId = singletonData && typeof singletonData.runId === 'string'
+    ? singletonData.runId
+    : null;
+  const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
+  const perRunPath = validRunId
+    ? path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json')
+    : null;
+
+  // Determine which file to read/write.
+  // Per-run file is preferred when it exists; singleton is the fallback.
+  let runActivePath;
+  let data;
+  if (perRunPath) {
+    try {
+      const raw = await fs.promises.readFile(perRunPath, 'utf8');
+      data = JSON.parse(raw);
+      runActivePath = perRunPath;
+    } catch (_) {
+      // Per-run file absent or unparseable — fall back to singleton.
+      data = singletonData;
+      runActivePath = singletonPath;
+    }
+  } else {
+    data = singletonData;
+    runActivePath = singletonPath;
   }
   // Guard: ensure agents array exists on an otherwise valid run-active.json.
   if (!Array.isArray(data.agents)) {
@@ -47,6 +74,9 @@ async function main(rawInput) {
 
   const agentId = payload.agent_id || null;
   const agentType = payload.agent_type || null;
+  const normalizedType = agentType
+    ? (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType)
+    : null;
 
   if (!agentId) {
     // No agent_id — cannot track this entry meaningfully, exit silently
@@ -77,7 +107,6 @@ async function main(rawInput) {
   // Runs BEFORE the new entry is pushed, so priorCount reflects history only.
   // Fail-open: if data.agents is not an array or agentType is falsy, skip.
   if (Array.isArray(data.agents) && agentType) {
-    const normalizedType = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
     const priorCount = data.agents.filter((a) => {
       const t = a.agent_type || '';
       return (t.startsWith('forge:') ? t.slice('forge:'.length) : t) === normalizedType;
@@ -93,20 +122,35 @@ async function main(rawInput) {
         '. Allowing retry.\n'
       );
     } else if (priorCount >= 2) {
-      const reason = '[forge-stuck] BLOCKED: Agent ' + safeType +
+      // INFO only — the hard-stop is enforced upstream by hooks/agent-loop-guard.js
+      // (PreToolUse). If this fires, the guard either failed open or was bypassed.
+      process.stderr.write(
+        '[forge-stuck] INFO: Agent ' + safeType +
         ' dispatched ' + (priorCount + 1) + ' times in run ' + safeRunId +
-        '. Stopping to prevent token burn.';
-      process.stdout.write(
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            permissionDecision: 'deny',
-            permissionDecisionReason: reason,
-          },
-        }) + '\n'
+        ' — stuck-loop guard should have blocked this upstream.\n'
       );
-      process.stderr.write(reason + '\n');
-      process.exit(2);
+    }
+  }
+
+  // Agent allowlist check: if stages are present in run-active.json, warn when
+  // this agent is not declared in any stage's agents array.
+  // Warning-only — SubagentStart cannot block (no deny capability).
+  // Fail-open: absent/null stages or stages with zero declared agents skip the check.
+  if (data.stages != null && typeof data.stages === 'object' && normalizedType) {
+    const allDeclaredAgents = new Set();
+    for (const stageObj of Object.values(data.stages)) {
+      if (stageObj && Array.isArray(stageObj.agents)) {
+        for (const a of stageObj.agents) allDeclaredAgents.add(a);
+      }
+    }
+    if (allDeclaredAgents.size > 0 && !allDeclaredAgents.has(normalizedType)) {
+      const safeType = normalizedType.replace(/[\r\n]/g, ' ').trim();
+      const safeRunId = (data.runId || '(unknown)').replace(/[\r\n]/g, ' ').trim();
+      process.stderr.write(
+        '[forge-allowlist] WARNING: Agent ' + safeType +
+        ' is not declared in any stage for run ' + safeRunId +
+        '. Declared agents: ' + [...allDeclaredAgents].join(', ') + '\n'
+      );
     }
   }
 
@@ -131,19 +175,56 @@ async function main(rawInput) {
     startedAt: nowTs,
   };
 
-  // Ensure .pipeline directory exists before writing
-  const pipelineDir = path.join(projectDir, '.pipeline');
+  // Ensure the target directory exists before writing.
+  // For per-run paths this is .pipeline/runs/<runId>/; for singleton it is .pipeline/.
+  const targetDir = path.dirname(runActivePath);
   try {
-    await fs.promises.mkdir(pipelineDir, { recursive: true });
+    await fs.promises.mkdir(targetDir, { recursive: true });
   } catch (_) {
     // Directory already exists or creation failed — proceed to write attempt
   }
 
   try {
-    await fs.promises.writeFile(runActivePath, JSON.stringify(data, null, 2), 'utf8');
+    const tmp = runActivePath + '.tmp.' + process.pid;
+    await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+    await fs.promises.rename(tmp, runActivePath);
   } catch (err) {
     console.error('[forge-subagent] Failed to write run-active.json: ' + err.message);
     // Non-fatal — exit 0 regardless
+  }
+
+  // Dual-write stages status: set the matching stage to "running" when agent starts.
+  // Fail-open: any error here must not block the hook.
+  if (data.stages != null && data.runId) {
+    try {
+      const pluginRoot = resolvePluginRoot();
+      const coreIndex = path.join(pluginRoot, 'packages', 'forge-core', 'src', 'runs', 'index.js');
+      const coreMod = await import('file:///' + coreIndex.replace(/\\/g, '/'));
+      const updateRun = coreMod.updateRun;
+
+      // Find first stage whose agents array contains normalizedAgent.
+      let matchedKey = null;
+      for (const [key, stageObj] of Object.entries(data.stages)) {
+        if (!stageObj || typeof stageObj !== 'object') continue;
+        if (Array.isArray(stageObj.agents) && stageObj.agents.includes(normalizedAgent)) {
+          matchedKey = key;
+          break;
+        }
+      }
+
+      if (matchedKey !== null) {
+        const stage = data.stages[matchedKey];
+        // Only advance to "running" from "pending" — no backward transitions.
+        if (stage.status === 'pending') {
+          updateRun(projectDir, data.runId, {
+            stages: { [matchedKey]: { status: 'running' } },
+          });
+        }
+      }
+    } catch (stagesErr) {
+      console.error('[forge-subagent] stages dual-write failed: ' + stagesErr.message);
+      // Non-fatal — proceed
+    }
   }
 
   exitOk();

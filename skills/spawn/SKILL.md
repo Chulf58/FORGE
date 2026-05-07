@@ -1,41 +1,37 @@
 ---
 name: forge:spawn
-description: "Spawn a new worker session for a feature. Creates a FORGE run, git worktree, and opens a Claude Code session in a new terminal tab."
-argument-hint: "<feature description>"
-allowed-tools: "Read Glob Grep Bash"
+description: "Spawn a new worker session for a feature. Creates a FORGE run and launches an Agent SDK worker process."
+argument-hint: "<feature description> [--worktree] [--type=plan|implement|debug|refactor|research]"
+allowed-tools: "Read Glob Grep"
 ---
 
 Spawn a worker session for the feature described below. Follow these steps exactly.
 
-## Step 1 — Create run
+## Step 1 — Parse arguments
+
+From the user's input below, extract:
+- `feature`: the feature description (everything except flags)
+- `useWorktree`: `true` if `--worktree` is present, `false` otherwise
+- `pipelineType`: value after `--type=` if present, default `"plan"`
+
+## Step 2 — Create run and spawn worker
 
 Call `forge_create_run` with:
-- `sessionId`: your session ID (or `"unknown"`)
-- `pipelineType`: `"plan"`
-- `mode`: `"LEAN"`
-- `feature`: a short summary derived from the user's input below
+- `sessionId`: `"conductor"`
+- `pipelineType`: the type from Step 1
+- `feature`: the feature from Step 1
+- `spawnWorker`: `true`
+- `useWorktree`: the value from Step 1
 
-Save the returned `runId`.
-
-## Step 2 — Create worktree
-
-Call `forge_create_worktree` with the `runId` from Step 1.
-
-Save the returned `worktreePath` and `branchName`.
-
-## Step 3 — Spawn worker pane
-
-Run via Bash:
-```
-node "$CLAUDE_PLUGIN_ROOT/bin/forge-spawn-worker.js" "<worktreePath>" "<runId>" "<feature>" "plan"
-```
-
-The feature argument MUST be quoted and sanitized — strip `"`, `\`, backticks, `$`, newlines.
-
-## Step 4 — Confirm to user
+## Step 3 — Confirm to user
 
 Report:
-- Worker session opened in a new tab
+- Worker session spawned
 - Run ID: `<runId>`
 - Branch: `<branchName>`
-- The worker will start the pipeline when you type "go" in the new tab
+- Pipeline type: `<pipelineType>`
+- Worker log: `.pipeline/worker-logs/<runId>.log`
+- The worker will begin the pipeline automatically once the process starts
+
+## Feature
+$ARGUMENTS

@@ -2,7 +2,7 @@
 
 // SessionStart hook: clear the FORGE routing-enforcement dispatch log.
 //
-// Bounds the session scope for routing-enforcement.js mechanically. Without this,
+// Bounds the session scope for dispatch logging mechanically. Without this,
 // a forge_get_model_recommendation entry from a previous session could accidentally
 // authorize a same-agent Agent spawn early in a new session (within the TTL window).
 //

@@ -7,36 +7,18 @@
 // No side effects, no network, no persistent state — just read the registry
 // + board + run-active files and return the four-group snapshot.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { getRun, listRuns } from "../../packages/forge-core/src/runs/index.js";
+import { getRun, listRuns, getRunActivePath } from "../../packages/forge-core/src/runs/index.js";
 
-import { stageLabelFor } from "./stage-labels.js";
+import { stageLabelFromStages } from "./stage-labels.js";
 
-const HARD_TERMINAL_STATUSES = new Set(["failed", "discarded"]);
+const HARD_TERMINAL_STATUSES = new Set(["failed", "discarded", "completed"]);
 const RECENT_COMPLETED_LIMIT = 5;
 const TOP_TODOS_LIMIT = 5;
 
-const NEXT_STEP_MAP = {
-  plan:      { gate: "gate1", next: "/forge:implement" },
-  implement: { gate: "gate2", next: "/forge:apply" },
-  debug:     { gate: "gate2", next: "/forge:apply" },
-  refactor:  { gate: "gate2", next: "/forge:apply" },
-};
-
-function needsNextStep(run) {
-  if (run.status !== "completed") return null;
-  const mapping = NEXT_STEP_MAP[run.pipelineType];
-  if (!mapping) return null;
-  const gs = run.gateState;
-  if (gs && gs.gate === mapping.gate && gs.status === "approved") return mapping.next;
-  return null;
-}
-
 function isTerminal(entry) {
-  if (HARD_TERMINAL_STATUSES.has(entry.status)) return true;
-  if (entry.status !== "completed") return false;
-  return !needsNextStep(entry);
+  return HARD_TERMINAL_STATUSES.has(entry.status);
 }
 
 function readActiveUnit(pipelineDir) {
@@ -69,10 +51,36 @@ function readJsonSafe(filePath) {
  * Returns { activeRuns, gatesAwaiting, recentCompleted, boardSummary }.
  * Never throws — missing files and parse failures degrade to empty groups.
  */
-export function buildDashboardState(projectDir) {
+function deriveActionNeeded(run) {
+  if (run.mergeBlocked) return "resolve merge conflict";
+  const gs = run.gateState;
+  if (!gs) return null;
+  if (gs.status === "pending") return "/forge:approve (" + gs.gate + ")";
+  if (gs.status === "approved" && gs.gate === "gate2") return "/forge:apply";
+  return null;
+}
+
+/**
+ * Read the per-run active file for a single runId.
+ * Returns the parsed data, or null when the file is absent or unreadable.
+ * Safe — never throws.
+ */
+function readPerRunActive(projectDir, runId) {
+  try {
+    const perRunPath = getRunActivePath(projectDir, runId);
+    if (!existsSync(perRunPath)) return null;
+    const raw = readFileSync(perRunPath, 'utf8');
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? data : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+export async function buildDashboardState(projectDir) {
   const pipelineDir = join(projectDir, ".pipeline");
 
-  // 1) Active unit marker — only the currently-steered run carries one.
+  // 1) Active unit marker — singleton identifies which run is currently steered.
   const { runId: activeRunId, currentUnit: activeUnit } = readActiveUnit(pipelineDir);
 
   // 2) Enumerate runs from the registry (with listRuns' lazy-heal).
@@ -83,24 +91,11 @@ export function buildDashboardState(projectDir) {
     allEntries = [];
   }
 
-  // 3) activeRuns — non-terminal, hydrated from run.json where present.
-  //    "completed" runs with an approved gate that needs a next step are NOT
-  //    terminal — they require user attention. But only if no later pipeline
-  //    stage already exists for the same feature.
-  // Only the latest run per feature can need attention.
-  const latestByFeature = new Map();
-  for (const e of allEntries) {
-    const key = (e.feature || "").toLowerCase();
-    const prev = latestByFeature.get(key);
-    if (!prev || (e.updatedAt || "") > (prev.updatedAt || "")) {
-      latestByFeature.set(key, e);
-    }
-  }
-
-  const activeRuns = [];
+  // 3) activeRuns — non-terminal runs (running or gate-pending).
+  //    Collect candidates first so we can fan-out per-run file reads in parallel.
+  const candidates = [];
   for (const entry of allEntries) {
-    if (HARD_TERMINAL_STATUSES.has(entry.status)) continue;
-    if (entry.status !== "running" && entry.status !== "gate-pending" && entry.status !== "completed") continue;
+    if (entry.status !== "running" && entry.status !== "gate-pending") continue;
     let full = null;
     try {
       full = getRun(projectDir, entry.runId);
@@ -109,28 +104,44 @@ export function buildDashboardState(projectDir) {
     }
     const src = full || entry;
     if (isTerminal(src)) continue;
-    const nextStep = needsNextStep(src);
-    if (nextStep) {
-      const key = (src.feature || "").toLowerCase();
-      const latest = latestByFeature.get(key);
-      if (!latest || latest.runId !== src.runId) continue;
+    candidates.push(src);
+  }
+
+  // Read all per-run active files in parallel (AC-10).
+  const perRunActiveResults = await Promise.all(
+    candidates.map(src => Promise.resolve(readPerRunActive(projectDir, src.runId))),
+  );
+
+  const activeRuns = candidates.map((src, i) => {
+    const perRunData = perRunActiveResults[i];
+
+    // Derive currentUnit: prefer per-run active file's currentUnit when present;
+    // fall back to singleton comparison for runs without a per-run file (legacy).
+    let currentUnit;
+    if (perRunData && perRunData.currentUnit) {
+      const cu = perRunData.currentUnit;
+      currentUnit = cu && typeof cu === 'object' && typeof cu.agent === 'string' && cu.agent
+        ? cu
+        : null;
+    } else {
+      // Legacy fallback: only the run matching singleton's runId can have a currentUnit.
+      currentUnit = src.runId === activeRunId ? activeUnit : null;
     }
-    activeRuns.push({
+
+    return {
       runId: src.runId,
       pipelineType: src.pipelineType,
-      mode: src.mode || null,
       feature: src.feature || "",
       status: src.status,
-      currentStep: src.currentStep || null,
-      stageLabel: stageLabelFor(src.pipelineType, src.currentStep),
+      stageLabel: stageLabelFromStages(src.stages),
       gateState: src.gateState || null,
       worktreePath: src.worktreePath || null,
-      currentUnit: src.runId === activeRunId ? activeUnit : null,
+      currentUnit,
       mergeBlocked: src.mergeBlocked || null,
-      updatedAt: src.updatedAt || entry.updatedAt || null,
-      actionNeeded: nextStep,
-    });
-  }
+      updatedAt: src.updatedAt || null,
+      actionNeeded: deriveActionNeeded(src),
+    };
+  });
   activeRuns.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 
   // 4) gatesAwaiting — actionable pending gates from the active set.
@@ -146,14 +157,35 @@ export function buildDashboardState(projectDir) {
 
   // 5) recentCompleted — truly terminal runs only.
   //    Excludes completed runs that still need a next pipeline step.
+  //    Unacknowledged research runs bypass the recency limit so they
+  //    stay visible until the user explicitly acknowledges them.
   const activeRunIds = new Set(activeRuns.map(r => r.runId));
-  const recentCompleted = allEntries
+  const terminalEntries = allEntries
     .filter(e => {
       if (activeRunIds.has(e.runId)) return false;
       return HARD_TERMINAL_STATUSES.has(e.status) || e.status === "completed";
     })
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+
+  const REVIEWABLE_TYPES = new Set(["research", "ideate"]);
+  const unackResearchIds = new Set();
+  for (const e of terminalEntries) {
+    if (REVIEWABLE_TYPES.has(e.pipelineType) && e.status === "completed") {
+      try {
+        const full = getRun(projectDir, e.runId);
+        if (full && !full.acknowledged) unackResearchIds.add(e.runId);
+      } catch (_) {}
+    }
+  }
+
+  const capped = terminalEntries
+    .filter(e => !unackResearchIds.has(e.runId))
+    .slice(0, RECENT_COMPLETED_LIMIT);
+  const unackResearch = terminalEntries
+    .filter(e => unackResearchIds.has(e.runId));
+
+  const recentCompleted = [...unackResearch, ...capped]
     .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
-    .slice(0, RECENT_COMPLETED_LIMIT)
     .map(e => {
       let mergeBlocked = null;
       try {

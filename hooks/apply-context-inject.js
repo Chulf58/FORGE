@@ -2,10 +2,10 @@
 
 // apply-context-inject.js — SubagentStart hook for apply-phase agents
 //
-// When the implementer or documenter agent starts, this hook resolves the
-// most recent implement run that has a worktree. If found and the worktree
-// directory exists on disk, it injects additionalContext telling the agent
-// to work in the worktree path instead of the main project directory.
+// When the documenter agent starts, this hook resolves the most recent
+// implement run that has a worktree. If found and the worktree directory
+// exists on disk, it injects additionalContext telling the agent to work
+// in the worktree path instead of the main project directory.
 //
 // This is the "apply consumes the correct worktree" enforcement point.
 // It fires structurally via SubagentStart — no model cooperation needed.
@@ -20,7 +20,7 @@ const { resolveProjectDir, resolvePluginRoot, stripAnsi, STDIN_TIMEOUT_SHORT } =
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 // Apply-phase agents that should receive worktree context
-const APPLY_AGENTS = new Set(['implementer', 'documenter']);
+const APPLY_AGENTS = new Set(['documenter']);
 
 function exitOk() { process.exit(0); }
 
@@ -69,9 +69,9 @@ async function main(rawInput) {
     }
 
     if (!targetRun) {
-      // No worktree-backed implement run found — the implementer/documenter
-      // will work in the main project directory as before. This is the
-      // fallback for SPRINT/DIRECT modes or when no worktree was created.
+      // No worktree-backed implement run found — the documenter will work
+      // in the main project directory as before. This is the fallback for
+      // runs where no worktree was created.
       console.error('[apply-context] No worktree-backed implement run found — using main project');
       exitOk();
       return;

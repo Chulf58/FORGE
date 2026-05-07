@@ -24,6 +24,24 @@ Read `docs/PLAN.md`, `docs/RESEARCH/`, and `docs/gotchas/GENERAL.md`. Check the 
 
 Output a brief report of any issues found. Do NOT modify files.
 
+## Permissions
+
+### Always
+- Read `docs/gotchas/GENERAL.md` first — its rules override all fallback gotchas.
+- Call `forge_get_constraints` with task-relevant keywords to surface per-stack constraints not in `GENERAL.md`; skip silently if unavailable.
+- Emit a Verdict (`APPROVED`, `APPROVED (with warnings)`, or `REVISE`) at the end of every check run.
+
+### Ask First
+No user is present during automated pipeline runs. If the plan has ≤ 2 tasks, skip the scope sanity, token budget, Nyquist compliance, file ownership cross-wave, and verification derivability checks — note this as the small-plan skip rule. Apply all other checks normally.
+
+### Never
+- Do not modify files — output a report only.
+- Never emit a BLOCKER verdict for an issue that is classified as a WARNING-only check (e.g. scope creep, no user-observable outcomes, key links vague).
+
+## Targeted constraints lookup
+
+When checking a plan, call `forge_get_constraints` with task-relevant keywords (e.g. file names, module names, technology labels from the task descriptions). This supplements the full `GENERAL.md` read — use returned results to flag gotchas from per-stack or project-specific constraint files that would not be caught by reading `GENERAL.md` alone. The existing full Read of `GENERAL.md` is **retained and not replaced** — `forge_get_constraints` is additive. If `forge_get_constraints` is unavailable (MCP error), skip this step silently and rely on the `GENERAL.md` read only.
+
 ## Stack-aware SKILLS.md check
 
 Read `.pipeline/project.json` if it exists — extract `techStackLabels`. Read `docs/gotchas/SKILLS.md` if it exists. Apply only `### <StackName>` subsections whose heading matches any label (case-insensitive substring). Fallback: if `project.json` absent or labels empty, apply all sections. Check SKILLS.md bullets as additional named gotchas for tasks targeting that agent. **WARNING only** — skip silently if `SKILLS.md` absent.
@@ -68,6 +86,18 @@ Count all numbered task items (`1.`, `2.`, etc.) in the current feature's task l
 - If count per phase **≥ 10 and < 15**: emit a **WARNING**:
   `**WARNING: Large plan phase ({N} tasks)** — May be large for one implementation run. Consider splitting if tasks are not tightly coupled.`
 - Counts below 10 per phase are silent — no output for this check.
+
+## Scope-creep check
+
+Read the `### Feature:` heading and the first paragraph or summary line below it — this is the **original request**. Then read each numbered task in the feature's task list.
+
+For each task, ask: does this task directly serve the stated feature goal? A task is **in-scope** if it implements, tests, documents, or directly enables the feature as described. A task is **out-of-scope** if it adds functionality, cleanup, refactoring, or improvements not mentioned in or implied by the feature description.
+
+- If **any** task cannot be traced back to the feature description, emit a **WARNING** per task:
+  `**WARNING: Possible scope creep** — Task N ("<first 10 words of task>") does not trace to the feature request. Confirm it is necessary or remove.`
+- If **all** tasks trace to the feature description, this check is silent — no output.
+
+This check is a **WARNING only** — never a BLOCKER. Some tasks (documentation, type updates, test coverage) are legitimate even if not explicitly stated in the request.
 
 ## Goal-backward framing check
 
@@ -212,6 +242,24 @@ For each file path that appears in tasks belonging to **more than one distinct w
 - If no file path appears in more than one wave, this check is silent — no output.
 - This check is a **WARNING only** — never a BLOCKER.
 
+## Agent boundary schema check
+
+Scan all active `[ ]` task descriptions in the current feature for file paths matching `agents/*.md` (backtick-quoted). Collect the unique set of agent file paths.
+
+For each unique agent file path:
+
+1. Read the file.
+2. Check whether it contains a `## Permissions` heading (exact `## Permissions` at the start of a line).
+3. If the file **does** contain `## Permissions`: clear — no action.
+4. If the file **does NOT** contain `## Permissions`:
+   - Check whether any task in the current plan explicitly states it will add, create, or migrate a `## Permissions` section to this file. Look for the phrases `## Permissions`, `Permissions section`, or `boundary schema` in the same task description that names this file path.
+   - If the plan addresses it: skip — the plan is fixing it.
+   - If the plan does NOT address it: emit a **WARNING**:
+     `**WARNING: Missing agent boundary schema** — \`<file>\` has no \`## Permissions\` section. See docs/gotchas/GENERAL.md "Agent boundary schema" for the required format.`
+
+- If no `agents/*.md` file paths appear in any task description, this check is silent — no output.
+- This check is a **WARNING only** — never a BLOCKER.
+
 ## Output format
 
 ```
@@ -238,7 +286,9 @@ REVISE — {N} blocking issue(s) found. Planner must address before implementati
 - **APPROVED** if no issues of any kind.
 
 BLOCKER issues: duplicate handler/route name, oversized plan phase (≥15 tasks per phase), wave sequence gap, invalid task reference, token budget risk (≥12 tasks AND ≥8 files per phase).
-WARNING issues: large plan phase (10–14 tasks), no user-observable outcomes, missing edge-case mention, no verification derivability, Nyquist compliance gap, token budget caution (≥8 tasks AND ≥6 files per phase), uncovered ROADMAP requirement, possible DECISIONS.md conflict, data contract mismatch, cross-wave file ownership gap, key links vague.
+WARNING issues: large plan phase (10–14 tasks), possible scope creep, no user-observable outcomes, missing edge-case mention, no verification derivability, Nyquist compliance gap, token budget caution (≥8 tasks AND ≥6 files per phase), uncovered ROADMAP requirement, possible DECISIONS.md conflict, data contract mismatch, cross-wave file ownership gap, key links vague, missing agent boundary schema.
 
 If no issues found, state APPROVED clearly. Keep it short — bullet points only, no prose paragraphs.
+
+**Write-back: discovered gotchas** If during checking you encounter a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result for the same pitfall — skip write-back entirely during MCP fallback (Glob+Grep) to prevent duplicate recordings.
 

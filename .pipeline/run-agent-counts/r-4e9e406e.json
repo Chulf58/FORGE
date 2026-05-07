@@ -1,0 +1,8 @@
+{
+  "planner": 1,
+  "reviewer-boundary": 2,
+  "reviewer-logic": 1,
+  "reviewer-performance": 1,
+  "reviewer-safety": 2,
+  "coder": 1
+}

@@ -16,6 +16,10 @@ Before claiming anything about this codebase's state, history, what exists, or w
 
 When invoking ANY subagent, include `Working directory: <absolute project folder path>` at the start of the prompt.
 
+## Approach-first protocol (MANDATORY)
+
+Before ANY direct file edit, present the approach to the user — what will change, which files, why — and wait for explicit approval. Only user words like "yes", "go", "do it", "approved" count. Narrating intent ("let me fix", "I'll update") is NOT self-authorization. This applies even for obvious one-line fixes, even in auto mode. Workers are exempt (they operate autonomously inside pipelines).
+
 ---
 
 ## Pipeline routing
@@ -56,6 +60,14 @@ Invoke agents in this order:
 
 - **Gate #1** — shown after `plan feature:` completes. User must approve before `implement feature:` runs.
 - **No Gate #2** — instructional projects have no apply pipeline and no code review gate.
+
+### Inline gate approval
+
+When the user approves gate1, execute inline — no `/forge:approve` skill needed:
+1. `forge_check_gate` — extract `runId`, `gate`, `feature`
+2. `forge_set_gate({ gate, feature, status: "approved", runId })`
+3. `forge_update_run({ runId, gateState: { ...existing, status: "approved", approvedAt: <now ISO> } })` — do NOT set `status: "completed"`. The run stays `gate-pending` with an approved gateState until commit+merge.
+4. Print: "Gate 1 approved for '<feature>'. Run /forge:implement to start implementation."
 
 ### Reviewer conflict protocol
 

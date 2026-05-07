@@ -1,11 +1,8 @@
 // Tests for scripts/lean-risk-classify.mjs
 // Run: node --test scripts/lean-risk-classify.test.mjs
 //
-// STANDARD/FULL unchanged: not exercised here because the classifier is
-// mode-agnostic and the mode-gating lives in skills/implement/SKILL.md
-// (the skill only invokes the classifier when mode === LEAN). Asserting
-// "STANDARD and FULL dispatch reviewers unconditionally" is a skill-text
-// contract, verified by direct inspection of the skill's LEAN-only gate.
+// The classifier is mode-agnostic. It returns skipReviewers:true only when ALL
+// conditions are met: verification clean, no blockers, no risk-surface patterns.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

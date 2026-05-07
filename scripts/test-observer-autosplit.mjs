@@ -17,11 +17,12 @@ const require = createRequire(import.meta.url);
 // Load hook module via require(). The stdin loop is guarded by `require.main === module`
 // so it does not execute here — only the pure helper exports are loaded.
 const hookPath = path.join(__dirname, '..', 'hooks', 'observer-autosplit.js');
-let shouldSkip, buildWtArgs;
+let shouldSkip, buildWtArgs, buildFallbackArgs;
 try {
   const mod = require(hookPath);
   shouldSkip = mod.shouldSkip;
   buildWtArgs = mod.buildWtArgs;
+  buildFallbackArgs = mod.buildFallbackArgs;
 } catch (err) {
   console.error('[FAIL] Could not require hook:', err.message);
   process.exit(1);
@@ -71,10 +72,36 @@ try {
   console.error('[FAIL] Test 3: command string shape —', err.message);
 }
 
+// --- Test 4: fallback args shape --------------------------------------------
+try {
+  const pluginRoot = 'C:\\plugin';
+  const observerCmdPath = path.win32.join(pluginRoot, 'bin', 'forge-observer.cmd');
+  const args = buildFallbackArgs(observerCmdPath);
+  const expected = ['/c', 'start', 'cmd', '/k', 'C:\\plugin\\bin\\forge-observer.cmd'];
+  assert.deepEqual(args, expected, 'fallback args array must match expected shape');
+  console.log('[PASS] Test 4: fallback args shape is correct');
+  passed++;
+} catch (err) {
+  console.error('[FAIL] Test 4: fallback args shape —', err.message);
+}
+
+// --- Test 5: buildFallbackArgs uses cmd /c start (not spawn of start directly) --
+try {
+  const args = buildFallbackArgs('C:\\any\\path.cmd');
+  assert.equal(args[0], '/c', 'first arg must be /c (cmd built-in routing)');
+  assert.equal(args[1], 'start', 'second arg must be start');
+  assert.equal(args[2], 'cmd', 'third arg must be cmd (new console shell)');
+  assert.equal(args[3], '/k', 'fourth arg must be /k (keep window open)');
+  console.log('[PASS] Test 5: fallback invokes start as cmd built-in');
+  passed++;
+} catch (err) {
+  console.error('[FAIL] Test 5: fallback cmd built-in check —', err.message);
+}
+
 // --- Result -----------------------------------------------------------------
-if (passed === 3) {
+if (passed === 5) {
   process.exit(0);
 } else {
-  console.error('[FAIL] ' + (3 - passed) + ' test(s) failed');
+  console.error('[FAIL] ' + (5 - passed) + ' test(s) failed');
   process.exit(1);
 }

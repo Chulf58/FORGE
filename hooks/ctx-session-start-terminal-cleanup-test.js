@@ -36,7 +36,6 @@ function seedProject() {
       worktreePath: null,
       branchName: null,
       pipelineType: 'implement',
-      mode: 'LEAN',
       feature: 'prior feature',
       status: 'completed',
       createdAt: ISO,
@@ -55,7 +54,6 @@ function seedProject() {
       startedAt: Date.now() - 60_000,
       runId: 'r-term01',
       pipelineType: 'implement',
-      mode: 'LEAN',
       feature: 'prior feature',
       agents: [],
       currentUnit: { agent: 'coder', startedAt: Date.now() - 120_000 },
@@ -114,20 +112,16 @@ async function main() {
       return fail('stdout should not contain a hookSpecificOutput envelope; got: ' + JSON.stringify(trimmed));
     }
 
-    // Assertion B: run-active.json.currentUnit is rewritten to null on disk.
-    const raw = readFileSync(join(projectDir, '.pipeline', 'run-active.json'), 'utf8');
-    const ra = JSON.parse(raw);
-    if (ra.currentUnit !== null) {
-      return fail('INVARIANT VIOLATED: run-active.json.currentUnit should be null after terminal-run cleanup, got: ' + JSON.stringify(ra.currentUnit));
-    }
-    // Preservation sanity: other fields still there.
-    if (ra.runId !== 'r-term01') {
-      return fail('cleanup must preserve other fields; runId lost, got: ' + JSON.stringify(ra));
+    // Assertion B: run-active.json is deleted when the referenced run is terminal.
+    const { existsSync } = require('node:fs');
+    const runActiveExists = existsSync(join(projectDir, '.pipeline', 'run-active.json'));
+    if (runActiveExists) {
+      return fail('INVARIANT VIOLATED: run-active.json should be deleted after terminal-run cleanup, but it still exists');
     }
 
     console.log('[ctx-session-start-terminal-cleanup] PASS');
     console.log('  no notice emitted on stdout');
-    console.log('  run-active.json.currentUnit === null');
+    console.log('  run-active.json deleted (terminal run cleanup)');
   } finally {
     try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
   }

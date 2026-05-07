@@ -24,7 +24,6 @@ Reviewer selection is handled by `scripts/reviewer-dispatch.mjs` — a determini
 
 - **Implement/debug/refactor stage:** the script scans `docs/context/handoff.md` for risk patterns (shell/spawn, fs writes, auth/crypto, network, schema changes, etc.) and returns the matching reviewer list.
 - **Plan stage:** the script keyword-scans active task lines in `docs/PLAN.md` and maps domain keywords to reviewers.
-- **FULL mode:** all 5 reviewers always run regardless of pattern matching.
 
 ### Revision loops
 
@@ -51,9 +50,9 @@ All revision loops share this pattern:
 ### `implement feature: <description>`
 
 0. If `"tddAgent": true` → invoke **tdd-agent** first.
-0.5. **coder-scout** — writes `docs/context/scout.json`. Skip in LEAN/SPRINT.
+0.5. **coder-scout** — writes `docs/context/scout.json`.
 1. **coder** — writes `docs/context/handoff.md`. Run sequentially (never parallelize).
-1b. **completeness-checker** — skip in LEAN mode.
+1b. **completeness-checker** — runs after coder, before reviewer dispatch.
 2. **Reviewer dispatch** (see common pattern).
 3. Apply **coder revision loop** if any mandatory reviewer BLOCKs.
 4. Emit `[summary] <one sentence>` → Gate #2.
@@ -84,6 +83,16 @@ All revision loops share this pattern:
 - **Gate #1** — after plan reviewers complete. Must approve before implement.
 - **Gate #2** — after implement/debug/refactor reviewers complete. Must approve before apply.
 
+### Inline gate approval (gate1 / gate2)
+
+When the user approves a non-commit gate, execute inline — no `/forge:approve` skill needed:
+1. `forge_check_gate` — extract `runId`, `gate`, `feature`
+2. `forge_set_gate({ gate, feature, status: "approved", runId })`
+3. `forge_update_run({ runId, gateState: { ...existing, status: "approved", approvedAt: <now ISO> } })` — do NOT set `status: "completed"`. The run stays `gate-pending` with an approved gateState until commit+merge.
+4. Print next step: gate1 → "Run /forge:implement", gate2 → "Run /forge:apply"
+
+For **commit gates**, always invoke `/forge:approve` — it executes commit+merge directly in Step 4 (never inline-approve).
+
 ### Reviewer conflict protocol
 
 | reviewer-safety | reviewer (boundary) | reviewer-logic | reviewer-performance | reviewer-style | Outcome |
@@ -96,38 +105,8 @@ All revision loops share this pattern:
 
 ---
 
-## Pipeline mode routing
-
-When absent, use LEAN. **These tables are binding** — do not add/substitute agents.
-
-### plan feature:
-| Mode | Agents |
-|------|--------|
-| SPRINT | planner → Gate #1 |
-| LEAN | planner → researcher? → dispatched reviewers → Gate #1 |
-| STANDARD | planner → researcher? → gotcha-checker → dispatched reviewers → Gate #1 |
-| FULL | planner → researcher → gotcha-checker → all 5 reviewers → Gate #1 |
-
-### implement feature:
-| Mode | Agents |
-|------|--------|
-| SPRINT | coder → Gate #2 |
-| LEAN | coder → dispatched reviewers → Gate #2 |
-| STANDARD | scout → coder → completeness → dispatched reviewers → Gate #2 |
-| FULL | scout → coder → completeness → all 5 reviewers → Gate #2 |
-
-### debug: / refactor:
-| Mode | Agents |
-|------|--------|
-| SPRINT | agent only → Gate #2 |
-| LEAN | agent → dispatched reviewers → Gate #2 |
-| STANDARD | agent → dispatched reviewers → Gate #2 |
-| FULL | agent → all 5 reviewers → Gate #2 |
-
----
-
 ## Model routing
-Before each agent invocation, call `forge_get_model_recommendation` with the agent name and dispatch based on the response. If unavailable, fall back to the agent's frontmatter `model:` field. FULL mode: promote all reviewers from haiku to sonnet.
+Before each agent invocation, call `forge_get_model_recommendation` with the agent name and dispatch based on the response. If unavailable, fall back to the agent's frontmatter `model:` field.
 
 ---
 
@@ -151,12 +130,14 @@ Before each agent invocation, call `forge_get_model_recommendation` with the age
 - `[todo] <task text>` — adds to FORGE TODO board. **Never use `TodoWrite`.**
 - `[questions]...[/questions]` — Q&A strip (planner/brainstormer/debug only)
 - `[summary] <one sentence>` — emitted before each gate
-- `[pipeline-summary] mode=<mode> verdict=<verdict>` — after every gate/apply
+- `[pipeline-summary] verdict=<verdict>` — after every gate/apply
 - `[wave-complete] N` — wave verification passed
 
 ---
 
 ## Orchestrator discipline
+
+**Approach-first protocol (MANDATORY):** Before ANY direct file edit, present the approach to the user — what will change, which files, why — and wait for explicit approval. Only user words like "yes", "go", "do it", "approved" count. Narrating intent ("let me fix", "I'll update") is NOT self-authorization. This applies even for obvious one-line fixes, even in auto mode. Workers are exempt (they operate autonomously inside pipelines).
 
 **Do not explore before starting the pipeline.** When a pipeline prefix is received, invoke the first agent immediately. Pre-pipeline exploration wastes 50–100k tokens.
 

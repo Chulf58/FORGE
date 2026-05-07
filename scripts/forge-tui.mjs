@@ -50,7 +50,7 @@ function truncate(s, n) {
 function renderActiveRuns(arr) {
   if (!arr.length) return "{grey-fg}No active runs.{/}";
   return arr.map(r => {
-    const stage = r.stageLabel || r.currentStep || "starting";
+    const stage = r.stageLabel || "starting";
     const wt = r.worktreePath ? " {grey-fg}wt={/}" + r.worktreePath.split(/[\\/]/).pop() : "";
     return `{cyan-fg}${r.runId}{/} {yellow-fg}${r.pipelineType}{/} {white-fg}${truncate(r.feature, 50)}{/} {grey-fg}· ${r.status} · at ${stage}{/}${wt}`;
   }).join("\n");
@@ -88,19 +88,19 @@ function renderBoard(b) {
   return lines.join("\n");
 }
 
-function fetchState() {
+async function fetchState() {
   const projectDir = resolveProjectDir();
   if (!existsSync(join(projectDir, ".pipeline"))) {
     return { error: "Project not initialized at " + projectDir + ". Run /forge:init first." };
   }
   try {
-    return { ok: true, state: buildDashboardState(projectDir), projectDir };
+    return { ok: true, state: await buildDashboardState(projectDir), projectDir };
   } catch (err) {
     return { error: "Failed to build state: " + (err && err.message || err) };
   }
 }
 
-function main() {
+async function main() {
   const screen = blessed.screen({
     smartCSR: true,
     title: "FORGE dashboard",
@@ -179,8 +179,8 @@ function main() {
     content: " {grey-fg}q: quit · mouse scroll enabled · refreshes every 5s{/}",
   });
 
-  function refresh() {
-    const result = fetchState();
+  async function refresh() {
+    const result = await fetchState();
     if (result.error) {
       header.setContent(" {bold}FORGE dashboard{/bold} {red-fg}· " + result.error + "{/}");
       activeBox.setContent("");
@@ -208,7 +208,7 @@ function main() {
     process.exit(0);
   });
 
-  refresh();
+  await refresh();
   const timer = setInterval(refresh, REFRESH_MS);
 
   screen.on("destroy", () => clearInterval(timer));

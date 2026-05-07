@@ -63,10 +63,17 @@ const { TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
  * contains a non-null `currentUnit` with an `agent` field, emit a one-line
  * stale-lock notice via hookSpecificOutput.additionalContext.
  *
+ * Per-run path resolution: when the singleton carries a valid runId, the
+ * authoritative state lives at .pipeline/runs/<runId>/run-active.json.
+ * Read from there if the file exists; when the per-run file is absent emit
+ * "per-run file missing — cannot verify lock" rather than reading stale
+ * singleton data. Fall back to singleton only when runId is absent or
+ * invalid (projects not yet migrated).
+ *
  * Truthfulness step: if the referenced run's status is terminal
  * (completed / failed / discarded), the marker is stale-by-finish, not
  * stale-by-crash — so instead of surfacing a misleading notice on every
- * subsequent session, we quietly clear `currentUnit` in run-active.json
+ * subsequent session, we quietly clear `currentUnit` in the active file
  * and emit nothing. All other cases (unknown run, missing registry file,
  * non-terminal status) preserve the prior notice behavior.
  *
@@ -75,9 +82,52 @@ const { TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
  */
 function emitStaleUnitNoticeIfAny(projectDir) {
   try {
-    const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
-    const raw = fs.readFileSync(runActivePath, 'utf8');
-    const data = JSON.parse(raw);
+    const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
+
+    // Read singleton to discover the runId steering pointer.
+    let singletonData;
+    try {
+      const raw = fs.readFileSync(singletonPath, 'utf8');
+      singletonData = JSON.parse(raw);
+    } catch (_) {
+      // Singleton absent / unreadable / unparseable — nothing to check.
+      return false;
+    }
+
+    const rawRunId = singletonData && typeof singletonData.runId === 'string'
+      ? singletonData.runId
+      : null;
+    const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
+    const perRunPath = validRunId
+      ? path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json')
+      : null;
+
+    let runActivePath;
+    let data;
+
+    if (perRunPath) {
+      // Per-run path known — attempt to read it.
+      try {
+        const raw = fs.readFileSync(perRunPath, 'utf8');
+        data = JSON.parse(raw);
+        runActivePath = perRunPath;
+      } catch (readErr) {
+        // Per-run file absent or unreadable — cannot verify lock state.
+        if (readErr.code === 'ENOENT') {
+          process.stderr.write(
+            '[forge-stale-lock] per-run file missing — cannot verify lock for run ' +
+            validRunId + '\n'
+          );
+        }
+        // Fail-open: do not fall back to potentially stale singleton data.
+        return false;
+      }
+    } else {
+      // No valid runId — legacy / not-yet-migrated project: read singleton.
+      data = singletonData;
+      runActivePath = singletonPath;
+    }
+
     const unit = data && data.currentUnit;
     if (!unit || typeof unit !== 'object' || typeof unit.agent !== 'string' || !unit.agent) {
       return false;
@@ -111,7 +161,7 @@ function emitStaleUnitNoticeIfAny(projectDir) {
     }) + '\n');
     return true;
   } catch (_) {
-    // File absent / unreadable / unparseable — fail silently. Report-only.
+    // Unexpected error — fail silently. Report-only.
     return false;
   }
 }

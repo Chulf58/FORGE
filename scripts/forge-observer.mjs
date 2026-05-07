@@ -3,12 +3,12 @@
 //
 // Run:  node scripts/forge-observer.mjs   (or use observer.bat)
 // Quit: q / Ctrl+C  |  Navigate: ↑↓ / j k / scroll  |  Click: expand  |  Refresh: r
-// Tabs: 1=Sessions  2=TODOs  3=Notes  4=Usage
+// Tabs: 1=Sessions  2=TODOs  3=Notes  4=SPECS
 
 import { createRequire } from 'node:module';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import { execSync, spawn } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,7 +29,7 @@ try {
   buildDashboardState = ds.buildDashboardState;
 } catch (err) {
   process.stderr.write('[forge-observer] Failed to load dependencies: ' + err.message + '\n');
-  process.stderr.write('[forge-observer] Run `node hooks/mcp-deps-install.js` to install, or start a fresh Claude Code session.\n');
+  process.stderr.write('[forge-observer] Restart your Claude Code session to install dependencies automatically.\n');
   process.exit(1);
 }
 
@@ -63,7 +63,7 @@ const TABS = [
   { key: '1', label: 'Sessions' },
   { key: '2', label: 'TODOs' },
   { key: '3', label: 'Notes' },
-  { key: '4', label: 'Usage' },
+  { key: '4', label: 'SPECS' },
 ];
 let currentTab = 0;
 
@@ -94,6 +94,85 @@ function loadUsage(projectDir) {
     const raw = readFileSync(join(projectDir, '.pipeline', 'usage.json'), 'utf8');
     return JSON.parse(raw);
   } catch (_) { return null; }
+}
+
+function loadProjectConfig(projectDir) {
+  try {
+    const raw = readFileSync(join(projectDir, '.pipeline', 'project.json'), 'utf8');
+    return JSON.parse(raw);
+  } catch (_) { return null; }
+}
+
+function loadAgentHealth(projectDir) {
+  const result = {
+    totalDispatches: 0,
+    successRate: 0,
+    truncatedCount: 0,
+    noVerdictCount: 0,
+    byAgent: {},
+    mismatches: [],
+  };
+  try {
+    const runsDir = join(projectDir, '.pipeline', 'runs');
+    let runDirs;
+    try {
+      runDirs = readdirSync(runsDir);
+    } catch (_) { return result; }
+    for (const runId of runDirs) {
+      let run;
+      try {
+        const raw = readFileSync(join(runsDir, runId, 'run.json'), 'utf8');
+        run = JSON.parse(raw);
+      } catch (_) { continue; }
+      if (!Array.isArray(run.agents)) continue;
+      for (const agent of run.agents) {
+        const rawType = typeof agent.agentType === 'string' ? agent.agentType : '';
+        const agentType = rawType.replace(/^forge:/, '');
+        if (!agentType) continue;
+        result.totalDispatches++;
+        const isTruncated = agent.outcome === null && agent.completedAt === null;
+        const isNoVerdict = agent.outcome === null && agent.completedAt !== null;
+        if (isTruncated) result.truncatedCount++;
+        if (isNoVerdict) result.noVerdictCount++;
+        if (!result.byAgent[agentType]) {
+          result.byAgent[agentType] = { dispatches: 0, truncated: 0, noVerdict: 0 };
+        }
+        result.byAgent[agentType].dispatches++;
+        if (isTruncated) result.byAgent[agentType].truncated++;
+        if (isNoVerdict) result.byAgent[agentType].noVerdict++;
+      }
+
+      // Locked vs dispatched comparison
+      if (run.stages && typeof run.stages === 'object') {
+        const locked = new Set();
+        for (const stage of Object.values(run.stages)) {
+          if (Array.isArray(stage.agents)) {
+            for (const a of stage.agents) locked.add(a);
+          }
+        }
+        const dispatched = new Set(
+          run.agents
+            .map((a) => (typeof a.agentType === 'string' ? a.agentType : '').replace(/^forge:/, ''))
+            .filter(Boolean),
+        );
+        const unlocked = [...dispatched].filter((a) => !locked.has(a));
+        const missing = [...locked].filter((a) => !dispatched.has(a));
+        if (unlocked.length > 0 || missing.length > 0) {
+          result.mismatches.push({
+            runId: run.runId || runId,
+            updatedAt: run.updatedAt || run.createdAt || '',
+            unlocked,
+            missing,
+          });
+        }
+      }
+    }
+  } catch (_) {}
+  const completed = result.totalDispatches - result.truncatedCount - result.noVerdictCount;
+  result.successRate = result.totalDispatches > 0
+    ? Math.round((completed / result.totalDispatches) * 100)
+    : 0;
+  return result;
 }
 
 function loadFullRun(projectDir, runId) {
@@ -217,22 +296,8 @@ function fmtTimestamp(iso) {
   return d.toISOString().replace('T', ' ').slice(0, 16);
 }
 
-const HEARTBEAT_STALE_MS = 120_000;
+const HEARTBEAT_STALE_MS = 300_000;
 
-function loadHeartbeats(projectDir) {
-  const dir = join(projectDir, '.pipeline', 'heartbeats');
-  const map = {};
-  try {
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith('.json')) continue;
-      try {
-        const data = JSON.parse(readFileSync(join(dir, f), 'utf8'));
-        if (data.runId) map[data.runId] = data.timestamp || 0;
-      } catch (_) {}
-    }
-  } catch (_) {}
-  return map;
-}
 
 function loadEscalations(projectDir) {
   const dir = join(projectDir, '.pipeline', 'escalations');
@@ -249,14 +314,20 @@ function loadEscalations(projectDir) {
   return map;
 }
 
-let heartbeats = {};
 let escalations = {};
 
 function isLost(run) {
   if (run.status !== 'running') return false;
-  const hb = heartbeats[run.runId];
-  if (!hb) return false;
-  return (Date.now() - hb) > HEARTBEAT_STALE_MS;
+  const logPath = join(PROJECT_DIR, '.pipeline', 'worker-logs', run.runId + '.log');
+  try {
+    const st = statSync(logPath);
+    return (Date.now() - st.mtimeMs) > HEARTBEAT_STALE_MS;
+  } catch (_) {
+    // Log file does not exist — fall back to run.updatedAt.
+    const ref = run.updatedAt ? Date.parse(run.updatedAt) : 0;
+    if (!ref) return false;
+    return (Date.now() - ref) > HEARTBEAT_STALE_MS;
+  }
 }
 
 function statusOf(run) {
@@ -275,58 +346,41 @@ function statusOf(run) {
 const PIPELINE_STAGES = {
   plan: {
     totalStages: 5, steps: {
-      'started': { stage: 1, label: 'starting' },
-      'brainstormer-decision': { stage: 1, label: 'brainstorming' },
-      'planner': { stage: 2, label: 'planner' },
-      'researcher': { stage: 3, label: 'researcher' },
-      'gotcha-checker': { stage: 3, label: 'gotcha-check' },
-      'reviewer-triage': { stage: 4, label: 'reviewers' },
-      'reviewer-boundary': { stage: 4, label: 'reviewers' },
+      'planning': { stage: 2, label: 'planning' },
+      'reviewing': { stage: 4, label: 'reviewers' },
       'gate1': { stage: 5, label: 'gate1' },
     },
   },
   implement: {
     totalStages: 6, steps: {
-      'started': { stage: 1, label: 'starting' },
-      'setup': { stage: 1, label: 'setup' },
-      'implementation-architect': { stage: 2, label: 'scoping slice' },
-      'coder-scout': { stage: 3, label: 'scout' },
-      'coder': { stage: 3, label: 'coder' },
-      'completeness-checker': { stage: 4, label: 'completeness' },
-      'reviewer-triage': { stage: 5, label: 'reviewers' },
-      'reviewer-boundary': { stage: 5, label: 'reviewers' },
+      'implementing': { stage: 3, label: 'implementing' },
+      'reviewing': { stage: 5, label: 'reviewers' },
       'gate2': { stage: 6, label: 'gate2' },
     },
   },
   apply: {
     totalStages: 6, steps: {
-      'started': { stage: 1, label: 'starting' },
-      'setup': { stage: 1, label: 'setup' },
-      'implementer-triage': { stage: 2, label: 'triage' },
-      'implementer': { stage: 2, label: 'implementer' },
-      'testing': { stage: 3, label: 'tests' },
-      'documenter': { stage: 4, label: 'documenter' },
-      'worktree-commit': { stage: 5, label: 'wt-commit' },
-      'merge-back': { stage: 6, label: 'merge-back' },
-      'done': { stage: 6, label: 'done' },
+      'applying': { stage: 4, label: 'applying' },
+      'commit': { stage: 5, label: 'commit approval' },
     },
   },
   debug: {
     totalStages: 4, steps: {
-      'started': { stage: 1, label: 'starting' },
-      'debug': { stage: 2, label: 'tracing' },
-      'reviewer-triage': { stage: 3, label: 'reviewers' },
-      'reviewer-boundary': { stage: 3, label: 'reviewers' },
+      'debugging': { stage: 2, label: 'debugging' },
+      'reviewing': { stage: 3, label: 'reviewers' },
       'gate2': { stage: 4, label: 'gate2' },
     },
   },
   refactor: {
     totalStages: 4, steps: {
-      'started': { stage: 1, label: 'starting' },
-      'refactor': { stage: 2, label: 'analyzing' },
-      'reviewer-triage': { stage: 3, label: 'reviewers' },
-      'reviewer-boundary': { stage: 3, label: 'reviewers' },
+      'refactoring': { stage: 2, label: 'refactoring' },
+      'reviewing': { stage: 3, label: 'reviewers' },
       'gate2': { stage: 4, label: 'gate2' },
+    },
+  },
+  research: {
+    totalStages: 2, steps: {
+      'researching': { stage: 2, label: 'researching' },
     },
   },
 };
@@ -339,16 +393,35 @@ function renderBar(filled, total) {
 function runProgress(run) {
   const config = PIPELINE_STAGES[run.pipelineType];
   if (!config) return { bar: '', label: run.pipelineType || 'running' };
+  if (run.status === 'completed') {
+    return { bar: renderBar(config.totalStages, config.totalStages), label: 'completed' };
+  }
+  if (run.status === 'failed') {
+    return { bar: renderBar(0, config.totalStages), label: 'failed' };
+  }
+  if (run.status === 'discarded') {
+    return { bar: renderBar(0, config.totalStages), label: 'discarded' };
+  }
   if (run.actionNeeded) {
-    return { bar: renderBar(config.totalStages, config.totalStages), label: 'run ' + run.actionNeeded };
+    return { bar: renderBar(config.totalStages, config.totalStages), label: run.actionNeeded };
   }
   if (run.status === 'gate-pending' && run.gateState) {
     const gate = run.gateState.gate;
     const stepInfo = config.steps[gate] || { stage: config.totalStages };
-    return { bar: renderBar(stepInfo.stage, config.totalStages), label: gate === 'gate1' ? 'plan approval needed' : 'approval needed' };
+    if (run.gateState.status === 'approved') {
+      const nextLabel = run.actionNeeded ? run.actionNeeded
+        : gate === 'gate1' ? 'approved — run /forge:implement'
+        : gate === 'gate2' ? 'approved — run /forge:apply'
+        : 'approved';
+      return { bar: renderBar(stepInfo.stage, config.totalStages), label: nextLabel };
+    }
+    const label = gate === 'gate1' ? 'plan approval needed'
+      : gate === 'commit' ? 'commit approval needed'
+      : 'approval needed';
+    return { bar: renderBar(stepInfo.stage, config.totalStages), label };
   }
-  const stepInfo = (run.currentStep && config.steps[run.currentStep])
-    || { stage: 1, label: run.currentStep || 'running' };
+  const label = run.stageLabel || 'running';
+  const stepInfo = config.steps[label] || { stage: 1, label };
   return { bar: renderBar(stepInfo.stage, config.totalStages), label: stepInfo.label };
 }
 
@@ -393,7 +466,7 @@ function lerp(c1, c2, t) {
   ];
 }
 
-const FONT = {
+const FONT_V1 = {
   F: ['████', '█   ', '███ ', '█   ', '█   '],
   O: [' ██ ', '█  █', '█  █', '█  █', ' ██ '],
   R: ['███ ', '█  █', '███ ', '█ █ ', '█  █'],
@@ -401,7 +474,16 @@ const FONT = {
   E: ['████', '█   ', '███ ', '█   ', '████'],
 };
 
-function buildBanner() {
+const BANNER_V2_RAW = [
+  '███████╗ ██████╗ ██████╗  ██████╗ ███████╗',
+  '██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝',
+  '█████╗  ██║   ██║██████╔╝██║  ███╗█████╗  ',
+  '██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  ',
+  '██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗',
+  '╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝',
+];
+
+function buildBannerV1() {
   const X_ = RESET;
   const colors = [[255, 205, 50], [255, 140, 30], [215, 45, 25]];
   const word = 'FORGE', gap = '  ';
@@ -410,7 +492,7 @@ function buildBanner() {
   for (let row = 0; row < 5; row++) {
     let line = '', col = 0;
     for (let i = 0; i < word.length; i++) {
-      const chars = FONT[word[i]][row];
+      const chars = FONT_V1[word[i]][row];
       for (let ci = 0; ci < 4; ci++) {
         const ch = chars[ci] || ' ';
         if (ch !== ' ') {
@@ -427,17 +509,30 @@ function buildBanner() {
     }
     txt.push(line);
   }
-
-  return [
-    '  ' + txt[0],
-    '  ' + txt[1],
-    '  ' + txt[2],
-    '  ' + txt[3],
-    '  ' + txt[4],
-  ];
+  return txt.map(l => '  ' + l);
 }
 
-const BANNER = buildBanner();
+function buildBannerV2() {
+  const X_ = RESET;
+  const colors = [[255, 205, 50], [255, 140, 30], [215, 45, 25]];
+  return BANNER_V2_RAW.map(raw => {
+    let line = '';
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (ch === ' ') {
+        line += ' ';
+      } else {
+        const t = raw.length > 1 ? i / (raw.length - 1) : 0;
+        const seg = Math.min(Math.floor(t * (colors.length - 1)), colors.length - 2);
+        const rc = lerp(colors[seg], colors[seg + 1], t * (colors.length - 1) - seg);
+        line += rgb(rc[0], rc[1], rc[2]) + ch + X_;
+      }
+    }
+    return '  ' + line;
+  });
+}
+
+const BANNER = buildBannerV2();
 
 // ── State ───────────────────────────────────────────────────────────────
 
@@ -445,6 +540,8 @@ let state = null;
 let todos = [];
 let notes = [];
 let usage = null;
+let projectConfig = null;
+let agentHealth = null;
 let workers = [];
 let completed = [];
 let orderedIds = [];
@@ -457,8 +554,9 @@ let notifiedDone = new Set();
 
 // ── Refresh ─────────────────────────────────────────────────────────────
 
+const REVIEWABLE_TYPES = new Set(['research', 'ideate']);
 function isUnacknowledgedResearch(run) {
-  return run.pipelineType === 'research' && run.status === 'completed' && !run.acknowledged;
+  return REVIEWABLE_TYPES.has(run.pipelineType) && run.status === 'completed' && !run.acknowledged;
 }
 
 function loadWorkerDone(projectDir) {
@@ -475,9 +573,9 @@ function loadWorkerDone(projectDir) {
   return results;
 }
 
-function refresh() {
+async function refresh() {
   try {
-    state = buildDashboardState(PROJECT_DIR);
+    state = await buildDashboardState(PROJECT_DIR);
     const PRI = { high: 0, medium: 1, low: 2 };
     todos = loadOpenTodos(PROJECT_DIR).sort((a, b) => {
       const pa = PRI[a.priority] ?? 3;
@@ -487,7 +585,8 @@ function refresh() {
     });
     notes = loadNotes(PROJECT_DIR);
     usage = loadUsage(PROJECT_DIR);
-    heartbeats = loadHeartbeats(PROJECT_DIR);
+    projectConfig = loadProjectConfig(PROJECT_DIR);
+    agentHealth = loadAgentHealth(PROJECT_DIR);
     escalations = loadEscalations(PROJECT_DIR);
 
     const gates = (state.activeRuns || []).filter(r => r.status === 'gate-pending');
@@ -622,13 +721,28 @@ function buildSessionsTab(cols) {
       if (isExpanded) {
         const fullRun = loadFullRun(PROJECT_DIR, run.runId) || run;
         const merged = { ...run, ...fullRun, actionNeeded: run.actionNeeded || null };
-        detailRows.push(['Pipeline', (merged.pipelineType || '') + (merged.mode ? ' (' + merged.mode + ')' : '')]);
+        detailRows.push(['Pipeline', (merged.pipelineType || '') + (merged.mode && merged.pipelineType !== 'research' ? ' (' + merged.mode + ')' : '')]);
         detailRows.push(['Status', (merged.status || '') + (merged.stageLabel ? ' — ' + merged.stageLabel : '')]);
-        if (merged.branchName) detailRows.push(['Branch', merged.branchName]);
-        if (merged.worktreePath) detailRows.push(['Worktree', merged.worktreePath.replace(/.*[/\\]/, '')]);
+        // Phase indicator — only when phases are present. Shows "X/Y" plus the
+        // currently-running phase label for quick context. Pending/blocked
+        // phases are not summarised here (Stage 2 of e7ebd631 adds full per-phase rows).
+        if (Array.isArray(merged.phases) && merged.phases.length > 0) {
+          const total = merged.phases.length;
+          const completed = merged.phases.filter(p => p.status === 'completed').length;
+          const running = merged.phases.find(p => p.status === 'running');
+          const blocked = merged.phases.find(p => p.status === 'blocked');
+          let phaseStr = completed + '/' + total;
+          if (running) phaseStr += ' (running ' + (running.label || ('phase ' + (running.index + 1))) + ')';
+          else if (blocked) phaseStr += ' (blocked: ' + (blocked.label || ('phase ' + (blocked.index + 1))) + ')';
+          detailRows.push(['Phases', phaseStr]);
+        }
+        // Branch row only when branchName uses a non-default prefix (default
+        // `forge/<runId>` is redundant with the runId already shown in the header).
+        if (merged.branchName && !merged.branchName.startsWith('forge/')) detailRows.push(['Branch', merged.branchName]);
+        // Worktree row removed — basename always equals runId, redundant with header.
         detailRows.push(['Created', fmtTimestamp(merged.createdAt)]);
         detailRows.push(['Updated', fmtTimestamp(merged.updatedAt)]);
-        const dur = fmtDuration(merged.createdAt, merged.updatedAt);
+        const dur = fmtDuration(merged.createdAt, merged.status === 'running' ? new Date().toISOString() : merged.updatedAt);
         if (dur) detailRows.push(['Duration', dur]);
         if (merged.gateState) detailRows.push(['Gate', merged.gateState.gate + ' — ' + merged.gateState.status]);
         if (merged.mergeBlocked) detailRows.push(['Blocked', merged.mergeBlocked.reason || 'merge blocked']);
@@ -672,7 +786,7 @@ function buildSessionsTab(cols) {
       const s = statusOf(run);
       const time = fmtRel(run.updatedAt);
       const type = (run.pipelineType || '').padEnd(10);
-      const dur = fmtDuration(run.createdAt, run.updatedAt);
+      const dur = fmtDuration(run.createdAt, run.status === 'running' ? new Date().toISOString() : run.updatedAt);
       const feature = trunc(run.feature || '', Math.max(6, cols - 26 - time.length - dur.length));
       regions.push({ idx: gi, bodyLine: lines.length, h: 1, type: 'completed' });
       if (isSelected) {
@@ -876,45 +990,102 @@ function buildNotesTab(cols) {
   return { lines, regions: [] };
 }
 
-// ── Tab 4: Usage ────────────────────────────────────────────────────────
+// ── Tab 4: SPECS ────────────────────────────────────────────────────────
 
-function buildUsageTab(cols) {
+function buildSpecsTab(cols) {
   const lines = [];
   lines.push('');
 
-  if (!usage) {
-    lines.push(c('gray', '  No usage data available'));
-    lines.push(c('gray', '  Usage tracking activates during pipeline runs'));
-    return { lines, regions: [] };
+  // ── Project section ────────────────────────────────────────────────────
+  lines.push('  ' + cb('cyan', 'Project'));
+  if (!projectConfig) {
+    lines.push(c('gray', '    No project config available'));
+    lines.push(c('gray', '    Run /forge:init or create .pipeline/project.json'));
+  } else {
+    if (projectConfig.name) {
+      lines.push('    ' + c('gray', 'Name:   ') + c('white', String(projectConfig.name)));
+    }
+    if (projectConfig.description) {
+      lines.push('    ' + c('gray', 'Desc:   ') + c('white', trunc(String(projectConfig.description), Math.max(20, cols - 16))));
+    }
+    const stacks = projectConfig.techStackLabels || projectConfig.techStacks;
+    if (Array.isArray(stacks) && stacks.length > 0) {
+      lines.push('    ' + c('gray', 'Stacks: ') + c('white', stacks.join(', ')));
+    }
   }
+  lines.push('');
 
-  if (usage.sessions) {
-    const s = usage.sessions;
-    lines.push('  ' + cb('cyan', 'Session'));
-    if (s.totalRuns !== undefined) lines.push('    ' + c('gray', 'Runs:   ') + c('white', String(s.totalRuns)));
-    if (s.totalAgents !== undefined) lines.push('    ' + c('gray', 'Agents: ') + c('white', String(s.totalAgents)));
-    lines.push('');
+  // ── Usage section ──────────────────────────────────────────────────────
+  lines.push('  ' + cb('cyan', 'Usage'));
+  if (!usage || !usage.providers || Object.keys(usage.providers).length === 0) {
+    lines.push(c('gray', '    No usage data available'));
+    lines.push(c('gray', '    Usage tracking activates during pipeline runs'));
+  } else {
+    for (const [providerId, provider] of Object.entries(usage.providers)) {
+      lines.push('    ' + cb('white', providerId));
+      lines.push('      ' + c('gray', 'Requests: ') + c('white', String(provider.requestCount ?? 0)));
+      lines.push('      ' + c('gray', 'Tokens:   ') + c('white', Number(provider.tokenCount ?? 0).toLocaleString()));
+      if (provider.lastUsed) {
+        lines.push('      ' + c('gray', 'Last:     ') + cd('gray', fmtRel(provider.lastUsed)));
+      }
+      if (provider.models && typeof provider.models === 'object') {
+        for (const [modelId, model] of Object.entries(provider.models)) {
+          lines.push('      ' + c('gray', '  ' + trunc(modelId, Math.max(10, cols - 28)) + ': ') +
+            c('white', String(model.requestCount ?? 0)) + c('gray', ' req  ') +
+            c('white', Number(model.tokenCount ?? 0).toLocaleString()) + c('gray', ' tok'));
+        }
+      }
+    }
   }
+  lines.push('');
 
-  if (usage.tokens) {
-    const t = usage.tokens;
-    lines.push('  ' + cb('cyan', 'Tokens'));
-    if (t.input !== undefined) lines.push('    ' + c('gray', 'Input:  ') + c('white', Number(t.input).toLocaleString()));
-    if (t.output !== undefined) lines.push('    ' + c('gray', 'Output: ') + c('white', Number(t.output).toLocaleString()));
-    if (t.total !== undefined) lines.push('    ' + c('gray', 'Total:  ') + cb('white', Number(t.total).toLocaleString()));
-    lines.push('');
-  }
-
-  if (usage.cost) {
-    lines.push('  ' + cb('cyan', 'Cost'));
-    if (usage.cost.estimated !== undefined) {
-      lines.push('    ' + c('gray', 'Est:    ') + cb('yellow', '$' + Number(usage.cost.estimated).toFixed(2)));
+  // ── Agent Health section ───────────────────────────────────────────────
+  lines.push('  ' + cb('cyan', 'Agent Health'));
+  if (!agentHealth || agentHealth.totalDispatches === 0) {
+    lines.push(c('gray', '    No agent dispatch data available'));
+    lines.push(c('gray', '    Agents appear here after pipeline runs'));
+  } else {
+    lines.push('    ' + c('gray', 'Dispatches: ') + c('white', String(agentHealth.totalDispatches)));
+    lines.push('    ' + c('gray', 'Success:    ') + c(agentHealth.successRate >= 80 ? 'green' : 'yellow', agentHealth.successRate + '%'));
+    if (agentHealth.truncatedCount > 0) {
+      lines.push('    ' + c('gray', 'Truncated:  ') + c('red', String(agentHealth.truncatedCount)));
+    }
+    if (agentHealth.noVerdictCount > 0) {
+      lines.push('    ' + c('gray', 'No-verdict: ') + c('yellow', String(agentHealth.noVerdictCount)));
+    }
+    const topAgents = Object.entries(agentHealth.byAgent)
+      .sort((a, b) => b[1].dispatches - a[1].dispatches)
+      .slice(0, 5);
+    if (topAgents.length > 0) {
+      lines.push('');
+      lines.push('    ' + c('gray', 'Top agents:'));
+      for (const [agentType, stats] of topAgents) {
+        const label = trunc(agentType, Math.max(16, cols - 32));
+        const flags = [];
+        if (stats.truncated > 0) flags.push(c('red', stats.truncated + ' trunc'));
+        if (stats.noVerdict > 0) flags.push(c('yellow', stats.noVerdict + ' nv'));
+        const flagStr = flags.length > 0 ? '  ' + flags.join(' ') : '';
+        lines.push('      ' + c('white', label) + c('gray', '  ' + stats.dispatches + ' runs') + flagStr);
+      }
     }
   }
 
-  if (Object.keys(usage).length === 0 || (!usage.sessions && !usage.tokens && !usage.cost)) {
-    lines.push(c('gray', '  Usage data format not recognized'));
-    lines.push(c('gray', '  Raw keys: ' + Object.keys(usage).join(', ')));
+  // ── Locked vs Dispatched ────────────────────────────────────────────
+  if (agentHealth && agentHealth.mismatches.length > 0) {
+    lines.push('');
+    lines.push('  ' + cb('cyan', 'Locked vs Dispatched'));
+    const recent = agentHealth.mismatches
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+      .slice(0, 5);
+    for (const mm of recent) {
+      lines.push('    ' + c('gray', mm.runId));
+      if (mm.unlocked.length > 0) {
+        lines.push('      ' + c('red', 'unlocked: ') + c('white', mm.unlocked.join(', ')));
+      }
+      if (mm.missing.length > 0) {
+        lines.push('      ' + c('yellow', 'missing:  ') + c('white', mm.missing.join(', ')));
+      }
+    }
   }
 
   return { lines, regions: [] };
@@ -927,7 +1098,7 @@ function buildBody(cols) {
     case 0: return buildSessionsTab(cols);
     case 1: return buildTodosTab(cols);
     case 2: return buildNotesTab(cols);
-    case 3: return buildUsageTab(cols);
+    case 3: return buildSpecsTab(cols);
     default: return { lines: [], regions: [] };
   }
 }
@@ -939,7 +1110,7 @@ function activeSelectedIdx() {
 
 function autoScroll(bodyLines, regions, viewportH) {
   if (currentTab !== 0 && currentTab !== 1) {
-    scrollOffset = 0;
+    scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, bodyLines - viewportH)));
     return;
   }
   const sel = activeSelectedIdx();
@@ -1021,7 +1192,7 @@ function draw() {
         ? '[↑↓] select  [⏎] toggle  [ESC] close'
         : '[↑↓] select  [⏎] open';
     } else {
-      modeHints = '';
+      modeHints = '[↑↓] scroll';
     }
     const globalHints = '[r] refresh  [q] quit';
     const allHints = [tabHints, modeHints, globalHints].filter(Boolean).join('  ');
@@ -1055,6 +1226,8 @@ function selectPrev() {
     if (selectedIdx > 0) { selectedIdx--; signalSelection(); draw(); }
   } else if (currentTab === 1) {
     if (todoSelectedIdx > 0) { todoSelectedIdx--; signalSelection(); draw(); }
+  } else {
+    if (scrollOffset > 0) { scrollOffset--; draw(); }
   }
 }
 
@@ -1063,6 +1236,8 @@ function selectNext() {
     if (selectedIdx < workers.length + completed.length - 1) { selectedIdx++; signalSelection(); draw(); }
   } else if (currentTab === 1) {
     if (todoSelectedIdx < todos.length - 1) { todoSelectedIdx++; signalSelection(); draw(); }
+  } else {
+    scrollOffset++; draw();
   }
 }
 
@@ -1177,25 +1352,59 @@ function flash(msg) {
   draw();
 }
 
+/**
+ * Resolve wt.exe: check PATH first, then the Microsoft Store App Execution
+ * Alias location (%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe).
+ *
+ * Returns 'wt.exe' if found on PATH, the Store-app path if found there,
+ * or null if not found in either location. Never throws.
+ */
+function resolveWtExe() {
+  try {
+    execSync('where wt.exe', { stdio: 'ignore', timeout: 2000 });
+    return 'wt.exe';
+  } catch (_) {
+    // Not on PATH — try Store-app alias.
+  }
+  try {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) {
+      const storePath = join(localAppData, 'Microsoft', 'WindowsApps', 'wt.exe');
+      if (existsSync(storePath)) {
+        return storePath;
+      }
+    }
+  } catch (_) {
+    // Ignore unexpected errors.
+  }
+  return null;
+}
+
 function resumeWorker() {
   if (currentTab !== 0) return;
   const run = getSelectedRun();
   if (!run || !run.runId) return;
   const workerName = 'worker-' + run.runId;
-  const wtPath = run.worktreePath || PROJECT_DIR;
-  try {
-    execSync('where wt.exe', { stdio: 'ignore', timeout: 2000 });
-  } catch (_) {
-    flash('wt.exe not found');
+  const wtDir = run.worktreePath || PROJECT_DIR;
+  const wtExe = resolveWtExe();
+  if (wtExe === null) {
+    flash('claude --resume ' + workerName);
     return;
+  }
+  // When wt.exe was found via the Store-app alias, ensure the WindowsApps
+  // directory is on PATH so the App Execution Alias resolves correctly.
+  const spawnEnv = Object.assign({}, process.env);
+  if (wtExe !== 'wt.exe' && process.env.LOCALAPPDATA) {
+    const aliasDir = process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps';
+    spawnEnv.PATH = aliasDir + (process.env.PATH ? ';' + process.env.PATH : '');
   }
   try {
     const child = spawn('wt.exe', [
       '-w', '0', 'nt',
-      '-d', wtPath,
+      '-d', wtDir,
       '--title', (run.feature || run.runId).slice(0, 60),
       '--', 'claude', '--resume', workerName,
-    ], { detached: true, stdio: 'ignore' });
+    ], { detached: true, stdio: 'ignore', env: spawnEnv });
     child.unref();
     flash('Resumed ' + run.runId + ' in new tab');
   } catch (err) {
@@ -1204,6 +1413,7 @@ function resumeWorker() {
 }
 
 function quit() {
+  try { const p = join(PROJECT_DIR, '.pipeline', 'observer.pid'); if (existsSync(p)) unlinkSync(p); } catch (_) {}
   term.grabInput(false);
   process.stdout.write(ESC + '?1049l');
   process.stdout.write(ESC + '?25h');
@@ -1238,6 +1448,13 @@ function drawAnimOnly() {
 
 // ── Main ────────────────────────────────────────────────────────────────
 
+// Write our own PID so observer-autosplit.js can detect we're already running.
+// The hook's spawn PID is unreliable (wt.exe exits immediately after delegating).
+try {
+  const pidDir = join(PROJECT_DIR, '.pipeline');
+  if (existsSync(pidDir)) writeFileSync(join(pidDir, 'observer.pid'), String(process.pid) + '\n', 'utf8');
+} catch (_) {}
+
 process.stdout.write(ESC + '?1049h');
 process.stdout.write(ESC + '?25l');
 term.grabInput({ mouse: 'button', focus: true });
@@ -1255,7 +1472,7 @@ term.on('key', (name) => {
     case 'DOWN': case 'j': selectNext(); break;
     case 'ENTER': toggleExpand(); break;
     case 'ESCAPE': collapseExpand(); break;
-    case 'r': refresh(); draw(); break;
+    case 'r': refresh().then(draw); break;
     case 'R': resumeWorker(); break;
   }
 });
@@ -1284,10 +1501,10 @@ term.on('mouse', (name, data) => {
   }
 });
 
-refresh();
+await refresh();
 draw();
 signalSelection();
 
-setInterval(() => { refresh(); draw(); }, REFRESH_MS);
+setInterval(() => { refresh().then(draw); }, REFRESH_MS);
 setInterval(drawAnimOnly, 150);
 term.on('resize', () => { draw(); });

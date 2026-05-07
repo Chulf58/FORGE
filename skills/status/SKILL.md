@@ -23,7 +23,7 @@ Render the status block from both tool responses:
 
 ```
 FORGE Status
-Project: <name> (<techStacks joined>) | Mode: <pipelineMode>
+Project: <name> (<techStacks joined>)
 Board: <boardSummary.todoCount> open TODOs (<boardSummary.blockedTodoCount> blocked), <boardSummary.plannedCount> planned
 Active runs: <activeRuns.length> | Gates pending: <gatesAwaiting.length>
 ```

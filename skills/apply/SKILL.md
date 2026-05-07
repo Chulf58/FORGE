@@ -2,25 +2,29 @@
 name: forge:apply
 description: "Run the FORGE apply pipeline. Use when: user approved Gate #2 and wants to apply the implementation to source files."
 argument-hint: "[feature name]"
-allowed-tools: "Read Write Edit Glob Grep Bash Agent"
+allowed-tools: "Read Glob Grep"
 model: claude-sonnet-4-6
 ---
 
-## STEP 1 — Create run (MANDATORY — do this FIRST, before anything else)
+## When to use this skill
 
-Immediately call `forge_create_run` with:
-- `sessionId`: your session ID (or `"unknown"` if unavailable)
-- `pipelineType`: `"apply"`
-- `mode`: read mode from `.pipeline/project.json` `pipelineMode` field (or `"LEAN"` if unavailable)
-- `feature`: the feature name from `$ARGUMENTS`, or read from `docs/PLAN.md` first heading
+**Normal flow:** After gate2 approval the existing worker resumes automatically and handles apply (documenter, lifecycle, commit gate). The conductor does NOT need to invoke /forge:apply — just wait for the commit gate and then /forge:approve.
 
-Save the returned `runId` and `feature` from the run object. The `feature` field has been mechanically sanitized (shell-unsafe characters stripped) by `forge_create_run`. Use this sanitized `feature` value — not raw `$ARGUMENTS` — in Steps 5, 6b, 7, and 8 when constructing git commit messages, script arguments, and PR titles.
+**Manual recovery only:** Use /forge:apply when the original worker died, failed, or was killed before reaching the commit gate. This spawns a fresh apply worker to pick up where the dead worker left off.
 
-Then call `forge_update_run` with that `runId` and `status: "running"`, `currentStep: "setup"`.
+## STEP 1 — Verify gate and dispatch worker (MANDATORY — do this FIRST)
 
-Do NOT skip this step. Do NOT check for existing runs first. Every /forge:apply invocation creates exactly one new run.
+### 1a. Verify this is manual recovery (MANDATORY — check BEFORE anything else)
 
-## STEP 1b — Verify Gate #2 approval (MANDATORY — do not skip)
+**The normal flow does NOT use /forge:apply.** After gate2 approval, the existing worker resumes automatically and handles apply (documenter, lifecycle, commit gate). The conductor just waits for the commit gate and then runs /forge:approve.
+
+**Only proceed if the original worker is confirmed dead.** Check:
+1. Call `forge_list_runs` with `status: "gate-pending"` to find the source run (implement/debug/refactor). Call `forge_get_run` on it.
+2. If the run has `status: "failed"` or `status: "discarded"` or `failureReason` is non-null: the worker is dead. Proceed to Step 1b.
+3. If the run is `gate-pending` with `gateState.gate === "gate2"` and `gateState.status === "approved"`: the worker should be resuming. Print "Worker should be resuming after gate2 approval — wait for the commit gate. Only use /forge:apply if the worker is confirmed dead (status: failed/discarded)." and STOP.
+4. If the run is still `running`: the worker is alive. Print "Worker is still running — wait for it to finish." and STOP.
+
+### 1b. Verify Gate #2 approval
 
 Call `forge_check_gate` to read the current gate state. If the MCP tool is unavailable, fall back to reading `.pipeline/gate-pending.json` directly.
 
@@ -32,46 +36,65 @@ Call `forge_check_gate` to read the current gate state. If the MCP tool is unava
 **If any check fails**, stop immediately. Print:
 "Gate #2 has not been approved. Run /forge:implement (or /forge:debug, /forge:refactor) and then /forge:approve before applying."
 
-Do NOT proceed to STEP 2. Do NOT read the handoff. Do NOT spawn agents.
+Do NOT proceed. Do NOT spawn a worker.
 
-## STEP 2 — Read handoff and config
+### 1c. Dispatch worker
 
-Read `docs/context/handoff.md` for the approved implementation.
+Call `forge_create_run` with:
+- `sessionId`: your session ID (or `"unknown"` if unavailable)
+- `pipelineType`: `"apply"`
+- `feature`: the feature name from `$ARGUMENTS`, or read from `docs/PLAN.md` first heading
+- `spawnWorker`: `true`
+- `useWorktree`: `false`
+
+The worker runs the apply pipeline autonomously — documenter, lifecycle cleanup — then pauses at a **commit gate** for user approval before committing and merging.
+
+Report to the user:
+- Run ID: `<runId>`
+- Log file: `<logFile>` (tail with `tail -f <logFile>` to follow progress)
+- "Apply running in background. The worker will pause at a commit gate before committing — use /forge:approve when ready."
+
+Do NOT invoke documenter directly. Do NOT check for existing runs first. Every /forge:apply invocation creates exactly one new run.
+
+Exit — do not proceed to further steps.
+
+<!-- Steps 2–7 below are executed by the autonomous worker process.
+     The conductor session exits after Step 1. -->
+
+## STEP 2 — Resolve worktree and read handoff (worker)
+
+### 2a. Resolve worktree (do this FIRST)
+
+Check if a worktree-backed run exists for this feature. Use `forge_list_runs` filtered by `pipelineType` values `"implement"`, `"refactor"`, and `"debug"` to find all completed runs for this feature. Among all matches, select the most recent one (by `createdAt`). Call `forge_get_run` on it to check for a non-null `worktreePath`.
+
+If the run has a `worktreePath` AND the directory exists on disk: save it as `<worktreePath>`. All agent work in STEP 3 happens inside this path. Persist it in two places:
+
+1. **Update the run itself:** call `forge_update_run` with the current apply `runId` and `worktreePath: "<worktreePath>"`. This lets the worker process (forge-worker.mjs) resolve the correct gate file path.
+2. **Update run-active.json:** read `.pipeline/run-active.json`, add/update the `worktreePath` field with the resolved path, write the file back (preserve all other fields). The workflow-guard hook uses this field to block source writes outside the worktree.
+
+If no worktree-backed run is found, or the directory does not exist: agents work in the main project directory as before. Do NOT write `worktreePath` to `run-active.json` or the run. Skip the worktree targeting block below.
+
+### 2b. Read handoff
+
+If a worktree was resolved: read `<worktreePath>/docs/context/handoff.md` for the approved implementation.
+If no worktree: read `docs/context/handoff.md` from the main project root.
 
 > See **Model routing** in CLAUDE.md.
 
 ## Git integration config check
 
-Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project` MCP tool, fall back to Read). If `gitIntegration` is not an object, or `gitIntegration.enabled` is not `true`, skip steps 1, 5, and 7 below (branch creation, auto-commit, auto-PR). Missing fields use defaults: `branchPrefix: "forge/"`, `autoCommit: false`, `autoPR: false`.
+Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project` MCP tool, fall back to Read). If `gitIntegration` is not an object, or `gitIntegration.enabled` is not `true`, skip git branch creation (step 3.1) and auto-PR (step 7). Missing fields use defaults: `branchPrefix: "forge/"`, `autoCommit: false`, `autoPR: false`.
 
-**Note:** Steps 2, 3, 4, 6, and 8 always run regardless of gitIntegration settings. Step 8 (worktree merge-back) is lifecycle closure, not a git integration preference.
+## STEP 3 — Run apply pipeline (worker)
 
-## STEP 2b — Resolve worktree (if applicable)
-
-Check if a worktree-backed run exists for this feature. Use `forge_list_runs` filtered by `pipelineType` values `"implement"`, `"refactor"`, and `"debug"` to find all completed runs for this feature. Among all matches, select the most recent one (by `createdAt`). Call `forge_get_run` on it to check for a non-null `worktreePath`.
-
-If the run has a `worktreePath` AND the directory exists on disk: save it as `<worktreePath>`. All agent work in STEP 3 happens inside this path. Then persist it into the active run marker so enforcement hooks can read it:
-
-- Read `.pipeline/run-active.json`
-- Add/update the `worktreePath` field with the resolved path
-- Write the file back (preserve all other fields)
-
-This is mandatory — the workflow-guard hook uses this field to block source writes outside the worktree.
-
-If no worktree-backed run is found, or the directory does not exist: agents work in the main project directory as before. Do NOT write `worktreePath` to `run-active.json`. Skip the worktree targeting block below.
-
-## STEP 3 — Run apply pipeline
-
-Update the run: call `forge_update_run` with the `runId` and `currentStep: "implementer"`.
-
-**If a worktree was resolved in Step 2b:** When spawning implementer and documenter, prepend this to each agent's prompt:
+**If a worktree was resolved in Step 2b:** When spawning documenter, prepend this to the agent's prompt:
 
 > Your working directory for this run is: `<worktreePath>`
 > Read and write all project files using absolute paths under this directory.
 > For example: `<worktreePath>/src/main.js`, `<worktreePath>/docs/context/handoff.md`, etc.
 > Do NOT read or write files in the main project root.
 
-**If no worktree was resolved:** spawn agents without the path prefix (they work in the main project directory).
+**If no worktree was resolved:** spawn the agent without the path prefix (it works in the main project directory).
 
 1. **Git branch creation** (opt-in — only if `gitIntegration.enabled`):
    - Derive feature slug: use `$ARGUMENTS` if provided, else read the first `## Feature:` heading from `docs/PLAN.md`
@@ -81,63 +104,49 @@ Update the run: call `forge_update_run` with the `runId` and `currentStep: "impl
    - If branch already exists: try `git checkout <branchPrefix><slug>` instead (reuse existing branch)
    - If checkout fails (dirty working tree, etc.): log the error and continue on current branch. Never stash, reset, or clean.
 
-2. **Implementer-triage** (STANDARD/FULL, if waves exist):
-   - Run via Bash: `node scripts/implementer-triage-extract.mjs --root <the same project/worktree root the apply skill is operating in>` with `timeout: 30000`.
-   - If exit 0 and stdout JSON has `ok: true`:
-     - If `noWaves` is `true`: no wave-annotated tasks found — skip triage and proceed to step 3 (implementer runs the full handoff sequentially).
-     - Otherwise: triage briefs are written to `<root>/docs/context/triage-briefs/wave-N-task-M.md`. Log `[implementer-triage] briefs=<briefCount> waves=<wave count>`. The orchestrator reads these briefs to dispatch parallel implementers per wave in step 3.
-   - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[implementer-triage] script fallback: <reason from stdout or stderr>` and invoke the `implementer-triage` agent as fallback (use `forge_get_model_recommendation` and spawn via Agent). The agent reads the handoff and plan directly.
-
-3. **Implementer:** applies handoff to source files
-
-4. **Test execution** (opt-in — only if `testCommand` is set in project.json):
+2. **Test execution** (opt-in — only if `testCommand` is set in project.json):
    - Run the test command via Bash with `timeout: 60000`
    - On success (exit 0): log "Tests passed" and continue
    - On failure (non-zero exit): show full output, emit `[suggest] debug — tests failed after apply`. Do NOT auto-fix or retry.
 
-5. **Auto-commit** (opt-in — only if `gitIntegration.autoCommit`):
-   - Use the sanitized `feature` field returned by `forge_create_run` in Step 1 as `<safe-feature>`. It has been mechanically sanitized at source — do not use raw `$ARGUMENTS` here. (Defense in depth: `"`, `\`, `` ` ``, `$`, newlines, and control characters have already been stripped.)
-   - Run `git add` with the specific files the implementer changed (use `git diff --name-only` and `git status --porcelain` to identify them). Do NOT use `git add -A` — it stages untracked files that may contain secrets or agent artifacts. Then `git commit -m "feat(forge): <safe-feature>"`
-   - If nothing to commit (exit code 1 or output contains "nothing to commit"): log "[git-integration] Nothing to commit — skipping" and continue
-   - If pre-commit hooks fail: log the error output and continue. Do NOT use `--no-verify`.
-   - Never amend, never force, never skip hooks
+3. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution.
+   After documenter completes, proceed to step 3b.
 
-6. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution.
-   After documenter completes, proceed to step 6b.
-
-6b. **Post-apply lifecycle cleanup** (always runs, not gated by gitIntegration):
+3b. **Post-apply lifecycle cleanup** (always runs, not gated by gitIntegration):
    - Run via Bash: `node scripts/post-apply-lifecycle.mjs "<safe-feature>"` (use the sanitized `feature` from Step 1). Set `timeout: 30000`.
    - On exit 0: log `[lifecycle] cleanup done`.
    - On non-zero exit: log `[lifecycle] cleanup failed: <stderr output>` and continue. Do NOT retry. This is non-blocking.
-   - Then call `forge_update_run` with the `runId` and `status: "completed"`, `currentStep: "done"`.
 
-7. **Auto-PR** (opt-in — only if `gitIntegration.autoPR`):
-   - Check `gh --version` first. If gh is not installed, log "[git-integration] gh CLI not found — skipping PR creation" and continue.
-   - Push the branch: `git push -u origin HEAD`
-   - If push fails: log the error and skip PR creation. Emit `[suggest] git push failed — push manually and create PR`
-   - Create PR: `gh pr create --title "feat(forge): <safe-feature>" --body "Applied via FORGE pipeline"`
-   - If PR creation fails: log the full error. Do NOT retry.
+3c. **Commit apply changes** (always runs — closes TODO `38bca814`):
 
-8. **Worktree commit** (mandatory when a worktree was resolved in Step 2b — NOT gated by gitIntegration):
-   - This commits the implementer's and documenter's changes onto the worktree branch so Step 9 can merge them. This is infrastructure, not a user preference.
-   - Run via Bash: `git -C <worktreePath> add` with the specific files the implementer changed (use `git -C <worktreePath> diff --name-only` and `git -C <worktreePath> status --porcelain`). Do NOT use `git add -A`.
-   - Then: `git -C <worktreePath> commit -m "feat(forge): <safe-feature>"` (use the same sanitized feature name from Step 5; if Step 5 was skipped, sanitize now: strip `"`, `\`, `` ` ``, `$`, newlines, control characters)
-   - If nothing to commit (exit code 1 or output contains "nothing to commit"): log `[worktree] No changes to commit on worktree branch — skipping.` and continue to Step 9.
-   - If commit fails for any other reason: log `[worktree] Commit failed: <error>` and continue. Step 9 merge will likely be a no-op but will not crash.
-   - Do NOT use `--no-verify`. Do NOT amend. Do NOT force.
-   - If no worktree was resolved in Step 2b: skip this step entirely.
+   Worker owns ALL commits inside the worktree — the conductor at the commit gate only merges. This step commits the documenter's CHANGELOG/ARCHITECTURE/PLAN.md updates AND any uncommitted source changes left over from the implement/debug/refactor stage (single-pass implement runs don't have per-phase commits).
 
-9. **Worktree merge-back** (automatic when a worktree-backed run exists):
-   - Check if a worktree was used for this feature. Read `gate-pending.json` — if it has a `feature` field, use `forge_list_runs` filtered by `pipelineType` values `"implement"`, `"refactor"`, and `"debug"` to find all completed runs for this feature. Select the most recent (by `createdAt`). Call `forge_get_run` on it to check for a non-null `worktreePath`. If no worktree-backed run is found, skip this step silently.
-   - If a worktree exists: extract the `runId` from the implement run. Run via Bash: `node bin/forge-worktree.js merge <runId>` (use the absolute path via `$CLAUDE_PLUGIN_ROOT` if available, else relative from project root).
-   - On success (exit 0): log `[worktree] Merged forge/<runId> into main and cleaned up worktree.`
-   - On failure (non-zero exit): log `[worktree] Merge failed — resolve manually with: git merge forge/<runId>` and continue. Do NOT delete the worktree on failure. Do NOT force-merge. Do NOT retry. The worktree is left intact for manual inspection.
-   - If the worktree directory does not exist on disk (already cleaned up): skip silently.
+   - When `<worktreePath>` is non-null:
+     - Run via Bash: `git -C <worktreePath> diff --name-only HEAD` to find changed files.
+     - For each file in the output, stage it individually: `git -C <worktreePath> add <file>` (do NOT use `git add -A`).
+     - Then: `git -C <worktreePath> commit -m "feat(forge): <safe-feature> [<runId>]"`.
+     - If nothing to commit: log `[worktree] No changes to commit — skipping.` and proceed to Step 4.
+     - If commit fails: log `[worktree] Commit failed: <error>` and proceed to Step 4 (the conductor will surface uncommitted files via the verify step in approve Step 4).
 
-## Error handling for all git steps
+   - When `<worktreePath>` is null (apply runs without a worktree):
+     - Same flow against the main project root: `git diff --name-only HEAD`, `git add <file>` per file, `git commit -m "feat(forge): <safe-feature> [<runId>]"`.
+     - Same fallthrough on errors.
 
-Every git step is wrapped in its own error handling. Failures log with `[git-integration]` prefix and continue — they NEVER block the pipeline. The pipeline must complete (implementer → documenter) regardless of git operation failures. Worktree merge failures log with `[worktree]` prefix and also continue without blocking.
+   Forbidden ops: `--force`, `--force-with-lease`, `--amend`, `--no-verify`, `git reset`, `git clean`, `git stash`. Worker does not bypass any safeguard.
 
-Forbidden operations: `--force`, `--force-with-lease`, `--amend`, `--no-verify`, `git reset`, `git clean`, `git stash`. If any of these appear in a git command, do NOT run it.
+## STEP 4 — Commit gate (worker writes gate and exits)
+
+After documenter + lifecycle cleanup AND the apply commit (Step 3c) are done, write the commit gate and exit. The conductor handles only the merge.
+
+1. Write gate file first (the worker exits on status change, so the file must exist before updating the run):
+   - Use `forge_set_gate` or write directly:
+   - If worktree: `<worktreePath>/.pipeline/gate-pending.json`
+   - If no worktree: `.pipeline/gate-pending.json`
+   - Content: `{"runId":"<runId>","gate":"commit","feature":"<feature name>","status":"pending","createdAt":"<now ISO>"}`
+2. Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"commit","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`
+3. Present a summary: list changed files (from `git diff --name-only` or `git -C <worktreePath> status --porcelain`), note test results if any.
+4. The worker exits after writing the gate. Use /forge:approve when ready — the conductor handles the merge (Step 4 of the approve skill). Never wait for the worker.
+
+**Conductor reminder:** When the user says "approve" for a commit gate, invoke `/forge:approve` via the Skill tool — never manually call `forge_set_gate`. The approve skill's Step 4 handles the merge.
 
 $ARGUMENTS

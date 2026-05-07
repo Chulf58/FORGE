@@ -108,6 +108,7 @@ function git(args, cwd) {
     cwd,
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: 30000, // 30s safety valve — prevents indefinite worker hang when a git call stalls (TODO 4db4d05c). On Windows, `git worktree add` has been observed to never return; a hung command throws ETIMEDOUT here, the caller propagates an error, and the worker gets a tool_result instead of freezing.
   }).trim();
 }
 
@@ -193,4 +194,51 @@ export function createWorktree(projectRoot, runId) {
   });
 
   return updated;
+}
+
+/**
+ * Removes a FORGE-managed worktree for a run.
+ *
+ * Safe to call when:
+ * - The worktree directory does not exist (no-op, returns false).
+ * - Git does not know about the worktree (rmSync fallback only).
+ *
+ * Does NOT touch the run record — caller is responsible for any
+ * run.json cleanup (pruneTerminalRuns deletes the whole run dir).
+ *
+ * @param {string} projectRoot - absolute path to the project
+ * @param {string} runId - run ID whose worktree should be removed
+ * @param {string|null} worktreePath - path recorded on the run (may be null)
+ * @returns {boolean} true if a worktree was removed, false if nothing to do
+ */
+export function removeWorktree(projectRoot, runId, worktreePath) {
+  const absRoot = resolve(projectRoot);
+  // Derive path from runId as a fallback when worktreePath is missing
+  const wtPath = worktreePath || join(absRoot, '.worktrees', runId);
+  const branchName = 'forge/' + runId;
+
+  if (!existsSync(wtPath)) {
+    // Nothing on disk — still attempt git prune in case git metadata is stale
+    try { git(['worktree', 'prune'], absRoot); } catch (_) {}
+    return false;
+  }
+
+  // Ask git to deregister and remove the worktree.
+  // --force handles the case where the worktree has uncommitted changes
+  // (prune always runs after terminal runs, so this is intentional).
+  try { git(['worktree', 'remove', wtPath, '--force'], absRoot); } catch (_) {}
+
+  // Delete the branch. -D (force-delete) is safe here: the run is terminal,
+  // meaning it was either merged (completed) or abandoned (failed/discarded).
+  try { git(['branch', '-D', branchName], absRoot); } catch (_) {}
+
+  // Clean up any stale git metadata
+  try { git(['worktree', 'prune'], absRoot); } catch (_) {}
+
+  // Belt-and-suspenders: if git worktree remove left the dir behind, remove it
+  if (existsSync(wtPath)) {
+    try { rmSync(wtPath, { recursive: true, force: true }); } catch (_) {}
+  }
+
+  return true;
 }

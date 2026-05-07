@@ -1,0 +1,24 @@
+# Normalize line endings across all platforms.
+# Repo stores LF; working tree uses LF on every OS.
+# Eliminates the CRLF-vs-LF noise that previously caused
+# `forge-worktree.js merge` to flag the main repo as dirty
+# (e.g. .pipeline/* and docs/* files showing as modified
+# even though only line endings differed).
+
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF on disk.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Common binary extensions — never normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.tar binary

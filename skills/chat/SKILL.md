@@ -43,7 +43,7 @@ The user delegates a code change and moves on. A worker session runs the full pi
 - User introduces a second task while one is already running
 
 **Flow:**
-1. Call `forge_create_run` with `pipelineType: "plan"`, `mode: "LEAN"`, and a short `feature` summary
+1. Call `forge_create_run` with `pipelineType: "plan"` and a short `feature` summary
 2. Call `forge_create_worktree` with the returned `runId`
 3. Run via Bash: `node "$CLAUDE_PLUGIN_ROOT/bin/forge-spawn-worker.js" "<worktreePath>" "<runId>" "<feature>" "plan"`
 4. Tell the user: "Worker started in a new tab — type 'go' to begin. Run: `<runId>`, branch: `<branchName>`"
@@ -60,7 +60,7 @@ The user wants something explored or investigated. A worker session runs in the 
 - Any task that produces knowledge, not code changes
 
 **Flow:**
-1. Call `forge_create_run` with `pipelineType: "research"`, `mode: "LEAN"`, and a short `feature` summary
+1. Call `forge_create_run` with `pipelineType: "research"` and a short `feature` summary
 2. Do NOT create a worktree — no branch needed
 3. Run via Bash: `node "$CLAUDE_PLUGIN_ROOT/bin/forge-spawn-worker.js" "<projectDir>" "<runId>" "<feature>" "research"`
 4. Tell the user: "Researcher started in a new tab. Run: `<runId>`"
@@ -102,12 +102,7 @@ Keep interruptions brief. Don't dump the full plan — summarise in one line. Th
 - **apply feature** -> implementer -> documenter
 - **debug** -> debug -> reviewers -> Gate #2
 - **refactor** -> refactor -> reviewers -> Gate #2
-
-## Pipeline modes (autonomous workers only, decided AFTER brainstormer)
-- **SUPERVISED** — no pipeline, conductor edits directly (checkpoint tag for rollback)
-- **LEAN** — core + reviewer-safety + reviewer
-- **STANDARD** — core + triage-dispatched reviewers
-- **FULL** — core + triage + all 5 reviewers
+- **ship** (`/forge:ship`) -> approves Gate #2 + spawns apply worker + auto-commits. Trigger phrases: "ship it", "approve and apply", "go ahead and ship", "just ship it", "ship this"
 
 ## Gates
 When a gate is reached, ask conversationally — not formally:

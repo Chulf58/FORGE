@@ -95,10 +95,35 @@ On Windows, bare `node` is not reliably on PATH for statusLine invocations, so F
 
 Use `\r\n` line endings (Windows). Create the `.claude/` directory via `Bash: mkdir -p .claude` if needed.
 
-**1e-ii — Update settings.json.** Use Read to check if `.claude/settings.json` exists.
+**1e-ii — Update settings.json (opt-in).** Use Read to check if `.claude/settings.json` exists.
 
-- If it exists: parse the JSON. If it has a `statusLine` field that does NOT contain `forge-status` in its command, print `[statusLine] Already configured (non-FORGE) — not replacing.` and skip. Otherwise, update or add the `statusLine` field using Edit.
-- If it does not exist: use Write to create it.
+- If it exists: parse the JSON. If it has a `statusLine` field that does NOT contain `forge-status` in its command, print `[statusLine] Already configured (non-FORGE) — not replacing.` and skip to Step 1f.
+- If it already has a `statusLine` containing `forge-status`, print `[statusLine] Already configured — no change needed.` and skip to Step 1f.
+
+**If the file does not exist or has no `statusLine` set**, present the proposed change and ask for consent before writing:
+
+Print the following (as text output, NOT via Bash):
+
+```
+FORGE can add a status line to .claude/settings.json that shows pipeline status at the bottom of your terminal.
+
+The following will be written to .claude/settings.json:
+
+  "statusLine": {
+    "type": "command",
+    "command": ".claude/forge-status.cmd"
+  }
+
+Add statusLine to .claude/settings.json? (yes/no)
+```
+
+Wait for the user's response.
+
+- If the user responds affirmatively ("yes", "y", "go", "approve", "ok", or similar): proceed with the write.
+  - If `.claude/settings.json` exists: update or add the `statusLine` field using Edit. Preserve all other existing fields.
+  - If it does not exist: use Write to create it with the `statusLine` value.
+  - Print: `[statusLine] Written to .claude/settings.json. Restart Claude Code for the status line to appear.`
+- If the user declines ("no", "n", "skip", or similar): print `[statusLine] Skipped — you can add this later by re-running /forge:init.` and continue to Step 1f.
 
 The `statusLine` value must be:
 ```json
@@ -109,8 +134,6 @@ The `statusLine` value must be:
   }
 }
 ```
-
-Preserve all other existing fields in settings.json. The user must restart for the status line to appear.
 
 ### 1f — Seed project-local forge-config.json (fallback when CLAUDE_PLUGIN_DATA is unset)
 
@@ -198,7 +221,7 @@ Check if `.pipeline/project.json` exists. If it does, print "FORGE project alrea
 Ask: project name, tech stack, description.
 
 Create `.pipeline/` with:
-- `project.json` (name, description, techStacks, pipelineMode: "LEAN")
+- `project.json` (name, description, techStacks)
 - `board.json` (`{"todos":[]}`)
 - `modules.json` (`[]`)
 

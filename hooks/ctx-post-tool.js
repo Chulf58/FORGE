@@ -53,37 +53,6 @@ function logToolCall(payload) {
   fs.promises.writeFile(latestPath, sessionId, 'utf8').catch(() => {});
 }
 
-function getSettingsPath() {
-  // Matches Electron app.getPath('userData'): %APPDATA%\FORGE on Windows
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'FORGE', 'forge-settings.json');
-  }
-  // macOS: ~/Library/Application Support/FORGE
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'FORGE', 'forge-settings.json');
-  }
-  // Linux: ~/.config/FORGE
-  return path.join(os.homedir(), '.config', 'FORGE', 'forge-settings.json');
-}
-
-async function isWarningsEnabled() {
-  try {
-    const settingsPath = getSettingsPath();
-    try {
-      await fs.promises.access(settingsPath);
-    } catch (_) {
-      return true; // default: enabled if file absent
-    }
-    const raw = await fs.promises.readFile(settingsPath, 'utf8');
-    const settings = JSON.parse(raw);
-    if (settings.contextWarningsEnabled === false) return false;
-  } catch (_) {
-    // Default to enabled on any read/parse error
-  }
-  return true;
-}
-
 async function readBridge(sessionId) {
   const bridgePath = path.join(os.tmpdir(), `claude-ctx-${sessionId}.json`);
   try {
@@ -148,9 +117,6 @@ async function main(rawInput) {
   const sessionId = payload.session_id;
   if (!sessionId) { exitOk(); return; }
 
-  // Opt-out check: read FORGE settings before doing anything else
-  if (!(await isWarningsEnabled())) { exitOk(); return; }
-
   // Read bridge file — exit silently if absent or stale
   const bridge = await readBridge(sessionId);
   if (!bridge) { exitOk(); return; }
@@ -190,7 +156,6 @@ async function main(rawInput) {
 
   const advisory = buildAdvisory(severity, remaining);
   // Validate sessionId format before using it in a filename — prevents path injection.
-  // Pattern mirrors the startsWith() guard used in src/main/index.ts agent IPC handlers.
   if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
     exitOk();
     return;

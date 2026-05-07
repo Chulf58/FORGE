@@ -66,12 +66,13 @@ function create() {
   // Create worktree with new branch from current HEAD
   run('git', ['worktree', 'add', wtPath, '-b', branch]);
 
-  // Merge-copy directories: git checkout may have created these from tracked files,
-  // but gitignored files (PLAN.md, board.json, etc.) still need copying from main.
+  // Copy .pipeline/ into worktree, excluding conductor-owned files that cause
+  // merge conflicts when both conductor and worker modify them.
+  const pipelineSkip = new Set(['board.json', 'modules.json', 'notes', 'runs', 'action-approved.json']);
   const pipelineSrc = '.pipeline';
   const pipelineDst = path.join(wtPath, '.pipeline');
   if (fs.existsSync(pipelineSrc)) {
-    copyDirSync(pipelineSrc, pipelineDst);
+    copyDirSync(pipelineSrc, pipelineDst, pipelineSkip);
   }
 
   const docsSrc = 'docs';
@@ -164,19 +165,19 @@ function merge() {
   }
 
   // Reject uncommitted tracked changes in the worktree — the apply skill (Step 8)
-  // is responsible for committing. Untracked files (pipeline artifacts like
-  // slice-brief.md, triage-dispatch.json) are harmless and should not block.
-  const wtStatus = run('git', ['-C', wtPath, 'status', '--porcelain'], { allowFail: true });
-  if (wtStatus) {
-    const trackedChanges = wtStatus
-      .split('\n')
-      .filter(Boolean)
-      .filter((l) => !l.startsWith('??'));
-    if (trackedChanges.length > 0) {
+  // is responsible for committing. Uses `git diff --quiet HEAD` which compares
+  // content only, immune to CRLF/autocrlf line-ending noise that `git status
+  // --porcelain` reports as modifications on Windows.
+  try {
+    execFileSync('git', ['-C', wtPath, 'diff', '--quiet', 'HEAD'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (diffErr) {
+    if (diffErr.status && diffErr.status !== 0) {
+      // Non-zero exit = real content changes exist
+      const wtStatus = run('git', ['-C', wtPath, 'diff', '--name-only', 'HEAD'], { allowFail: true });
       console.error(JSON.stringify({
         ok: false,
         error: 'Worktree has uncommitted tracked changes — the apply skill should have committed in Step 8.',
-        uncommittedFiles: trackedChanges.map(l => l.trim()),
+        uncommittedFiles: wtStatus ? wtStatus.split('\n').filter(Boolean) : [],
       }));
       process.exit(1);
     }
@@ -311,10 +312,11 @@ function cleanup() {
   console.log(JSON.stringify({ ok: true, removed }));
 }
 
-function copyDirSync(src, dst) {
+function copyDirSync(src, dst, skip) {
   fs.mkdirSync(dst, { recursive: true });
   const entries = fs.readdirSync(src, { withFileTypes: true });
   for (const entry of entries) {
+    if (skip && skip.has(entry.name)) continue;
     const srcPath = path.join(src, entry.name);
     const dstPath = path.join(dst, entry.name);
     if (entry.isDirectory()) {

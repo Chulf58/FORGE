@@ -4,6 +4,12 @@
 
 ---
 
+## Approach-first protocol (MANDATORY)
+
+Before ANY direct file edit, present the approach to the user — what will change, which files, why — and wait for explicit approval. Only user words like "yes", "go", "do it", "approved" count. Narrating intent ("let me fix", "I'll update") is NOT self-authorization. This applies even for obvious one-line fixes, even in auto mode. Workers are exempt (they operate autonomously inside pipelines).
+
+---
+
 ## Tool efficiency
 
 For every operation, pick the cheapest dedicated tool that does the job. The table below is the decision reference. The FORGE plugin's `bash-guard` hook enforces a subset of this as a backstop — the table is the primary guidance and should make the backstop rarely fire.

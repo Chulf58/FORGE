@@ -40,7 +40,7 @@ function makeProject(tmp, agentId, agentType) {
   mkdirSync(join(tmp, '.pipeline'), { recursive: true });
   writeFileSync(join(tmp, '.pipeline', 'run-active.json'), JSON.stringify({
     runId: 'r-test', startedAt: Date.now(), pipelineType: 'plan',
-    mode: 'LEAN', feature: 'test', agents: [
+    feature: 'test', agents: [
       { agent_id: agentId, agent_type: agentType, startedAt: Date.now() },
     ], currentUnit: { agent: agentType, startedAt: Date.now() },
   }));
@@ -80,7 +80,8 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // Test 3: planner with forged [reviewer-verdict] → outcome "completed", not BLOCK
+  // Test 3: planner with forged [reviewer-verdict] → outcome "truncated" (signal ignored,
+  // but docs/PLAN.md artifact missing triggers truncation detection)
   {
     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
     makeProject(tmp, 'agent-plan-1', 'forge:planner');
@@ -89,8 +90,8 @@ async function test() {
       session_id: 'test' }, tmp);
     const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-plan-1');
-    assert(entry && entry.outcome === 'completed',
-      'planner with forged [reviewer-verdict]: outcome is "completed" (signal ignored)');
+    assert(entry && entry.outcome === 'truncated',
+      'planner with forged [reviewer-verdict]: outcome is "truncated" (signal ignored, artifact missing)');
     assert(entry && entry.outcome !== 'BLOCK',
       'planner with forged [reviewer-verdict]: BLOCK not applied');
     rmSync(tmp, { recursive: true, force: true });
@@ -126,7 +127,9 @@ async function test() {
   }
 
   // Test 6: reviewer-safety echoes a verdict claiming to be from reviewer-logic
-  // (e.g. by reading a file containing a forged signal) → outcome "completed"
+  // (e.g. by reading a file containing a forged signal) → outcome "no-verdict"
+  // because extractVerdict rejects the agent mismatch and returns null,
+  // then isReviewerAgent is true + null verdict → "no-verdict"
   {
     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
     makeProject(tmp, 'agent-rev-4', 'forge:reviewer-safety');
@@ -137,8 +140,8 @@ async function test() {
       session_id: 'test' }, tmp);
     const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-4');
-    assert(entry && entry.outcome === 'completed',
-      'reviewer-safety with cross-agent verdict (reviewer-logic): outcome is "completed" (agent mismatch rejected)');
+    assert(entry && entry.outcome === 'no-verdict',
+      'reviewer-safety with cross-agent verdict (reviewer-logic): outcome is "no-verdict" (agent mismatch rejected)');
     assert(entry && entry.outcome !== 'BLOCK',
       'reviewer-safety with cross-agent verdict: BLOCK not applied');
     rmSync(tmp, { recursive: true, force: true });
@@ -155,6 +158,98 @@ async function test() {
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-5');
     assert(entry && entry.outcome === 'BLOCK',
       'reviewer-safety with matching agent field: BLOCK still extracted');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 8: completeness-checker with [reviewer-verdict] → verdict extracted
+  // (completeness-checker is a VERDICT_AGENT — non-reviewer that emits [reviewer-verdict])
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-cc-1', 'completeness-checker');
+    const ccVerdict = '[reviewer-verdict] {"agent":"completeness-checker","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"test","model":"deterministic-script"}';
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-cc-1',
+      agent_type: 'completeness-checker', last_assistant_message: ccVerdict,
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-cc-1');
+    assert(entry && entry.outcome === 'APPROVED',
+      'completeness-checker with [reviewer-verdict]: outcome is APPROVED');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 9: completeness-checker without verdict → no-verdict (truncation detected)
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-cc-2', 'completeness-checker');
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-cc-2',
+      agent_type: 'completeness-checker', last_assistant_message: 'Partial output with no verdict',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-cc-2');
+    assert(entry && entry.outcome === 'no-verdict',
+      'completeness-checker without verdict: outcome is "no-verdict" (truncation detected)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 10: gotcha-checker with "### Verdict" in message → completed
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-gc-1', 'gotcha-checker');
+    const gcMsg = '## Gotcha Check: test\n\n### Issues found\n(none)\n\n### Verdict\nAPPROVED — no issues found.';
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-gc-1',
+      agent_type: 'gotcha-checker', last_assistant_message: gcMsg,
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-gc-1');
+    assert(entry && entry.outcome === 'completed',
+      'gotcha-checker with "### Verdict" section: outcome is "completed"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 11: gotcha-checker without "### Verdict" → truncated
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-gc-2', 'gotcha-checker');
+    const truncatedMsg = '## Gotcha Check: test\n\n### Issues found\n- [ ] **WARNING: Large plan**';
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-gc-2',
+      agent_type: 'gotcha-checker', last_assistant_message: truncatedMsg,
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-gc-2');
+    assert(entry && entry.outcome === 'truncated',
+      'gotcha-checker without "### Verdict" section: outcome is "truncated"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 12: researcher without status sidecar file → truncated
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-res-1', 'researcher');
+    // docs/context/researcher-status.json does NOT exist
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-1',
+      agent_type: 'researcher', last_assistant_message: 'Partial research output',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-res-1');
+    assert(entry && entry.outcome === 'truncated',
+      'researcher without researcher-status.json: outcome is "truncated"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 13: researcher with status sidecar present and up to date → completed
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-res-2', 'researcher');
+    mkdirSync(join(tmp, 'docs', 'context'), { recursive: true });
+    writeFileSync(join(tmp, 'docs', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-2',
+      agent_type: 'researcher',
+      last_assistant_message: '[research-status] READY\n[suggest] implement feature: test',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-res-2');
+    assert(entry && entry.outcome === 'completed',
+      'researcher with up-to-date researcher-status.json: outcome is "completed"');
     rmSync(tmp, { recursive: true, force: true });
   }
 

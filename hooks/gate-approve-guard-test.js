@@ -59,6 +59,7 @@ function writeApprovalToken(projectDir, actions, ttlMs) {
 function makeTmpProject() {
   const tmp = mkdtempSync(join(tmpdir(), 'gate-approve-test-'));
   mkdirSync(join(tmp, '.pipeline'), { recursive: true });
+  writeFileSync(join(tmp, '.pipeline', 'project.json'), '{"name":"test"}', 'utf8');
   return tmp;
 }
 

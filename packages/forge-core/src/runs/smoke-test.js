@@ -22,10 +22,9 @@ try {
     projectRoot: tmp,
     sessionId: 'test-session-001',
     pipelineType: 'plan',
-    mode: 'LEAN',
     feature: 'Add user preferences',
   });
-  console.log('Created:', run.runId, run.status, run.pipelineType, run.mode);
+  console.log('Created:', run.runId, run.status, run.pipelineType);
 
   // 2. Get it back
   console.log('\n--- getRun ---');
@@ -44,16 +43,14 @@ try {
   console.log('\n--- updateRun (status -> running) ---');
   const updated = updateRun(tmp, run.runId, {
     status: 'running',
-    currentStep: 'planner',
   });
-  console.log('Updated:', updated.status, updated.currentStep);
+  console.log('Updated:', updated.status);
   console.assert(updated.status === 'running', 'Status should be running');
 
   // 5. Update with gate state
   console.log('\n--- updateRun (gate-pending) ---');
   const gated = updateRun(tmp, run.runId, {
     status: 'gate-pending',
-    currentStep: 'gate1',
     gateState: {
       gate: 'gate1',
       status: 'pending',
@@ -75,7 +72,6 @@ try {
     projectRoot: tmp,
     sessionId: 'test-session-002',
     pipelineType: 'debug',
-    mode: 'STANDARD',
     feature: 'Fix crash on empty input',
   });
   console.log('Created:', run2.runId, run2.pipelineType);

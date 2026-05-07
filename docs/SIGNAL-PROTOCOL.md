@@ -13,7 +13,7 @@ Agent output signals use `[signal-name]` format. This is the canonical reference
 
 ### `[suggest]` — Next step recommendation
 **Format:** `[suggest] /forge:<command>` or `[suggest] <action description>`
-**Emitters:** planner, coder, debug, refactor, implementer, gotcha-checker, implementation-architect, cleanup, skills-generator
+**Emitters:** planner, coder, debug, refactor, gotcha-checker, implementation-architect, cleanup, skills-generator
 **Consumer:** Orchestrating Claude reads it to decide what to present as the next action.
 **Value:** MEDIUM — guides pipeline flow. No code parses it but the LLM reliably acts on it.
 
@@ -24,8 +24,8 @@ Agent output signals use `[signal-name]` format. This is the canonical reference
 **Value:** MEDIUM — the user sees this in gate summaries.
 
 ### `[todo]` — Board task creation
-**Format:** `[todo] <priority>: <title> — <description>` (ideator/red-team) or `[todo] <N>. <task text>` (planner)
-**Emitters:** planner, ideator, red-team
+**Format:** `[todo] <priority>: <title> — <description>` (critic/red-team) or `[todo] <N>. <task text>` (planner)
+**Emitters:** planner, critic, red-team
 **Consumer:** Orchestrating Claude reads these and calls `forge_add_todo` to create board entries.
 **Value:** MEDIUM — creates persistent tasks. The LLM bridges signal to MCP tool call.
 

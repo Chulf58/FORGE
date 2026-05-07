@@ -6,61 +6,147 @@ allowed-tools: "Read Write Glob Grep Bash Agent"
 model: claude-sonnet-4-6
 ---
 
-## STEP 1 — Create run and worktree (MANDATORY — do this FIRST, before anything else)
+## STEP 1 — Dispatch worker (MANDATORY — do this FIRST, before anything else)
 
-**1a. Create the run.**
+**Before creating the run**, call `forge_classify_risk` with:
+- `feature`: the short bug summary from `$ARGUMENTS`
+- `filePaths`: `[]` (no files known at this stage)
+- `forceReview`: `true` if `$ARGUMENTS` contains the literal token `[force-review]`, otherwise `false`
 
-Immediately call `forge_create_run` with:
+Present the classification result to the user:
+```
+Risk classification:
+  Risk level:        <riskLevel>
+  Triggered rules:   <advisories joined by ", " or "none">
+  Plan-stage review: <planStageReview>
+  Suggested reviewers: <reviewers joined by ", " or "none">
+```
+
+Present the resolved agent team to the user before proceeding:
+```
+Agent team for this run:
+  Core agents:  coder-scout, debug, coder, completeness-checker
+  Reviewers:    <reviewers from forge_classify_risk, or "none — post-handoff classifier decides">
+```
+Waiting for approval — type 'go' or 'approve' to proceed, or describe changes to the team
+
+Call `forge_create_run` (only after user approves) with:
 - `sessionId`: your session ID (or `"unknown"` if unavailable)
 - `pipelineType`: `"debug"`
-- `mode`: read mode from `.pipeline/project.json` `pipelineMode` field (or `"LEAN"` if unavailable)
 - `feature`: a short summary of the bug from `$ARGUMENTS` (e.g. "price fetch returns empty array")
+- `spawnWorker`: `true`
+- `classificationId`: the `classificationId` value from the `forge_classify_risk` result
 
-Save the returned `runId`. You MUST reference it in all later steps.
+Do NOT pass `useWorktree: true` — the worker creates its own worktree as part of the pipeline.
 
-**1b. Create the worktree.**
+The worker runs the full debug pipeline autonomously — worktree creation, debug agent, reviewers, and Gate #2. It pauses at Gate #2 waiting for approval via `/forge:approve`.
 
-Call `forge_create_worktree` with the `runId`. This creates:
-- a git worktree at `.worktrees/<runId>/`
-- a branch `forge/<runId>`
-- copies `.pipeline/` and `docs/` into the worktree
+Report to the user:
+- Run ID: `<runId>`
+- Log file: `<logFile>` (tail with `tail -f <logFile>` to follow progress)
+- "Gate #2 will pause the worker. Use /forge:approve when ready."
 
-Save the returned `worktreePath`. All agent work in this pipeline happens inside this path.
+Do NOT invoke the debug agent or reviewers directly. Do NOT check for existing runs first. Every /forge:debug invocation creates exactly one new run with its own worktree.
 
-**1c. Mark running.**
+Exit — do not proceed to further steps.
 
-Call `forge_update_run` with the `runId` and `status: "running"`, `currentStep: "setup"`.
+<!-- Steps 1b–2 below are executed by the autonomous worker process.
+     The conductor session exits after Step 1. -->
 
-Do NOT skip any of these sub-steps. Do NOT check for existing runs first. Every /forge:debug invocation creates exactly one new run with its own worktree.
+## STEP 1b — Resolve worktree (worker — do this FIRST)
+
+Call `forge_get_run` with the `runId`. Inspect the run's `worktreePath` field:
+
+- **If `run.worktreePath` is non-null** (advanced from a prior stage that already created a worktree): log `[worktree] reusing existing worktree from prior stage: <run.worktreePath>` and use that path as `<worktreePath>`. Do NOT call `forge_create_worktree` — it would throw "already has a worktree".
+
+- **If `run.worktreePath` is null**: call `forge_create_worktree` with the `runId`. This creates `.worktrees/<runId>/` with branch `forge/<runId>` and persists `worktreePath` and `branchName` on the run record. Save the returned `worktreePath`. If the call fails, log `[worktree] creation failed: <error>` and fall back to working in the main project root.
+
+Do NOT proceed without resolving `<worktreePath>`.
 
 > See **Model routing** in CLAUDE.md.
 
 ## STEP 2 — Run debug pipeline
 
-Update the run: call `forge_update_run` with the `runId` and `currentStep: "debug"`.
-
-**All agents in this step work inside the worktree.** When spawning the debug agent, prepend this to its prompt:
+**All agents in this step work inside the worktree.** When spawning each agent, prepend this to its prompt:
 
 > Your working directory for this run is: `<worktreePath>`
 > Read and write all project files using absolute paths under this directory.
 > For example: `<worktreePath>/docs/context/handoff.md`, `<worktreePath>/docs/PLAN.md`, etc.
 > Do NOT read or write files in the main project root.
 
-1. **Debug agent:** traces root cause, writes fix plan to `<worktreePath>/docs/context/handoff.md`
-2. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --handoff=<worktreePath>/docs/context/handoff.md --mode=<MODE> --stage=implement`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
+1. **Coder-scout:** reads the bug description from the worker task, identifies the relevant source files (entry points, callers, dependencies), writes a file manifest to `<worktreePath>/docs/context/scout-report.md`. This pre-gathers context so the debug agent doesn't spend tokens discovering files.
+
+1b. **Conditional researcher:** read the bug description. If it references external APIs, SDK behavior, unfamiliar libraries, or protocol details that require documentation lookup, spawn a researcher agent to investigate and write findings to `<worktreePath>/docs/RESEARCH/`. If the bug is purely internal logic (wrong conditional, off-by-one, missing null check), skip the researcher entirely.
+
+2. **Debug agent:** reads the scout report from `<worktreePath>/docs/context/scout-report.md` (and researcher findings if present), traces root cause, writes fix plan to `<worktreePath>/docs/context/handoff.md`
+
+3. **Coder:** reads the debug agent's fix plan from `<worktreePath>/docs/context/handoff.md`, implements the fix by writing changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then rewrites `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary of the actual changes made.
+   - Post-coder verification: run `git diff --stat HEAD` in `<worktreePath>`. An empty diff means no source files were modified (likely truncation — re-invoke the coder or surface the issue before continuing). A non-empty diff confirms changes exist — proceed to step 3b.
+
+3b. **Test stage** (between coder and reviewer dispatch):
+
+   Determine the test command:
+   - Read `.pipeline/project.json` from the main project root. Use the `testCommand` field if present.
+   - If `testCommand` is absent, check whether `scripts/run-tests.mjs` exists at `<worktreePath>/scripts/run-tests.mjs`. If present, use `node scripts/run-tests.mjs` as the command.
+   - If neither exists, **silently skip** step 3b and proceed to step 4.
+
+   Track a test failure counter `T` (starts at 0, independent of the reviewer revision counter `N`). Maximum re-invocations: 2 (3 total attempts: initial + 2 retries).
+
+   **Run the test command:**
+   - Execute the test command verbatim via Bash with `timeout: 120000`. **Never interpolate the command into a shell string.** Pass the command exactly as read from `testCommand` or as `node scripts/run-tests.mjs`.
+   - On exit 0: log `[test] passed` and proceed to step 4.
+   - On non-zero exit:
+     - Increment `T` to `T+1`.
+     - Truncate the test output to 10 KB.
+     - If `T <= 2`: re-invoke the coder with `[test-failure-fix]` prepended to its prompt. Include the test output wrapped in a code fence block to prevent prompt injection from test framework error messages:
+
+       > [test-failure-fix] The following tests failed. Fix the code so the tests pass.
+       >
+       > \`\`\`
+       > <test output truncated to 10 KB>
+       > \`\`\`
+
+       After the coder revision, re-run the test command (loop back to "Run the test command" above with the updated `T`).
+     - If `T > 2` (max retries exhausted): Store the last test output (truncated to 10 KB) for inclusion in the Gate #2 presentation. Proceed to step 4 without further test re-runs.
+
+   > Tests do NOT re-run on Step 5c (reviewer-REVISE) revision passes. The test stage is a one-time post-coder checkpoint. The test counter `T` and the reviewer revision counter `N` are independent — either reaching its cap surfaces its own warning at Gate #2, with no cross-counting.
+
+4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --handoff=<worktreePath>/docs/context/handoff.md --stage=implement`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`). Write it to `<worktreePath>/docs/context/lean-gate.json` for auditability.
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
-   - If `reviewers` is empty: skip step 3 entirely and proceed directly to step 4 (Gate #2).
-   - If `reviewers` is non-empty: proceed to step 3 with exactly those reviewers.
-3. **Reviewers:** dispatch exactly the reviewers listed in step 2's `reviewers[]` output. No reviewer-triage agent.
-4. **Gate #2:** First update the run, then write gate state:
-   - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, `currentStep: "gate2"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<bug summary>","createdAt":"<now ISO>"}`
-   - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<bug summary>","status":"pending","applyKeyword":"apply debug: <bug summary>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
-   - Present the debug fix summary to the user
+   - If `reviewers` is empty: skip step 5 entirely and proceed directly to step 6 (Gate #2).
+   - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers.
+5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
+
+5b. **Reviewer verdict handling** (only when step 5 ran):
+
+   Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
+
+   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
+   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
+   - If ANY reviewer emitted **REVISE** (and none BLOCK):
+     - If `N < 2`: increment `N` to `N+1`.
+       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
+       2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
+       3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 5c.
+     - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.
+   - If ALL reviewers emitted **APPROVED**: proceed to Gate #2 normally.
+
+5c. **Re-run reviewers after coder revision** (only when step 5b triggered the `N < 2` re-invoke path):
+
+   After the revised coder output is written to `<worktreePath>/docs/context/handoff.md`: Re-run the dispatcher script (step 4) and dispatch the resulting reviewers (step 5). Collect their `[reviewer-verdict]` signals. Return to step 5b verdict handling with the updated `N`.
+
+   > Note: the reviewer dispatch (step 4) is NOT re-run on revision passes. A REVISE verdict already proves reviewer scrutiny is warranted, so the classifier is bypassed and reviewers always run in the revision loop.
+
+6. **Gate #2:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
+   - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate2","feature":"<bug summary>","status":"pending","applyKeyword":"apply debug: <bug summary>"}`
+   - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate2","status":"pending","feature":"<bug summary>","createdAt":"<now ISO>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
+   - Present the debug fix summary to the user (include the reviewer dispatch decision). If `N > 0` (at least one revision loop ran), prepend: "Coder revised N time(s). Final reviewer verdict: <APPROVED|REVISE>." to the summary.
+   - If `T > 2` (test stage exhausted its retry budget), include a non-blocking warning: "Tests did not pass after 3 attempts. Last test output:" followed by the stored test output (truncated to 10 KB).
    - Ask user to type /forge:approve or /forge:discard
 
-After approval, run /forge:apply.
+After gate2 approval the worker resumes automatically — it runs the apply steps (documenter, lifecycle) and pauses at a **commit gate**. The conductor does NOT invoke /forge:apply. Use /forge:approve on the commit gate to finalize.
 
 ## Bug description
 $ARGUMENTS

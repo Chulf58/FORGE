@@ -47,7 +47,7 @@ async function main(rawInput) {
     if (Array.isArray(activeData.agents)) {
       sourceAgentRan = activeData.agents.some((a) => {
         const t = typeof a.agent_type === 'string' ? a.agent_type : '';
-        return (t.includes('implementer') || t.includes('coder')) && a.completedAt;
+        return t.includes('coder') && a.completedAt;
       });
     }
   } catch (_) { /* run-active absent or unreadable — skip check */ }

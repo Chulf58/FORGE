@@ -3,7 +3,7 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
-const { hasValidApprovalToken, STDIN_TIMEOUT_LONG } = require('./hook-utils');
+const { hasValidApprovalToken, STDIN_TIMEOUT_LONG, isProjectInitialized, resolveProjectDir } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
@@ -26,7 +26,10 @@ function exitBlock(msg) {
   process.exit(2);
 }
 
-// Commands that should use dedicated tools instead of Bash
+// Commands that should use dedicated tools instead of Bash.
+// Note: ls and wc are NOT in this map — they are read-only when used without
+// output redirect and have no dedicated tool equivalent for that use case.
+// They are handled as redirect-conditional special cases below (like echo).
 const BLOCKED_COMMANDS = {
   'cat':  'Read',
   'head': 'Read',
@@ -34,10 +37,8 @@ const BLOCKED_COMMANDS = {
   'grep': 'Grep',
   'rg':   'Grep',
   'find': 'Glob',
-  'ls':   'Glob',
   'sed':  'Edit',
   'awk':  'Edit',
-  'wc':   'Read',
 };
 
 /**
@@ -92,13 +93,35 @@ function splitIntoSegments(command) {
 }
 
 /**
- * Returns the first command word of every operator-separated segment.
- * Used to detect blocked commands anywhere in a chained expression.
+ * Returns the first command word of every operator-separated segment,
+ * plus command words found inside common bypass patterns:
+ * - `bash -c '...'` / `sh -c '...'` wrappers
+ * - `$(...)` command substitutions
  */
 function extractAllCommandWords(command) {
-  return splitIntoSegments(command)
+  const words = splitIntoSegments(command)
     .map(seg => extractCommandWord(seg))
     .filter(Boolean);
+
+  // Detect `bash -c 'cmd ...'` and `sh -c 'cmd ...'` wrappers
+  const shellCRe = /\b(?:bash|sh)\s+-c\s+(['"])(.*?)\1/g;
+  let m;
+  while ((m = shellCRe.exec(command)) !== null) {
+    const inner = extractCommandWord(m[2]);
+    if (inner) words.push(inner);
+  }
+
+  // Detect `$(cmd ...)` command substitutions, but skip heredoc patterns
+  // like $(cat <<'EOF' ...) which are legitimate multiline string builders
+  const subRe = /\$\(([^)]+)\)/g;
+  while ((m = subRe.exec(command)) !== null) {
+    const inner = m[1].trim();
+    if (/^cat\s+<</.test(inner)) continue;
+    const word = extractCommandWord(inner);
+    if (word) words.push(word);
+  }
+
+  return words;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +145,20 @@ const PROTECTED_CONTROL_FILES = [
 function maskHeredocs(command) {
   return command.replace(/<<-?\s*['"]?(\w+)['"]?\s*\n[\s\S]*?\n\1(?=\s|$)/gm,
     (m) => 'x'.repeat(m.length));
+}
+
+// Mask quoted string contents so commit messages and other string arguments
+// don't trigger git hard-block patterns (e.g. "cleanup" matching git clean).
+function maskQuotedStrings(command) {
+  return command
+    .replace(/"(?:\\.|[^"\\])*"/g, s => '"' + 'x'.repeat(Math.max(0, s.length - 2)) + '"')
+    .replace(/'(?:\\.|[^'\\])*'/g, s => "'" + 'x'.repeat(Math.max(0, s.length - 2)) + "'");
+}
+
+// Combined masking for pattern tests: neutralizes heredocs, quoted strings,
+// and $(cat ...) command substitution bodies.
+function maskStringContent(command) {
+  return maskQuotedStrings(maskHeredocs(command));
 }
 
 function referencesControlFile(command) {
@@ -212,14 +249,58 @@ function getGitSubcommand(segment) {
  * pipeline itself and don't need a separate approval token.
  * Fail-open: any read/parse error returns false.
  */
-function hasActivePipelineRun() {
+function getActivePipelineRun(projectDir) {
   try {
-    const runActivePath = path.join(process.cwd(), '.pipeline', 'run-active.json');
+    const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
     const raw = fs.readFileSync(runActivePath, 'utf8');
     const data = JSON.parse(raw);
-    return typeof data.runId === 'string' && data.runId.length > 0;
+    if (typeof data.runId !== 'string' || data.runId.length === 0) return null;
+    return { runId: data.runId, worktreePath: data.worktreePath || null };
   } catch (_) {
-    return false;
+    return null;
+  }
+}
+
+/**
+ * Returns true when a commit gate is currently pending. Reads gate-pending.json
+ * using worktree-first fallback (gate-enforcement.js was removed).
+ * Fail-open: missing or unreadable gate file → returns false (no block).
+ */
+function isCommitGatePending(projectDir) {
+  try {
+    // Worktree-first: check run-active.json for worktreePath
+    let gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');
+    try {
+      const runRaw = fs.readFileSync(path.join(projectDir, '.pipeline', 'run-active.json'), 'utf8');
+      const runData = JSON.parse(runRaw);
+      if (runData && typeof runData.worktreePath === 'string' && runData.worktreePath) {
+        const wtGatePath = path.join(runData.worktreePath, '.pipeline', 'gate-pending.json');
+        try {
+          fs.readFileSync(wtGatePath, 'utf8'); // probe existence
+          gatePath = wtGatePath;
+        } catch (_) {
+          // worktree gate not found, fall back to main project root
+        }
+      }
+    } catch (_) {
+      // run-active.json absent or unreadable — use main project root gate path
+    }
+
+    let gateData;
+    try {
+      gateData = JSON.parse(fs.readFileSync(gatePath, 'utf8'));
+    } catch (_) {
+      return false; // fail-open: absent or unreadable → no block
+    }
+
+    return (
+      gateData !== null &&
+      typeof gateData === 'object' &&
+      gateData.gate === 'commit' &&
+      gateData.status === 'pending'
+    );
+  } catch (_) {
+    return false; // fail-open
   }
 }
 
@@ -280,12 +361,33 @@ async function main(rawInput) {
       );
       return;
     }
+
+    // Special case: ls and wc are read-only when used without output redirect.
+    // Plain `ls /dir` or `wc -l file` are informational (human-visible only) and
+    // have no dedicated tool equivalent for that use case. Only block when the
+    // output is being redirected to a file — in that case, use Glob + Write or Read.
+    if (cmdWord === 'ls' && hasOutputRedirect(command)) {
+      exitBlock(
+        '[bash-guard] Use Glob tool instead of `ls > file`. ' +
+        'Bash is reserved for git, npm, node, and process operations.'
+      );
+      return;
+    }
+
+    if (cmdWord === 'wc' && hasOutputRedirect(command)) {
+      exitBlock(
+        '[bash-guard] Avoid redirecting `wc` output to a file via Bash. ' +
+        'Bash is reserved for git, npm, node, and process operations.'
+      );
+      return;
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // Control file write guard
+  // Control file write guard (skipped during init — project not yet bootstrapped)
   // ---------------------------------------------------------------------------
-  if (referencesControlFile(command) && hasBashWriteVector(command)) {
+  const cfProjectDir = resolveProjectDir(payload);
+  if (isProjectInitialized(cfProjectDir) && referencesControlFile(command) && hasBashWriteVector(command)) {
     exitBlock(
       '[bash-guard] Blocked: command writes to a protected .pipeline/ control file via Bash. ' +
       'Use the corresponding MCP tool (forge_create_run, forge_set_gate, etc.) or the Write tool instead.'
@@ -301,23 +403,43 @@ async function main(rawInput) {
     const sub = getGitSubcommand(segment);
     if (sub === null) continue; // not a git command segment
 
-    // Hard-block: test the full command string for destructive patterns.
-    // (Flags like --force may appear after a subcommand in the same segment;
-    // testing the full string catches them regardless of position.)
+    // Hard-block: test the masked command string for destructive patterns.
+    // Masking neutralizes quoted strings and heredocs so commit message content
+    // (e.g. "sidecar cleanup" matching git clean) doesn't cause false positives.
+    const maskedCommand = maskStringContent(command);
     for (const { pattern, reason } of GIT_HARD_BLOCKED_PATTERNS) {
-      if (pattern.test(command)) {
+      if (pattern.test(maskedCommand)) {
         exitBlock('[bash-guard] Blocked: ' + reason + '. This operation is permanently disabled.');
         return;
       }
     }
 
+    // Commit-gate hard-block: deny git commit when a commit gate is pending.
+    // This must be checked BEFORE the soft-block so no active-run bypass is possible.
+    if (sub === 'commit' && isCommitGatePending(resolveProjectDir(payload))) {
+      exitBlock(
+        '[bash-guard] Blocked: a commit gate is pending. Run `/forge:approve` to review ' +
+        'and approve the pending gate before committing.'
+      );
+      return;
+    }
+
     // Soft-block: require pipeline run OR valid approval token
     if (GIT_SOFT_BLOCKED[sub] !== undefined) {
-      if (hasActivePipelineRun()) {
-        // Active pipeline run — allow (the pipeline initiated this git call)
-        continue;
+      const activeRun = getActivePipelineRun(resolveProjectDir(payload));
+      if (activeRun) {
+        if (!activeRun.worktreePath) {
+          // Non-worktree run (e.g. apply on main) — allow all git ops
+          continue;
+        }
+        // Worktree run: only bypass if the command targets the worktree
+        const normalizedWt = activeRun.worktreePath.replace(/\\/g, '/');
+        if (command.includes(normalizedWt) || command.includes(activeRun.worktreePath)) {
+          continue;
+        }
+        // Command targets main, not the worktree — fall through to approval check
       }
-      if (hasValidApprovalToken(sub)) {
+      if (hasValidApprovalToken(sub, resolveProjectDir(payload))) {
         // User explicitly approved this action in their last message — allow
         continue;
       }

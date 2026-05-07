@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, stripAnsi, isForgeAgent, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, stripAnsi, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -18,6 +18,17 @@ function isReviewerAgent(agentType) {
   if (!agentType) return false;
   const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
   return normalized.startsWith('reviewer');
+}
+
+// Non-reviewer agents that legitimately emit [reviewer-verdict] signals.
+// These receive the same verdict extraction and no-verdict truncation check
+// as reviewer-typed agents.
+const VERDICT_AGENTS = new Set(['completeness-checker']);
+
+function isVerdictEmittingAgent(agentType) {
+  if (!agentType) return false;
+  const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
+  return normalized.startsWith('reviewer') || VERDICT_AGENTS.has(normalized);
 }
 
 /**
@@ -65,6 +76,53 @@ function extractVerdict(text, expectedAgentType) {
   return null;
 }
 
+/**
+ * Resolves the provider and model ID for a given agent type by reading
+ * the most recent matching entry from session-dispatch-log.json.
+ *
+ * @param {string} projectDir
+ * @param {string} normalizedType - bare agent name (no "forge:" prefix)
+ * @returns {Promise<{ providerId: string|null, modelId: string|null }>}
+ */
+async function resolveAgentModel(projectDir, normalizedType) {
+  try {
+    const logPath = path.join(projectDir, '.pipeline', 'session-dispatch-log.json');
+    let raw;
+    try {
+      raw = await fs.promises.readFile(logPath, 'utf8');
+    } catch (_) {
+      return { providerId: null, modelId: null };
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      return { providerId: null, modelId: null };
+    }
+    if (!parsed || !Array.isArray(parsed.entries)) {
+      return { providerId: null, modelId: null };
+    }
+    // Find the most recent entry matching agentName
+    let best = null;
+    for (const entry of parsed.entries) {
+      if (entry && entry.agentName === normalizedType) {
+        if (!best || (entry.ts && entry.ts > best.ts)) {
+          best = entry;
+        }
+      }
+    }
+    if (!best) {
+      return { providerId: null, modelId: null };
+    }
+    return {
+      providerId: typeof best.providerId === 'string' ? best.providerId : null,
+      modelId: typeof best.modelId === 'string' ? best.modelId : null,
+    };
+  } catch (_) {
+    return { providerId: null, modelId: null };
+  }
+}
+
 async function main(rawInput) {
   let payload;
   try {
@@ -76,18 +134,45 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
+  const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
 
-  // Read existing run-active.json
-  let data;
+  // Read the singleton first to discover the runId (steering pointer).
+  let singletonData;
   try {
-    const raw = await fs.promises.readFile(runActivePath, 'utf8');
-    data = JSON.parse(raw);
+    const raw = await fs.promises.readFile(singletonPath, 'utf8');
+    singletonData = JSON.parse(raw);
   } catch (_) {
-    // File absent or unparseable — nothing to patch, exit silently
+    // Singleton absent or unparseable — nothing to patch, exit silently
     console.error('[forge-subagent] run-active.json not found or unreadable — skipping stop patch');
     exitOk();
     return;
+  }
+
+  // Resolve per-run path when a valid runId is present.
+  const rawRunId = singletonData && typeof singletonData.runId === 'string'
+    ? singletonData.runId
+    : null;
+  const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
+  const perRunPath = validRunId
+    ? path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json')
+    : null;
+
+  // Determine which file to read/write.
+  let runActivePath;
+  let data;
+  if (perRunPath) {
+    try {
+      const raw = await fs.promises.readFile(perRunPath, 'utf8');
+      data = JSON.parse(raw);
+      runActivePath = perRunPath;
+    } catch (_) {
+      // Per-run file absent or unparseable — fall back to singleton.
+      data = singletonData;
+      runActivePath = singletonPath;
+    }
+  } else {
+    data = singletonData;
+    runActivePath = singletonPath;
   }
 
   if (!Array.isArray(data.agents)) {
@@ -120,30 +205,66 @@ async function main(rawInput) {
   }
 
   // Determine outcome from last_assistant_message.
-  // Only reviewer-typed agents may emit [reviewer-verdict] — non-reviewers
-  // always get outcome "completed" regardless of message content.
+  // Reviewer-typed agents and VERDICT_AGENTS (e.g. completeness-checker) may
+  // emit [reviewer-verdict] — all others always get outcome "completed"
+  // regardless of message content.
   const lastMessage = payload.last_assistant_message || null;
-  const verdict = isReviewerAgent(agentType) ? extractVerdict(lastMessage, agentType) : null;
+  const verdict = isVerdictEmittingAgent(agentType) ? extractVerdict(lastMessage, agentType) : null;
   let outcome = verdict !== null ? verdict : 'completed';
 
-  // Reviewer without verdict = likely truncation or prompt failure.
-  if (isReviewerAgent(agentType) && verdict === null) {
+  // Verdict-emitting agent without verdict = likely truncation or prompt failure.
+  if (isVerdictEmittingAgent(agentType) && verdict === null) {
     outcome = 'no-verdict';
     console.error('[forge-subagent] WARNING: ' + stripAnsi(agentType) + ' stopped without emitting [reviewer-verdict] — possible truncation');
+  }
+
+  // Truncation detection for the coder agent — check git diff rather than
+  // artifact mtime, since source files are now the primary coder output.
+  // Guard with data.worktreePath: skip this check for non-worktree runs.
+  const normalizedType = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
+
+  if (normalizedType === 'coder' && data.worktreePath && outcome === 'completed') {
+    try {
+      const { spawnSync } = require('child_process');
+      const result = spawnSync('git', ['diff', '--quiet', 'HEAD'], { cwd: data.worktreePath });
+      if (result.error) {
+        // git not found or worktree path invalid — fail-open, assume not truncated
+        console.error('[forge-subagent] coder git diff check failed: ' + result.error.message + ' — assuming completed');
+      } else if (result.status === 0) {
+        // exit 0 = no changes present — coder produced no diff, likely truncated
+        outcome = 'truncated';
+        console.error('[forge-subagent] WARNING: coder stopped but git diff shows no changes — possible truncation');
+      }
+      // exit non-zero = changes present — outcome stays 'completed'
+    } catch (err) {
+      // spawnSync threw — fail-open
+      console.error('[forge-subagent] coder git diff check threw: ' + err.message + ' — assuming completed');
+    }
+  }
+
+  // Truncation detection for the gotcha-checker agent.
+  // The agent's output always ends with a "### Verdict" section. If that
+  // section is absent from the last message, the agent was truncated before
+  // completing its analysis.
+  if (normalizedType === 'gotcha-checker' && outcome === 'completed') {
+    const msg = lastMessage || '';
+    if (!msg.includes('### Verdict')) {
+      outcome = 'truncated';
+      console.error('[forge-subagent] WARNING: gotcha-checker stopped but no "### Verdict" section found — possible truncation');
+    }
   }
 
   // Truncation detection for artifact-producing agents.
   // If the agent's expected output file was not modified after it started,
   // the agent was likely truncated mid-generation before writing its artifact.
   const EXPECTED_ARTIFACTS = {
-    'coder': 'docs/context/handoff.md',
     'planner': 'docs/PLAN.md',
     'debug': 'docs/context/handoff.md',
     'refactor': 'docs/context/handoff.md',
     'implementation-architect': 'docs/context/slice-brief.md',
+    'researcher': 'docs/context/researcher-status.json',
   };
 
-  const normalizedType = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
   const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];
 
   if (artifactRelPath && typeof entry.startedAt === 'number' && outcome === 'completed') {
@@ -176,10 +297,53 @@ async function main(rawInput) {
   data.currentUnit = null;
 
   try {
-    await fs.promises.writeFile(runActivePath, JSON.stringify(data, null, 2), 'utf8');
+    const tmp = runActivePath + '.tmp.' + process.pid;
+    await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+    await fs.promises.rename(tmp, runActivePath);
   } catch (err) {
     console.error('[forge-subagent] Failed to write run-active.json: ' + err.message);
     // Non-fatal — exit 0 regardless
+  }
+
+  // Dual-write: sync agents array to run registry on completion.
+  // Follows the stages dual-write pattern from subagent-start.js.
+  if (data.runId) {
+    try {
+      const pluginRoot = resolvePluginRoot();
+      const coreIndex = path.join(pluginRoot, 'packages', 'forge-core', 'src', 'runs', 'index.js');
+      const coreMod = await import('file:///' + coreIndex.replace(/\\/g, '/'));
+      const updateRunCore = coreMod.updateRun;
+
+      // Transform snake_case → camelCase for RunAgent schema compatibility
+      const registryAgents = data.agents.map(a => ({
+        agentId: a.agent_id || '',
+        agentType: a.agent_type || null,
+        startedAt: a.startedAt,
+        completedAt: a.completedAt || null,
+        durationMs: a.durationMs || null,
+        outcome: a.outcome || null,
+      }));
+
+      updateRunCore(projectDir, data.runId, { agents: registryAgents });
+    } catch (syncErr) {
+      console.error('[forge-subagent] agents registry sync failed: ' + syncErr.message);
+      // Non-fatal — proceed
+    }
+  }
+
+  // Record Anthropic usage — one request per native agent dispatch.
+  // Token count is 0: SubagentStop payload does not include token data.
+  const { providerId: agentProviderId, modelId: agentModelId } = await resolveAgentModel(projectDir, normalizedType);
+  if (agentProviderId === 'anthropic') {
+    try {
+      const pluginRoot = resolvePluginRoot();
+      const usageStorePath = path.join(pluginRoot, 'mcp', 'lib', 'usage-store.js');
+      const usageMod = await import('file:///' + usageStorePath.replace(/\\/g, '/'));
+      usageMod.recordUsage(projectDir, 'anthropic', 0, agentModelId || undefined);
+    } catch (usageErr) {
+      console.error('[forge-subagent] usage recording failed: ' + usageErr.message);
+      // Non-fatal — proceed
+    }
   }
 
   exitOk();

@@ -25,12 +25,12 @@ const ISO = '2026-04-15T00:00:00.000Z';
 
 // 6 runs spanning every filter dimension we exercise.
 const RUNS = [
-  { runId: 'r-aaaa', pipelineType: 'plan',     mode: 'LEAN',     status: 'created',      feature: 'plan A',   updatedAt: '2026-04-15T01:00:00.000Z' },
-  { runId: 'r-bbbb', pipelineType: 'implement',mode: 'STANDARD', status: 'running',      feature: 'impl B',   updatedAt: '2026-04-15T02:00:00.000Z' },
-  { runId: 'r-cccc', pipelineType: 'implement',mode: 'FULL',     status: 'gate-pending', feature: 'impl C',   updatedAt: '2026-04-15T03:00:00.000Z' },
-  { runId: 'r-dddd', pipelineType: 'plan',     mode: 'LEAN',     status: 'completed',    feature: 'plan D',   updatedAt: '2026-04-15T04:00:00.000Z' },
-  { runId: 'r-eeee', pipelineType: 'debug',    mode: 'SPRINT',   status: 'failed',       feature: 'debug E',  updatedAt: '2026-04-15T05:00:00.000Z' },
-  { runId: 'r-ffff', pipelineType: 'refactor', mode: 'LEAN',     status: 'discarded',    feature: 'refac F',  updatedAt: '2026-04-15T06:00:00.000Z' },
+  { runId: 'r-aaaa', pipelineType: 'plan',      status: 'created',      feature: 'plan A',   updatedAt: '2026-04-15T01:00:00.000Z' },
+  { runId: 'r-bbbb', pipelineType: 'implement', status: 'running',      feature: 'impl B',   updatedAt: '2026-04-15T02:00:00.000Z' },
+  { runId: 'r-cccc', pipelineType: 'implement', status: 'gate-pending', feature: 'impl C',   updatedAt: '2026-04-15T03:00:00.000Z' },
+  { runId: 'r-dddd', pipelineType: 'plan',      status: 'completed',    feature: 'plan D',   updatedAt: '2026-04-15T04:00:00.000Z' },
+  { runId: 'r-eeee', pipelineType: 'debug',     status: 'failed',       feature: 'debug E',  updatedAt: '2026-04-15T05:00:00.000Z' },
+  { runId: 'r-ffff', pipelineType: 'refactor',  status: 'discarded',    feature: 'refac F',  updatedAt: '2026-04-15T06:00:00.000Z' },
 ];
 
 function writeRun(projectDir, run) {
@@ -44,7 +44,6 @@ function writeRun(projectDir, run) {
       worktreePath: null,
       branchName: null,
       pipelineType: run.pipelineType,
-      mode: run.mode,
       feature: run.feature,
       status: run.status,
       createdAt: ISO,
@@ -144,20 +143,7 @@ async function main() {
       }
     }
 
-    // 4. mode filter (forces hydration).
-    if (!failure) {
-      const items = await callList(client, { filter: { mode: 'LEAN' } });
-      const expect = ['r-aaaa', 'r-dddd', 'r-ffff'];
-      if (JSON.stringify(idsOf(items)) !== JSON.stringify(expect)) {
-        failure = 'filter.mode="LEAN": expected ' + JSON.stringify(expect) + ', got ' + JSON.stringify(idsOf(items));
-      }
-      // Hydrated runs should carry the `mode` field.
-      if (!failure && items.length > 0 && items[0].mode !== 'LEAN') {
-        failure = 'filter.mode="LEAN": hydrated entries should carry mode field, got ' + JSON.stringify(Object.keys(items[0]));
-      }
-    }
-
-    // 5. Combined filter: implement + running → r-bbbb.
+    // 4. Combined filter: implement + running → r-bbbb.
     if (!failure) {
       const items = await callList(client, { filter: { pipelineType: 'implement', status: 'running' } });
       const expect = ['r-bbbb'];
@@ -182,32 +168,15 @@ async function main() {
       }
     }
 
-    // 7. Empty-result edge: mode=FULL + status=completed → no run matches (r-cccc is FULL but gate-pending).
+    // 7. Empty-result edge: implement + discarded → no run matches (r-cccc is gate-pending, r-ffff is refactor).
     if (!failure) {
-      const items = await callList(client, { filter: { mode: 'FULL', status: 'completed' } });
+      const items = await callList(client, { filter: { pipelineType: 'implement', status: 'discarded' } });
       if (items.length !== 0) {
         failure = 'empty-result edge: expected 0, got ' + items.length + ' (' + JSON.stringify(idsOf(items)) + ')';
       }
     }
 
-    // 8. mode filter + fields projection over a non-index key (`mode`) → projection has mode, hydration was needed.
-    if (!failure) {
-      const items = await callList(client, { filter: { mode: 'LEAN' }, fields: ['runId', 'mode'] });
-      const expect = ['r-aaaa', 'r-dddd', 'r-ffff'];
-      if (JSON.stringify(idsOf(items)) !== JSON.stringify(expect)) {
-        failure = 'mode+fields: expected ' + JSON.stringify(expect) + ', got ' + JSON.stringify(idsOf(items));
-      } else {
-        for (const item of items) {
-          const keys = Object.keys(item).sort();
-          if (JSON.stringify(keys) !== JSON.stringify(['mode', 'runId'])) {
-            failure = 'mode+fields: expected keys ["mode","runId"], got ' + JSON.stringify(keys);
-            break;
-          }
-        }
-      }
-    }
-
-    // 9. Backward-compat: no arguments → legacy path, all 6 entries with index-entry shape.
+    // 8. Backward-compat: no arguments → legacy path, all 6 entries with index-entry shape.
     if (!failure) {
       const items = await callList(client, {});
       if (items.length !== 6) {
@@ -225,7 +194,7 @@ async function main() {
       }
     }
 
-    // 10. Backward-compat: legacy flat status="running" still works when filter absent.
+    // 9. Backward-compat: legacy flat status="running" still works when filter absent.
     if (!failure) {
       const items = await callList(client, { status: 'running' });
       const expect = ['r-bbbb'];
@@ -239,11 +208,9 @@ async function main() {
       console.log('  filter.status="running"          → 1 item');
       console.log('  filter.status=[run,gate-pend]    → 2 items (array)');
       console.log('  filter.pipelineType="plan"       → 2 items');
-      console.log('  filter.mode="LEAN"               → 3 items (hydrated)');
       console.log('  combined impl+running            → 1 item');
       console.log('  fields=[runId,status]            → 6 items, 2 keys');
-      console.log('  empty-result mode=FULL+completed → 0 items');
-      console.log('  mode + fields=[runId,mode]       → 3 items, hydrated+projected');
+      console.log('  empty-result impl+discarded      → 0 items');
       console.log('  legacy no-args                   → 6 items, index shape');
       console.log('  legacy flat status="running"     → 1 item');
     }

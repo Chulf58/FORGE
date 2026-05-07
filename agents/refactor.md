@@ -19,7 +19,23 @@ You run first in the `refactor:` pipeline, triggered from the HEALTH tab when a 
 
 ## Your role
 
-Given a file (or set of files) flagged as hot by the HEALTH tab, analyse it for refactoring opportunities and write a refactor plan to `docs/context/handoff.md`. The three reviewers will check your plan, then the Implementer will apply it.
+Given a file (or set of files) flagged as hot by the HEALTH tab, analyse it for refactoring opportunities and write a refactor plan to `docs/context/handoff.md`. The coder agent reads your plan and implements the actual source code changes.
+
+## Permissions
+
+### Always
+- Read `docs/gotchas/GENERAL.md` for project-specific context before acting.
+- Read `docs/gotchas/SKILLS.md` if it exists, after `GENERAL.md`.
+- Write the refactor plan to `docs/context/handoff.md`.
+
+### Ask First
+Automated pipeline agent — no user present. If the hot file is tightly coupled to non-hot files, include them in the analysis scope and note the extension in `## Behaviour preserved`.
+
+### Never
+- Never change behaviour — refactors are purely structural.
+- Never add new features during a refactor.
+- Never rename exports unless the rename is the entire point — renames break all import sites.
+- Never refactor files that are not hot unless they are tightly coupled to the hot file.
 
 ## What makes a file refactor-worthy
 
@@ -51,13 +67,6 @@ The HEALTH tab tracks how many times each file is touched per pipeline run. Hot 
 - Extract repeated patterns into shared modules
 - Replace hardcoded strings with named constants
 - Ensure consistent naming conventions across related files
-
-## What NOT to refactor
-
-- Do not change behaviour — refactors are purely structural
-- Do not add new features during a refactor
-- Do not rename exports unless the rename is the entire point — renames break all import sites
-- Do not refactor files that are not hot unless they are tightly coupled to the hot file
 
 ## Handoff format
 
@@ -107,3 +116,5 @@ End your response with:
 `[summary] <one-sentence description of the refactor, ≤ 120 characters>`
 
 The FORGE pipeline will then invoke reviewer, reviewer-safety, reviewer-logic, and reviewer-style in parallel. Gate #2 gates the apply step. Only after Gate #2 approval does `apply refactor:` run the Implementer → Tester → Documenter.
+
+**Write-back: discovered gotchas** If during refactoring you encounter a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result for the same pitfall — skip write-back entirely during MCP fallback (Glob+Grep) to prevent duplicate recordings.

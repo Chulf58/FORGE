@@ -8,14 +8,15 @@
 // to specific reviewers. For plan-stage: keyword-scans active task lines.
 //
 // Usage:
-//   node scripts/reviewer-dispatch.mjs --handoff=<path> --mode=<LEAN|STANDARD|FULL> [--stage=implement|plan] [--pipeline=refactor] [--force-review]
+//   node scripts/reviewer-dispatch.mjs --handoff=<path> [--stage=implement|plan] [--pipeline=refactor] [--force-review]
+//   node scripts/reviewer-dispatch.mjs --diff=<path> --coder-status=<path> [--stage=implement] [--pipeline=refactor] [--force-review]
 //
 // Output (JSON on stdout):
-//   { "reviewers": ["reviewer-safety", "reviewer-boundary"], "reasons": [...] }
+//   { "reviewers": ["reviewer-safety", "reviewer-boundary"], "reasons": [...], "classifiedBy": "diff"|"handoff" }
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { classifyHandoff } from './lean-risk-classify.mjs';
+import { classifyHandoff, classifyDiff } from './lean-risk-classify.mjs';
 
 // --- Rule-to-reviewer mapping ------------------------------------------------
 const RULE_TO_REVIEWERS = {
@@ -62,15 +63,10 @@ const PLAN_REVIEWER_KEYWORDS = {
   ],
 };
 
-function dispatchForImplementStage(handoffContent, mode, forceReview, pipeline) {
-  if (mode === 'FULL') {
-    return {
-      reviewers: ['reviewer-boundary', 'reviewer-safety', 'reviewer-logic', 'reviewer-style', 'reviewer-performance'],
-      reasons: ['full-mode-all-reviewers'],
-    };
-  }
-
-  const classification = classifyHandoff({ handoffContent, forceReview });
+function dispatchForImplementStage(handoffContent, forceReview, pipeline, diffContent, coderStatus) {
+  const classification = (diffContent !== undefined && coderStatus !== undefined)
+    ? classifyDiff({ diffContent, coderStatus, forceReview })
+    : classifyHandoff({ handoffContent, forceReview });
 
   if (classification.skipReviewers && pipeline !== 'refactor') {
     return { reviewers: [], reasons: classification.reasons };
@@ -105,38 +101,20 @@ function dispatchForImplementStage(handoffContent, mode, forceReview, pipeline) 
 
   if (pipeline === 'refactor') reviewerSet.add('reviewer-style');
 
-  if (mode === 'STANDARD') {
-    const lower = handoffContent.toLowerCase();
-    if (/\basync\s+function\b|\bawait\b|\b\.then\s*\(/.test(lower)) {
-      reviewerSet.add('reviewer-logic');
-      reasons.push('async-pattern-detected → reviewer-logic');
-    }
-    if (/\bfor\s*\(|\\.map\s*\(|\\.filter\s*\(|\\.forEach\s*\(|\breadFileSync\b|\breadFile\b/.test(lower)) {
-      reviewerSet.add('reviewer-performance');
-      reasons.push('loop-or-fileread-detected → reviewer-performance');
-    }
-    const lineCount = handoffContent.split('\n').length;
-    if (lineCount > 200) {
-      reviewerSet.add('reviewer-style');
-      reasons.push('large-handoff → reviewer-style');
-    }
-  }
-
-  return {
+  const result = {
     reviewers: Array.from(reviewerSet).sort(),
     reasons,
     triggeredRules: classification.triggeredRules,
   };
-}
 
-function dispatchForPlanStage(planContent, mode) {
-  if (mode === 'FULL') {
-    return {
-      reviewers: ['reviewer-boundary', 'reviewer-safety', 'reviewer-logic', 'reviewer-performance'],
-      reasons: ['full-mode-all-plan-reviewers'],
-    };
+  if (classification.classifiedBy === 'diff') {
+    result.classifiedBy = 'diff';
   }
 
+  return result;
+}
+
+function dispatchForPlanStage(planContent) {
   const taskLines = planContent
     .split('\n')
     .filter((l) => /^\s*-\s*\[ \]/.test(l))
@@ -177,9 +155,51 @@ function parseArgs(argv) {
 if (isMainModule()) {
   const args = parseArgs(process.argv);
   const stage = args.stage || 'implement';
-  const mode = (args.mode || 'LEAN').toUpperCase();
   const pipeline = args.pipeline || 'implement';
   const forceReview = Boolean(args['force-review']);
+
+  // Diff-first path: --diff= and optionally --coder-status=
+  if (args.diff && stage !== 'plan') {
+    let diffContent;
+    try {
+      diffContent = fs.readFileSync(args.diff, 'utf8');
+    } catch (err) {
+      process.stdout.write(JSON.stringify({
+        reviewers: ['reviewer-safety', 'reviewer-boundary'],
+        reasons: ['diff-unreadable-fallback'],
+        classifiedBy: 'diff',
+        error: err.message,
+      }, null, 2) + '\n');
+      process.exit(1);
+    }
+
+    let coderStatus = null;
+    if (args['coder-status']) {
+      try {
+        coderStatus = JSON.parse(fs.readFileSync(args['coder-status'], 'utf8'));
+      } catch (err) {
+        process.stdout.write(JSON.stringify({
+          reviewers: ['reviewer-safety', 'reviewer-boundary'],
+          reasons: ['coder-status-unreadable-fallback'],
+          classifiedBy: 'diff',
+          error: err.message,
+        }, null, 2) + '\n');
+        process.exit(1);
+      }
+    }
+
+    const result = dispatchForImplementStage(
+      '', // handoffContent unused when diff+coderStatus provided
+      forceReview,
+      pipeline,
+      diffContent,
+      coderStatus,
+    );
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.exit(0);
+  }
+
+  // Fallback: handoff path (or plan path for plan-stage)
   const filePath = args.handoff || args.plan || (stage === 'plan' ? 'docs/PLAN.md' : 'docs/context/handoff.md');
 
   let content;
@@ -197,8 +217,8 @@ if (isMainModule()) {
   }
 
   const result = stage === 'plan'
-    ? dispatchForPlanStage(content, mode)
-    : dispatchForImplementStage(content, mode, forceReview, pipeline);
+    ? dispatchForPlanStage(content)
+    : dispatchForImplementStage(content, forceReview, pipeline);
 
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }

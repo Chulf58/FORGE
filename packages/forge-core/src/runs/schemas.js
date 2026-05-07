@@ -13,7 +13,7 @@ export const RunStatus = z.enum([
 ]);
 
 export const GateState = z.object({
-  gate: z.enum(['gate1', 'gate2']),
+  gate: z.enum(['gate1', 'gate2', 'commit']),
   status: z.enum(['pending', 'approved', 'discarded']),
   feature: z.string(),
   createdAt: z.string(),
@@ -29,19 +29,25 @@ export const RunAgent = z.object({
   outcome: z.string().nullable().default(null),
 });
 
+export const PhaseEntry = z.object({
+  index: z.number().int(),
+  label: z.string(),
+  status: z.enum(['pending', 'running', 'completed', 'skipped', 'blocked']),
+  committedAt: z.string().nullable().default(null),
+  reviewerVerdict: z.enum(['approved', 'revise', 'blocked']).nullable().default(null),
+});
+
 export const Run = z.object({
   runId: z.string(),
   sessionId: z.string(),
   projectRoot: z.string(),
   worktreePath: z.string().nullable().default(null),
   branchName: z.string().nullable().default(null),
-  pipelineType: z.enum(['plan', 'implement', 'apply', 'debug', 'refactor']),
-  mode: z.enum(['SPRINT', 'LEAN', 'STANDARD', 'FULL']),
+  pipelineType: z.enum(['plan', 'implement', 'apply', 'debug', 'refactor', 'research', 'explore', 'ideate']),
   feature: z.string().default(''),
   status: RunStatus.default('created'),
   createdAt: z.string(),
   updatedAt: z.string(),
-  currentStep: z.string().nullable().default(null),
   gateState: GateState.default(null),
   agents: z.array(RunAgent).default([]),
   artifacts: z.object({
@@ -57,6 +63,40 @@ export const Run = z.object({
     reason: z.string(),
     detectedAt: z.string(),
   }).nullable().default(null),
+  failureReason: z.string().nullable().default(null),
+  // Optional back-reference to the run that spawned this one (e.g. plan → implement chain).
+  parentRunId: z.string().regex(/^r-[a-zA-Z0-9]+$/).nullable().default(null),
+  // Pipeline stage tracking — keys are stage names, values are per-stage objects.
+  // Null until the first stage update is written via forge_update_run.
+  stages: z.record(z.string(), z.object({
+    agents: z.array(z.enum([
+      'planner',
+      'researcher',
+      'gotcha-checker',
+      'coder',
+      'coder-scout',
+      'debug',
+      'refactor',
+      'completeness-checker',
+      'implementation-architect',
+      'documenter',
+      'reviewer-safety',
+      'reviewer-boundary',
+      'reviewer-logic',
+      'reviewer-style',
+      'reviewer-performance',
+    ])).default([]),
+    status: z.enum(['pending', 'running', 'completed', 'skipped']).default('pending'),
+  })).nullable().default(null),
+  // ID of the risk classification produced by forge_classify_risk for this run.
+  classificationId: z.string().nullable().default(null),
+  // Explicit reviewer overrides — when set, the dispatcher uses this list
+  // instead of deriving reviewers from the risk classification.
+  reviewerOverrides: z.array(z.string()).default([]),
+  // Per-phase execution tracking — populated when the feature plan uses
+  // ## Phase N — <label> headings. Null for single-phase (non-partitioned) features.
+  phases: z.array(PhaseEntry).nullable().default(null),
+  acknowledged: z.boolean().default(false),
 });
 
 // Index entry — lightweight pointer stored in runs/index.json
@@ -67,6 +107,8 @@ export const RunIndexEntry = z.object({
   status: RunStatus,
   createdAt: z.string(),
   updatedAt: z.string(),
+  parentRunId: z.string().regex(/^r-[a-zA-Z0-9]+$/).nullable().default(null),
+  classificationId: z.string().nullable().default(null),
 });
 
 export const RunIndex = z.object({

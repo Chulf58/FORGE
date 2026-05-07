@@ -1,74 +1,14 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const readline = require('readline');
-const { hasValidApprovalToken: hasValidApprovalTokenShared, STDIN_TIMEOUT_LONG } = require('./hook-utils');
+const { hasValidApprovalToken: hasValidApprovalTokenShared, resolveProjectDir, STDIN_TIMEOUT_LONG, featuresMatch, isProjectInitialized } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS  = STDIN_TIMEOUT_LONG;
 
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'discarded']);
-
 function exitOk() {
   process.exit(0);
-}
-
-function getSettingsPath() {
-  // Matches Electron app.getPath('userData'): %APPDATA%\FORGE on Windows
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'FORGE', 'forge-settings.json');
-  }
-  // macOS: ~/Library/Application Support/FORGE
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'FORGE', 'forge-settings.json');
-  }
-  // Linux: ~/.config/FORGE
-  return path.join(os.homedir(), '.config', 'FORGE', 'forge-settings.json');
-}
-
-async function isGuardEnabled() {
-  try {
-    const settingsPath = getSettingsPath();
-    try {
-      await fs.promises.access(settingsPath);
-    } catch (_) {
-      return false; // default: disabled if settings absent
-    }
-    const raw = await fs.promises.readFile(settingsPath, 'utf8');
-    const settings = JSON.parse(raw);
-    return settings.workflowGuardEnabled === true;
-  } catch (_) {
-    return false; // default off on any error
-  }
-}
-
-async function isPipelineActive() {
-  const projectDir = process.cwd();
-  const markerPath = path.join(projectDir, '.pipeline', 'run-active.json');
-  let runId;
-  try {
-    const raw = await fs.promises.readFile(markerPath, 'utf8');
-    const data = JSON.parse(raw);
-    if (!data || !data.runId) return false;
-    runId = data.runId;
-  } catch (_) {
-    return false;
-  }
-  // Validate runId to prevent path traversal via a tampered run-active.json.
-  if (!/^r-[a-zA-Z0-9]+$/.test(runId)) return false;
-  // Cross-reference the run registry for terminal status.
-  // Fail-open: if run.json is absent or unreadable, treat as non-terminal.
-  try {
-    const runPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run.json');
-    const raw = await fs.promises.readFile(runPath, 'utf8');
-    const run = JSON.parse(raw);
-    if (run && run.status && TERMINAL_STATUSES.has(run.status)) return false;
-  } catch (_) {
-    // run.json absent or unreadable — fail open (non-terminal assumed)
-  }
-  return true;
 }
 
 function isSourceFile(filePath, { includeAgents = true } = {}) {
@@ -92,8 +32,8 @@ function isSourceFile(filePath, { includeAgents = true } = {}) {
 }
 
 // -- Gate self-approval token check ------------------------------------------
-function hasValidGateApprovalToken() {
-  return hasValidApprovalTokenShared('gate-approve');
+function hasValidGateApprovalToken(projectDir) {
+  return hasValidApprovalTokenShared('gate-approve', projectDir);
 }
 
 // -- Gate #2 enforcement for apply runs --------------------------------------
@@ -102,62 +42,86 @@ function hasValidGateApprovalToken() {
 // must match the approved gate's feature. This prevents out-of-sequence
 // source mutations and wrong-handoff application.
 
-// Generic filler words stripped before comparison — these add no
-// feature-identifying signal and cause false mismatches.
-const FILLER_WORDS = new Set([
-  'feature', 'features', 'the', 'a', 'an', 'for', 'and', 'of', 'in',
-  'to', 'with', 'from', 'this', 'that', 'fix', 'add', 'update',
-]);
+// runId validation guard — defence-in-depth before constructing per-run paths.
+const RUN_ID_RE = /^r-[a-zA-Z0-9]+$/;
 
-function normalizeFeature(s) {
-  if (!s || typeof s !== 'string') return '';
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+// Try to read .pipeline/runs/<runId>/run-active.json — returns null if absent or unreadable.
+async function readPerRunActive(pipelineDir, runId) {
+  if (typeof runId !== 'string' || !RUN_ID_RE.test(runId)) return null;
+  try {
+    const perRunPath = path.join(pipelineDir, 'runs', runId, 'run-active.json');
+    const raw = await fs.promises.readFile(perRunPath, 'utf8');
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? data : null;
+  } catch (_) {
+    return null;
+  }
 }
 
-function toMeaningfulWords(normalized) {
-  return normalized.split(/\s+/).filter(w => w && !FILLER_WORDS.has(w));
-}
-
-// Strip trailing 's' for simple singular/plural tolerance.
-function stem(word) {
-  if (word.length > 3 && word.endsWith('s')) return word.slice(0, -1);
-  return word;
-}
-
-function featuresMatch(gateFeature, handoffFeature) {
-  const g = normalizeFeature(gateFeature);
-  const h = normalizeFeature(handoffFeature);
-  if (!g || !h) return false;
-  if (g === h) return true;
-
-  const gWords = toMeaningfulWords(g);
-  const hWords = toMeaningfulWords(h);
-  if (gWords.length === 0 || hWords.length === 0) return false;
-
-  // The shorter side's meaningful words must all appear in the longer side
-  // (with simple singular/plural tolerance via stem()).
-  const shorter = gWords.length <= hWords.length ? gWords : hWords;
-  const longerStems = new Set((gWords.length <= hWords.length ? hWords : gWords).map(stem));
-
-  return shorter.every(w => longerStems.has(stem(w)));
+// Fallback: scan .pipeline/runs/ for an active apply run when run-active.json is absent.
+// Returns the runId so callers can read the per-run active file when present.
+async function findActiveApplyRun(pipelineDir) {
+  const runsDir = path.join(pipelineDir, 'runs');
+  let entries;
+  try {
+    entries = await fs.promises.readdir(runsDir, { withFileTypes: true });
+  } catch (_) {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const raw = await fs.promises.readFile(path.join(runsDir, entry.name, 'run.json'), 'utf8');
+      const data = JSON.parse(raw);
+      if (data.pipelineType === 'apply' && data.status === 'running') {
+        return { runId: data.runId || entry.name, pipelineType: 'apply', worktreePath: data.worktreePath || null };
+      }
+    } catch (_) {
+      continue;
+    }
+  }
+  return null;
 }
 
 // Returns null if write is allowed, or a deny-reason string if blocked.
 // filePath is the absolute or relative path the Write/Edit targets.
-async function checkApplyGateAndHandoff(filePath) {
-  const projectDir = process.cwd();
+async function checkApplyGateAndHandoff(filePath, projectDir) {
+  // projectDir is resolved by the caller via resolveProjectDir(payload)
   const pipelineDir = path.join(projectDir, '.pipeline');
 
-  // Read run-active.json to check if this is an apply run
+  // AC-12: prefer the per-run active file for the apply run when available;
+  // fall back to the singleton when the per-run file is absent.
+  // 1. Look up the apply run via the run registry to learn its runId.
+  // 2. If found, try .pipeline/runs/<runId>/run-active.json — most accurate.
+  // 3. Otherwise (per-run absent OR no apply run in registry) fall back to singleton.
+  // Both per-run and singleton are MCP-server-written; neither is more authoritative
+  // than the other (workflow-guard.js:205 blocks direct agent writes to run-active.json paths).
   let pipelineType = null;
   let worktreePath = null;
-  try {
-    const raw = await fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), 'utf8');
-    const data = JSON.parse(raw);
-    pipelineType = data.pipelineType || null;
-    worktreePath = data.worktreePath || null;
-  } catch (_) {
-    return null; // no active run — not an apply, nothing to block
+  const applyEntry = await findActiveApplyRun(pipelineDir);
+  let perRunData = null;
+  if (applyEntry && applyEntry.runId) {
+    perRunData = await readPerRunActive(pipelineDir, applyEntry.runId);
+  }
+  if (perRunData) {
+    pipelineType = perRunData.pipelineType || null;
+    worktreePath = perRunData.worktreePath || null;
+  } else {
+    // Per-run file absent — read singleton.
+    try {
+      const raw = await fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), 'utf8');
+      const data = JSON.parse(raw);
+      pipelineType = data.pipelineType || null;
+      worktreePath = data.worktreePath || null;
+    } catch (_) {
+      // Singleton absent too — use registry-derived metadata if we found an apply entry.
+      if (applyEntry) {
+        pipelineType = applyEntry.pipelineType;
+        worktreePath = applyEntry.worktreePath;
+      } else {
+        return null; // genuinely no active apply run
+      }
+    }
   }
 
   if (pipelineType !== 'apply') return null;
@@ -167,7 +131,9 @@ async function checkApplyGateAndHandoff(filePath) {
   try {
     const raw = await fs.promises.readFile(path.join(pipelineDir, 'gate-pending.json'), 'utf8');
     const gate = JSON.parse(raw);
-    if (gate.gate !== 'gate2' || gate.status !== 'approved') {
+    const isGate2Approved = gate.gate === 'gate2' && gate.status === 'approved';
+    const isCommitGate = gate.gate === 'commit';
+    if (!isGate2Approved && !isCommitGate) {
       return 'FORGE: Cannot write source files during /forge:apply \u2014 Gate #2 has not been approved. ' +
         'Run /forge:implement (or /forge:debug, /forge:refactor) and then /forge:approve before applying.';
     }
@@ -226,6 +192,8 @@ async function main(rawInput) {
   let payload;
   try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
 
+  const projectDir = resolveProjectDir(payload);
+
   const toolName  = payload.tool_name;
   const toolInput = payload.tool_input || {};
 
@@ -242,7 +210,7 @@ async function main(rawInput) {
   // This runs BEFORE the opt-in guard. It is not optional.
   // Checks: (1) gate2 approved, (2) handoff matches gate, (3) write path inside worktree.
   if (isSourceFile(filePath)) {
-    const denyReason = await checkApplyGateAndHandoff(filePath);
+    const denyReason = await checkApplyGateAndHandoff(filePath, projectDir);
     if (denyReason) {
       process.stdout.write(
         JSON.stringify({
@@ -257,6 +225,12 @@ async function main(rawInput) {
       return;
     }
   }
+
+  // --- Init-mode bypass: no project initialized yet, nothing to protect ---
+  // When .pipeline/project.json does not exist, /forge:init is bootstrapping the
+  // project for the first time. All control file guards are skipped — none of the
+  // files they protect exist yet, and project.json must be created by init itself.
+  if (!isProjectInitialized(projectDir)) { exitOk(); return; }
 
   // --- Control file guards: run-active.json and gate-pending.json ---
   const normalisedPath = filePath.replace(/\\/g, '/');
@@ -323,8 +297,6 @@ async function main(rawInput) {
 
   // Block ALL direct writes to project.json.
   // Managed exclusively by MCP tools (forge_update_config, forge_read_project).
-  // If the model could Write this file, it could downgrade pipelineMode to
-  // SPRINT to bypass gate enforcement and reviewer dispatch.
   if (normalisedPath.endsWith('.pipeline/project.json')) {
     process.stdout.write(
       JSON.stringify({
@@ -362,7 +334,7 @@ async function main(rawInput) {
       isApprovalWrite = /"status"\s*:\s*"approved"/.test(newString);
     }
 
-    if (isApprovalWrite && !hasValidGateApprovalToken()) {
+    if (isApprovalWrite && !hasValidGateApprovalToken(projectDir)) {
       process.stdout.write(
         JSON.stringify({
           hookSpecificOutput: {
@@ -380,7 +352,7 @@ async function main(rawInput) {
       return;
     }
 
-    if (!isPendingWrite && !hasValidGateApprovalToken()) {
+    if (!isPendingWrite && !hasValidGateApprovalToken(projectDir)) {
       process.stdout.write(
         JSON.stringify({
           hookSpecificOutput: {
@@ -397,25 +369,6 @@ async function main(rawInput) {
       return;
     }
   }
-
-  // --- Opt-in advisory guard (existing behavior) ---
-
-  // Opt-in check — off by default
-  if (!(await isGuardEnabled())) { exitOk(); return; }
-
-  // Pipeline active? No advisory needed.
-  if (await isPipelineActive()) { exitOk(); return; }
-
-  // Only warn for source files (advisory path excludes agents/)
-  if (!isSourceFile(filePath, { includeAgents: false })) { exitOk(); return; }
-
-  // Emit advisory via additionalContext (injected directly into Claude's active session)
-  const advisory =
-    'Advisory: This edit is happening outside a FORGE pipeline run. ' +
-    "Changes won't be tracked in a handoff, won't have a TESTING.md checklist, " +
-    "and won't be reviewed. Consider using FORGE's debug: or implement feature: " +
-    'pipeline instead. (This is advisory only \u2014 the edit will proceed.)';
-  process.stdout.write(JSON.stringify({ additionalContext: advisory }) + '\n');
 
   exitOk();
 }

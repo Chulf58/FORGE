@@ -1,0 +1,8 @@
+{
+  "reviewer-safety": 2,
+  "reviewer-boundary": 2,
+  "planner": 1,
+  "gotcha-checker": 2,
+  "reviewer-logic": 2,
+  "reviewer-performance": 2
+}

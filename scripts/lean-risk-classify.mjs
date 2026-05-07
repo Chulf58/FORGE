@@ -1,25 +1,33 @@
 #!/usr/bin/env node
-// LEAN-lite reviewer-skip classifier.
+// Risk-surface classifier for reviewer dispatch.
 //
-// Given a coder-produced handoff.md, decide whether LEAN-mode reviewer dispatch
-// can be skipped. Skip is allowed only when ALL of:
-//   1. `## Verification` section contains the single literal line `pre-flight clean`
-//   2. `## Blockers` section is absent or has no bullets
-//   3. The handoff does NOT touch the risk surface (shell/fs/auth/net/schema/etc)
+// Given a coder-produced handoff.md (or a git unified diff + coder-status.json),
+// decide whether reviewer dispatch can be skipped. Skip is allowed only
+// when ALL of:
+//   1. Verification is clean (coder-status.verificationClean === true, or
+//      `## Verification` section contains the single literal line `pre-flight clean`)
+//   2. No blockers (coder-status.hasBlockers === false, or `## Blockers` is absent)
+//   3. The changed code does NOT touch the risk surface (shell/fs/auth/net/schema/etc)
 //   4. The caller did not pass `forceReview: true` (operator escape hatch)
 //
+// Two entry points:
+//   classifyHandoff({ handoffContent, forceReview }) — original, reads handoff.md
+//   classifyDiff({ diffContent, coderStatus, forceReview }) — new, reads git diff
+//
 // The classifier is pure — no I/O, no side effects — so it is trivially testable.
-// A CLI wrapper at the bottom reads a handoff file and prints JSON for the skill
-// to capture. The skill uses this in the LEAN pipeline path only; STANDARD and
-// FULL ignore the classifier entirely.
+// A CLI wrapper at the bottom reads input files and prints JSON for the skill
+// to capture. The dispatcher always runs the classifier; a clean handoff with no
+// risk-surface match results in an empty reviewer list (reviewers skipped).
 //
 // Usage (CLI):
 //   node scripts/lean-risk-classify.mjs --handoff=<path> [--force-review]
+//   node scripts/lean-risk-classify.mjs --diff=<path> --coder-status=<path> [--force-review]
 //
 // Exit codes: 0 on success (JSON on stdout), non-zero on unrecoverable error.
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractSection, extractCodeBlockContent } from './lib/handoff-utils.mjs';
 
 // --- Risk-surface rules -----------------------------------------------------
 // Path-based: if any handoff-declared file path matches, reviewers must run.
@@ -82,21 +90,7 @@ const RISK_CONTENT_PATTERNS = [
 ];
 
 // --- Section extraction -----------------------------------------------------
-// Pull the body of a level-2 markdown section by heading text.
-// Returns the body (without the heading) or null if absent.
-function extractSection(content, headingText) {
-  const headingRegex = new RegExp(
-    `^##\\s+${headingText.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\s*$`,
-    'mi',
-  );
-  const match = content.match(headingRegex);
-  if (!match) return null;
-  const start = match.index + match[0].length;
-  const rest = content.slice(start);
-  const nextHeading = rest.match(/^##\s+\S/m);
-  const end = nextHeading ? nextHeading.index : rest.length;
-  return rest.slice(0, end);
-}
+// extractSection and extractCodeBlockContent are imported from ./lib/handoff-utils.mjs
 
 function extractFilePaths(filesSection) {
   if (!filesSection) return [];
@@ -127,19 +121,6 @@ function extractFilePaths(filesSection) {
   }
 
   return Array.from(seen);
-}
-
-function extractCodeBlockContent(filesSection) {
-  if (!filesSection) return '';
-  // Concatenate every fenced code block body so content patterns can match
-  // across languages. The triple-backtick fence is the universal delimiter.
-  const out = [];
-  const re = /```[\w-]*\n([\s\S]*?)```/g;
-  let m;
-  while ((m = re.exec(filesSection)) !== null) {
-    out.push(m[1]);
-  }
-  return out.join('\n');
 }
 
 // --- Main classifier --------------------------------------------------------
@@ -245,6 +226,120 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
   };
 }
 
+// --- Diff classifier --------------------------------------------------------
+// Extract changed file paths from unified diff `+++ b/<path>` headers.
+function extractDiffFilePaths(diffContent) {
+  if (!diffContent) return [];
+  const seen = new Set();
+  const re = /^\+\+\+\s+b\/(.+)$/gm;
+  let m;
+  while ((m = re.exec(diffContent)) !== null) {
+    const p = m[1].trim().replace(/\\/g, '/');
+    if (p) seen.add(p);
+  }
+  return Array.from(seen);
+}
+
+// Extract added-line code from unified diff (lines prefixed with `+` but not `+++`).
+function extractDiffAddedCode(diffContent) {
+  if (!diffContent) return '';
+  const lines = diffContent.split('\n');
+  return lines
+    .filter(l => l.startsWith('+') && !l.startsWith('+++'))
+    .map(l => l.slice(1))
+    .join('\n');
+}
+
+export function classifyDiff({ diffContent, coderStatus, forceReview = false }) {
+  if (forceReview) {
+    return {
+      skipReviewers: false,
+      reasons: ['force-review-requested'],
+      triggeredRules: [],
+      classifiedBy: 'diff',
+    };
+  }
+
+  if (typeof diffContent !== 'string' || !diffContent.trim()) {
+    return {
+      skipReviewers: false,
+      reasons: ['diff-empty-or-invalid'],
+      triggeredRules: [],
+      classifiedBy: 'diff',
+    };
+  }
+
+  // --- Check 1: Verification clean (from coderStatus, not handoff parsing) ---
+  if (!coderStatus || typeof coderStatus !== 'object') {
+    return {
+      skipReviewers: false,
+      reasons: ['coder-status-missing'],
+      triggeredRules: [],
+      classifiedBy: 'diff',
+    };
+  }
+  if (coderStatus.verificationClean !== true) {
+    return {
+      skipReviewers: false,
+      reasons: ['verification-not-clean'],
+      triggeredRules: [],
+      classifiedBy: 'diff',
+    };
+  }
+
+  // --- Check 2: Blockers absent (from coderStatus, not handoff parsing) ---
+  if (coderStatus.hasBlockers === true) {
+    return {
+      skipReviewers: false,
+      reasons: ['blockers-present'],
+      triggeredRules: [],
+      classifiedBy: 'diff',
+    };
+  }
+
+  // --- Check 3: Risk-surface classification ---
+  const filePaths = extractDiffFilePaths(diffContent);
+  const codeContent = extractDiffAddedCode(diffContent);
+
+  const triggered = [];
+
+  for (const file of filePaths) {
+    for (const pat of RISK_PATH_PATTERNS) {
+      if (pat.regex.test(file)) {
+        triggered.push(`${pat.rule}:${file}`);
+      }
+    }
+  }
+
+  for (const pat of RISK_CONTENT_PATTERNS) {
+    const globalRegex = new RegExp(pat.regex.source, pat.regex.flags.includes('g') ? pat.regex.flags : pat.regex.flags + 'g');
+    let m;
+    while ((m = globalRegex.exec(codeContent)) !== null) {
+      const passesExtraCheck = !pat.extraCheck || pat.extraCheck(codeContent, m.index);
+      if (passesExtraCheck) {
+        triggered.push(`${pat.rule}:${m[0].slice(0, 40)}`);
+        break;
+      }
+    }
+  }
+
+  if (triggered.length > 0) {
+    return {
+      skipReviewers: false,
+      reasons: ['risk-surface-match'],
+      triggeredRules: triggered,
+      classifiedBy: 'diff',
+    };
+  }
+
+  return {
+    skipReviewers: true,
+    reasons: ['verification-clean', 'no-blockers', 'no-risk-surface-match'],
+    triggeredRules: [],
+    classifiedBy: 'diff',
+  };
+}
+
 // --- CLI --------------------------------------------------------------------
 function isMainModule() {
   const scriptPath = process.argv[1];
@@ -263,8 +358,54 @@ function parseArgs(argv) {
 
 function runCli() {
   const args = parseArgs(process.argv);
-  const handoffPath = args.handoff || 'docs/context/handoff.md';
   const forceReview = Boolean(args['force-review']);
+
+  // Diff path takes precedence when provided
+  if (args.diff) {
+    const diffPath = args.diff;
+    const coderStatusPath = args['coder-status'];
+
+    let diffContent;
+    try {
+      diffContent = fs.readFileSync(diffPath, 'utf8');
+    } catch (err) {
+      const result = {
+        skipReviewers: false,
+        reasons: ['diff-unreadable'],
+        triggeredRules: [],
+        classifiedBy: 'diff',
+        error: err.message,
+        diffPath,
+      };
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      process.exit(1);
+    }
+
+    let coderStatus = null;
+    if (coderStatusPath) {
+      try {
+        coderStatus = JSON.parse(fs.readFileSync(coderStatusPath, 'utf8'));
+      } catch (err) {
+        const result = {
+          skipReviewers: false,
+          reasons: ['coder-status-unreadable'],
+          triggeredRules: [],
+          classifiedBy: 'diff',
+          error: err.message,
+          coderStatusPath,
+        };
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+        process.exit(1);
+      }
+    }
+
+    const result = classifyDiff({ diffContent, coderStatus, forceReview });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    return;
+  }
+
+  // Fallback: handoff path
+  const handoffPath = args.handoff || 'docs/context/handoff.md';
 
   let content;
   try {

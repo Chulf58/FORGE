@@ -58,6 +58,15 @@ async function main(rawInput) {
     if (data.gateState) parts.push(`Gate: ${data.gateState.gate} — ${data.gateState.status}`);
     if (data.actionNeeded) parts.push(`Action needed: ${data.actionNeeded}`);
     if (data.branchName) parts.push(`Branch: ${data.branchName}`);
+    if (data.stages != null && typeof data.stages === 'object' && Object.keys(data.stages).length > 0) {
+      const safe = (s) => String(s || '').replace(/[\r\n]/g, ' ').trim();
+      const stageParts = Object.entries(data.stages).map(([k, v]) => {
+        const name = safe(k);
+        const status = safe(v && v.status ? v.status : 'unknown');
+        return name + ': ' + status;
+      });
+      parts.push('Stages: ' + stageParts.join(', '));
+    }
 
     if (data.summary) {
       const s = data.summary;

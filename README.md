@@ -126,16 +126,9 @@ Start a Claude Code session with the plugin loaded, then run these commands in a
 
 ---
 
-## Pipeline modes
+## Reviewer dispatch
 
-Set per project in `.pipeline/project.json` (`pipelineMode` field). Controls how deep the review wave goes.
-
-| Mode | When to use | Effect |
-|------|-------------|--------|
-| SPRINT | Easy task, high confidence | Core agent only, no reviewers |
-| LEAN | Everyday default | Core + safety reviewer |
-| STANDARD | Multi-file, cross-cutting changes | Core + completeness-checker + triage-dispatched reviewers |
-| FULL | High-stakes, nothing skipped | Core + all 5 specialist reviewers |
+FORGE uses risk-surface-based reviewer dispatch — `scripts/reviewer-dispatch.mjs` scans your handoff for patterns (shell commands, fs writes, auth, network, schema changes) and routes to the matching reviewers automatically. No mode dial to configure.
 
 ---
 
@@ -172,7 +165,7 @@ You see the implementation summary and all reviewer verdicts. `/forge:approve` m
 
 ## What's included
 
-- **29 specialist agents** — planner, researcher, coder, 5 reviewers (safety, logic, style, performance, boundary correctness), implementer, documenter, architect, ideator, and more
+- **29 specialist agents** — planner, researcher, coder, 5 reviewers (safety, logic, style, performance, boundary correctness), implementer, documenter, architect, critic, and more
 - **21 skills** — slash commands that orchestrate agents into pipelines
 - **13 hook scripts** across 7 lifecycle events — enforcement, context injection, board hygiene
 - **24 MCP tools** — structured access to pipeline state, board, gates, model routing, and dashboard
