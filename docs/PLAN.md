@@ -521,7 +521,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
 
 - [ ] 6. Replace singleton read with per-run read in `ctx-session-start.js` (`hooks/ctx-session-start.js`) (wave: 2)
   Intent: Remove the singleton dependency from SessionStart cleanup by scanning the per-run files directly instead of using the singleton as a pointer.
-  Verify: AC-6: `emitStaleUnitNoticeIfAny` in `ctx-session-start.js` enumerates `.pipeline/runs/*/run-active.json` directly (no singleton read); it selects the most recently written non-terminal run's per-run file; deletion of the singleton on terminal-run cleanup is removed (nothing to delete); the stale-lock notice and `currentUnit` clear behaviour are preserved for the per-run file path.
+  Verify: AC-6: `emitStaleUnitNoticeIfAny` in `ctx-session-start.js` enumerates `.pipeline/runs/*/run-active.json` via the shared `findActiveRun(projectDir)` helper added to `hooks/hook-utils.js` (or via inline async enumeration if the helper is not added); the helper returns the most recently written non-terminal run's `runId`, OR returns `null` when zero or multiple non-terminal runs match (ambiguous tie-break — hooks fail open per RESEARCH.md line 49); deletion of the singleton on terminal-run cleanup is removed (nothing to delete); the stale-lock notice and `currentUnit` clear behaviour are preserved for the per-run file path.
 
 - [ ] 7. Replace singleton read with per-run / registry in `agent-loop-guard.js` (`hooks/agent-loop-guard.js`) (wave: 2)
   Intent: Remove the singleton dependency from the loop-guard hook.
@@ -529,7 +529,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
 
 - [ ] 8. Replace singleton reads in `bash-guard.js` with per-run / registry reads (`hooks/bash-guard.js`) (wave: 2)
   Intent: Remove both singleton reads (`getActivePipelineRun` at line 254 and `isCommitGatePending` at line 274) so `bash-guard.js` does not depend on the deleted singleton.
-  Verify: AC-8: `getActivePipelineRun` enumerates `.pipeline/runs/*/run.json` for the non-terminal running run and returns its `{ runId, worktreePath }`; `isCommitGatePending` resolves `worktreePath` from the same run.json enumeration instead of from the singleton; no reference to `.pipeline/run-active.json` remains in `bash-guard.js`; the PROTECTED_CONTROL_FILES array entry `'run-active.json'` is removed (line 135).
+  Verify: AC-8: `getActivePipelineRun` enumerates `.pipeline/runs/*/run.json` for the non-terminal running run and returns its `{ runId, worktreePath }`; `isCommitGatePending` resolves `worktreePath` from the same run.json enumeration instead of from the singleton; no reference to `.pipeline/run-active.json` remains in `bash-guard.js`; the PROTECTED_CONTROL_FILES array entry `'run-active.json'` is removed (line 135). The PROTECTED_CONTROL_FILES removal is verified path-specific to the singleton at line 135 — entries that protect per-run files (e.g. `runs/<runId>/run-active.json`) are explicitly retained.
 
 - [ ] 9. Replace singleton read with per-run file read in `ctx-pre-tool.js` (`hooks/ctx-pre-tool.js`) (wave: 2)
   Intent: Remove the singleton read in `readActiveWorktreePath` so it resolves `worktreePath` from the per-run active file or run.json.
@@ -537,7 +537,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
 
 - [ ] 10. Replace singleton fallback with run.json scan in `workflow-guard.js` (`hooks/workflow-guard.js`) (wave: 2)
   Intent: Remove the singleton fallback path in `checkApplyGateAndHandoff` so it derives `pipelineType` and `worktreePath` entirely from `run.json` files found via `findActiveApplyRun`.
-  Verify: AC-10: The singleton fallback block in `workflow-guard.js` (line 112 — `fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), ...)`) is removed; `checkApplyGateAndHandoff` uses only `findActiveApplyRun` (which reads `run.json`) and `readPerRunActive` (which reads the per-run active file); the direct-write block at line 241 (`normalisedPath.endsWith('.pipeline/run-active.json')`) is removed because the singleton no longer exists; the per-run active file path (`runs/<runId>/run-active.json`) write-block guard is retained.
+  Verify: AC-10: The singleton fallback block in `workflow-guard.js` (line 112 — `fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), ...)`) is removed; `checkApplyGateAndHandoff` uses only `findActiveApplyRun` (which reads `run.json`) and `readPerRunActive` (which reads the per-run active file); the direct-write block at line 241 (`normalisedPath.endsWith('.pipeline/run-active.json')`) is removed because the singleton no longer exists; the per-run active file path (`runs/<runId>/run-active.json`) write-block guard is retained. Removal of the line 241 check is confirmed safe via inspection: the predicate uses suffix-match against the singleton path only (no preceding `runs/<runId>/` segment), so it cannot match per-run paths. The separate per-run write-block guard remains intact at its existing line.
 
 - [ ] 11. Replace singleton reads in `ctx-stop.js` with per-run active file reads (`hooks/ctx-stop.js`) (wave: 2)
   Intent: Remove the two singleton reads in `ctx-stop.js` so the stop-hook warnings use the per-run active file.
@@ -552,7 +552,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
 - [ ] 13. Replace singleton read in `forge_get_active_run` with per-run / registry lookup (`mcp/server.js`) (wave: 3)
   Depends: 1, 2, 3
   Intent: Make `forge_get_active_run` discover the active run from the registry (most recently updated non-terminal run) instead of the singleton, while keeping the `runId`-provided fast path unchanged.
-  Verify: AC-13: When called without `runId`, `forge_get_active_run` calls `listRuns` to find the non-terminal run with the most recent `updatedAt`, reads its per-run active file via `getRunActivePath`, and returns that data; the singleton read (lines 692–717) is removed; when called with `runId` the per-run file is still read directly (unchanged); when no active run exists the tool returns null.
+  Verify: AC-13: When called without `runId`, `forge_get_active_run` calls `listRuns` to find the non-terminal run with the most recent `updatedAt`; when zero or multiple non-terminal runs match (ambiguous), returns null per RESEARCH.md line 49 tie-break rule; when exactly one matches, reads its per-run active file via `getRunActivePath` and returns that data; the singleton read (lines 692–717) is removed; when called with `runId` the per-run file is still read directly (unchanged); when no active run exists the tool returns null.
 
 - [ ] 14. Replace singleton read in `dashboard-state.js` `readActiveUnit` with per-run file reads (`mcp/lib/dashboard-state.js`) (wave: 3)
   Depends: 1, 2, 3
@@ -605,6 +605,10 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
   Depends: 6
   Intent: Silently clean up existing user installs that still have a singleton file on disk so first SessionStart after upgrade does not leave a stale artifact that confuses old tooling.
   Verify: AC-23: `ctx-session-start.js` attempts `fs.unlink('.pipeline/run-active.json')` at the start of every SessionStart invocation; the call is wrapped in a try/catch (ENOENT is ignored silently); no other logic depends on whether the delete succeeded; existing tests for `ctx-session-start.js` continue to pass after removing the singleton-delete assertion.
+
+#### Post-migration assumption
+
+After Phase 1 deployment, no component creates `.pipeline/run-active.json`. The Phase 4 startup migration (Task 23) deletes any leftover singleton on first SessionStart after upgrade. If a future bug or external tool recreates the file, the singleton-free hooks (Phase 2/3) ignore it — the file becomes inert litter rather than a hazard. The workflow-guard write-block guard for per-run paths remains active.
 
 ### Research needed
 
