@@ -2631,6 +2631,35 @@
         "iterate"
       ],
       "doneAt": "2026-05-06T19:23:43.774Z"
+    },
+    {
+      "id": "756bd820",
+      "priority": "high",
+      "text": "Worker proceeds to gate2 even when reviewer subagent failed to write its verdict file. Observed in r-a11e9fd7: reviewer-boundary's Write tool call to docs/context/reviewer-output/reviewer-boundary.md fired per worker log line 368 but the file mtime never updated — stale verdict from prior run r-61c6a00a remained on disk (copied at worktree creation). subagent-stop correctly flagged completedAt:null but the worker still progressed to gate2 with a phantom-APPROVED boundary review. Two issues: (1) reviewer-boundary Write didn't actually persist (root cause unknown — worktree copy + path resolution?); (2) worker's gate2-readiness check should treat completedAt:null as REVISE-unresolved and fail-the-run per existing BLOCK/REVISE-unresolved policy (commit 197cf3d). Investigate both.",
+      "title": "Worker proceeds to gate2 even when",
+      "summary": "Observed in r-a11e9fd7: reviewer-boundary's Write tool call to docs/context/reviewer-output/reviewer-boundary.md fired per worker log line 368 but the file mtime never updated — stale verdict from prior run r-61c6a00a remained on disk (copied at worktree creation). subagent-stop correctly flagged completedAt:null but the worker still progressed to gate2 with a phantom-APPROVED boundary review.",
+      "done": false,
+      "addedAt": 1778180581938,
+      "tags": [
+        "worker",
+        "reviewer",
+        "gate",
+        "parallel"
+      ]
+    },
+    {
+      "id": "61992a60",
+      "priority": "medium",
+      "text": "Observer shows stale \"run /forge:apply\" hint after gate2 approval. scripts/forge-observer.mjs:414 maps gate2-approved → 'approved — run /forge:apply', but per CLAUDE.md the worker auto-resumes into apply and the user should NOT invoke /forge:apply (it's manual recovery only when worker is dead). Fix: change line 414 to 'approved — worker resumes automatically' (or check worker liveness via PID file and only suggest /forge:apply when dead). Single-file, single-line change to a display string. Low risk.",
+      "title": "Observer shows stale \"run",
+      "summary": "scripts/forge-observer.mjs:414 maps gate2-approved → 'approved — run /forge:apply', but per CLAUDE.md the worker auto-resumes into apply and the user should NOT invoke /forge:apply (it's manual recovery only when worker is dead).",
+      "done": false,
+      "addedAt": 1778180837866,
+      "tags": [
+        "observer",
+        "ux",
+        "stale-hint"
+      ]
     }
   ],
   "planned": []
