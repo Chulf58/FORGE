@@ -11,6 +11,14 @@ const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 // once per stage and must never be hard-stopped.
 const EXEMPT_AGENTS = new Set(['documenter']);
 
+// Cap dispatches per agent type per run. Set high enough to cover phased
+// implements (each phase dispatches 1 coder + ~2 reviewers) plus retry
+// headroom, while still catching runaway loops (which dispatch 20+).
+// Raised from 2 → 15 after r-2329c669 hit the cap mid-Phase-2 of a
+// 4-phase implement; 4-phase × ~3 dispatches per agent type / phase
+// fits comfortably under 15.
+const MAX_DISPATCHES_PER_AGENT_PER_RUN = 15;
+
 function exitOk() {
   process.exit(0);
 }
@@ -123,8 +131,8 @@ async function main(rawInput) {
   const safeType = normalizedType.replace(/[\r\n]/g, ' ').trim();
   const safeRunId = runId.replace(/[\r\n]/g, ' ').trim();
 
-  if (priorCount >= 2) {
-    // Hard-stop: 3rd+ dispatch of this agent type in the run.
+  if (priorCount >= MAX_DISPATCHES_PER_AGENT_PER_RUN) {
+    // Hard-stop: dispatch count has reached the configured cap.
     deny(
       '[forge-stuck] HARD STOP: Agent ' + safeType +
       ' has been dispatched ' + priorCount + ' times already in run ' + safeRunId +
