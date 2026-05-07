@@ -1844,6 +1844,7 @@ server.registerTool(
           detached: process.platform !== "win32",
           windowsHide: true,
           stdio: ["ignore", logFd, logFd],
+          env: { ...process.env, FORGE_WORKER_RUN_ID: started.runId },
         });
         const pidDir = join(projectDir, ".pipeline", "worker-pids");
         mkdirSync(pidDir, { recursive: true });
@@ -2720,6 +2721,7 @@ server.registerTool(
           detached: process.platform !== "win32",
           windowsHide: true,
           stdio: ["ignore", logFd, logFd],
+          env: { ...process.env, FORGE_WORKER_RUN_ID: runId },
         });
         child.on("error", (err) => {
           console.error("[forge_advance_stage] worker spawn failed: " + err.message);
