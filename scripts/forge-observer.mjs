@@ -410,8 +410,8 @@ function runProgress(run) {
     const stepInfo = config.steps[gate] || { stage: config.totalStages };
     if (run.gateState.status === 'approved') {
       const nextLabel = run.actionNeeded ? run.actionNeeded
-        : gate === 'gate1' ? 'approved — run /forge:implement'
-        : gate === 'gate2' ? 'approved — run /forge:apply'
+        : gate === 'gate1' ? 'approved — implementing'
+        : gate === 'gate2' ? 'approved — applying'
         : 'approved';
       return { bar: renderBar(stepInfo.stage, config.totalStages), label: nextLabel };
     }
@@ -721,7 +721,9 @@ function buildSessionsTab(cols) {
       if (isExpanded) {
         const fullRun = loadFullRun(PROJECT_DIR, run.runId) || run;
         const merged = { ...run, ...fullRun, actionNeeded: run.actionNeeded || null };
-        detailRows.push(['Pipeline', (merged.pipelineType || '') + (merged.mode && merged.pipelineType !== 'research' ? ' (' + merged.mode + ')' : '')]);
+        const runningStage = merged.stages ? Object.entries(merged.stages).find(([_, v]) => v && v.status === 'running')?.[0] : null;
+        const stageSuffix = (runningStage && runningStage !== merged.pipelineType) ? ' → ' + runningStage : '';
+        detailRows.push(['Pipeline', (merged.pipelineType || '') + (merged.mode && merged.pipelineType !== 'research' ? ' (' + merged.mode + ')' : '') + stageSuffix]);
         detailRows.push(['Status', (merged.status || '') + (merged.stageLabel ? ' — ' + merged.stageLabel : '')]);
         // Phase indicator — only when phases are present. Shows "X/Y" plus the
         // currently-running phase label for quick context. Pending/blocked
