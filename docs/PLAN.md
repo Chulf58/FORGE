@@ -444,3 +444,175 @@ None. The bypass mechanism is confirmed by direct code inspection (`mcp/server.j
 - Decision: Single guard insertion in `forge_update_run` immediately before the `if (cleanPatch.gateState)` block at `mcp/server.js` ~line 2153. No schema changes. No hook changes. No new MCP tools.
 - Trade-off: The guard is inserted *before* the canonical-feature-preservation read — it fires even if `gateState.feature` would be overwritten. This is the safest position: we block the bad call before touching stored state.
 - Uncertainty: None. `hasGateApprovalToken` is defined at line 110, used at line 815 and line 2131 — adding a third callsite is a direct copy of the established pattern.
+
+---
+
+### Feature: Eliminate singleton run-active.json — per-run file as sole authoritative source
+
+Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to use per-run files or the run registry directly.
+
+#### Inventory of all references (confirmed by Grep)
+
+**Singleton writers (create/overwrite `.pipeline/run-active.json`):**
+- `mcp/server.js:1758` — `forge_create_run` writes singleton after writing per-run file
+- `mcp/server.js:2495` / `2534–2538` — `forge_resume_run` writes singleton; error message names it
+- `mcp/server.js:2631–2638` — `forge_advance_stage` patches singleton stages
+- `skills/apply/SKILL.md:73` — conductor step instructs direct singleton write for `worktreePath`
+
+**Singleton readers (and current fallback pattern):**
+- `hooks/subagent-start.js:27` — reads singleton to discover runId; prefers per-run file when present
+- `hooks/subagent-stop.js:137` — same two-file pattern
+- `hooks/ctx-session-start.js:85` — reads singleton to discover runId, deletes it on terminal run
+- `hooks/agent-loop-guard.js:64` — reads singleton first; per-run fallback at line 89
+- `hooks/bash-guard.js:254` — reads singleton for `runId`; line 274 reads singleton for `worktreePath`
+- `hooks/ctx-pre-tool.js:21` — reads singleton for `worktreePath`
+- `hooks/workflow-guard.js:112` — singleton fallback when per-run absent
+- `hooks/ctx-stop.js:38, 66` — reads singleton for `agents` array (two checks)
+- `hooks/session-end.js:43` — reads singleton for `agents` array
+- `mcp/server.js:forge_get_active_run:692` — reads singleton to discover runId; prefers per-run
+- `mcp/lib/dashboard-state.js:26` — `readActiveUnit()` reads singleton; per-run used for `currentUnit` in active runs
+- `bin/forge-status.js:172` — reads singleton as fallback when registry produces empty list
+- `bin/forge-worktree.js:111` — uses presence of singleton to set `running: true` in worktree list
+- `scripts/audit-tool-calls.mjs:98` — reads singleton for `runId`
+- `scripts/integrity-check.mjs:222` — `check8_staleRunActive()` reports on singleton
+
+**Control-file guard (blocks direct writes):**
+- `hooks/workflow-guard.js:241` — blocks Write/Edit to `.pipeline/run-active.json`
+- `hooks/bash-guard.js:135` — `run-active.json` in PROTECTED_CONTROL_FILES
+
+**Tests that fixture singleton:**
+- `hooks/agent-loop-guard-test.mjs:34`
+- `hooks/ctx-session-start-terminal-cleanup-test.js:52, 115–117, 124`
+- `mcp/dashboard-state-shape-test.mjs:130`
+- `mcp/resume-terminal-suppression-test.mjs:80`
+- `hooks/subagent-stop-verdict-test.js:41, 61, 76, 91, 107, 122, 141, 157, 173, 187, 202, 217, 232, 249`
+- `hooks/control-file-guard-test.js:67–338` (run-active.json write-block tests)
+
+**Docs with singleton references:**
+- `docs/gotchas/GENERAL.md:30–39` — lifecycle contract section
+- `skills/apply/SKILL.md:73,75` — instructs singleton write for worktreePath
+- `skills/dashboard/SKILL.md:15` — describes `currentUnit` sourced from singleton
+- `scaffolds/power-automate/CLAUDE.md:26` — table row: "Read .pipeline/run-active.json directly"
+- `.gitignore:51` — ignores singleton
+
+#### Phase 1 — Remove singleton writes from MCP server
+
+- [ ] 1. Remove singleton write from `forge_create_run` (`mcp/server.js`) (wave: 1)
+  Intent: Eliminate the primary singleton writer so new runs no longer create the redundant file, making the per-run file the only active-state artifact from run creation forward.
+  Verify: AC-1: `forge_create_run` no longer writes `.pipeline/run-active.json` (lines 1758–1759 removed); it continues to call `writeRunActive` for the per-run file; the `runActiveData` object construction is retained but only passed to `writeRunActive`; existing tests that assert on per-run file content pass; no reference to `runActivePath` remains in the `forge_create_run` handler body.
+
+- [ ] 2. Remove singleton write from `forge_resume_run` (`mcp/server.js`) (wave: 1)
+  Intent: Stop `forge_resume_run` from recreating the deleted singleton so the resume path is fully singleton-free.
+  Verify: AC-2: `forge_resume_run` no longer writes `.pipeline/run-active.json` (lines 2495, 2534–2540 removed); the prior-`currentUnit` read that referenced `runActivePath` is replaced with a read from the per-run active file for the run being resumed (using `getRunActivePath`); `writeRunActive` call is retained; error message no longer names `run-active.json`.
+
+- [ ] 3. Remove singleton patch from `forge_advance_stage` (`mcp/server.js`) (wave: 1)
+  Intent: Eliminate the stages-sync patch to the singleton so `forge_advance_stage` only updates the per-run active file.
+  Verify: AC-3: The singleton-patching block in `forge_advance_stage` (lines 2631–2641) is removed; the per-run active file update block (lines 2643–2650) is retained and continues to update stages; no reference to the singleton path remains in `forge_advance_stage`.
+
+#### Phase 2 — Replumb hooks from singleton to per-run / registry
+
+- [ ] 4. Replace singleton-first read with registry-based runId resolution in `subagent-start.js` (`hooks/subagent-start.js`) (wave: 2)
+  Intent: Remove the singleton dependency from the SubagentStart hook by deriving the runId from the hook payload's `session_id` / `run_id` fields or from the per-run files enumeration, so the hook does not depend on a file that no longer exists.
+  Verify: AC-4: `hooks/subagent-start.js` reads its runId from `payload.run_id` (if present) or scans `.pipeline/runs/*/run.json` for the non-terminal run matching the current session; the singleton path (`path.join(projectDir, '.pipeline', 'run-active.json')`) is no longer referenced; when no active run is found the hook exits silently (same fail-open as today); the per-run active file is still read and written using `perRunPath` derived from the resolved runId.
+
+- [ ] 5. Replace singleton-first read with per-run / registry resolution in `subagent-stop.js` (`hooks/subagent-stop.js`) (wave: 2)
+  Intent: Remove the singleton dependency from the SubagentStop hook using the same resolution pattern as task 4.
+  Verify: AC-5: `hooks/subagent-stop.js` resolves runId without reading the singleton; the singleton path (line 137) is removed; per-run file read/write continues unchanged; when no active run is found the hook logs and exits silently (same as today's singleton-missing path).
+
+- [ ] 6. Replace singleton read with per-run read in `ctx-session-start.js` (`hooks/ctx-session-start.js`) (wave: 2)
+  Intent: Remove the singleton dependency from SessionStart cleanup by scanning the per-run files directly instead of using the singleton as a pointer.
+  Verify: AC-6: `emitStaleUnitNoticeIfAny` in `ctx-session-start.js` enumerates `.pipeline/runs/*/run-active.json` directly (no singleton read); it selects the most recently written non-terminal run's per-run file; deletion of the singleton on terminal-run cleanup is removed (nothing to delete); the stale-lock notice and `currentUnit` clear behaviour are preserved for the per-run file path.
+
+- [ ] 7. Replace singleton read with per-run / registry in `agent-loop-guard.js` (`hooks/agent-loop-guard.js`) (wave: 2)
+  Intent: Remove the singleton dependency from the loop-guard hook.
+  Verify: AC-7: `hooks/agent-loop-guard.js` resolves runId from `payload.run_id` or by scanning run.json files; the singleton path (line 64) is removed; the per-run active file (line 89) is still read when found; when no runId can be resolved the hook exits silently (conductor session path unchanged).
+
+- [ ] 8. Replace singleton reads in `bash-guard.js` with per-run / registry reads (`hooks/bash-guard.js`) (wave: 2)
+  Intent: Remove both singleton reads (`getActivePipelineRun` at line 254 and `isCommitGatePending` at line 274) so `bash-guard.js` does not depend on the deleted singleton.
+  Verify: AC-8: `getActivePipelineRun` enumerates `.pipeline/runs/*/run.json` for the non-terminal running run and returns its `{ runId, worktreePath }`; `isCommitGatePending` resolves `worktreePath` from the same run.json enumeration instead of from the singleton; no reference to `.pipeline/run-active.json` remains in `bash-guard.js`; the PROTECTED_CONTROL_FILES array entry `'run-active.json'` is removed (line 135).
+
+- [ ] 9. Replace singleton read with per-run file read in `ctx-pre-tool.js` (`hooks/ctx-pre-tool.js`) (wave: 2)
+  Intent: Remove the singleton read in `readActiveWorktreePath` so it resolves `worktreePath` from the per-run active file or run.json.
+  Verify: AC-9: `readActiveWorktreePath` in `ctx-pre-tool.js` reads `worktreePath` from the currently active run's per-run active file (enumerated from `.pipeline/runs/*/run-active.json`) or from run.json; no reference to `.pipeline/run-active.json` (line 21) remains; when no active run is found the function returns null (same as today).
+
+- [ ] 10. Replace singleton fallback with run.json scan in `workflow-guard.js` (`hooks/workflow-guard.js`) (wave: 2)
+  Intent: Remove the singleton fallback path in `checkApplyGateAndHandoff` so it derives `pipelineType` and `worktreePath` entirely from `run.json` files found via `findActiveApplyRun`.
+  Verify: AC-10: The singleton fallback block in `workflow-guard.js` (line 112 — `fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), ...)`) is removed; `checkApplyGateAndHandoff` uses only `findActiveApplyRun` (which reads `run.json`) and `readPerRunActive` (which reads the per-run active file); the direct-write block at line 241 (`normalisedPath.endsWith('.pipeline/run-active.json')`) is removed because the singleton no longer exists; the per-run active file path (`runs/<runId>/run-active.json`) write-block guard is retained.
+
+- [ ] 11. Replace singleton reads in `ctx-stop.js` with per-run active file reads (`hooks/ctx-stop.js`) (wave: 2)
+  Intent: Remove the two singleton reads in `ctx-stop.js` so the stop-hook warnings use the per-run active file.
+  Verify: AC-11: Both `fs.promises.readFile` calls for `run-active.json` (lines 38 and 66) are replaced with reads of the currently active run's per-run active file (enumerated or resolved via a helper); the `agents` array checks for incomplete agents (Check 1) and documenter-ran (Check 3) use the per-run file data; when no active run is found both checks are skipped (same fail-open as today).
+
+- [ ] 12. Replace singleton read in `session-end.js` with per-run active file read (`hooks/session-end.js`) (wave: 2)
+  Intent: Remove the singleton read in the SessionEnd hook.
+  Verify: AC-12: `hooks/session-end.js` resolves the active run's per-run active file (via enumeration or a shared helper); the singleton path (line 43) is removed; the `sourceAgentRan` check uses the per-run file's `agents` array; when no active run is found the check is skipped.
+
+#### Phase 3 — MCP tool, dashboard, status-line, scripts
+
+- [ ] 13. Replace singleton read in `forge_get_active_run` with per-run / registry lookup (`mcp/server.js`) (wave: 3)
+  Depends: 1, 2, 3
+  Intent: Make `forge_get_active_run` discover the active run from the registry (most recently updated non-terminal run) instead of the singleton, while keeping the `runId`-provided fast path unchanged.
+  Verify: AC-13: When called without `runId`, `forge_get_active_run` calls `listRuns` to find the non-terminal run with the most recent `updatedAt`, reads its per-run active file via `getRunActivePath`, and returns that data; the singleton read (lines 692–717) is removed; when called with `runId` the per-run file is still read directly (unchanged); when no active run exists the tool returns null.
+
+- [ ] 14. Replace singleton read in `dashboard-state.js` `readActiveUnit` with per-run file reads (`mcp/lib/dashboard-state.js`) (wave: 3)
+  Depends: 1, 2, 3
+  Intent: Remove the singleton read from dashboard state building so the dashboard derives `currentUnit` solely from per-run active files already read in the active-runs loop.
+  Verify: AC-14: `readActiveUnit` is deleted from `mcp/lib/dashboard-state.js`; the `activeRunId` / `activeUnit` variables derived from it (lines 84) are removed; `currentUnit` for each active run is resolved from the per-run active file already read in the `perRunActiveResults` parallel-read block (the `perRunData.currentUnit` branch at line 121 already does this correctly); the legacy singleton-comparison fallback (lines 127–128) is removed; dashboard state output is unchanged for runs that have a per-run active file.
+
+- [ ] 15. Remove singleton fallback from `forge-status.js` (`bin/forge-status.js`) (wave: 3)
+  Depends: 1, 2, 3
+  Intent: Eliminate the singleton-based synthesized-run fallback in `forge-status.js` so the status line is driven entirely by the run registry.
+  Verify: AC-15: The `if (activeRuns.length === 0)` singleton-fallback block (lines 171–204) is removed; `forge-status.js` uses only the registry enumeration path; when the registry is empty the status line shows no active run (current design intent — synthesized entries were always approximate); the `run-active.json` comment in the file header (line 9) is removed.
+
+- [ ] 16. Replace singleton read in `forge-worktree.js` with run.json check (`bin/forge-worktree.js`) (wave: 3)
+  Depends: 1, 2, 3
+  Intent: Remove the presence-of-singleton heuristic for `running: true` in the worktree list command, replacing it with an authoritative registry check.
+  Verify: AC-16: `bin/forge-worktree.js` line 111 no longer checks for `run-active.json`; instead it checks whether a `run.json` exists under the worktree's `.pipeline/runs/` with `status: "running"` or `status: "gate-pending"`; the `running` field in the output JSON reflects the registry-based status; the change preserves backward-compatible JSON shape.
+
+- [ ] 17. Replace singleton read in `audit-tool-calls.mjs` with registry lookup (`scripts/audit-tool-calls.mjs`) (wave: 3)
+  Depends: 1, 2, 3
+  Intent: Remove the singleton read from `readRunId` so the audit script resolves the current runId from the run registry.
+  Verify: AC-17: `readRunId` in `scripts/audit-tool-calls.mjs` enumerates `.pipeline/runs/*/run.json` and returns the `runId` of the most recently updated non-terminal run instead of reading the singleton (line 98); when no active run exists returns null (same as today's parse-failure path).
+
+- [ ] 18. Replace singleton check in `integrity-check.mjs` with registry-based stale-run detection (`scripts/integrity-check.mjs`) (wave: 3)
+  Depends: 1, 2, 3
+  Intent: Remove `check8_staleRunActive` which tested singleton presence; replace with a registry-based check that detects runs stuck in `running` status longer than expected.
+  Verify: AC-18: `check8_staleRunActive` (lines 221–233) is removed or replaced; the new check scans `.pipeline/runs/*/run.json` for runs with `status: "running"` whose `updatedAt` is more than 30 minutes old and emits the same severity findings (HIGH for apply-type, MEDIUM otherwise); no reference to `.pipeline/run-active.json` remains in `scripts/integrity-check.mjs`.
+
+#### Phase 4 — Tests, docs, migration
+
+- [ ] 19. Update hook tests to remove singleton fixture writes (`hooks/agent-loop-guard-test.mjs`, `hooks/ctx-session-start-terminal-cleanup-test.js`, `hooks/subagent-stop-verdict-test.js`, `hooks/control-file-guard-test.js`) (wave: 4)
+  Depends: 4, 5, 6, 7
+  Intent: Align hook test fixtures with the new singleton-free state — tests that created or asserted on the singleton must switch to per-run file fixtures or registry-based assertions.
+  Verify: AC-19: `hooks/agent-loop-guard-test.mjs` line 34 writes a per-run active file instead of the singleton; `hooks/ctx-session-start-terminal-cleanup-test.js` assertions for singleton deletion (lines 115–117) are replaced with per-run file assertions; `hooks/subagent-stop-verdict-test.js` per-test singleton setups (all `writeFileSync ... run-active.json` calls) are replaced with per-run active file writes; `hooks/control-file-guard-test.js` run-active.json write-block tests (lines 67–338) are removed or updated to test the per-run active file write-block guard instead; all modified test files pass `node --test`.
+
+- [ ] 20. Update MCP and dashboard tests to remove singleton fixture (`mcp/dashboard-state-shape-test.mjs`, `mcp/resume-terminal-suppression-test.mjs`, `mcp/run-active-helpers-test.mjs`) (wave: 4)
+  Depends: 13, 14
+  Intent: Align MCP integration tests with the singleton-free implementation so test fixtures match the new file layout.
+  Verify: AC-20: `mcp/dashboard-state-shape-test.mjs` line 130 singleton write is removed; `currentUnit` is now exercised via the per-run active file (already written in the test setup via `writeRunActive`); `mcp/resume-terminal-suppression-test.mjs` line 80 singleton write is replaced with a per-run active file write; `mcp/run-active-helpers-test.mjs` path-construction assertions are updated to match the per-run path only (singleton path assertions removed); all test files pass.
+
+- [ ] 21. Update apply skill singleton-write instruction (`skills/apply/SKILL.md`) (wave: 4)
+  Depends: 1, 2, 3
+  Intent: Remove the outdated conductor instruction to manually write `worktreePath` to the singleton, replacing it with the correct MCP-based path.
+  Verify: AC-21: Lines 73–75 of `skills/apply/SKILL.md` no longer instruct the conductor to read/write `.pipeline/run-active.json`; the `worktreePath` update uses `forge_update_run` only (already mentioned at step 1 of the same block); no other reference to `run-active.json` appears in the file.
+
+- [ ] 22. Update docs, gotchas, and scaffold references (`docs/gotchas/GENERAL.md`, `skills/dashboard/SKILL.md`, `scaffolds/power-automate/CLAUDE.md`, `.gitignore`) (wave: 4)
+  Depends: 1, 2, 3
+  Intent: Remove all documentation that describes the singleton lifecycle so future readers do not attempt to re-introduce it.
+  Verify: AC-22: The `## run-active.json lifecycle contract` section (lines 30–39) in `docs/gotchas/GENERAL.md` is replaced with a note that per-run active files live at `.pipeline/runs/<runId>/run-active.json` and are the sole source; `skills/dashboard/SKILL.md` line 15 is updated to remove the singleton mention; `scaffolds/power-automate/CLAUDE.md` table row referencing direct singleton read is removed or updated to use `forge_get_active_run`; `.gitignore` line 51 entry for `.pipeline/run-active.json` is removed.
+
+- [ ] 23. Add one-time migration: delete singleton if present on startup (`hooks/ctx-session-start.js`) (wave: 4)
+  Depends: 6
+  Intent: Silently clean up existing user installs that still have a singleton file on disk so first SessionStart after upgrade does not leave a stale artifact that confuses old tooling.
+  Verify: AC-23: `ctx-session-start.js` attempts `fs.unlink('.pipeline/run-active.json')` at the start of every SessionStart invocation; the call is wrapped in a try/catch (ENOENT is ignored silently); no other logic depends on whether the delete succeeded; existing tests for `ctx-session-start.js` continue to pass after removing the singleton-delete assertion.
+
+### Research needed
+
+- **Hook payload `run_id` field:** Confirm whether SubagentStart and SubagentStop hook payloads include a `run_id` or equivalent field that directly identifies the current pipeline run without needing to read any file. If present, tasks 4, 5, 7, 12 can resolve runId from the payload directly. If absent, they must enumerate `.pipeline/runs/*/run.json`. Check `hooks/hook-utils.js` and any hook payload documentation.
+- **Shared enumeration helper:** Several hooks (tasks 4, 5, 6, 7, 8, 9, 11, 12) will need the same "find the active non-terminal run" logic. Confirm whether a shared helper already exists in `hooks/hook-utils.js` that can be extended, or whether a new `findActiveRun(projectDir)` function must be added there. Read `hooks/hook-utils.js` before coding tasks 4–12.
+
+### Approach summary
+
+- Decision: Flip the dependency — every consumer currently using the singleton to discover runId will instead use the run registry (`listRuns` / `run.json` enumeration) or the hook payload's own runId field; the singleton write points in `forge_create_run`, `forge_resume_run`, and `forge_advance_stage` are removed; a one-time startup migration deletes any leftover singleton file.
+- Trade-off: Enumeration of `.pipeline/runs/*/run.json` is slightly more I/O-intensive than a single-file read; this is acceptable because all hooks are non-blocking advisory paths and the registry directory is small.
+- Uncertainty: Whether hook payloads carry a direct `run_id` field is the primary unknown — if they do, enumeration is unnecessary for hooks and the implementation simplifies considerably.
