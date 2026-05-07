@@ -27,6 +27,21 @@ function findMainProjectDir(projectDir) {
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 function findWorkerTaskFile(dir) {
+  const runId = process.env.FORGE_WORKER_RUN_ID;
+  if (runId) {
+    // Targeted: use cwd directly (not resolveProjectDir) so worktree workers
+    // find their file in <worktreePath>/.pipeline/ rather than the stripped
+    // main project root.
+    const pipelineDir = path.join(process.cwd(), '.pipeline');
+    const specific = 'worker-task-' + runId + '.json';
+    try {
+      const entries = fs.readdirSync(pipelineDir);
+      return entries.includes(specific) ? path.join(pipelineDir, specific) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  // Fallback: no runId env var — lex-first (conductor sessions, legacy, tests)
   const pipelineDir = path.join(dir, '.pipeline');
   try {
     const entries = fs.readdirSync(pipelineDir);

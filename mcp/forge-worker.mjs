@@ -42,8 +42,15 @@ function resolveMainProjectRoot(projectDir) {
 
 function findWorkerTaskFile(dir) {
   const pipelineDir = join(dir, '.pipeline');
+  const runId = process.env.FORGE_WORKER_RUN_ID;
   try {
     const entries = readdirSync(pipelineDir);
+    if (runId) {
+      // Targeted: accept only the file for this exact run
+      const specific = 'worker-task-' + runId + '.json';
+      return entries.includes(specific) ? join(pipelineDir, specific) : null;
+    }
+    // Fallback: lex-first (legacy / single-worker runs)
     const match = entries.find((e) => /^worker-task-.+\.json$/.test(e));
     return match ? join(pipelineDir, match) : null;
   } catch {
