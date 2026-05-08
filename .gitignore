@@ -28,6 +28,7 @@ out
 .pipeline/board.json
 .pipeline/modules.json
 .pipeline/agent-roles.json
+docs/PLAN.md
 docs/PLAN-archive.md
 docs/CHANGELOG.md
 docs/ARCHITECTURE.md

@@ -172,6 +172,34 @@ No paragraphs. No "this feature enables/provides..." preamble. Only reusable pat
 
 5. Log: `[solution] <category>/<slug>.md` — nothing else.
 
+## Step 8d — Plan snapshot (apply stage only)
+
+**Skip if:** `docs/PLAN.md` in the worktree has no active `### Feature:` section (e.g. the file is the stub `## Active Plan\n` or is absent).
+
+When `docs/PLAN.md` contains a `### Feature:` section:
+
+1. Extract the feature heading line (`### Feature: <title>`), the `Summary:` line immediately after it, and all completed task lines (`- [x] ...`).
+2. Derive `<feature-slug>`: lowercase the feature title, replace spaces and non-alphanumeric characters with hyphens, collapse consecutive hyphens.
+3. Ensure `docs/solutions/plans/` exists (`mkdir -p`). If `<feature-slug>.md` already exists, append `-<epoch>`.
+4. Write to `docs/solutions/plans/<feature-slug>.md` — max 15 lines excluding frontmatter:
+
+```markdown
+---
+title: <feature title>
+category: plans
+date: <YYYY-MM-DD>
+---
+### Feature: <title>
+Summary: <summary line>
+## Completed tasks
+- [x] <task 1 title>
+- [x] <task 2 title>
+```
+
+Only include the task title line (not Intent/Verify). Stop at 15 content lines. The snapshot is committed as part of Step 3c of the apply skill.
+
+5. Log: `[plan-snapshot] plans/<feature-slug>.md` — nothing else.
+
 ## Post-write verification
 
 Grep `docs/CHANGELOG.md` for the feature name. If missing: `[warn] changelog entry not found`. Warnings only — do not re-attempt.
