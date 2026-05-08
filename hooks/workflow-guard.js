@@ -214,6 +214,47 @@ async function main(rawInput) {
     }
   }
 
+  // --- PLAN.md worktree boundary guard ---
+  // Fires for both Write and Edit. When a plan worker running inside a worktree
+  // attempts to write docs/PLAN.md to a path that resolves outside its own worktree
+  // (e.g. the main project root), block with a descriptive error.
+  //
+  // Path resolution: toolInput.file_path with fallback to toolInput.path (mirrors doc-size-guard.js:30).
+  // Normalization: lowercase + replace backslashes (mirrors lines 165-172 above).
+  // Worktree detection: process.cwd() must match .worktrees/<runId>/ using RUN_ID_RE.
+  {
+    const rawTarget = toolInput.file_path || toolInput.path || null;
+    if (rawTarget) {
+      const normalizedTarget = path.resolve(rawTarget).replace(/\\/g, '/').toLowerCase();
+      if (normalizedTarget.endsWith('docs/plan.md')) {
+        const cwd = process.cwd().replace(/\\/g, '/');
+        // Check if cwd is inside a worktree: must contain .worktrees/<runId>/ where runId matches RUN_ID_RE
+        const worktreeMatch = cwd.match(/\.worktrees\/(r-[a-zA-Z0-9]+)(?:\/|$)/);
+        if (worktreeMatch) {
+          const normalizedCwd = cwd.toLowerCase();
+          // Block only when the target path does NOT start with the worktree cwd
+          if (!normalizedTarget.startsWith(normalizedCwd.replace(/\\/g, '/') + '/') && normalizedTarget !== normalizedCwd.replace(/\\/g, '/')) {
+            process.stdout.write(
+              JSON.stringify({
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'deny',
+                  permissionDecisionReason:
+                    'FORGE: docs/PLAN.md must be written inside the worktree, not the main project root. ' +
+                    'Offending path: ' + path.resolve(rawTarget) + '. ' +
+                    'The plan worker cwd is ' + process.cwd() + '. ' +
+                    'Write to: ' + path.join(process.cwd(), 'docs', 'PLAN.md') + ' instead.',
+                },
+              }) + '\n'
+            );
+            process.exit(2);
+            return;
+          }
+        }
+      }
+    }
+  }
+
   // --- Init-mode bypass: no project initialized yet, nothing to protect ---
   // When .pipeline/project.json does not exist, /forge:init is bootstrapping the
   // project for the first time. All control file guards are skipped — none of the

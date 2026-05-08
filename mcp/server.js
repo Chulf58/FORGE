@@ -1678,10 +1678,7 @@ server.registerTool(
           // listRuns failure — fall through to PLAN.md check
         }
         if (!planFound) {
-          planFound = existsSync(join(projectDir, "docs", "PLAN.md"));
-        }
-        if (!planFound) {
-          return errorResult("implement pipeline requires a completed plan (gate1 approved) or docs/PLAN.md. Run /forge:plan first.");
+          return errorResult("implement pipeline requires a completed plan (gate1 approved). Run /forge:plan first.");
         }
       }
 

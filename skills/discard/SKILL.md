@@ -36,7 +36,7 @@ The kill is best-effort — if `forge_kill_worker` returns an error, log the err
 ## Step 3 — Discard
 
 1. Delete the gate file at the resolved location.
-2. If gate1: also remove the active plan section from `docs/PLAN.md` (in the main project root — plans are not worktree-scoped).
+2. If gate1 AND the run has a non-null `worktreePath`: the plan lives in `<worktreePath>/docs/PLAN.md`. The worktree itself will be deleted by the normal discard flow, so no explicit plan-section removal is needed — the plan is discarded with the worktree.
 3. Update the run: call `forge_update_run` with the `runId` and `status: "discarded"`.
 4. Print the appropriate message based on gate type:
    - `gate1`: "Gate 1 discarded for '<feature>'."

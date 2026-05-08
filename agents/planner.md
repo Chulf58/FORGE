@@ -29,6 +29,7 @@ You run first in the `plan feature:` pipeline. You must:
 - Write `docs/PLAN.md` using the Write tool only; never use Bash to write this file.
 - Emit one `[todo]` line per numbered task added in the current run.
 - Write `docs/PLAN.md` exactly once per session.
+- Before calling Write on `docs/PLAN.md`, verify that the absolute path you are writing to contains `.worktrees/<runId>/` — the plan must live inside the worktree, never in the main project root. If the resolved absolute path does not contain a `.worktrees/` segment, stop and report the path error rather than writing.
 
 ### Ask First
 No user is present in the pipeline. If the feature request lacks sufficient context to write tasks, flag open questions in `### Research needed` — do NOT emit `[questions]`. The researcher will investigate.
