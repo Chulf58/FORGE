@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG, findActiveRun, TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS   = STDIN_TIMEOUT_LONG;
 const CONTEXT_WINDOW     = 200_000;
@@ -56,76 +56,50 @@ async function getLastUsage(transcriptPath) {
   return null;
 }
 
-const { TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
-
 /**
- * Report-only recovery primitive: if .pipeline/run-active.json exists and
- * contains a non-null `currentUnit` with an `agent` field, emit a one-line
- * stale-lock notice via hookSpecificOutput.additionalContext.
+ * Report-only recovery primitive: enumerates per-run active files and, when
+ * a single non-terminal run has a non-null `currentUnit`, emits a stale-lock
+ * notice via hookSpecificOutput.additionalContext.
  *
- * Per-run path resolution: when the singleton carries a valid runId, the
- * authoritative state lives at .pipeline/runs/<runId>/run-active.json.
- * Read from there if the file exists; when the per-run file is absent emit
- * "per-run file missing — cannot verify lock" rather than reading stale
- * singleton data. Fall back to singleton only when runId is absent or
- * invalid (projects not yet migrated).
+ * Resolution: calls findActiveRun to enumerate .pipeline/runs/*/run.json and
+ * identify the single non-terminal run, then reads its per-run active file
+ * (.pipeline/runs/<runId>/run-active.json). Returns null when zero or multiple
+ * non-terminal runs exist (fail-open per RESEARCH.md line 49).
  *
  * Truthfulness step: if the referenced run's status is terminal
  * (completed / failed / discarded), the marker is stale-by-finish, not
  * stale-by-crash — so instead of surfacing a misleading notice on every
- * subsequent session, we quietly clear `currentUnit` in the active file
- * and emit nothing. All other cases (unknown run, missing registry file,
- * non-terminal status) preserve the prior notice behavior.
+ * subsequent session, we quietly clear `currentUnit` in the per-run active
+ * file and emit nothing.
  *
+ * The singleton (.pipeline/run-active.json) is no longer read or deleted.
  * Never mutates anything except `currentUnit` on the narrow terminal path.
- * Never throws. Returns true iff a notice was emitted.
+ * Never throws. Returns a Promise<boolean> — true iff a notice was emitted.
  */
-function emitStaleUnitNoticeIfAny(projectDir) {
+async function emitStaleUnitNoticeIfAny(projectDir) {
   try {
-    const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
-
-    // Read singleton to discover the runId steering pointer.
-    let singletonData;
-    try {
-      const raw = fs.readFileSync(singletonPath, 'utf8');
-      singletonData = JSON.parse(raw);
-    } catch (_) {
-      // Singleton absent / unreadable / unparseable — nothing to check.
+    // Enumerate run.json files to find the single non-terminal run.
+    const activeRun = await findActiveRun(projectDir);
+    if (!activeRun) {
+      // Zero or multiple non-terminal runs — fail open, nothing to surface.
       return false;
     }
+    const { runId } = activeRun;
 
-    const rawRunId = singletonData && typeof singletonData.runId === 'string'
-      ? singletonData.runId
-      : null;
-    const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
-    const perRunPath = validRunId
-      ? path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json')
-      : null;
-
-    let runActivePath;
+    // Read the per-run active file for the resolved run.
+    const runActivePath = path.join(projectDir, '.pipeline', 'runs', runId, 'run-active.json');
     let data;
-
-    if (perRunPath) {
-      // Per-run path known — attempt to read it.
-      try {
-        const raw = fs.readFileSync(perRunPath, 'utf8');
-        data = JSON.parse(raw);
-        runActivePath = perRunPath;
-      } catch (readErr) {
-        // Per-run file absent or unreadable — cannot verify lock state.
-        if (readErr.code === 'ENOENT') {
-          process.stderr.write(
-            '[forge-stale-lock] per-run file missing — cannot verify lock for run ' +
-            validRunId + '\n'
-          );
-        }
-        // Fail-open: do not fall back to potentially stale singleton data.
-        return false;
+    try {
+      const raw = await fs.promises.readFile(runActivePath, 'utf8');
+      data = JSON.parse(raw);
+    } catch (readErr) {
+      if (readErr.code === 'ENOENT') {
+        process.stderr.write(
+          '[forge-stale-lock] per-run active file missing — cannot verify lock for run ' +
+          runId + '\n'
+        );
       }
-    } else {
-      // No valid runId — legacy / not-yet-migrated project: read singleton.
-      data = singletonData;
-      runActivePath = singletonPath;
+      return false;
     }
 
     const unit = data && data.currentUnit;
@@ -136,16 +110,18 @@ function emitStaleUnitNoticeIfAny(projectDir) {
     // Terminal-run cleanup: only clear the marker when we can prove the
     // referenced run is already done. Unknown/unreadable → keep the notice
     // (defensive: never silently drop a marker we can't verify).
-    const runId = data && typeof data.runId === 'string' ? data.runId : null;
-    const runStatus = readRunStatus(projectDir, runId);
+    const activeRunId = data && typeof data.runId === 'string' ? data.runId : runId;
+    const runStatus = readRunStatus(projectDir, activeRunId);
     if (runStatus && TERMINAL_STATUSES.has(runStatus)) {
+      // Clear currentUnit in the per-run active file (no singleton to delete).
       try {
-        fs.unlinkSync(runActivePath);
+        data.currentUnit = null;
+        const tmp = runActivePath + '.tmp.' + process.pid;
+        await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+        await fs.promises.rename(tmp, runActivePath);
       } catch (_) {
-        // Cleanup failed — fall through silently. We deliberately do NOT
-        // emit the misleading notice in this case either; the marker just
-        // stays on disk until the next cleanup attempt or a successful
-        // start/stop cycle.
+        // Cleanup failed — fall through silently. The misleading notice is
+        // still suppressed; the marker stays until the next cleanup attempt.
       }
       return false;
     }
@@ -176,7 +152,7 @@ async function main(rawInput) {
   // Stale-lock notice is independent of context-window logic and session_id —
   // fire it first so it appears even when we exit early below.
   const projectDir = resolveProjectDir(payload);
-  emitStaleUnitNoticeIfAny(projectDir);
+  await emitStaleUnitNoticeIfAny(projectDir);
 
   // Clean stale worker-session marker from prior sessions. If this is a worker,
   // worker-task-inject.js (runs later in the SessionStart chain) will recreate it.

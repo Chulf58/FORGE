@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, stripAnsi, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, stripAnsi, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -134,45 +134,26 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
-
-  // Read the singleton first to discover the runId (steering pointer).
-  let singletonData;
-  try {
-    const raw = await fs.promises.readFile(singletonPath, 'utf8');
-    singletonData = JSON.parse(raw);
-  } catch (_) {
-    // Singleton absent or unparseable — nothing to patch, exit silently
-    console.error('[forge-subagent] run-active.json not found or unreadable — skipping stop patch');
+  // Resolve runId via per-run file enumeration (payload carries no run_id field).
+  // findActiveRun returns null when zero or multiple non-terminal runs exist — fail open.
+  const activeRun = await findActiveRun(projectDir);
+  if (!activeRun) {
+    // No active run found — nothing to patch, exit silently.
     exitOk();
     return;
   }
+  const { runId: validRunId } = activeRun;
 
-  // Resolve per-run path when a valid runId is present.
-  const rawRunId = singletonData && typeof singletonData.runId === 'string'
-    ? singletonData.runId
-    : null;
-  const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
-  const perRunPath = validRunId
-    ? path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json')
-    : null;
-
-  // Determine which file to read/write.
-  let runActivePath;
+  // Read the per-run active file using the resolved runId.
+  const runActivePath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json');
   let data;
-  if (perRunPath) {
-    try {
-      const raw = await fs.promises.readFile(perRunPath, 'utf8');
-      data = JSON.parse(raw);
-      runActivePath = perRunPath;
-    } catch (_) {
-      // Per-run file absent or unparseable — fall back to singleton.
-      data = singletonData;
-      runActivePath = singletonPath;
-    }
-  } else {
-    data = singletonData;
-    runActivePath = singletonPath;
+  try {
+    const raw = await fs.promises.readFile(runActivePath, 'utf8');
+    data = JSON.parse(raw);
+  } catch (_) {
+    // Per-run active file absent or unparseable — exit silently (fail-open).
+    exitOk();
+    return;
   }
 
   if (!Array.isArray(data.agents)) {

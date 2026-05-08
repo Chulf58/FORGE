@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -24,53 +24,31 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
-
-  // Read the singleton first to discover the runId (steering pointer).
-  // If absent or unparseable, there is no authoritative pointer for this hook
-  // to amend — exit silently rather than scaffolding a partial identity-less
-  // file that poisons downstream consumers.
-  let singletonData;
-  try {
-    const raw = await fs.promises.readFile(singletonPath, 'utf8');
-    singletonData = JSON.parse(raw);
-  } catch (_) {
+  // Resolve runId via per-run file enumeration (payload carries no run_id field).
+  // findActiveRun returns null when zero or multiple non-terminal runs exist — fail open.
+  const activeRun = await findActiveRun(projectDir);
+  if (!activeRun) {
     exitOk();
     return;
   }
+  const { runId: validRunId, runData: runJson } = activeRun;
 
-  // Resolve per-run path when a valid runId is present.
-  // Validate against ^r-[a-zA-Z0-9]+$ before constructing the path.
-  const rawRunId = singletonData && typeof singletonData.runId === 'string'
-    ? singletonData.runId
-    : null;
-  const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
-  const perRunPath = validRunId
-    ? path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json')
-    : null;
-
-  // Determine which file to read/write.
-  // Per-run file is preferred when it exists; singleton is the fallback.
-  let runActivePath;
+  // Read the per-run active file using the resolved runId.
+  const runActivePath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json');
   let data;
-  if (perRunPath) {
-    try {
-      const raw = await fs.promises.readFile(perRunPath, 'utf8');
-      data = JSON.parse(raw);
-      runActivePath = perRunPath;
-    } catch (_) {
-      // Per-run file absent or unparseable — fall back to singleton.
-      data = singletonData;
-      runActivePath = singletonPath;
-    }
-  } else {
-    data = singletonData;
-    runActivePath = singletonPath;
+  try {
+    const raw = await fs.promises.readFile(runActivePath, 'utf8');
+    data = JSON.parse(raw);
+  } catch (_) {
+    // Per-run active file absent or unparseable — exit silently (fail-open).
+    exitOk();
+    return;
   }
   // Guard: ensure agents array exists on an otherwise valid run-active.json.
   if (!Array.isArray(data.agents)) {
     data.agents = [];
   }
+  void runJson; // resolved via run.json scan; run-active.json is authoritative for agent tracking
 
   const agentId = payload.agent_id || null;
   const agentType = payload.agent_type || null;

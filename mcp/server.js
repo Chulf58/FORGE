@@ -1755,10 +1755,7 @@ server.registerTool(
         }
       }
 
-      const runActivePath = join(projectDir, ".pipeline", "run-active.json");
-      writeJsonSafe(runActivePath, runActiveData);
-
-      // Write per-run active file alongside singleton (AC-3).
+      // Write per-run active file — sole authoritative source (singleton removed).
       try {
         writeRunActive(projectDir, started.runId, runActiveData);
       } catch (perRunErr) {
@@ -2434,7 +2431,7 @@ server.registerTool(
   "forge_resume_run",
   {
     title: "FORGE Resume Run",
-    description: "Re-enters a paused or in-progress run by runId. Restores .pipeline/run-active.json steering pointer; does not progress the run autonomously and does not invoke any pipeline skill.",
+    description: "Re-enters a paused or in-progress run by runId. Restores the per-run active file (.pipeline/runs/<runId>/run-active.json); does not progress the run autonomously and does not invoke any pipeline skill.",
     inputSchema: z.object({
       runId: runIdOrBareSchema.describe("Run ID to resume (e.g. r-a1b2c3d4). The 'r-' prefix is added if missing."),
     }),
@@ -2492,10 +2489,12 @@ server.registerTool(
       // in hooks/ctx-session-start.js. Defensive: if the referenced run can't
       // be verified (no prior runId / registry miss / throw), keep the marker.
       const TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
-      const runActivePath = join(check.pipelineDir, "run-active.json");
+      // Read prior currentUnit from the per-run active file for the run being resumed.
+      // The singleton is no longer written; use getRunActivePath to locate state.
+      const priorRunActivePath = getRunActivePath(projectDir, run.runId);
       let staleUnit = null;
       try {
-        const priorRaw = readFileSync(runActivePath, "utf8");
+        const priorRaw = readFileSync(priorRunActivePath, "utf8");
         const prior = JSON.parse(priorRaw);
         if (prior && prior.currentUnit && typeof prior.currentUnit === "object") {
           staleUnit = prior.currentUnit;
@@ -2516,7 +2515,7 @@ server.registerTool(
         staleUnit = null;
       }
 
-      // Success effect: overwrite run-active.json steering pointer.
+      // Success effect: write per-run active file (sole authoritative source).
       // We do NOT mutate run.status, gateState, or agents — those are
       // owned by the pipeline skills; resume only restores the per-session pointer.
       const runActiveData = {
@@ -2532,19 +2531,11 @@ server.registerTool(
       }
 
       try {
-        writeJsonSafe(runActivePath, runActiveData);
+        writeRunActive(projectDir, run.runId, runActiveData);
       } catch (writeErr) {
         return errorResult(
-          "Failed to update run-active.json: " + writeErr.message + ". Run-active state was not modified."
+          "Failed to update per-run active file: " + writeErr.message + ". Run-active state was not modified."
         );
-      }
-
-      // Write per-run active file alongside singleton (AC-4).
-      // Non-fatal: stale-unit suppression logic above is unchanged regardless.
-      try {
-        writeRunActive(projectDir, run.runId, runActiveData);
-      } catch (perRunErr) {
-        console.error("[forge_resume_run] per-run active write failed (non-fatal): " + perRunErr.message);
       }
 
       // Return structured fields for the future /forge:resume skill to render.
@@ -2621,27 +2612,13 @@ server.registerTool(
       };
       const updatedRun = updateRun(projectDir, runId, { stages: stagesPatch, status: "running" });
 
-      // Refresh run-active.json stages so subagent hooks see the updated allowlist.
-      // Note: forge_update_run does not touch run-active.json by design; only
+      // Refresh per-run active file stages so subagent hooks see the updated allowlist.
+      // Note: forge_update_run does not touch run-active files by design; only
       // forge_create_run, forge_resume_run, and forge_advance_stage do. If the
       // conductor calls forge_update_run({ stages: ... }) mid-run to add a reviewer
-      // agent, run-active.json won't reflect it until next resume — the allowlist
-      // warning may fire spuriously for that agent. Acceptable limitation.
-      // Fail-open: if run-active.json is absent or belongs to a different run, skip.
-      const runActivePath = join(projectDir, ".pipeline", "run-active.json");
-      try {
-        const rawActive = readFileSync(runActivePath, "utf8");
-        const activeData = JSON.parse(rawActive);
-        if (activeData && activeData.runId === runId) {
-          activeData.stages = updatedRun.stages ?? null;
-          writeJsonSafe(runActivePath, activeData);
-        }
-      } catch (_) {
-        // run-active.json absent or belongs to a different run — skip silently
-      }
-
-      // Update per-run active file stages alongside singleton (AC-5).
-      // Fail-open: if per-run file is absent, skip silently.
+      // agent, the per-run active file won't reflect it until next resume — the
+      // allowlist warning may fire spuriously for that agent. Acceptable limitation.
+      // Fail-open: if per-run active file is absent, skip silently.
       try {
         const perRunActivePath = getRunActivePath(projectDir, runId);
         const rawPerRun = readFileSync(perRunActivePath, "utf8");

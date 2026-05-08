@@ -214,6 +214,52 @@ function readRunStatus(projectDir, runId) {
   }
 }
 
+// -- Active run scanner -------------------------------------------------------
+
+/**
+ * Enumerates .pipeline/runs/&lt;runId&gt;/run.json and returns the single non-terminal run.
+ * Returns { runId, runData } when exactly one non-terminal run exists.
+ * Returns null when zero or multiple non-terminal runs exist (fail-open per
+ * RESEARCH.md line 49 — never pick a winner in an ambiguous tie-break).
+ *
+ * Uses fs.promises throughout. Never throws — all errors produce null.
+ *
+ * @param {string} projectDir - validated project root (from resolveProjectDir)
+ * @returns {Promise<{ runId: string, runData: object }|null>}
+ */
+async function findActiveRun(projectDir) {
+  const fs = require('fs');
+  const runsDir = path.join(projectDir, '.pipeline', 'runs');
+  let entries;
+  try {
+    entries = await fs.promises.readdir(runsDir);
+  } catch (_) {
+    // .pipeline/runs/ absent — no active run
+    return null;
+  }
+
+  const active = [];
+  for (const entry of entries) {
+    const runPath = path.join(runsDir, entry, 'run.json');
+    try {
+      const raw = await fs.promises.readFile(runPath, 'utf8');
+      const runData = JSON.parse(raw);
+      const status = runData && typeof runData.status === 'string' ? runData.status : null;
+      // Absent/unreadable status is treated as non-terminal (fail-open)
+      if (!status || !TERMINAL_STATUSES.has(status)) {
+        active.push({ runId: entry, runData });
+      }
+    } catch (_) {
+      // Unreadable / unparseable — treat as non-terminal (fail-open)
+      // but do NOT push without a runData object; skip this entry to avoid
+      // operating on corrupted state.
+    }
+  }
+
+  if (active.length !== 1) return null;
+  return active[0];
+}
+
 // -- Feature matching (shared between workflow-guard and gate-sync) ------------
 
 // Generic filler words stripped before comparison — these add no
@@ -294,5 +340,6 @@ module.exports = {
   resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken,
   getForgeAgentSet, isForgeAgent, isProjectInitialized,
   STDIN_TIMEOUT_LONG, STDIN_TIMEOUT_SHORT, TERMINAL_STATUSES, readRunStatus,
+  findActiveRun,
   normalizeFeature, toMeaningfulWords, stemWord, featuresMatch,
 };

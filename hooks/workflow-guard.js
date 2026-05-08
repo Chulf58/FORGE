@@ -58,7 +58,7 @@ async function readPerRunActive(pipelineDir, runId) {
   }
 }
 
-// Fallback: scan .pipeline/runs/ for an active apply run when run-active.json is absent.
+// Scan .pipeline/runs/ for an active apply run via run.json registry.
 // Returns the runId so callers can read the per-run active file when present.
 async function findActiveApplyRun(pipelineDir) {
   const runsDir = path.join(pipelineDir, 'runs');
@@ -89,39 +89,27 @@ async function checkApplyGateAndHandoff(filePath, projectDir) {
   // projectDir is resolved by the caller via resolveProjectDir(payload)
   const pipelineDir = path.join(projectDir, '.pipeline');
 
-  // AC-12: prefer the per-run active file for the apply run when available;
-  // fall back to the singleton when the per-run file is absent.
-  // 1. Look up the apply run via the run registry to learn its runId.
-  // 2. If found, try .pipeline/runs/<runId>/run-active.json — most accurate.
-  // 3. Otherwise (per-run absent OR no apply run in registry) fall back to singleton.
-  // Both per-run and singleton are MCP-server-written; neither is more authoritative
-  // than the other (workflow-guard.js:205 blocks direct agent writes to run-active.json paths).
+  // Resolve pipelineType and worktreePath exclusively from the run registry.
+  // 1. Look up the apply run via findActiveApplyRun (reads run.json files).
+  // 2. If found, try the per-run active file for more precise worktreePath.
+  // 3. Fall back to registry-derived metadata when the per-run file is absent.
   let pipelineType = null;
   let worktreePath = null;
   const applyEntry = await findActiveApplyRun(pipelineDir);
+  if (!applyEntry) {
+    return null; // genuinely no active apply run
+  }
   let perRunData = null;
-  if (applyEntry && applyEntry.runId) {
+  if (applyEntry.runId) {
     perRunData = await readPerRunActive(pipelineDir, applyEntry.runId);
   }
   if (perRunData) {
     pipelineType = perRunData.pipelineType || null;
     worktreePath = perRunData.worktreePath || null;
   } else {
-    // Per-run file absent — read singleton.
-    try {
-      const raw = await fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), 'utf8');
-      const data = JSON.parse(raw);
-      pipelineType = data.pipelineType || null;
-      worktreePath = data.worktreePath || null;
-    } catch (_) {
-      // Singleton absent too — use registry-derived metadata if we found an apply entry.
-      if (applyEntry) {
-        pipelineType = applyEntry.pipelineType;
-        worktreePath = applyEntry.worktreePath;
-      } else {
-        return null; // genuinely no active apply run
-      }
-    }
+    // Per-run active file absent — use registry-derived metadata.
+    pipelineType = applyEntry.pipelineType;
+    worktreePath = applyEntry.worktreePath;
   }
 
   if (pipelineType !== 'apply') return null;
@@ -170,7 +158,7 @@ async function checkApplyGateAndHandoff(filePath, projectDir) {
   }
 
   // --- Worktree path enforcement ---
-  // If run-active.json has a worktreePath, source writes must be under it.
+  // If the per-run active file has a worktreePath, source writes must be under it.
   // This prevents the implementer from writing to the main project when a
   // worktree was resolved. worktreePath is set by the apply skill in Step 2b.
   if (worktreePath) {
@@ -232,27 +220,15 @@ async function main(rawInput) {
   // files they protect exist yet, and project.json must be created by init itself.
   if (!isProjectInitialized(projectDir)) { exitOk(); return; }
 
-  // --- Control file guards: run-active.json and gate-pending.json ---
+  // --- Control file guards: gate-pending.json, action-approved.json, etc. ---
+  // Note: the legacy singleton .pipeline/run-active.json no longer exists; its
+  // write-block check has been removed. Per-run active files at
+  // .pipeline/runs/<runId>/run-active.json are managed exclusively by MCP tools
+  // (forge_create_run, forge_resume_run, forge_advance_stage) and the
+  // subagent-start/subagent-stop hooks. The bash-guard write-vector check
+  // (`>\s*['"]?\.pipeline\//`) covers shell-redirect attempts; Write/Edit
+  // attempts on per-run files are not currently blocked here.
   const normalisedPath = filePath.replace(/\\/g, '/');
-
-  // Block ALL direct writes to run-active.json.
-  // Managed exclusively by MCP tools (forge_create_run, forge_resume_run)
-  // and hooks (subagent-start, subagent-stop). No legitimate Write/Edit path.
-  if (normalisedPath.endsWith('.pipeline/run-active.json')) {
-    process.stdout.write(
-      JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason:
-            'FORGE: Direct writes to .pipeline/run-active.json are not allowed. ' +
-            'Use forge_create_run or forge_resume_run MCP tools to manage run state.',
-        },
-      }) + '\n'
-    );
-    process.exit(2);
-    return;
-  }
 
   // Block ALL direct writes to action-approved.json.
   // Managed exclusively by approval-token.js (UserPromptSubmit hook) via fs.writeFileSync.

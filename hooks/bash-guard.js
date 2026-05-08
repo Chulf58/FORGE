@@ -3,7 +3,7 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
-const { hasValidApprovalToken, STDIN_TIMEOUT_LONG, isProjectInitialized, resolveProjectDir } = require('./hook-utils');
+const { hasValidApprovalToken, STDIN_TIMEOUT_LONG, isProjectInitialized, resolveProjectDir, findActiveRun } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
@@ -132,7 +132,6 @@ function extractAllCommandWords(command) {
 // ---------------------------------------------------------------------------
 
 const PROTECTED_CONTROL_FILES = [
-  'run-active.json',
   'action-approved.json',
   'gate-pending.json',
   'session-dispatch-log.json',
@@ -244,18 +243,21 @@ function getGitSubcommand(segment) {
 }
 
 /**
- * Returns true when .pipeline/run-active.json exists and contains a non-empty
- * runId. An active pipeline run means git operations were initiated by the
- * pipeline itself and don't need a separate approval token.
- * Fail-open: any read/parse error returns false.
+ * Enumerates .pipeline/runs/*/run.json for the non-terminal running run and
+ * returns its { runId, worktreePath }. An active pipeline run means git
+ * operations were initiated by the pipeline itself and don't need a separate
+ * approval token. Fail-open: any read/parse error returns null.
  */
-function getActivePipelineRun(projectDir) {
+async function getActivePipelineRun(projectDir) {
   try {
-    const runActivePath = path.join(projectDir, '.pipeline', 'run-active.json');
-    const raw = fs.readFileSync(runActivePath, 'utf8');
-    const data = JSON.parse(raw);
-    if (typeof data.runId !== 'string' || data.runId.length === 0) return null;
-    return { runId: data.runId, worktreePath: data.worktreePath || null };
+    const active = await findActiveRun(projectDir);
+    if (!active) return null;
+    const runId = active.runData && typeof active.runData.runId === 'string' ? active.runData.runId : active.runId;
+    if (!runId || runId.length === 0) return null;
+    const worktreePath = (active.runData && typeof active.runData.worktreePath === 'string')
+      ? active.runData.worktreePath || null
+      : null;
+    return { runId, worktreePath };
   } catch (_) {
     return null;
   }
@@ -266,29 +268,24 @@ function getActivePipelineRun(projectDir) {
  * using worktree-first fallback (gate-enforcement.js was removed).
  * Fail-open: missing or unreadable gate file → returns false (no block).
  */
-function isCommitGatePending(projectDir) {
+async function isCommitGatePending(projectDir) {
   try {
-    // Worktree-first: check run-active.json for worktreePath
+    // Worktree-first: resolve worktreePath from the active run's run.json data.
     let gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');
-    try {
-      const runRaw = fs.readFileSync(path.join(projectDir, '.pipeline', 'run-active.json'), 'utf8');
-      const runData = JSON.parse(runRaw);
-      if (runData && typeof runData.worktreePath === 'string' && runData.worktreePath) {
-        const wtGatePath = path.join(runData.worktreePath, '.pipeline', 'gate-pending.json');
-        try {
-          fs.readFileSync(wtGatePath, 'utf8'); // probe existence
-          gatePath = wtGatePath;
-        } catch (_) {
-          // worktree gate not found, fall back to main project root
-        }
+    const active = await findActiveRun(projectDir);
+    if (active && active.runData && typeof active.runData.worktreePath === 'string' && active.runData.worktreePath) {
+      const wtGatePath = path.join(active.runData.worktreePath, '.pipeline', 'gate-pending.json');
+      try {
+        await fs.promises.readFile(wtGatePath, 'utf8'); // probe existence
+        gatePath = wtGatePath;
+      } catch (_) {
+        // worktree gate not found, fall back to main project root
       }
-    } catch (_) {
-      // run-active.json absent or unreadable — use main project root gate path
     }
 
     let gateData;
     try {
-      gateData = JSON.parse(fs.readFileSync(gatePath, 'utf8'));
+      gateData = JSON.parse(await fs.promises.readFile(gatePath, 'utf8'));
     } catch (_) {
       return false; // fail-open: absent or unreadable → no block
     }
@@ -416,7 +413,7 @@ async function main(rawInput) {
 
     // Commit-gate hard-block: deny git commit when a commit gate is pending.
     // This must be checked BEFORE the soft-block so no active-run bypass is possible.
-    if (sub === 'commit' && isCommitGatePending(resolveProjectDir(payload))) {
+    if (sub === 'commit' && await isCommitGatePending(resolveProjectDir(payload))) {
       exitBlock(
         '[bash-guard] Blocked: a commit gate is pending. Run `/forge:approve` to review ' +
         'and approve the pending gate before committing.'
@@ -426,7 +423,7 @@ async function main(rawInput) {
 
     // Soft-block: require pipeline run OR valid approval token
     if (GIT_SOFT_BLOCKED[sub] !== undefined) {
-      const activeRun = getActivePipelineRun(resolveProjectDir(payload));
+      const activeRun = await getActivePipelineRun(resolveProjectDir(payload));
       if (activeRun) {
         if (!activeRun.worktreePath) {
           // Non-worktree run (e.g. apply on main) — allow all git ops

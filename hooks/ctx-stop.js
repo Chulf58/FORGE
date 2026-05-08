@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG, findActiveRun } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
@@ -33,19 +33,29 @@ async function main(rawInput) {
   const now = Date.now();
   const warnings = [];
 
-  // Check 1: Incomplete pipeline run
+  // Resolve the active run once via the registry-based helper. Both Check 1
+  // (incomplete agents) and Check 3 (documenter-ran) consume the per-run active
+  // file's `agents` array. When no unique non-terminal run exists, both checks
+  // are skipped (same fail-open as the prior singleton-missing path).
+  let perRunActive = null;
   try {
-    const raw = await fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), 'utf8');
-    const data = JSON.parse(raw);
-    if (Array.isArray(data.agents)) {
-      const incomplete = data.agents.filter(a => a.startedAt && !a.completedAt);
-      // Staleness guard: skip if oldest incomplete agent started > 30 min ago
-      const isFresh = incomplete.some(a => (now - a.startedAt) < STALE_THRESHOLD_MS);
-      if (incomplete.length > 0 && isFresh) {
-        warnings.push('Pipeline run has ' + incomplete.length + ' agent(s) that started but did not complete.');
-      }
+    const active = await findActiveRun(projectDir);
+    if (active && active.runId) {
+      const perRunPath = path.join(pipelineDir, 'runs', active.runId, 'run-active.json');
+      const raw = await fs.promises.readFile(perRunPath, 'utf8');
+      perRunActive = JSON.parse(raw);
     }
-  } catch (_) { /* file missing or unreadable — skip */ }
+  } catch (_) { /* per-run file missing or unreadable — skip */ }
+
+  // Check 1: Incomplete pipeline run
+  if (perRunActive && Array.isArray(perRunActive.agents)) {
+    const incomplete = perRunActive.agents.filter(a => a.startedAt && !a.completedAt);
+    // Staleness guard: skip if oldest incomplete agent started > 30 min ago
+    const isFresh = incomplete.some(a => (now - a.startedAt) < STALE_THRESHOLD_MS);
+    if (incomplete.length > 0 && isFresh) {
+      warnings.push('Pipeline run has ' + incomplete.length + ' agent(s) that started but did not complete.');
+    }
+  }
 
   // Check 2: Pending gate
   try {
@@ -62,17 +72,13 @@ async function main(rawInput) {
   } catch (_) { /* file missing or unreadable — skip */ }
 
   // Check 3: Documenter not run
-  try {
-    const raw = await fs.promises.readFile(path.join(pipelineDir, 'run-active.json'), 'utf8');
-    const data = JSON.parse(raw);
-    if (Array.isArray(data.agents) && data.agents.length > 0) {
-      const hasDocumenter = data.agents.some(a => a.agent_type === 'forge:documenter' && a.completedAt);
-      const hasCoder = data.agents.some(a => a.agent_type === 'forge:coder' && a.completedAt);
-      if (hasCoder && !hasDocumenter) {
-        warnings.push('Source files were modified (coder ran) but the documenter agent has not run. Run the documenter before ending the session.');
-      }
+  if (perRunActive && Array.isArray(perRunActive.agents) && perRunActive.agents.length > 0) {
+    const hasDocumenter = perRunActive.agents.some(a => a.agent_type === 'forge:documenter' && a.completedAt);
+    const hasCoder = perRunActive.agents.some(a => a.agent_type === 'forge:coder' && a.completedAt);
+    if (hasCoder && !hasDocumenter) {
+      warnings.push('Source files were modified (coder ran) but the documenter agent has not run. Run the documenter before ending the session.');
     }
-  } catch (_) { /* file missing or unreadable — skip */ }
+  }
 
   // Check 4: Unapplied handoff
   try {

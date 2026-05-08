@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, STDIN_TIMEOUT_LONG } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG, findActiveRun } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 const FRESHNESS_MS = 60 * 60 * 1000; // 60 minutes
@@ -36,21 +36,27 @@ async function main(rawInput) {
     }
   } catch (_) { /* missing or unreadable — default to enabled */ }
 
-  // Check whether any source-modifying agents (implementer or coder) completed
+  // Check whether any source-modifying agents (implementer or coder) completed.
+  // Resolve the active run via the registry-based helper, then read its per-run
+  // active file. When no unique non-terminal run exists, the check is skipped
+  // (same fail-open as the prior singleton-missing path).
   let sourceAgentRan = false;
   try {
-    const activeRaw = await fs.promises.readFile(
-      path.join(projectDir, '.pipeline', 'run-active.json'),
-      'utf8',
-    );
-    const activeData = JSON.parse(activeRaw);
-    if (Array.isArray(activeData.agents)) {
-      sourceAgentRan = activeData.agents.some((a) => {
-        const t = typeof a.agent_type === 'string' ? a.agent_type : '';
-        return t.includes('coder') && a.completedAt;
-      });
+    const active = await findActiveRun(projectDir);
+    if (active && active.runId) {
+      const activeRaw = await fs.promises.readFile(
+        path.join(projectDir, '.pipeline', 'runs', active.runId, 'run-active.json'),
+        'utf8',
+      );
+      const activeData = JSON.parse(activeRaw);
+      if (Array.isArray(activeData.agents)) {
+        sourceAgentRan = activeData.agents.some((a) => {
+          const t = typeof a.agent_type === 'string' ? a.agent_type : '';
+          return t.includes('coder') && a.completedAt;
+        });
+      }
     }
-  } catch (_) { /* run-active absent or unreadable — skip check */ }
+  } catch (_) { /* per-run active file absent or unreadable — skip check */ }
 
   if (!sourceAgentRan) {
     process.exit(0);

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -67,46 +67,27 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  // Resolve runId from singleton run-active.json, then optionally per-run file.
-  // Matches the resolution pattern in subagent-start.js.
-  const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
+  // Resolve runId from payload fast-path first; fall back to registry enumeration.
+  let runId = null;
+  const payloadRunId = payload.run_id && typeof payload.run_id === 'string' ? payload.run_id : null;
+  if (payloadRunId && /^r-[a-zA-Z0-9]+$/.test(payloadRunId)) {
+    runId = payloadRunId;
+  } else {
+    const activeRun = await findActiveRun(projectDir);
+    if (!activeRun) {
+      // No active run — conductor session or I/O error. Exit silently.
+      exitOk();
+      return;
+    }
+    const rawRunId = activeRun.runId;
+    runId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
+  }
 
-  let singletonData;
-  try {
-    const raw = await fs.promises.readFile(singletonPath, 'utf8');
-    singletonData = JSON.parse(raw);
-  } catch (_) {
-    // No active run — conductor session or I/O error. Exit silently.
+  if (!runId) {
+    // No valid runId — conductor session. Exit silently.
     exitOk();
     return;
   }
-
-  const rawRunId = singletonData && typeof singletonData.runId === 'string'
-    ? singletonData.runId
-    : null;
-  // Validate runId format to prevent path traversal.
-  const validRunId = rawRunId && /^r-[a-zA-Z0-9]+$/.test(rawRunId) ? rawRunId : null;
-
-  if (!validRunId) {
-    // No valid runId — conductor session or uninitialised singleton. Exit silently.
-    exitOk();
-    return;
-  }
-
-  // Per-run fallback: check if a per-run run-active.json exists.
-  const perRunPath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json');
-  let runData = singletonData;
-  try {
-    const raw = await fs.promises.readFile(perRunPath, 'utf8');
-    runData = JSON.parse(raw);
-  } catch (_) {
-    // Per-run file absent — keep singletonData as runData.
-  }
-
-  // Use the runId from whichever file we resolved (both should agree).
-  const runId = (runData && typeof runData.runId === 'string' && /^r-[a-zA-Z0-9]+$/.test(runData.runId))
-    ? runData.runId
-    : validRunId;
 
   // Dedicated counter file — primary deny-decision source.
   // Race-free: this hook writes the counter itself; no dependency on SubagentStart timing.
