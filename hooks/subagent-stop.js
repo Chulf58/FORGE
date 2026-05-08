@@ -204,6 +204,33 @@ async function main(rawInput) {
   // Guard with data.worktreePath: skip this check for non-worktree runs.
   const normalizedType = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
 
+  // Checkpoint detection — must run BEFORE the truncation blocks below so
+  // a checkpoint outcome is not overridden by the artifact-mtime check.
+  // Condition: agent emitted [CONTEXT-CHECKPOINT] AND checkpoint file exists.
+  if (outcome === 'completed' || outcome === 'no-verdict') {
+    const hasCheckpointSignal = (() => {
+      if (!lastMessage || typeof lastMessage !== 'string') return false;
+      const lines = lastMessage.split('\n');
+      return lines.some((l) => l.trim() === '[CONTEXT-CHECKPOINT]');
+    })();
+
+    if (hasCheckpointSignal) {
+      const baseDir = data.worktreePath || projectDir;
+      const checkpointPath = path.join(baseDir, 'docs', 'context', 'checkpoint.md');
+      const checkpointExists = (() => {
+        try { fs.statSync(checkpointPath); return true; } catch (_) { return false; }
+      })();
+
+      if (checkpointExists) {
+        outcome = 'checkpoint';
+        console.error('[forge-subagent] ' + normalizedType + ' emitted [CONTEXT-CHECKPOINT] + checkpoint.md exists — stamping outcome: checkpoint');
+      } else {
+        // Signal without file — orphan signal; log and fall through to normal outcome
+        console.error('[forge-subagent] WARNING: ' + normalizedType + ' emitted [CONTEXT-CHECKPOINT] but checkpoint.md not found — treating as completed');
+      }
+    }
+  }
+
   if (normalizedType === 'coder' && data.worktreePath && outcome === 'completed') {
     try {
       const { spawnSync } = require('child_process');

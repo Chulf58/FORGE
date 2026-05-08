@@ -225,6 +225,20 @@ async function main() {
   }
 
   /**
+   * Reads run-active.json for the current run. Returns parsed object or null.
+   * Never throws — fail-open so a missing file does not abort the worker.
+   * Reads from the WORKTREE (workDir) because subagent-stop.js writes it there.
+   */
+  function readRunActiveData() {
+    try {
+      const p = join(workDir, '.pipeline', 'runs', runId, 'run-active.json');
+      return JSON.parse(readFileSync(p, 'utf-8'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * Polls a gate file until its status is 'approved' or 'discarded',
    * or until the worker timeout fires.
    *
@@ -319,6 +333,11 @@ async function main() {
 
     let gateHandled = false;
 
+    // Checkpoint re-dispatch tracking. Keyed by normalized agent type.
+    // Cap: 2 re-dispatches per agent type per worker lifetime (= per run).
+    const CHECKPOINT_RESUME_CAP = 2;
+    const checkpointResumeCounts = new Map();
+
     // Progress logging — emit a structured line every 25 messages OR every 60s,
     // whichever first. Closes TODO `708c056f`. Useful for post-mortem when the
     // worker dies silently mid-processing (no exit reason, log just stops). The
@@ -346,6 +365,62 @@ async function main() {
       if (msg && msg.type === 'system' && msg.subtype === 'task_notification' && msg.status === 'completed') {
         progressAgentsCompleted += 1;
       }
+
+      // Checkpoint resume handler.
+      // Fires when a subagent completes — reads run-active.json to detect
+      // whether the most-recently-completed agent has outcome === 'checkpoint'.
+      if (msg && msg.type === 'system' && msg.subtype === 'task_notification' && msg.status === 'completed') {
+        const activeData = readRunActiveData();
+        if (activeData && Array.isArray(activeData.agents) && activeData.agents.length > 0) {
+          // Find the most recently completed agent (highest completedAt)
+          let latest = null;
+          for (const a of activeData.agents) {
+            if (!latest || (typeof a.completedAt === 'number' && a.completedAt > (latest.completedAt || 0))) {
+              latest = a;
+            }
+          }
+          if (latest && latest.outcome === 'checkpoint') {
+            const rawType = latest.agent_type || '';
+            const normType = rawType.startsWith('forge:') ? rawType.slice('forge:'.length) : rawType;
+            const priorResumes = checkpointResumeCounts.get(normType) || 0;
+
+            if (priorResumes >= CHECKPOINT_RESUME_CAP) {
+              // Cap hit — surface as hard failure so the conductor can investigate
+              writeLog('[forge-worker] CHECKPOINT CAP HIT: ' + normType + ' has been resumed ' + priorResumes + ' times — context too large for a single pass. Stopping worker.');
+              process.stderr.write('[forge-worker] CHECKPOINT CAP HIT: ' + normType + ' exhausted ' + CHECKPOINT_RESUME_CAP + ' checkpoint resumes. Work is too large for context — manual intervention required.\n');
+              break;
+            }
+
+            checkpointResumeCounts.set(normType, priorResumes + 1);
+            writeLog('[forge-worker] checkpoint detected for ' + normType + ' (resume ' + (priorResumes + 1) + '/' + CHECKPOINT_RESUME_CAP + ') — re-dispatching');
+
+            const checkpointPath = join(workDir, 'docs', 'context', 'checkpoint.md');
+            const resumeMsg = '[resume-from-checkpoint]\n' +
+              'The previous ' + normType + ' agent hit its context limit mid-task. ' +
+              'Read `docs/context/checkpoint.md` to see what was completed and what remains. ' +
+              'Continue from where the prior pass stopped — do not repeat completed work.';
+
+            inputChannel.push({
+              type: 'user',
+              message: { role: 'user', content: resumeMsg },
+              parent_tool_use_id: null,
+            });
+            writeLog('[forge-worker] injected checkpoint resume message for ' + normType);
+          } else if (latest && latest.outcome !== 'checkpoint') {
+            // Agent completed normally — clean up checkpoint.md if it exists (best-effort)
+            try {
+              const checkpointPath = join(workDir, 'docs', 'context', 'checkpoint.md');
+              if (existsSync(checkpointPath)) {
+                unlinkSync(checkpointPath);
+                writeLog('[forge-worker] deleted checkpoint.md after clean completion of ' + (latest.agent_type || 'unknown'));
+              }
+            } catch (_) {
+              // Non-fatal — checkpoint cleanup is best-effort
+            }
+          }
+        }
+      }
+
       if (msg && msg.type === 'assistant' && msg.message && Array.isArray(msg.message.content)) {
         for (const block of msg.message.content) {
           if (block && block.type === 'tool_use' && block.name === 'Agent' && block.input && block.input.subagent_type) {

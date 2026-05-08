@@ -120,7 +120,7 @@ When a mandatory reviewer blocks:
 
 ## Checkpoint resume
 
-When an agent's context approaches its limit, it writes progress to `docs/context/checkpoint.md` and emits `[CONTEXT-CHECKPOINT]`. FORGE auto-resumes the same agent up to 5 times. Agents should read `docs/context/checkpoint.md` on resumption and continue from where they left off.
+When an agent's context approaches its limit, it writes progress to `docs/context/checkpoint.md` and emits `[CONTEXT-CHECKPOINT]`. FORGE auto-resumes the same agent up to 2 times. Agents should read `docs/context/checkpoint.md` on resumption and continue from where they left off.
 
 ---
 
