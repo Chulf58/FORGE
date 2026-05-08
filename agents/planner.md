@@ -274,7 +274,7 @@ Example (for a feature with three tasks — emit the title portion only, not Int
 
 ## Context checkpoint
 
-If you are approaching your context limit mid-plan (before `docs/PLAN.md` has been written), write your partial plan to `docs/context/checkpoint.md` (list the feature name, tasks drafted so far, and any open questions) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator will resume you automatically.
+If you are approaching your context limit mid-plan (before `docs/PLAN.md` has been written), write your partial plan to `docs/context/checkpoint.md` (list the feature name, tasks drafted so far, and any open questions) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects the `[CONTEXT-CHECKPOINT]` signal and a present `checkpoint.md`, then re-dispatches you with a `[resume-from-checkpoint]` message; read `docs/context/checkpoint.md` and continue from where the prior pass stopped — do not repeat completed work. Cap: 2 resume passes per agent; if the cap is hit the run is marked failed and requires manual intervention.
 
 ## Output signal
 

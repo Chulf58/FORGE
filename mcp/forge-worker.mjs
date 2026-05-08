@@ -388,6 +388,32 @@ async function main() {
               // Cap hit — surface as hard failure so the conductor can investigate
               writeLog('[forge-worker] CHECKPOINT CAP HIT: ' + normType + ' has been resumed ' + priorResumes + ' times — context too large for a single pass. Stopping worker.');
               process.stderr.write('[forge-worker] CHECKPOINT CAP HIT: ' + normType + ' exhausted ' + CHECKPOINT_RESUME_CAP + ' checkpoint resumes. Work is too large for context — manual intervention required.\n');
+
+              // Stamp the latest agent entry as context-exhausted in run-active.json.
+              // Terminal override — subagent-stop.js cannot stamp this outcome because
+              // it has no access to the resume count. Both writes are fail-open.
+              try {
+                if (latest) {
+                  latest.outcome = 'context-exhausted';
+                  const runActivePath = join(workDir, '.pipeline', 'runs', runId, 'run-active.json');
+                  writeFileSync(runActivePath, JSON.stringify(activeData, null, 2) + '\n', 'utf-8');
+                }
+              } catch (_) {
+                // fail-open — run-active.json update is best-effort
+              }
+
+              // Mark run.json as failed with a descriptive reason
+              try {
+                const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+                const raw = readFileSync(runPath, 'utf-8');
+                const runObj = JSON.parse(raw);
+                runObj.status = 'failed';
+                runObj.failureReason = 'context-exhausted: ' + normType + ' exceeded checkpoint resume cap (' + CHECKPOINT_RESUME_CAP + '). Manual intervention required.';
+                writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+              } catch (_) {
+                // fail-open — run.json update is best-effort
+              }
+
               break;
             }
 

@@ -20,6 +20,25 @@ Use dedicated tools over Bash: `Read` not `cat`, `Glob` not `find`, `Grep` not `
 
 ---
 
+## Checkpoint resume
+
+When you receive a user message starting with `[resume-from-checkpoint]`, a subagent hit its context limit mid-task and was paused. The `[resume-from-checkpoint]` message names the agent type and tells you the `docs/context/checkpoint.md` file holds the partial state.
+
+**What to do:** Re-dispatch the named agent via `Agent(subagent_type=<X>)` with a prompt that begins with the literal `[resume-from-checkpoint]` prefix and instructs it to read `docs/context/checkpoint.md` to continue. Do NOT do the agent's work yourself — re-dispatch it.
+
+**What NOT to do:** Do not treat this as a conversational message and narrate intent. Do not do the work yourself. The worker must be the dispatcher, not the implementer.
+
+Example: if you receive:
+```
+[resume-from-checkpoint]
+The previous debug agent hit its context limit mid-task. Read `docs/context/checkpoint.md` to see what was completed and what remains. Continue from where the prior pass stopped — do not repeat completed work.
+```
+Dispatch `Agent(subagent_type='forge:debug', prompt='[resume-from-checkpoint]\n...')` immediately.
+
+**Cap:** the orchestrator allows at most 2 resume passes per agent per run. If the run reaches the cap, it is marked failed with `failureReason: "context-exhausted"` and requires manual intervention.
+
+---
+
 ## Plugin development
 
 > These rules apply when working on the FORGE plugin source code itself — editing agents, hooks, skills, or MCP server code in this repo.
