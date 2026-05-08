@@ -61,7 +61,7 @@ async function getLastUsage(transcriptPath) {
  * a single non-terminal run has a non-null `currentUnit`, emits a stale-lock
  * notice via hookSpecificOutput.additionalContext.
  *
- * Resolution: calls findActiveRun to enumerate .pipeline/runs/*/run.json and
+ * Resolution: calls findActiveRun to enumerate .pipeline/runs/<runId>/run.json and
  * identify the single non-terminal run, then reads its per-run active file
  * (.pipeline/runs/<runId>/run-active.json). Returns null when zero or multiple
  * non-terminal runs exist (fail-open per RESEARCH.md line 49).

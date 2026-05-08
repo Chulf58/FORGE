@@ -243,7 +243,7 @@ function getGitSubcommand(segment) {
 }
 
 /**
- * Enumerates .pipeline/runs/*/run.json for the non-terminal running run and
+ * Enumerates .pipeline/runs/<runId>/run.json for the non-terminal running run and
  * returns its { runId, worktreePath }. An active pipeline run means git
  * operations were initiated by the pipeline itself and don't need a separate
  * approval token. Fail-open: any read/parse error returns null.

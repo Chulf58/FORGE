@@ -13,7 +13,7 @@ function exitOk() {
 
 /**
  * Read the active run's worktreePath from the per-run active file, if any.
- * Enumerates .pipeline/runs/*/run.json to find the active run, then reads
+ * Enumerates .pipeline/runs/<runId>/run.json to find the active run, then reads
  * its per-run run-active.json for worktreePath.
  * Returns null when no active run, no worktreePath, or the file is unreadable.
  */
