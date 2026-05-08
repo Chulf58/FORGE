@@ -87,7 +87,11 @@ function create() {
     copyDirSync(claudeSrc, claudeDst);
   }
 
-  if (fs.existsSync('CLAUDE.md')) {
+  const claudeWorkerSrc = path.join(path.resolve(__dirname, '..'), 'CLAUDE-WORKER.md');
+  if (fs.existsSync(claudeWorkerSrc)) {
+    fs.copyFileSync(claudeWorkerSrc, path.join(wtPath, 'CLAUDE.md'));
+  } else if (fs.existsSync('CLAUDE.md')) {
+    // Fallback: copy conductor CLAUDE.md if CLAUDE-WORKER.md is missing (degraded)
     fs.copyFileSync('CLAUDE.md', path.join(wtPath, 'CLAUDE.md'));
   }
 

@@ -25,14 +25,20 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  const workerMarker = path.join(projectDir, '.pipeline', 'worker-task.json');
+  // Check durable worker marker first (written by worker-task-inject.js; survives task file deletion)
+  const workerSession = path.join(projectDir, '.pipeline', '.worker-session');
+  try { fs.accessSync(workerSession); process.exit(0); return; } catch (_) {}
+
+  // Also check for a pending worker-task file (pre-injection: task file exists but marker not yet written)
+  const pipelineDir = path.join(projectDir, '.pipeline');
   try {
-    fs.accessSync(workerMarker);
-    process.exit(0);
-    return;
-  } catch (_) {
-    // Not a worker — this is a conductor session, inject the reminder
-  }
+    const entries = fs.readdirSync(pipelineDir);
+    if (entries.some((e) => /^worker-task-.+\.json$/.test(e))) {
+      process.exit(0);
+      return;
+    }
+  } catch (_) {}
+  // Not a worker session — inject conductor reminder
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {

@@ -9,8 +9,9 @@
 // No Claude dependency. No MCP dependency. Pure git + filesystem.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getRun } from './getRun.js';
 import { updateRun } from './updateRun.js';
 
@@ -171,6 +172,18 @@ export function createWorktree(projectRoot, runId) {
       const detail = (err && (err.stderr || err.message)) || String(err);
       throw new Error('git worktree add failed: ' + detail);
     }
+  }
+
+  // Overwrite the conductor CLAUDE.md that git checked out with worker-specific instructions.
+  // Claude Code loads <cwd>/CLAUDE.md before any hook additionalContext fires, so this must
+  // happen at worktree-creation time — a hook-time write is too late.
+  try {
+    const pluginRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
+    const workerMdContent = readFileSync(join(pluginRoot, 'CLAUDE-WORKER.md'), 'utf-8');
+    writeFileSync(join(wtPath, 'CLAUDE.md'), workerMdContent, 'utf-8');
+  } catch (_) {
+    // Fail-open: if CLAUDE-WORKER.md is unreadable, leave the checked-out CLAUDE.md
+    // in place. Worker will get conductor rules — degraded but not fatal.
   }
 
   // Merge-copy directories: git checkout may have created these from tracked files,
