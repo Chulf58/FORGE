@@ -87,6 +87,8 @@ Opt-in via `.pipeline/project.json`: `gitIntegration: { enabled, branchPrefix, a
 
 **PreToolUse now fires for Agent tool** — As of ~2026-04-27, Claude Code invokes PreToolUse hooks when the Agent tool is called. Previously dead `"Agent"` matchers in hooks.json now trigger. The routing-enforcement and gate-enforcement Agent matchers were removed from hooks.json because they caused false blocks (gate-enforcement couldn't reliably read `gate-pending.json` from the hook process). Gate and routing enforcement for agents remains skill-level (skills check via `forge_check_gate`). SubagentStart also fires but cannot block (no deny capability).
 
+**`docs/PLAN.md` gitignored — plan workers skip their commit step.** Since commit `60a68dbd`, `docs/PLAN.md` is gitignored at the repo root. Plan workers attempting `git add docs/PLAN.md` (per `skills/plan/SKILL.md` Step 1b) hit gitignore and silently log `[plan] commit skipped`. Net effect: PLAN.md lives only in the worktree's working tree during the run — never committed. Inline-edits to PLAN.md (e.g. by the conductor to address a reviewer BLOCK at gate1) persist only until worktree deletion. The documenter's Step 8d snapshots completed plans to `docs/solutions/plans/<slug>.md` for the durable record.
+
 ---
 
 ## Mechanically enforced (hooks — do not duplicate here)
