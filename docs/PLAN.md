@@ -495,7 +495,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
 - `scaffolds/power-automate/CLAUDE.md:26` — table row: "Read .pipeline/run-active.json directly"
 - `.gitignore:51` — ignores singleton
 
-#### Phase 1 — Remove singleton writes from MCP server
+#### Phase 1 — Remove singleton writes from MCP server AND replumb hooks (Tasks 1–12)
 
 - [ ] 1. Remove singleton write from `forge_create_run` (`mcp/server.js`) (wave: 1)
   Intent: Eliminate the primary singleton writer so new runs no longer create the redundant file, making the per-run file the only active-state artifact from run creation forward.
@@ -508,8 +508,6 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
 - [ ] 3. Remove singleton patch from `forge_advance_stage` (`mcp/server.js`) (wave: 1)
   Intent: Eliminate the stages-sync patch to the singleton so `forge_advance_stage` only updates the per-run active file.
   Verify: AC-3: The singleton-patching block in `forge_advance_stage` (lines 2631–2641) is removed; the per-run active file update block (lines 2643–2650) is retained and continues to update stages; no reference to the singleton path remains in `forge_advance_stage`.
-
-#### Phase 2 — Replumb hooks from singleton to per-run / registry
 
 - [ ] 4. Replace singleton-first read with registry-based runId resolution in `subagent-start.js` (`hooks/subagent-start.js`) (wave: 2)
   Intent: Remove the singleton dependency from the SubagentStart hook by deriving the runId from the hook payload's `session_id` / `run_id` fields or from the per-run files enumeration, so the hook does not depend on a file that no longer exists.
@@ -547,7 +545,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
   Intent: Remove the singleton read in the SessionEnd hook.
   Verify: AC-12: `hooks/session-end.js` resolves the active run's per-run active file (via enumeration or a shared helper); the singleton path (line 43) is removed; the `sourceAgentRan` check uses the per-run file's `agents` array; when no active run is found the check is skipped.
 
-#### Phase 3 — MCP tool, dashboard, status-line, scripts
+#### Phase 2 — MCP tool, dashboard, status-line, scripts (Tasks 13–18)
 
 - [ ] 13. Replace singleton read in `forge_get_active_run` with per-run / registry lookup (`mcp/server.js`) (wave: 3)
   Depends: 1, 2, 3
@@ -579,7 +577,7 @@ Summary: Delete `.pipeline/run-active.json` and replumb every reader/writer to u
   Intent: Remove `check8_staleRunActive` which tested singleton presence; replace with a registry-based check that detects runs stuck in `running` status longer than expected.
   Verify: AC-18: `check8_staleRunActive` (lines 221–233) is removed or replaced; the new check scans `.pipeline/runs/*/run.json` for runs with `status: "running"` whose `updatedAt` is more than 30 minutes old and emits the same severity findings (HIGH for apply-type, MEDIUM otherwise); no reference to `.pipeline/run-active.json` remains in `scripts/integrity-check.mjs`.
 
-#### Phase 4 — Tests, docs, migration
+#### Phase 3 — Tests, docs, migration (Tasks 19–23)
 
 - [ ] 19. Update hook tests to remove singleton fixture writes (`hooks/agent-loop-guard-test.mjs`, `hooks/ctx-session-start-terminal-cleanup-test.js`, `hooks/subagent-stop-verdict-test.js`, `hooks/control-file-guard-test.js`) (wave: 4)
   Depends: 4, 5, 6, 7
