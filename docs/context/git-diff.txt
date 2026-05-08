@@ -1,527 +1,845 @@
 diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
-index 3b2f737..e69de29 100644
+index ce8e83d2..e69de29b 100644
 --- a/docs/context/git-diff.txt
 +++ b/docs/context/git-diff.txt
-@@ -1,335 +0,0 @@
+@@ -1,527 +0,0 @@
 -diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
--index d57ed93..e69de29 100644
+-index 3b2f737..e69de29 100644
 ---- a/docs/context/git-diff.txt
 -+++ b/docs/context/git-diff.txt
--@@ -1,276 +0,0 @@
+-@@ -1,335 +0,0 @@
 --diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
---index 5adc069..e69de29 100644
+--index d57ed93..e69de29 100644
 ----- a/docs/context/git-diff.txt
 --+++ b/docs/context/git-diff.txt
---@@ -1,36 +0,0 @@
----diff --git a/mcp/forge-worker.mjs b/mcp/forge-worker.mjs
----index 26dccca..455c66f 100644
------- a/mcp/forge-worker.mjs
----+++ b/mcp/forge-worker.mjs
----@@ -278,6 +278,11 @@ async function main() {
----     });
----   }
---- 
----+  // Debounce tracking for terminal-status poll — updated each time readRunData()
----+  // is called in the per-message loop. Initialised to 0 so the first message
----+  // always triggers a check (Date.now() - 0 >> 500).
----+  let lastStatusReadAt = 0;
+--@@ -1,276 +0,0 @@
+---diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
+---index 5adc069..e69de29 100644
+------ a/docs/context/git-diff.txt
+---+++ b/docs/context/git-diff.txt
+---@@ -1,36 +0,0 @@
+----diff --git a/mcp/forge-worker.mjs b/mcp/forge-worker.mjs
+----index 26dccca..455c66f 100644
+------- a/mcp/forge-worker.mjs
+----+++ b/mcp/forge-worker.mjs
+----@@ -278,6 +278,11 @@ async function main() {
+----     });
+----   }
+---- 
+----+  // Debounce tracking for terminal-status poll — updated each time readRunData()
+----+  // is called in the per-message loop. Initialised to 0 so the first message
+----+  // always triggers a check (Date.now() - 0 >> 500).
+----+  let lastStatusReadAt = 0;
+----+
+----   let exitCode = 0;
+----   const inputChannel = createMessageChannel();
+----   inputChannel.push({
+----@@ -331,6 +336,19 @@ async function main() {
+----         break;
+----       }
+---- 
+----+      // Terminal-status poll: debounced to at most once per 500 ms so the check
+----+      // does not multiply with high-frequency stream messages during agent dispatch.
+----+      // Absent/unreadable run.json is treated as non-terminal (fail-open per GENERAL.md).
+----+      if (Date.now() - lastStatusReadAt >= 500) {
+----+        lastStatusReadAt = Date.now();
+----+        const terminalData = readRunData();
+----+        const terminalStatus = terminalData && terminalData.status;
+----+        if (terminalStatus === 'completed' || terminalStatus === 'failed' || terminalStatus === 'discarded') {
+----+          writeLog('[forge-worker] run is terminal (status=' + terminalStatus + ') — exiting');
+----+          break;
+----+        }
+----+      }
+----+
+----       if (gateHandled) continue;
+---- 
+----       const runData = readRunData();
+---diff --git a/mcp/lib/worker-pids.js b/mcp/lib/worker-pids.js
+---new file mode 100644
+---index 0000000..35da858
+------ /dev/null
+---+++ b/mcp/lib/worker-pids.js
+---@@ -0,0 +1,229 @@
+---+import { readdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'node:fs';
+---+import { join } from 'node:path';
 ---+
----   let exitCode = 0;
----   const inputChannel = createMessageChannel();
----   inputChannel.push({
----@@ -331,6 +336,19 @@ async function main() {
----         break;
----       }
---- 
----+      // Terminal-status poll: debounced to at most once per 500 ms so the check
----+      // does not multiply with high-frequency stream messages during agent dispatch.
----+      // Absent/unreadable run.json is treated as non-terminal (fail-open per GENERAL.md).
----+      if (Date.now() - lastStatusReadAt >= 500) {
----+        lastStatusReadAt = Date.now();
----+        const terminalData = readRunData();
----+        const terminalStatus = terminalData && terminalData.status;
----+        if (terminalStatus === 'completed' || terminalStatus === 'failed' || terminalStatus === 'discarded') {
----+          writeLog('[forge-worker] run is terminal (status=' + terminalStatus + ') — exiting');
----+          break;
----+        }
+---+/**
+---+ * Validates a runId against the canonical pattern.
+---+ * @param {string} runId
+---+ * @returns {boolean}
+---+ */
+---+function isValidRunId(runId) {
+---+  return typeof runId === 'string' && /^r-[a-zA-Z0-9]+$/.test(runId);
+---+}
+---+
+---+/**
+---+ * Reads and parses a PID file, returning the content or null on error.
+---+ * @param {string} filePath
+---+ * @returns {{ runId: string, pid: number, startedAt: string } | null}
+---+ */
+---+function readPidFile(filePath) {
+---+  try {
+---+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+---+  } catch (_) {
+---+    return null;
+---+  }
+---+}
+---+
+---+/**
+---+ * Reads run.json for a given run, returning the parsed object or null on error.
+---+ * @param {string} projectDir
+---+ * @param {string} runId
+---+ * @returns {{ status: string, [key: string]: unknown } | null}
+---+ */
+---+function readRunJson(projectDir, runId) {
+---+  try {
+---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+---+    return JSON.parse(readFileSync(runPath, 'utf-8'));
+---+  } catch (_) {
+---+    return null;
+---+  }
+---+}
+---+
+---+/**
+---+ * Writes an updated run.json, marking the run as failed.
+---+ * @param {string} projectDir
+---+ * @param {string} runId
+---+ * @param {{ status: string, [key: string]: unknown }} runData
+---+ * @returns {boolean} true on success, false on error
+---+ */
+---+function markRunFailed(projectDir, runId, runData) {
+---+  try {
+---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+---+    const updated = {
+---+      ...runData,
+---+      status: 'failed',
+---+      failureReason: 'worker process no longer alive (swept)',
+---+    };
+---+    writeFileSync(runPath, JSON.stringify(updated, null, 2), 'utf-8');
+---+    return true;
+---+  } catch (err) {
+---+    console.error('[worker-pids] failed to update run.json for ' + runId + ':', err.message);
+---+    return false;
+---+  }
+---+}
+---+
+---+/**
+---+ * Probes whether a PID is alive using process.kill(pid, 0).
+---+ *
+---+ * Return values:
+---+ *   'dead'    — ESRCH: process does not exist, safe to sweep
+---+ *   'alive'   — no error: process exists and same user owns it
+---+ *   'cross'   — EPERM: process exists but owned by another user — treat as live
+---+ *   'unknown' — any other error: fail-open, skip this entry
+---+ *
+---+ * @param {number} pid
+---+ * @returns {'dead' | 'alive' | 'cross' | 'unknown'}
+---+ */
+---+function probePid(pid) {
+---+  try {
+---+    process.kill(pid, 0);
+---+    return 'alive';
+---+  } catch (err) {
+---+    const code = /** @type {{ code?: string }} */ (err).code;
+---+    if (code === 'ESRCH') return 'dead';
+---+    if (code === 'EPERM') return 'cross';
+---+    return 'unknown';
+---+  }
+---+}
+---+
+---+/**
+---+ * Sweeps stale PID files from `.pipeline/worker-pids/` in the given project directory.
+---+ *
+---+ * For each PID file found:
+---+ * 1. Validates the PID value (must be a finite positive integer).
+---+ * 2. Probes the PID with process.kill(pid, 0):
+---+ *    - ESRCH → dead: if run status is 'running', marks run as failed, then deletes PID file.
+---+ *    - EPERM → cross-user alive: do NOT sweep (avoid false-positive sweeps).
+---+ *    - no error → alive: do NOT sweep.
+---+ *    - other error → fail-open: log and skip.
+---+ * 3. Order per dead PID is deterministic: read run.json → write run.json → delete PID file.
+---+ *    This ensures run.json is durable before the PID file delete that signals "swept".
+---+ *
+---+ * After the liveness sweep, applies a retention policy: if worker-pids/ still contains
+---+ * > 200 entries, deletes the oldest (by mtime) until the count is ≤ 200.
+---+ *
+---+ * @param {string} projectDir - Absolute path to the project root (main repo, not a worktree).
+---+ * @returns {{ swept: number, alive: number, errors: number }}
+---+ */
+---+export function sweepStalePids(projectDir) {
+---+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
+---+
+---+  let swept = 0;
+---+  let alive = 0;
+---+  let errors = 0;
+---+
+---+  /** @type {string[]} */
+---+  let entries;
+---+  try {
+---+    entries = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
+---+  } catch (err) {
+---+    // Directory absent or unreadable — no PID files to sweep.
+---+    const code = /** @type {{ code?: string }} */ (err).code;
+---+    if (code !== 'ENOENT') {
+---+      console.error('[worker-pids] could not read worker-pids dir:', err.message);
+---+    }
+---+    return { swept: 0, alive: 0, errors: 0 };
+---+  }
+---+
+---+  for (const fileName of entries) {
+---+    const filePath = join(pidsDir, fileName);
+---+
+---+    // Parse PID file.
+---+    const pidData = readPidFile(filePath);
+---+    if (pidData === null) {
+---+      console.error('[worker-pids] could not parse PID file, skipping:', filePath);
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // Validate runId.
+---+    const { runId, pid } = pidData;
+---+    if (!isValidRunId(runId)) {
+---+      console.error('[worker-pids] invalid runId in PID file, skipping:', filePath, 'runId:', runId);
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // Validate PID value.
+---+    const pidInt = typeof pid === 'number' ? pid : parseInt(String(pid), 10);
+---+    if (!Number.isFinite(pidInt) || pidInt <= 0 || !Number.isInteger(pidInt)) {
+---+      console.error('[worker-pids] invalid PID value in file, skipping:', filePath, 'pid:', pid);
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // Probe liveness.
+---+    const probe = probePid(pidInt);
+---+
+---+    if (probe === 'alive' || probe === 'cross') {
+---+      // Cross-user processes are treated as live to avoid false-positive sweeps.
+---+      alive++;
+---+      continue;
+---+    }
+---+
+---+    if (probe === 'unknown') {
+---+      // Unexpected error probing — fail-open.
+---+      console.error('[worker-pids] unexpected error probing PID', pidInt, 'in', filePath, '— skipping');
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // probe === 'dead': process no longer alive.
+---+    // Order: read run.json → conditionally write run.json → delete PID file.
+---+    const runData = readRunJson(projectDir, runId);
+---+
+---+    if (runData !== null && runData.status === 'running') {
+---+      // Mark run as failed before deleting the PID file (durability before signal).
+---+      const updated = markRunFailed(projectDir, runId, runData);
+---+      if (updated) {
+---+        console.error('[worker-pids] marked run ' + runId + ' as failed (worker PID ' + pidInt + ' is dead)');
 ---+      }
+---+    }
 ---+
----       if (gateHandled) continue;
---- 
----       const runData = readRunData();
---diff --git a/mcp/lib/worker-pids.js b/mcp/lib/worker-pids.js
---new file mode 100644
---index 0000000..35da858
------ /dev/null
---+++ b/mcp/lib/worker-pids.js
---@@ -0,0 +1,229 @@
---+import { readdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'node:fs';
---+import { join } from 'node:path';
---+
---+/**
---+ * Validates a runId against the canonical pattern.
---+ * @param {string} runId
---+ * @returns {boolean}
---+ */
---+function isValidRunId(runId) {
---+  return typeof runId === 'string' && /^r-[a-zA-Z0-9]+$/.test(runId);
---+}
---+
---+/**
---+ * Reads and parses a PID file, returning the content or null on error.
---+ * @param {string} filePath
---+ * @returns {{ runId: string, pid: number, startedAt: string } | null}
---+ */
---+function readPidFile(filePath) {
---+  try {
---+    return JSON.parse(readFileSync(filePath, 'utf-8'));
---+  } catch (_) {
---+    return null;
---+  }
---+}
---+
---+/**
---+ * Reads run.json for a given run, returning the parsed object or null on error.
---+ * @param {string} projectDir
---+ * @param {string} runId
---+ * @returns {{ status: string, [key: string]: unknown } | null}
---+ */
---+function readRunJson(projectDir, runId) {
---+  try {
---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
---+    return JSON.parse(readFileSync(runPath, 'utf-8'));
---+  } catch (_) {
---+    return null;
---+  }
---+}
---+
---+/**
---+ * Writes an updated run.json, marking the run as failed.
---+ * @param {string} projectDir
---+ * @param {string} runId
---+ * @param {{ status: string, [key: string]: unknown }} runData
---+ * @returns {boolean} true on success, false on error
---+ */
---+function markRunFailed(projectDir, runId, runData) {
---+  try {
---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
---+    const updated = {
---+      ...runData,
---+      status: 'failed',
---+      failureReason: 'worker process no longer alive (swept)',
---+    };
---+    writeFileSync(runPath, JSON.stringify(updated, null, 2), 'utf-8');
---+    return true;
---+  } catch (err) {
---+    console.error('[worker-pids] failed to update run.json for ' + runId + ':', err.message);
---+    return false;
---+  }
---+}
---+
---+/**
---+ * Probes whether a PID is alive using process.kill(pid, 0).
---+ *
---+ * Return values:
---+ *   'dead'    — ESRCH: process does not exist, safe to sweep
---+ *   'alive'   — no error: process exists and same user owns it
---+ *   'cross'   — EPERM: process exists but owned by another user — treat as live
---+ *   'unknown' — any other error: fail-open, skip this entry
---+ *
---+ * @param {number} pid
---+ * @returns {'dead' | 'alive' | 'cross' | 'unknown'}
---+ */
---+function probePid(pid) {
---+  try {
---+    process.kill(pid, 0);
---+    return 'alive';
---+  } catch (err) {
---+    const code = /** @type {{ code?: string }} */ (err).code;
---+    if (code === 'ESRCH') return 'dead';
---+    if (code === 'EPERM') return 'cross';
---+    return 'unknown';
---+  }
---+}
---+
---+/**
---+ * Sweeps stale PID files from `.pipeline/worker-pids/` in the given project directory.
---+ *
---+ * For each PID file found:
---+ * 1. Validates the PID value (must be a finite positive integer).
---+ * 2. Probes the PID with process.kill(pid, 0):
---+ *    - ESRCH → dead: if run status is 'running', marks run as failed, then deletes PID file.
---+ *    - EPERM → cross-user alive: do NOT sweep (avoid false-positive sweeps).
---+ *    - no error → alive: do NOT sweep.
---+ *    - other error → fail-open: log and skip.
---+ * 3. Order per dead PID is deterministic: read run.json → write run.json → delete PID file.
---+ *    This ensures run.json is durable before the PID file delete that signals "swept".
---+ *
---+ * After the liveness sweep, applies a retention policy: if worker-pids/ still contains
---+ * > 200 entries, deletes the oldest (by mtime) until the count is ≤ 200.
---+ *
---+ * @param {string} projectDir - Absolute path to the project root (main repo, not a worktree).
---+ * @returns {{ swept: number, alive: number, errors: number }}
---+ */
---+export function sweepStalePids(projectDir) {
---+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
---+
---+  let swept = 0;
---+  let alive = 0;
---+  let errors = 0;
---+
---+  /** @type {string[]} */
---+  let entries;
---+  try {
---+    entries = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
---+  } catch (err) {
---+    // Directory absent or unreadable — no PID files to sweep.
---+    const code = /** @type {{ code?: string }} */ (err).code;
---+    if (code !== 'ENOENT') {
---+      console.error('[worker-pids] could not read worker-pids dir:', err.message);
---+    }
---+    return { swept: 0, alive: 0, errors: 0 };
---+  }
---+
---+  for (const fileName of entries) {
---+    const filePath = join(pidsDir, fileName);
---+
---+    // Parse PID file.
---+    const pidData = readPidFile(filePath);
---+    if (pidData === null) {
---+      console.error('[worker-pids] could not parse PID file, skipping:', filePath);
---+      errors++;
---+      continue;
---+    }
---+
---+    // Validate runId.
---+    const { runId, pid } = pidData;
---+    if (!isValidRunId(runId)) {
---+      console.error('[worker-pids] invalid runId in PID file, skipping:', filePath, 'runId:', runId);
---+      errors++;
---+      continue;
---+    }
---+
---+    // Validate PID value.
---+    const pidInt = typeof pid === 'number' ? pid : parseInt(String(pid), 10);
---+    if (!Number.isFinite(pidInt) || pidInt <= 0 || !Number.isInteger(pidInt)) {
---+      console.error('[worker-pids] invalid PID value in file, skipping:', filePath, 'pid:', pid);
---+      errors++;
---+      continue;
---+    }
---+
---+    // Probe liveness.
---+    const probe = probePid(pidInt);
---+
---+    if (probe === 'alive' || probe === 'cross') {
---+      // Cross-user processes are treated as live to avoid false-positive sweeps.
---+      alive++;
---+      continue;
---+    }
---+
---+    if (probe === 'unknown') {
---+      // Unexpected error probing — fail-open.
---+      console.error('[worker-pids] unexpected error probing PID', pidInt, 'in', filePath, '— skipping');
---+      errors++;
---+      continue;
---+    }
---+
---+    // probe === 'dead': process no longer alive.
---+    // Order: read run.json → conditionally write run.json → delete PID file.
---+    const runData = readRunJson(projectDir, runId);
---+
---+    if (runData !== null && runData.status === 'running') {
---+      // Mark run as failed before deleting the PID file (durability before signal).
---+      const updated = markRunFailed(projectDir, runId, runData);
---+      if (updated) {
---+        console.error('[worker-pids] marked run ' + runId + ' as failed (worker PID ' + pidInt + ' is dead)');
+---+    // Delete the stale PID file.
+---+    try {
+---+      unlinkSync(filePath);
+---+      console.error('[worker-pids] deleted stale PID file:', filePath);
+---+      swept++;
+---+    } catch (err) {
+---+      console.error('[worker-pids] failed to delete stale PID file:', filePath, err.message);
+---+      errors++;
+---+    }
+---+  }
+---+
+---+  // Retention policy: cap worker-pids/ to ≤ 200 entries.
+---+  // Re-read directory after sweep to get current state.
+---+  let remaining;
+---+  try {
+---+    remaining = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
+---+  } catch (_) {
+---+    // If we can't re-read, skip retention enforcement — already swept above.
+---+    return { swept, alive, errors };
+---+  }
+---+
+---+  if (remaining.length > 200) {
+---+    // Sort by mtime ascending (oldest first).
+---+    /** @type {Array<{ name: string, mtime: number }>} */
+---+    const withMtime = [];
+---+    for (const name of remaining) {
+---+      try {
+---+        const st = statSync(join(pidsDir, name));
+---+        withMtime.push({ name, mtime: st.mtimeMs });
+---+      } catch (_) {
+---+        // Can't stat — skip this entry during retention sort.
+---+      }
+---+    }
+---+    withMtime.sort((a, b) => a.mtime - b.mtime);
+---+
+---+    const toDelete = withMtime.slice(0, withMtime.length - 200);
+---+    for (const { name } of toDelete) {
+---+      try {
+---+        unlinkSync(join(pidsDir, name));
+---+        console.error('[worker-pids] retention policy: deleted old PID file:', name);
+---+      } catch (err) {
+---+        console.error('[worker-pids] retention policy: could not delete:', name, err.message);
+---+      }
+---+    }
+---+  }
+---+
+---+  return { swept, alive, errors };
+---+}
+--diff --git a/docs/context/scout.json b/docs/context/scout.json
+--index ba9d965..3bcfbd3 100644
+----- a/docs/context/scout.json
+--+++ b/docs/context/scout.json
+--@@ -1,6 +1,7 @@
+-- {
+--   "files_to_read": [
+--     "mcp/forge-worker.mjs",
+--+    "mcp/lib/worker-pids.js",
+--     "mcp/server.js"
+--   ],
+--   "functions_to_modify": {},
+--diff --git a/mcp/server.js b/mcp/server.js
+--index 3fdae16..0d5764c 100644
+----- a/mcp/server.js
+--+++ b/mcp/server.js
+--@@ -17,6 +17,7 @@ import { buildDashboardState } from "./lib/dashboard-state.js";
+-- import { sanitizeFeatureName } from "./lib/sanitize.js";
+-- import { searchConstraints, searchPatterns, appendSolutionDoc } from "./lib/knowledge-store.js";
+-- import { workerLogPath, killPillPath } from "./lib/worker-paths.js";
+--+import { sweepStalePids } from "./lib/worker-pids.js";
+-- 
+-- // -- Shared Zod schemas ------------------------------------------------------
+-- 
+--@@ -1751,6 +1752,14 @@ server.registerTool(
+--         return textResult(started);
+--       }
+-- 
+--+      // Sweep stale PID files before collision guard so zombie "running" entries
+--+      // do not falsely block new spawns.
+--+      const mainProjectDir = resolveMainProjectDir();
+--+      const sweepResult = sweepStalePids(mainProjectDir);
+--+      if (sweepResult.swept > 0) {
+--+        console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
 --+      }
---+    }
 --+
---+    // Delete the stale PID file.
---+    try {
---+      unlinkSync(filePath);
---+      console.error('[worker-pids] deleted stale PID file:', filePath);
---+      swept++;
---+    } catch (err) {
---+      console.error('[worker-pids] failed to delete stale PID file:', filePath, err.message);
---+      errors++;
---+    }
---+  }
---+
---+  // Retention policy: cap worker-pids/ to ≤ 200 entries.
---+  // Re-read directory after sweep to get current state.
---+  let remaining;
---+  try {
---+    remaining = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
---+  } catch (_) {
---+    // If we can't re-read, skip retention enforcement — already swept above.
---+    return { swept, alive, errors };
---+  }
---+
---+  if (remaining.length > 200) {
---+    // Sort by mtime ascending (oldest first).
---+    /** @type {Array<{ name: string, mtime: number }>} */
---+    const withMtime = [];
---+    for (const name of remaining) {
---+      try {
---+        const st = statSync(join(pidsDir, name));
---+        withMtime.push({ name, mtime: st.mtimeMs });
---+      } catch (_) {
---+        // Can't stat — skip this entry during retention sort.
+--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
+--       //
+--       // The new run's intent at this point is captured by `useWorktree`:
+--@@ -2621,6 +2630,14 @@ server.registerTool(
+--         return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
+--       }
+-- 
+--+      // Sweep stale PID files before collision guard so zombie "running" entries
+--+      // do not falsely block this advance path.
+--+      const mainProjectDirAdv = resolveMainProjectDir();
+--+      const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
+--+      if (sweepResultAdv.swept > 0) {
+--+        console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
 --+      }
---+    }
---+    withMtime.sort((a, b) => a.mtime - b.mtime);
 --+
---+    const toDelete = withMtime.slice(0, withMtime.length - 200);
---+    for (const { name } of toDelete) {
---+      try {
---+        unlinkSync(join(pidsDir, name));
---+        console.error('[worker-pids] retention policy: deleted old PID file:', name);
---+      } catch (err) {
---+        console.error('[worker-pids] retention policy: could not delete:', name, err.message);
---+      }
---+    }
---+  }
---+
---+  return { swept, alive, errors };
---+}
--diff --git a/docs/context/scout.json b/docs/context/scout.json
--index ba9d965..3bcfbd3 100644
----- a/docs/context/scout.json
--+++ b/docs/context/scout.json
--@@ -1,6 +1,7 @@
-- {
--   "files_to_read": [
--     "mcp/forge-worker.mjs",
--+    "mcp/lib/worker-pids.js",
--     "mcp/server.js"
--   ],
--   "functions_to_modify": {},
--diff --git a/mcp/server.js b/mcp/server.js
--index 3fdae16..0d5764c 100644
----- a/mcp/server.js
--+++ b/mcp/server.js
--@@ -17,6 +17,7 @@ import { buildDashboardState } from "./lib/dashboard-state.js";
-- import { sanitizeFeatureName } from "./lib/sanitize.js";
-- import { searchConstraints, searchPatterns, appendSolutionDoc } from "./lib/knowledge-store.js";
-- import { workerLogPath, killPillPath } from "./lib/worker-paths.js";
--+import { sweepStalePids } from "./lib/worker-pids.js";
-- 
-- // -- Shared Zod schemas ------------------------------------------------------
-- 
--@@ -1751,6 +1752,14 @@ server.registerTool(
--         return textResult(started);
--       }
-- 
--+      // Sweep stale PID files before collision guard so zombie "running" entries
--+      // do not falsely block new spawns.
--+      const mainProjectDir = resolveMainProjectDir();
--+      const sweepResult = sweepStalePids(mainProjectDir);
--+      if (sweepResult.swept > 0) {
--+        console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
--+      }
+--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
+--       //
+--       // At this point `run` has its final worktreePath/branchName. Apply the
+-diff --git a/mcp/zombie-worker-prevention-test.mjs b/mcp/zombie-worker-prevention-test.mjs
+-new file mode 100644
+-index 0000000..817e014
+---- /dev/null
+-+++ b/mcp/zombie-worker-prevention-test.mjs
+-@@ -0,0 +1,181 @@
+-+#!/usr/bin/env node
+-+// Unit test: sweepStalePids helper from mcp/lib/worker-pids.js
+-+//
+-+// Tests that the sweep correctly:
+-+//   - identifies dead PIDs, marks runs failed, deletes PID files, returns swept=1
+-+//   - leaves non-running runs (e.g. completed) untouched even when the PID is dead
+-+//
+-+// Run: node mcp/zombie-worker-prevention-test.mjs
+-+// Auto-discovered by scripts/run-tests.mjs via mcp/*-test.mjs suffix.
 -+
--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
--       //
--       // The new run's intent at this point is captured by `useWorktree`:
--@@ -2621,6 +2630,14 @@ server.registerTool(
--         return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
--       }
-- 
--+      // Sweep stale PID files before collision guard so zombie "running" entries
--+      // do not falsely block this advance path.
--+      const mainProjectDirAdv = resolveMainProjectDir();
--+      const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
--+      if (sweepResultAdv.swept > 0) {
--+        console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
--+      }
+-+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+-+import { join } from 'node:path';
+-+import { tmpdir } from 'node:os';
+-+import { spawnSync } from 'node:child_process';
 -+
--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
--       //
--       // At this point `run` has its final worktreePath/branchName. Apply the
-diff --git a/mcp/zombie-worker-prevention-test.mjs b/mcp/zombie-worker-prevention-test.mjs
-new file mode 100644
-index 0000000..817e014
---- /dev/null
-+++ b/mcp/zombie-worker-prevention-test.mjs
-@@ -0,0 +1,181 @@
-+#!/usr/bin/env node
-+// Unit test: sweepStalePids helper from mcp/lib/worker-pids.js
-+//
-+// Tests that the sweep correctly:
-+//   - identifies dead PIDs, marks runs failed, deletes PID files, returns swept=1
-+//   - leaves non-running runs (e.g. completed) untouched even when the PID is dead
-+//
-+// Run: node mcp/zombie-worker-prevention-test.mjs
-+// Auto-discovered by scripts/run-tests.mjs via mcp/*-test.mjs suffix.
+-+import { sweepStalePids } from './lib/worker-pids.js';
+-+
+-+const LABEL = '[zombie-worker-prevention]';
+-+
+-+function fail(msg) {
+-+  console.error(LABEL + ' FAIL');
+-+  console.error('  ' + msg);
+-+  process.exit(1);
+-+}
+-+
+-+/**
+-+ * Returns a PID that is guaranteed to be dead.
+-+ *
+-+ * Strategy: spawn `node -e "process.exit(0)"` synchronously and capture its
+-+ * pid. spawnSync() waits for exit before returning, so by the time we read
+-+ * .pid the child has already exited and the OS has reaped it (no zombie on
+-+ * any POSIX system once the parent calls spawnSync). This is more reliable
+-+ * than a magic constant because:
+-+ *   - PID 2 is alive on Linux (kthreadd).
+-+ *   - INT_MAX-style PIDs can theoretically be recycled on long-running boxes.
+-+ *   - A freshly-exited child PID is guaranteed dead on all platforms this
+-+ *     plugin targets (macOS, Linux, Windows via Node's kill(0) probe).
+-+ *
+-+ * @returns {number}
+-+ */
+-+function getDeadPid() {
+-+  const result = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { timeout: 5000 });
+-+  if (result.pid == null || result.pid <= 0) {
+-+    // Fallback: use a very high PID that is almost certainly unused.
+-+    // 2147483646 is near the 32-bit signed int max; unlikely to be a live PID.
+-+    return 2147483646;
+-+  }
+-+  return result.pid;
+-+}
+-+
+-+function seedPidFile(pidsDir, runId, pid) {
+-+  const filePath = join(pidsDir, runId + '.json');
+-+  writeFileSync(filePath, JSON.stringify({ runId, pid, startedAt: new Date().toISOString() }, null, 2), 'utf-8');
+-+  return filePath;
+-+}
+-+
+-+function seedRunJson(projectDir, runId, status) {
+-+  const runDir = join(projectDir, '.pipeline', 'runs', runId);
+-+  mkdirSync(runDir, { recursive: true });
+-+  const runPath = join(runDir, 'run.json');
+-+  writeFileSync(runPath, JSON.stringify({
+-+    runId,
+-+    status,
+-+    feature: 'test-feature',
+-+    createdAt: new Date().toISOString(),
+-+  }, null, 2), 'utf-8');
+-+  return runPath;
+-+}
+-+
+-+function readRunJson(projectDir, runId) {
+-+  const p = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+-+  if (!existsSync(p)) return null;
+-+  return JSON.parse(readFileSync(p, 'utf-8'));
+-+}
+-+
+-+async function main() {
+-+  const projectDir = mkdtempSync(join(tmpdir(), 'forge-zombie-test-'));
+-+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
+-+  mkdirSync(pidsDir, { recursive: true });
+-+
+-+  const deadPid = getDeadPid();
+-+
+-+  // Seed run-A: status=running, dead PID — should be swept and marked failed.
+-+  const runIdA = 'r-deadtest1';
+-+  seedPidFile(pidsDir, runIdA, deadPid);
+-+  const runPathA = seedRunJson(projectDir, runIdA, 'running');
+-+  const pidFileA = join(pidsDir, runIdA + '.json');
+-+
+-+  // Seed run-B: status=completed, dead PID — PID file deleted but run.json NOT modified.
+-+  const runIdB = 'r-deadtest2';
+-+  seedPidFile(pidsDir, runIdB, deadPid);
+-+  seedRunJson(projectDir, runIdB, 'completed');
+-+  const pidFileB = join(pidsDir, runIdB + '.json');
+-+
+-+  let failure = null;
+-+
+-+  try {
+-+    const result = sweepStalePids(projectDir);
+-+
+-+    // ── Assert 1: return shape has swept=2 (both dead PID files removed) ──────
+-+    // Both PID files belong to dead PIDs; the sweep deletes them regardless of
+-+    // run status. swept counts PID file deletions, not run-status changes.
+-+    if (typeof result.swept !== 'number') {
+-+      failure = 'return value.swept is not a number: ' + JSON.stringify(result);
+-+    } else if (result.swept !== 2) {
+-+      failure = 'expected swept=2 (both dead PID files deleted), got swept=' + result.swept;
+-+    }
+-+
+-+    // ── Assert 2: run-A (running) is now marked failed ────────────────────────
+-+    if (!failure) {
+-+      const runA = readRunJson(projectDir, runIdA);
+-+      if (!runA) {
+-+        failure = 'run.json for ' + runIdA + ' missing after sweep';
+-+      } else if (runA.status !== 'failed') {
+-+        failure = 'run-A status should be "failed" after sweep, got: ' + runA.status;
+-+      } else if (runA.failureReason !== 'worker process no longer alive (swept)') {
+-+        failure = 'run-A failureReason unexpected: ' + runA.failureReason;
+-+      } else {
+-+        console.error(LABEL + ' assert 2 PASS — run-A (running) marked failed');
+-+      }
+-+    }
+-+
+-+    // ── Assert 3: PID file for run-A is deleted ───────────────────────────────
+-+    if (!failure) {
+-+      if (existsSync(pidFileA)) {
+-+        failure = 'PID file for run-A should be deleted after sweep, but still exists';
+-+      } else {
+-+        console.error(LABEL + ' assert 3 PASS — PID file for run-A deleted');
+-+      }
+-+    }
+-+
+-+    // ── Assert 4: run-B (completed) run.json is NOT changed ───────────────────
+-+    // The sweep marks only 'running' runs as failed; completed/failed runs are
+-+    // left untouched (PID file is still deleted since the PID is dead).
+-+    if (!failure) {
+-+      const runB = readRunJson(projectDir, runIdB);
+-+      if (!runB) {
+-+        failure = 'run.json for ' + runIdB + ' missing after sweep';
+-+      } else if (runB.status !== 'completed') {
+-+        failure = 'run-B status should remain "completed", got: ' + runB.status;
+-+      } else {
+-+        console.error(LABEL + ' assert 4 PASS — run-B (completed) left untouched');
+-+      }
+-+    }
+-+
+-+    // ── Assert 5: PID file for run-B is deleted (dead PID, any run status) ────
+-+    if (!failure) {
+-+      if (existsSync(pidFileB)) {
+-+        failure = 'PID file for run-B should be deleted after sweep, but still exists';
+-+      } else {
+-+        console.error(LABEL + ' assert 5 PASS — PID file for run-B deleted');
+-+      }
+-+    }
+-+
+-+    // ── Assert 6: no errors in return value ───────────────────────────────────
+-+    if (!failure && result.errors !== 0) {
+-+      failure = 'expected errors=0, got errors=' + result.errors;
+-+    }
+-+
+-+    if (!failure) {
+-+      console.error(LABEL + ' PASS');
+-+      console.error('  deadPid: ' + deadPid);
+-+      console.error('  swept:   ' + result.swept);
+-+      console.error('  alive:   ' + result.alive);
+-+      console.error('  errors:  ' + result.errors);
+-+    }
+-+
+-+  } catch (err) {
+-+    failure = 'test harness error: ' + (err && err.stack || String(err));
+-+  } finally {
+-+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+-+  }
+-+
+-+  if (failure) fail(failure);
+-+  process.exit(0);
+-+}
+-+
+-+main().catch((err) => {
+-+  console.error(LABEL + ' unexpected throw:', err);
+-+  process.exit(1);
+-+});
+diff --git a/hooks/checkpoint-detection-test.js b/hooks/checkpoint-detection-test.js
+index 95d7fdcb..853771c7 100644
+--- a/hooks/checkpoint-detection-test.js
++++ b/hooks/checkpoint-detection-test.js
+@@ -4,10 +4,13 @@
+ //   (a) signal + checkpoint.md exists → outcome "checkpoint"
+ //   (b) signal + checkpoint.md missing → outcome "completed" (orphan signal warning)
+ //   (c) no signal → outcome unchanged (still "completed")
++// Also covers the worker-driven proactive bridge path (AC-3):
++//   (d) bridge file with remaining:20 causes ctx-post-tool.js to emit [CONTEXT-CHECKPOINT]
++//   (e) subagent-start.js sidecar-write path produces expected file contents
+ //
+ // Run: node hooks/checkpoint-detection-test.js
+ 
+-const { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } = require('fs');
++const { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, unlinkSync } = require('fs');
+ const { join } = require('path');
+ const { tmpdir } = require('os');
+ const { spawn } = require('child_process');
+@@ -128,6 +131,91 @@ async function test() {
+     rmSync(tmp, { recursive: true, force: true });
+   }
+ 
++  // Test 4 (case d, AC-3): Worker-driven bridge with remaining:20 triggers [CONTEXT-CHECKPOINT]
++  // from ctx-post-tool.js when invoked with a matching non-Agent tool payload.
++  {
++    const sessionId = 'test-bridge-' + process.pid;
++    const bridgePath = join(tmpdir(), 'claude-ctx-' + sessionId + '.json');
++    // Write bridge file as the worker would: remaining=20, fresh timestamp
++    writeFileSync(bridgePath, JSON.stringify({ remaining: 20, timestamp: Date.now() }), 'utf8');
 +
-+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-+import { join } from 'node:path';
-+import { tmpdir } from 'node:os';
-+import { spawnSync } from 'node:child_process';
++    let stdout = '';
++    let stderr = '';
++    const result = await new Promise((resolve, reject) => {
++      const payload = JSON.stringify({
++        tool_name: 'Read',
++        tool_input: { file_path: '/some/file.txt' },
++        session_id: sessionId,
++        agent_type: 'coder',
++      });
++      const child = spawn(process.execPath, [join(__dirname, 'ctx-post-tool.js')], {
++        env: { ...process.env },
++        stdio: ['pipe', 'pipe', 'pipe'],
++      });
++      child.stdout.on('data', d => { stdout += d; });
++      child.stderr.on('data', d => { stderr += d; });
++      child.stdin.write(payload);
++      child.stdin.end();
++      child.on('close', code => resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() }));
++      child.on('error', reject);
++    });
 +
-+import { sweepStalePids } from './lib/worker-pids.js';
++    // Clean up bridge file
++    try { unlinkSync(bridgePath); } catch (_) {}
++    // Also clean up debounce file if written
++    try { unlinkSync(join(tmpdir(), 'claude-ctx-debounce-' + sessionId + '.json')); } catch (_) {}
 +
-+const LABEL = '[zombie-worker-prevention]';
-+
-+function fail(msg) {
-+  console.error(LABEL + ' FAIL');
-+  console.error('  ' + msg);
-+  process.exit(1);
-+}
-+
-+/**
-+ * Returns a PID that is guaranteed to be dead.
-+ *
-+ * Strategy: spawn `node -e "process.exit(0)"` synchronously and capture its
-+ * pid. spawnSync() waits for exit before returning, so by the time we read
-+ * .pid the child has already exited and the OS has reaped it (no zombie on
-+ * any POSIX system once the parent calls spawnSync). This is more reliable
-+ * than a magic constant because:
-+ *   - PID 2 is alive on Linux (kthreadd).
-+ *   - INT_MAX-style PIDs can theoretically be recycled on long-running boxes.
-+ *   - A freshly-exited child PID is guaranteed dead on all platforms this
-+ *     plugin targets (macOS, Linux, Windows via Node's kill(0) probe).
-+ *
-+ * @returns {number}
-+ */
-+function getDeadPid() {
-+  const result = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { timeout: 5000 });
-+  if (result.pid == null || result.pid <= 0) {
-+    // Fallback: use a very high PID that is almost certainly unused.
-+    // 2147483646 is near the 32-bit signed int max; unlikely to be a live PID.
-+    return 2147483646;
++    assert(
++      result.stdout.includes('[CONTEXT-CHECKPOINT]'),
++      'AC-3 (d): bridge remaining:20 causes ctx-post-tool.js to emit [CONTEXT-CHECKPOINT]',
++    );
 +  }
-+  return result.pid;
-+}
 +
-+function seedPidFile(pidsDir, runId, pid) {
-+  const filePath = join(pidsDir, runId + '.json');
-+  writeFileSync(filePath, JSON.stringify({ runId, pid, startedAt: new Date().toISOString() }, null, 2), 'utf-8');
-+  return filePath;
-+}
++  // Test 5 (case e, AC-3): subagent-start.js sidecar-write path produces expected file contents.
++  {
++    const agentId = 'agent-sidecar-test-' + process.pid;
++    const sessionId = 'sess-sidecar-' + process.pid;
++    const sidecarPath = join(tmpdir(), 'forge-agent-session-' + agentId + '.json');
++    // Clean up any pre-existing sidecar
++    try { unlinkSync(sidecarPath); } catch (_) {}
 +
-+function seedRunJson(projectDir, runId, status) {
-+  const runDir = join(projectDir, '.pipeline', 'runs', runId);
-+  mkdirSync(runDir, { recursive: true });
-+  const runPath = join(runDir, 'run.json');
-+  writeFileSync(runPath, JSON.stringify({
-+    runId,
-+    status,
-+    feature: 'test-feature',
-+    createdAt: new Date().toISOString(),
-+  }, null, 2), 'utf-8');
-+  return runPath;
-+}
++    const tmp = mkdtempSync(join(tmpdir(), 'sidecar-test-'));
++    makeProject(tmp, agentId, 'coder');
 +
-+function readRunJson(projectDir, runId) {
-+  const p = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
-+  if (!existsSync(p)) return null;
-+  return JSON.parse(readFileSync(p, 'utf-8'));
-+}
++    // Invoke subagent-start.js with a synthetic subagent payload including session_id
++    const payload = {
++      agent_id: agentId,
++      agent_type: 'coder',
++      session_id: sessionId,
++      cwd: tmp,
++    };
++    await new Promise((resolve, reject) => {
++      const child = spawn(process.execPath, [join(__dirname, 'subagent-start.js')], {
++        cwd: tmp,
++        env: { ...process.env, CLAUDE_PLUGIN_ROOT: join(__dirname, '..') },
++        stdio: ['pipe', 'pipe', 'pipe'],
++      });
++      child.stdin.write(JSON.stringify(payload));
++      child.stdin.end();
++      child.on('close', resolve);
++      child.on('error', reject);
++    });
 +
-+async function main() {
-+  const projectDir = mkdtempSync(join(tmpdir(), 'forge-zombie-test-'));
-+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
-+  mkdirSync(pidsDir, { recursive: true });
++    let sidecarData = null;
++    try {
++      sidecarData = JSON.parse(readFileSync(sidecarPath, 'utf8'));
++    } catch (_) {}
 +
-+  const deadPid = getDeadPid();
++    assert(
++      sidecarData !== null && sidecarData.sessionId === sessionId,
++      'AC-3 (e): subagent-start.js writes sidecar with expected sessionId',
++    );
 +
-+  // Seed run-A: status=running, dead PID — should be swept and marked failed.
-+  const runIdA = 'r-deadtest1';
-+  seedPidFile(pidsDir, runIdA, deadPid);
-+  const runPathA = seedRunJson(projectDir, runIdA, 'running');
-+  const pidFileA = join(pidsDir, runIdA + '.json');
++    // Cleanup
++    try { unlinkSync(sidecarPath); } catch (_) {}
++    rmSync(tmp, { recursive: true, force: true });
++  }
 +
-+  // Seed run-B: status=completed, dead PID — PID file deleted but run.json NOT modified.
-+  const runIdB = 'r-deadtest2';
-+  seedPidFile(pidsDir, runIdB, deadPid);
-+  seedRunJson(projectDir, runIdB, 'completed');
-+  const pidFileB = join(pidsDir, runIdB + '.json');
-+
-+  let failure = null;
-+
+   console.log('');
+   console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
+   process.exit(failed > 0 ? 1 : 0);
+diff --git a/hooks/ctx-session-start.js b/hooks/ctx-session-start.js
+index 727f3acc..7b3c5a5e 100644
+--- a/hooks/ctx-session-start.js
++++ b/hooks/ctx-session-start.js
+@@ -158,6 +158,21 @@ async function main(rawInput) {
+   // worker-task-inject.js (runs later in the SessionStart chain) will recreate it.
+   try { fs.unlinkSync(path.join(projectDir, '.pipeline', '.worker-session')); } catch (_) {}
+ 
++  // Clean stale forge-agent-session-*.json sidecar files from prior sessions.
++  // These are written by subagent-start.js to let the worker resolve agent_id → session_id.
++  // Orphaned files from crashed sessions are harmless but accumulate over time.
 +  try {
-+    const result = sweepStalePids(projectDir);
-+
-+    // ── Assert 1: return shape has swept=2 (both dead PID files removed) ──────
-+    // Both PID files belong to dead PIDs; the sweep deletes them regardless of
-+    // run status. swept counts PID file deletions, not run-status changes.
-+    if (typeof result.swept !== 'number') {
-+      failure = 'return value.swept is not a number: ' + JSON.stringify(result);
-+    } else if (result.swept !== 2) {
-+      failure = 'expected swept=2 (both dead PID files deleted), got swept=' + result.swept;
-+    }
-+
-+    // ── Assert 2: run-A (running) is now marked failed ────────────────────────
-+    if (!failure) {
-+      const runA = readRunJson(projectDir, runIdA);
-+      if (!runA) {
-+        failure = 'run.json for ' + runIdA + ' missing after sweep';
-+      } else if (runA.status !== 'failed') {
-+        failure = 'run-A status should be "failed" after sweep, got: ' + runA.status;
-+      } else if (runA.failureReason !== 'worker process no longer alive (swept)') {
-+        failure = 'run-A failureReason unexpected: ' + runA.failureReason;
-+      } else {
-+        console.error(LABEL + ' assert 2 PASS — run-A (running) marked failed');
++    const tmpDir = os.tmpdir();
++    const entries = fs.readdirSync(tmpDir);
++    for (const entry of entries) {
++      if (/^forge-agent-session-[a-zA-Z0-9_-]+\.json$/.test(entry)) {
++        try { fs.unlinkSync(path.join(tmpDir, entry)); } catch (_) {}
 +      }
 +    }
-+
-+    // ── Assert 3: PID file for run-A is deleted ───────────────────────────────
-+    if (!failure) {
-+      if (existsSync(pidFileA)) {
-+        failure = 'PID file for run-A should be deleted after sweep, but still exists';
-+      } else {
-+        console.error(LABEL + ' assert 3 PASS — PID file for run-A deleted');
-+      }
-+    }
-+
-+    // ── Assert 4: run-B (completed) run.json is NOT changed ───────────────────
-+    // The sweep marks only 'running' runs as failed; completed/failed runs are
-+    // left untouched (PID file is still deleted since the PID is dead).
-+    if (!failure) {
-+      const runB = readRunJson(projectDir, runIdB);
-+      if (!runB) {
-+        failure = 'run.json for ' + runIdB + ' missing after sweep';
-+      } else if (runB.status !== 'completed') {
-+        failure = 'run-B status should remain "completed", got: ' + runB.status;
-+      } else {
-+        console.error(LABEL + ' assert 4 PASS — run-B (completed) left untouched');
-+      }
-+    }
-+
-+    // ── Assert 5: PID file for run-B is deleted (dead PID, any run status) ────
-+    if (!failure) {
-+      if (existsSync(pidFileB)) {
-+        failure = 'PID file for run-B should be deleted after sweep, but still exists';
-+      } else {
-+        console.error(LABEL + ' assert 5 PASS — PID file for run-B deleted');
-+      }
-+    }
-+
-+    // ── Assert 6: no errors in return value ───────────────────────────────────
-+    if (!failure && result.errors !== 0) {
-+      failure = 'expected errors=0, got errors=' + result.errors;
-+    }
-+
-+    if (!failure) {
-+      console.error(LABEL + ' PASS');
-+      console.error('  deadPid: ' + deadPid);
-+      console.error('  swept:   ' + result.swept);
-+      console.error('  alive:   ' + result.alive);
-+      console.error('  errors:  ' + result.errors);
-+    }
-+
-+  } catch (err) {
-+    failure = 'test harness error: ' + (err && err.stack || String(err));
-+  } finally {
-+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
++  } catch (_) {
++    // Non-fatal — cleanup is best-effort
 +  }
 +
-+  if (failure) fail(failure);
-+  process.exit(0);
-+}
+   if (!sessionId) { exitOk(); return; }
+ 
+   const usage     = await getLastUsage(transcriptPath);
+diff --git a/hooks/subagent-start.js b/hooks/subagent-start.js
+index 8ebde6c1..61373be9 100644
+--- a/hooks/subagent-start.js
++++ b/hooks/subagent-start.js
+@@ -1,6 +1,7 @@
+ 'use strict';
+ 
+ const fs = require('fs');
++const os = require('os');
+ const path = require('path');
+ const readline = require('readline');
+ const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
+@@ -205,6 +206,24 @@ async function main(rawInput) {
+     }
+   }
+ 
++  // Sidecar: write forge-agent-session-<agentId>.json so the outer worker can
++  // resolve agent_id → session_id when writing the ctx bridge file.
++  // Only written when running inside a subagent process (payload.session_id present).
++  // Atomic write (.tmp + rename) to prevent partial reads by the worker.
++  const subagentSessionId = payload.session_id;
++  if (agentId && subagentSessionId && /^[a-zA-Z0-9_-]+$/.test(subagentSessionId)) {
++    const safeAgentId = String(agentId).replace(/[^a-zA-Z0-9_-]/g, '');
++    const sidecarPath = path.join(os.tmpdir(), 'forge-agent-session-' + safeAgentId + '.json');
++    const tmpPath = sidecarPath + '.tmp.' + process.pid;
++    try {
++      await fs.promises.writeFile(tmpPath, JSON.stringify({ sessionId: subagentSessionId }), 'utf8');
++      await fs.promises.rename(tmpPath, sidecarPath);
++    } catch (sidecarErr) {
++      process.stderr.write('[forge-subagent] sidecar write failed: ' + sidecarErr.message + '\n');
++      // Non-fatal — worker falls back silently when sidecar is absent
++    }
++  }
 +
-+main().catch((err) => {
-+  console.error(LABEL + ' unexpected throw:', err);
-+  process.exit(1);
-+});
+   exitOk();
+ }
+ 
+diff --git a/mcp/forge-worker.mjs b/mcp/forge-worker.mjs
+index 84647b4c..caa5d31d 100644
+--- a/mcp/forge-worker.mjs
++++ b/mcp/forge-worker.mjs
+@@ -1,9 +1,18 @@
+ import { query } from '@anthropic-ai/claude-agent-sdk';
+ import { readFileSync, writeFileSync, existsSync, unlinkSync, openSync, writeSync, closeSync, mkdirSync, readdirSync, watchFile, unwatchFile } from 'node:fs';
++import { promises as fsPromises } from 'node:fs';
+ import { join, dirname, resolve } from 'node:path';
++import { tmpdir } from 'node:os';
+ import { fileURLToPath } from 'node:url';
+ import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.js';
+ 
++// Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
++// Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
++const BUDGET_THRESHOLD_CONSUMED = 0.70; // 70% consumed triggers bridge write
++const BUDGET_CONTEXT_WINDOW = 200_000;  // denominator for all dispatched models (V1: fixed)
++const BUDGET_AUTOCOMPACT_FACTOR = 0.835; // mirrors ctx-session-start.js
++const BUDGET_DEBOUNCE_MS = 30_000;      // write bridge at most once per 30 s per agent
++
+ const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+ 
+ /**
+@@ -357,6 +366,103 @@ async function main() {
+     const PROGRESS_MESSAGE_INTERVAL = 25;
+     const PROGRESS_TIME_INTERVAL_MS = 60_000;
+ 
++    // Context-budget monitoring: track the active subagent's agent_id and last bridge-write time.
++    // Map<agentId, lastBridgeWriteAt> — prevents flooding the hook with repeated bridge writes.
++    /** @type {Map<string, number>} */
++    const budgetLastWriteAt = new Map();
++
++    /**
++     * Reads the sidecar file written by subagent-start.js inside the subagent process.
++     * Returns the subagent's session_id, or null if the sidecar is absent/unreadable.
++     * @param {string} agentId
++     * @returns {Promise<string|null>}
++     */
++    async function readAgentSidecar(agentId) {
++      const safeId = String(agentId).replace(/[^a-zA-Z0-9_-]/g, '');
++      if (!safeId) return null;
++      const sidecarPath = join(tmpdir(), 'forge-agent-session-' + safeId + '.json');
++      try {
++        const raw = await fsPromises.readFile(sidecarPath, 'utf8');
++        const data = JSON.parse(raw);
++        if (data && typeof data.sessionId === 'string' && /^[a-zA-Z0-9_-]+$/.test(data.sessionId)) {
++          return data.sessionId;
++        }
++        return null;
++      } catch (_) {
++        return null;
++      }
++    }
++
++    /**
++     * Writes the ctx bridge file for a subagent session so the PostToolUse hook fires
++     * [CONTEXT-CHECKPOINT] on the subagent's next tool call.
++     * Atomic write (.tmp + rename) to prevent partial reads.
++     * @param {string} sessionId - the subagent's own session_id (from sidecar)
++     * @param {number} remainingPct - percentage remaining (0–100)
++     */
++    async function writeBridge(sessionId, remainingPct) {
++      const bridgePath = join(tmpdir(), 'claude-ctx-' + sessionId + '.json');
++      const tmpPath = bridgePath + '.tmp.' + process.pid;
++      try {
++        await fsPromises.writeFile(
++          tmpPath,
++          JSON.stringify({ remaining: remainingPct, timestamp: Date.now() }),
++          'utf8',
++        );
++        await fsPromises.rename(tmpPath, bridgePath);
++        writeLog('[forge-worker] ctx bridge written for session ' + sessionId + ' remaining=' + Math.round(remainingPct));
++      } catch (err) {
++        writeLog('[forge-worker] ctx bridge write failed: ' + err.message);
++      }
++    }
++
++    /**
++     * Handles proactive context-budget monitoring for a usage update from the SDK stream.
++     * Reads run-active.json to find non-completed agents, resolves each agent_id → session_id
++     * via the sidecar, and writes a fresh bridge when the budget crosses the threshold.
++     * Debounced per agent: at most one bridge write per BUDGET_DEBOUNCE_MS window.
++     * @param {{ input_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number }} usage
++     */
++    async function handleBudgetUsage(usage) {
++      const input  = Number(usage.input_tokens                ?? 0);
++      const create = Number(usage.cache_creation_input_tokens ?? 0);
++      const cacheR = Number(usage.cache_read_input_tokens     ?? 0);
++      const total  = input + create + cacheR;
++      if (total === 0) return;
++
++      const usable = BUDGET_CONTEXT_WINDOW * BUDGET_AUTOCOMPACT_FACTOR;
++      const consumedFraction = total / usable;
++      if (consumedFraction < BUDGET_THRESHOLD_CONSUMED) return;
++
++      const remainingPct = Math.max(0, (1 - consumedFraction) * 100);
++
++      // Read run-active.json to enumerate active agents.
++      const activeData = readRunActiveData();
++      if (!activeData || !Array.isArray(activeData.agents)) return;
++
++      const now = Date.now();
++      for (const agent of activeData.agents) {
++        // Skip agents that have already completed.
++        if (agent.outcome) continue;
++        const agentId = agent.agent_id;
++        if (!agentId) continue;
++
++        // Debounce: skip if we wrote a bridge for this agent recently.
++        const lastWrite = budgetLastWriteAt.get(agentId) || 0;
++        if (now - lastWrite < BUDGET_DEBOUNCE_MS) continue;
++
++        // Resolve agent_id → session_id via sidecar.
++        const sessionId = await readAgentSidecar(agentId);
++        if (!sessionId) {
++          process.stderr.write('[forge-worker] no sidecar for agent ' + agentId + ' — skipping bridge write\n');
++          continue;
++        }
++
++        budgetLastWriteAt.set(agentId, now);
++        await writeBridge(sessionId, remainingPct);
++      }
++    }
++
+     for await (const msg of stream) {
+       writeLog(JSON.stringify(msg));
+ 
+@@ -460,6 +566,11 @@ async function main() {
+         if (typeof u.cache_creation_input_tokens === 'number') progressLastCacheCreate = u.cache_creation_input_tokens;
+         if (typeof u.cache_read_input_tokens === 'number') progressLastCacheRead = u.cache_read_input_tokens;
+         if (typeof u.output_tokens === 'number') progressLastOutputTokens = u.output_tokens;
++        // Proactive context-budget monitoring: write bridge file if threshold crossed.
++        // Fire-and-forget — a failed bridge write is non-fatal and logged.
++        handleBudgetUsage(u).catch((err) => {
++          writeLog('[forge-worker] handleBudgetUsage error: ' + err.message);
++        });
+       }
+       const sinceLastEmit = Date.now() - progressLastEmitAt;
+       if ((progressMessagesSeen % PROGRESS_MESSAGE_INTERVAL === 0) || sinceLastEmit >= PROGRESS_TIME_INTERVAL_MS) {

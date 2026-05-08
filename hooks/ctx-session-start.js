@@ -158,6 +158,21 @@ async function main(rawInput) {
   // worker-task-inject.js (runs later in the SessionStart chain) will recreate it.
   try { fs.unlinkSync(path.join(projectDir, '.pipeline', '.worker-session')); } catch (_) {}
 
+  // Clean stale forge-agent-session-*.json sidecar files from prior sessions.
+  // These are written by subagent-start.js to let the worker resolve agent_id → session_id.
+  // Orphaned files from crashed sessions are harmless but accumulate over time.
+  try {
+    const tmpDir = os.tmpdir();
+    const entries = fs.readdirSync(tmpDir);
+    for (const entry of entries) {
+      if (/^forge-agent-session-[a-zA-Z0-9_-]+\.json$/.test(entry)) {
+        try { fs.unlinkSync(path.join(tmpDir, entry)); } catch (_) {}
+      }
+    }
+  } catch (_) {
+    // Non-fatal — cleanup is best-effort
+  }
+
   if (!sessionId) { exitOk(); return; }
 
   const usage     = await getLastUsage(transcriptPath);
