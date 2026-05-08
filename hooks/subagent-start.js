@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
@@ -202,6 +203,24 @@ async function main(rawInput) {
     } catch (stagesErr) {
       console.error('[forge-subagent] stages dual-write failed: ' + stagesErr.message);
       // Non-fatal — proceed
+    }
+  }
+
+  // Sidecar: write forge-agent-session-<agentId>.json so the outer worker can
+  // resolve agent_id → session_id when writing the ctx bridge file.
+  // Only written when running inside a subagent process (payload.session_id present).
+  // Atomic write (.tmp + rename) to prevent partial reads by the worker.
+  const subagentSessionId = payload.session_id;
+  if (agentId && subagentSessionId && /^[a-zA-Z0-9_-]+$/.test(subagentSessionId)) {
+    const safeAgentId = String(agentId).replace(/[^a-zA-Z0-9_-]/g, '');
+    const sidecarPath = path.join(os.tmpdir(), 'forge-agent-session-' + safeAgentId + '.json');
+    const tmpPath = sidecarPath + '.tmp.' + process.pid;
+    try {
+      await fs.promises.writeFile(tmpPath, JSON.stringify({ sessionId: subagentSessionId }), 'utf8');
+      await fs.promises.rename(tmpPath, sidecarPath);
+    } catch (sidecarErr) {
+      process.stderr.write('[forge-subagent] sidecar write failed: ' + sidecarErr.message + '\n');
+      // Non-fatal — worker falls back silently when sidecar is absent
     }
   }
 

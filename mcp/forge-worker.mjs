@@ -1,8 +1,17 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { readFileSync, writeFileSync, existsSync, unlinkSync, openSync, writeSync, closeSync, mkdirSync, readdirSync, watchFile, unwatchFile } from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.js';
+
+// Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
+// Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
+const BUDGET_THRESHOLD_CONSUMED = 0.70; // 70% consumed triggers bridge write
+const BUDGET_CONTEXT_WINDOW = 200_000;  // denominator for all dispatched models (V1: fixed)
+const BUDGET_AUTOCOMPACT_FACTOR = 0.835; // mirrors ctx-session-start.js
+const BUDGET_DEBOUNCE_MS = 30_000;      // write bridge at most once per 30 s per agent
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -357,6 +366,103 @@ async function main() {
     const PROGRESS_MESSAGE_INTERVAL = 25;
     const PROGRESS_TIME_INTERVAL_MS = 60_000;
 
+    // Context-budget monitoring: track the active subagent's agent_id and last bridge-write time.
+    // Map<agentId, lastBridgeWriteAt> — prevents flooding the hook with repeated bridge writes.
+    /** @type {Map<string, number>} */
+    const budgetLastWriteAt = new Map();
+
+    /**
+     * Reads the sidecar file written by subagent-start.js inside the subagent process.
+     * Returns the subagent's session_id, or null if the sidecar is absent/unreadable.
+     * @param {string} agentId
+     * @returns {Promise<string|null>}
+     */
+    async function readAgentSidecar(agentId) {
+      const safeId = String(agentId).replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeId) return null;
+      const sidecarPath = join(tmpdir(), 'forge-agent-session-' + safeId + '.json');
+      try {
+        const raw = await fsPromises.readFile(sidecarPath, 'utf8');
+        const data = JSON.parse(raw);
+        if (data && typeof data.sessionId === 'string' && /^[a-zA-Z0-9_-]+$/.test(data.sessionId)) {
+          return data.sessionId;
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    /**
+     * Writes the ctx bridge file for a subagent session so the PostToolUse hook fires
+     * [CONTEXT-CHECKPOINT] on the subagent's next tool call.
+     * Atomic write (.tmp + rename) to prevent partial reads.
+     * @param {string} sessionId - the subagent's own session_id (from sidecar)
+     * @param {number} remainingPct - percentage remaining (0–100)
+     */
+    async function writeBridge(sessionId, remainingPct) {
+      const bridgePath = join(tmpdir(), 'claude-ctx-' + sessionId + '.json');
+      const tmpPath = bridgePath + '.tmp.' + process.pid;
+      try {
+        await fsPromises.writeFile(
+          tmpPath,
+          JSON.stringify({ remaining: remainingPct, timestamp: Date.now() }),
+          'utf8',
+        );
+        await fsPromises.rename(tmpPath, bridgePath);
+        writeLog('[forge-worker] ctx bridge written for session ' + sessionId + ' remaining=' + Math.round(remainingPct));
+      } catch (err) {
+        writeLog('[forge-worker] ctx bridge write failed: ' + err.message);
+      }
+    }
+
+    /**
+     * Handles proactive context-budget monitoring for a usage update from the SDK stream.
+     * Reads run-active.json to find non-completed agents, resolves each agent_id → session_id
+     * via the sidecar, and writes a fresh bridge when the budget crosses the threshold.
+     * Debounced per agent: at most one bridge write per BUDGET_DEBOUNCE_MS window.
+     * @param {{ input_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number }} usage
+     */
+    async function handleBudgetUsage(usage) {
+      const input  = Number(usage.input_tokens                ?? 0);
+      const create = Number(usage.cache_creation_input_tokens ?? 0);
+      const cacheR = Number(usage.cache_read_input_tokens     ?? 0);
+      const total  = input + create + cacheR;
+      if (total === 0) return;
+
+      const usable = BUDGET_CONTEXT_WINDOW * BUDGET_AUTOCOMPACT_FACTOR;
+      const consumedFraction = total / usable;
+      if (consumedFraction < BUDGET_THRESHOLD_CONSUMED) return;
+
+      const remainingPct = Math.max(0, (1 - consumedFraction) * 100);
+
+      // Read run-active.json to enumerate active agents.
+      const activeData = readRunActiveData();
+      if (!activeData || !Array.isArray(activeData.agents)) return;
+
+      const now = Date.now();
+      for (const agent of activeData.agents) {
+        // Skip agents that have already completed.
+        if (agent.outcome) continue;
+        const agentId = agent.agent_id;
+        if (!agentId) continue;
+
+        // Debounce: skip if we wrote a bridge for this agent recently.
+        const lastWrite = budgetLastWriteAt.get(agentId) || 0;
+        if (now - lastWrite < BUDGET_DEBOUNCE_MS) continue;
+
+        // Resolve agent_id → session_id via sidecar.
+        const sessionId = await readAgentSidecar(agentId);
+        if (!sessionId) {
+          process.stderr.write('[forge-worker] no sidecar for agent ' + agentId + ' — skipping bridge write\n');
+          continue;
+        }
+
+        budgetLastWriteAt.set(agentId, now);
+        await writeBridge(sessionId, remainingPct);
+      }
+    }
+
     for await (const msg of stream) {
       writeLog(JSON.stringify(msg));
 
@@ -460,6 +566,11 @@ async function main() {
         if (typeof u.cache_creation_input_tokens === 'number') progressLastCacheCreate = u.cache_creation_input_tokens;
         if (typeof u.cache_read_input_tokens === 'number') progressLastCacheRead = u.cache_read_input_tokens;
         if (typeof u.output_tokens === 'number') progressLastOutputTokens = u.output_tokens;
+        // Proactive context-budget monitoring: write bridge file if threshold crossed.
+        // Fire-and-forget — a failed bridge write is non-fatal and logged.
+        handleBudgetUsage(u).catch((err) => {
+          writeLog('[forge-worker] handleBudgetUsage error: ' + err.message);
+        });
       }
       const sinceLastEmit = Date.now() - progressLastEmitAt;
       if ((progressMessagesSeen % PROGRESS_MESSAGE_INTERVAL === 0) || sinceLastEmit >= PROGRESS_TIME_INTERVAL_MS) {
