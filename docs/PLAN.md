@@ -93,3 +93,87 @@ The implementer can either edit Tasks 4 and 5 in two passes through each skill f
 **reviewer-performance REVISE — same-second mtime tolerance (advisory)**: helper compares `mtime >= since`. On NTFS (Windows, this project's primary target) mtime resolution is 100 ns, so same-second collisions are vanishingly rare. Resolution: **use `>=` (inclusive)** in the helper; document the assumption inline in `scripts/verify-output.mjs` that filesystem mtime resolution is finer than the caller's `since` precision. If cross-platform CI is added later, the implementer should revisit (e.g. subtract 1 s from `since` on filesystems with second-only resolution).
 
 These resolutions supersede any conflicting text above. The implementer should reference this section when there's ambiguity.
+
+---
+
+### Feature: TDD Guard Hook
+
+Summary: Build `hooks/tdd-guard.js`, a PreToolUse hook that blocks Write/Edit on source files when no failing test exists for the targeted module.
+
+#### Hook contract (from `hooks/bash-guard.js:316-327` and `hooks/bash-guard.js:11-27`)
+
+- **stdin:** JSON payload with at minimum `tool_input.file_path` (Write) or `tool_input.path` (Edit) and `cwd`. Shape confirmed from `bash-guard.js:325` (`payload.tool_input?.command`) — Write/Edit equivalents use `file_path`/`path`.
+- **exit 0:** allow the tool call through.
+- **exit 2 + stdout JSON deny envelope + stderr message:** block the tool call. Deny envelope shape from `bash-guard.js:16-26`: `{ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "<msg>" } }`. `console.error(msg)` provides the legacy stderr backup (`bash-guard.js:26`). Exit 2 alone is silently discarded by the current runtime (`bash-guard.js:15`).
+- **stdin reading:** readline + timeout pattern, fail-open on parse error (`bash-guard.js:456-466`). Timeout constant from `hook-utils.js` (`STDIN_TIMEOUT_LONG`).
+
+#### Source-file detection rule
+
+Based on `hooks/workflow-guard.js:14-31` (`isSourceFile` function), which explicitly excludes `/.pipeline/`, `/docs/`, `/.claude/`, `/scaffolds/`, `/node_modules/`, `/.git/`, `/mcp/`, `/hooks/`, `/skills/`, `/bin/`. The tdd-guard must use a **narrower, additive rule**: intercept Write/Edit on files under `hooks/`, `bin/`, `scripts/`, `mcp/` that are NOT test files. Test file exclusion: path ends with `.test.js`, `.test.mjs`, or is under `__tests__/` or `tests/`. Config/doc exclusion: ends with `.md` or `.json` at project root level (matches workflow-guard.js:29-30 precedent).
+
+**Trigger tools:** Write and Edit (matching the existing PreToolUse matchers at `hooks/hooks.json:237-270`). MultiEdit — unknown, researcher should verify whether MultiEdit fires as a separate PreToolUse event or is an alias.
+
+#### "Failing test exists" check — chosen mechanism
+
+**Option (a): run the test file** — confirmed by research doc §4.1 (tdd-agentic-llm-setups.md:92-96): "Test reporter integration parses Vitest/Jest/pytest/etc. results. File-pattern validation: rule says 'edits to `src/foo.py` require a failing test in `tests/test_foo.py`.'" Research doc §3.1 (tdd-agentic-llm-setups.md:44-46) states: "the harness, not the agent, runs the tests; the harness, not the agent, decides green/red." Option (a) is the research-recommended mechanism.
+
+Concrete: for a target file `hooks/foo.js`, the hook looks for `hooks/foo.test.js` or `tests/foo.test.js` or `scripts/foo.test.mjs`. If found, runs `node --test <test-file>` with a short timeout. If the test runner exits non-zero, a failing test exists — allow the write. If exits 0 (all tests pass), block — no red phase. If test file absent — block with a message directing the agent to write a failing test first.
+
+**Option (b) mtime:** rejected — research doc §3.3 (tdd-agentic-llm-setups.md:52-54) flags "tests that pass before implementation" as a failure mode that mtime cannot detect. A newer-than-source test file may contain only green tests.
+
+**Option (c) sentinel file:** rejected — requires a companion PostToolUse hook writing sentinel files on every Bash test run; higher complexity and a separate failure surface.
+
+#### Bypass mechanism
+
+Env var `TDD_GUARD_BYPASS=1` — matches the session-toggle pattern described in research doc §4.1 (tdd-agentic-llm-setups.md:95). `bash-guard.js` uses `hasValidApprovalToken` from hook-utils; tdd-guard uses a simpler env-var check (no approval token needed — this is a developer opt-out, not a security boundary). A `.tddguardignore` file at project root can list path globs to skip (one per line).
+
+#### Performance budget
+
+<500 ms typical, <2 s worst case. `node --test <single-file>` on a fast local test file takes ~100–300 ms on this platform. Timeout guard: spawn with `timeout: 2000 ms`; on ETIMEDOUT — fail-open (allow the write, log a warning to stderr).
+
+#### Failure modes
+
+| Scenario | Behavior |
+|---|---|
+| Node not on PATH | Fail-open: `spawn` throws ENOENT → catch → `exitOk()` + stderr warning |
+| Test file malformed / parse error | Fail-open: test runner exits non-zero → treated as failing test → allow write |
+| Hook itself crashes / unhandled exception | Fail-open: `.catch(() => process.exit(0))` wraps main (same pattern as `bash-guard.js:466`) |
+| Timeout (>2 s) | Fail-open: log warning, allow write |
+| No test file found | Fail-closed: block write, message directs agent to write failing test first |
+| TDD_GUARD_BYPASS=1 | Fail-open: skip all checks, allow write |
+
+---
+
+#### Phase 1 — Test cases for the hook (written first — TDD structure)
+
+- [ ] 8. Write failing tests for `hooks/tdd-guard.js` (`hooks/tdd-guard.test.mjs`) (wave: 1)
+  Intent: Establish the red bar for the hook itself — tests must fail before any production code is written, satisfying the TDD-structured requirement.
+  Verify: AC-8: `node --test hooks/tdd-guard.test.mjs` exits non-zero with the following test cases failing: (1) blocks Write when no test file exists for target; (2) blocks Write when test file exists but all tests pass (green); (3) allows Write when test file exists and at least one test fails (red); (4) allows Write on test files themselves; (5) allows Write when TDD_GUARD_BYPASS=1; (6) fail-open when node test runner times out; (7) fail-open on hook parse error.
+
+#### Phase 2 — Hook implementation
+
+- [ ] 9. Implement `hooks/tdd-guard.js` (`hooks/tdd-guard.js`) (wave: 2)
+  Depends: 8
+  Intent: Enforce the Red phase by blocking source-file writes until a failing test for the target module is observed, closing the Red+Green collapse failure mode documented in tdd-agentic-llm-setups.md:48-50.
+  Verify: AC-9: All test cases from Task 8 pass (`node --test hooks/tdd-guard.test.mjs` exits 0); hook reads stdin via readline+timeout pattern matching bash-guard.js:456-466; deny envelope matches bash-guard.js:16-26 shape; fail-open on timeout/crash.
+
+- [ ] 10. Register hook in `hooks/hooks.json` (`hooks/hooks.json`) (wave: 3)
+  Depends: 9
+  Intent: Activate the hook in the Claude Code runtime so it fires on every Write and Edit PreToolUse event, matching the existing Write/Edit matcher pattern at hooks.json:237-270.
+  Verify: AC-10: `hooks/hooks.json` contains two new PreToolUse entries — one for matcher `"Write"` and one for `"Edit"` — both invoking `node "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js"`; JSON is valid (`node -e "require('./hooks/hooks.json')"` exits 0).
+
+- [ ] 11. Add tdd-guard entry to `.pipeline/agent-roles.json` (`.pipeline/agent-roles.json`) (wave: 3)
+  Depends: 9
+  Intent: Keep agent-roles.json in sync so ctx-pre-tool.js does not fail open for any hook-process identity that references tdd-guard — per GENERAL.md line 157 requirement that all active agents appear in the manifest.
+  Verify: AC-11: `.pipeline/agent-roles.json` contains an entry for `tdd-guard` with `readonly: true`; `ctx-pre-tool.js` does not emit an "agent not found" warning when tdd-guard is the active hook process.
+
+### Research needed
+
+- **MultiEdit PreToolUse event:** does `MultiEdit` fire as a distinct PreToolUse event with its own tool name, or is it routed through the `Edit` matcher? If it is a separate tool name, `hooks/hooks.json` needs a third matcher entry. Unknown — researcher should verify by inspecting Claude Code hook documentation or existing hook behavior logs.
+- **stdin `file_path` vs `path` field name for Edit vs Write:** bash-guard.js reads `payload.tool_input?.command` for Bash. The Write tool uses `file_path` and Edit uses `path` — confirm the exact field names from Claude Code PreToolUse payload docs or an existing hook that reads Write/Edit file paths (e.g., `ctx-pre-tool.js`).
+- **`agent-roles.json` scope for hook processes:** GENERAL.md line 157 says new agents need an entry. Hooks are not agents — verify whether hook processes run under an agent identity that ctx-pre-tool.js checks, or whether the agent-roles.json entry is unnecessary for a hook script.
+
+### Approach summary
+- Decision: Hook-enforced TDD guard (research §6.1 pattern) using `node --test <test-file>` to confirm a failing test exists before allowing source-file writes; fail-open on timeout/crash; `TDD_GUARD_BYPASS=1` env var for session opt-out.
+- Trade-off: Spawning a node subprocess per Write/Edit adds ~100–300 ms latency to every source-file write; acceptable given the <500 ms budget, but will be noticeable in tight edit loops.
+- Uncertainty: MultiEdit tool name for the PreToolUse matcher is unconfirmed; exact stdin field names for Write vs Edit payloads need researcher verification before the coder writes the file-path extraction logic.
