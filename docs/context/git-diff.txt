@@ -1,1704 +1,492 @@
-diff --git a/docs/PLAN.md b/docs/PLAN.md
-index 0a2da16b..fee1a2a0 100644
---- a/docs/PLAN.md
-+++ b/docs/PLAN.md
-@@ -1,100 +1,6 @@
- ## Active Plan
- 
--(Stale "Per-run context isolation" feature block removed by conductor — already shipped today via r-83ef4be9 → commit 5679aaf2 → merge 476dca08. The active plan below targets a different feature.)
+diff --git a/.pipeline/context/reviewer-output/reviewer-boundary.md b/.pipeline/context/reviewer-output/reviewer-boundary.md
+deleted file mode 100644
+index 0503ab4a..00000000
+--- a/.pipeline/context/reviewer-output/reviewer-boundary.md
++++ /dev/null
+@@ -1,34 +0,0 @@
+-## Boundary Review: TDD Guard Hook — Phase 1
 -
--### Feature: Worker output-verification mtime cross-check
--
--Summary: Replace git-diff-based output verification with mtime cross-check; extract into a testable helper; close TODOs 756bd820 (Bug 2) and a625d351.
--
--## Problem
--
--**TODO `756bd820` (Bug 2 only — Bug 1 closes via `36fdb461`):**
--> "BUG 2 — WORKER MUST CROSS-CHECK FILE MTIME (remaining work): Worker's gate2-readiness check accepts the [reviewer-verdict] signal in agent output as authoritative. Does not verify the verdict FILE was actually persisted (mtime > agent startedAt). Even with per-run dirs (Bug 1 fix), a reviewer could fail to Write for other reasons: disk full, permission denied, transient error, agent emitted signal but Write tool refused for path reasons. subagent-stop already flags `completedAt: null` for these cases, but the worker's verdict aggregation doesn't act on it."
-->
--> AC-1: Worker's verdict aggregation reads each reviewer's expected output file, compares mtime to agent startedAt, treats stale-or-missing files as no-verdict.
--> AC-2: A reviewer with [reviewer-verdict]=APPROVED but stale/missing file does NOT advance the run to gate2; instead surfaces as REVISE-unresolved (consistent with existing policy).
--> AC-3: subagent-stop's existing `completedAt: null` flag is honored — outcomes with null completedAt are treated as no-verdict.
--> AC-4: Test or smoke covering the stale-file scenario: dispatch reviewer with a stale verdict file already on disk, verify worker rejects the phantom verdict.
--
--**TODO `a625d351`:**
--> "Worker false-negative on gitignored-doc detection — affects documenter, planner, and any worker that diff-checks gitignored doc paths. Workers that perform `git diff --stat HEAD` (or similar) to verify 'did the agent write what it claimed?' get a FALSE NEGATIVE for any change to these files. Git doesn't show gitignored files in diffs even if they're modified on disk."
-->
--> AC1: Worker correctly detects documenter writes to gitignored doc files (CHANGELOG, ARCHITECTURE, DECISIONS, etc.) as success rather than re-invoking.
--> AC2: For files NOT modified by documenter (mtime unchanged), worker still re-invokes (existing behavior preserved).
--> AC3: Same fix pattern applied to any other worker → agent verification check that uses git diff against gitignored files.
--
--## Root cause
--
--- `skills/implement/SKILL.md:192` — `git diff --stat HEAD` used for post-coder output verification; silent false-negative for gitignored files (PLAN.md, CHANGELOG.md, etc.).
--- `skills/debug/SKILL.md:84` — same `git diff --stat HEAD` pattern.
--- `skills/refactor/SKILL.md:80` — same `git diff --stat HEAD` pattern.
--- `skills/implement/SKILL.md:261` (step 5b) — verdict aggregation reads `[reviewer-verdict]` signals from reviewer output files but does not check file mtime vs. agent startedAt; stale files from prior runs accepted as fresh.
--- `skills/apply/SKILL.md:132,147` — `git diff --name-only HEAD` used in commit detection; same gitignore-blindness for doc files.
--- The verification question in all cases is "did the file change?" — git cannot answer this for gitignored files; filesystem mtime can.
--
--## Approach
--
--Extract a testable helper script (`scripts/verify-output.mjs`) that answers "is this file fresher than timestamp T?" with exit-code and JSON stdout semantics matching the existing script pattern (`scripts/lean-risk-classify.mjs`). Skills invoke the helper via Bash. Tests use `node:test` (the existing test framework in this repo — confirmed via `scripts/lean-risk-classify.test.mjs`). Assumption: NTFS mtime resolution is 100 ns — finer than the second-level granularity of most CI checks; no rounding guard needed. Same-machine execution assumed; no NTP/clock-skew risk.
--
-----
--
--- [ ] 1. Add failing tests for Bug 2 mtime rejection (`scripts/verify-output.test.mjs`) (wave: 1)
--  Intent: Establish a red-bar baseline that will fail on current code, proving the bug exists before the fix.
--  Verify: AC-1: Running `node --test scripts/verify-output.test.mjs` exits non-zero; at least two tests fail — one reproducing a stale-mtime verdict file being accepted (756bd820 Bug 2), one reproducing a gitignored-file write going undetected (a625d351).
--
--- [ ] 2. Add failing test for stale-verdict regression (756bd820 AC-4) (`scripts/verify-output.test.mjs`) (wave: 1)
--  Intent: Cover the specific AC-4 scenario — a stale reviewer verdict file present on disk before the agent runs — so the regression cannot reappear silently.
--  Verify: AC-2: A dedicated test simulates a verdict file with mtime older than a mock agent startedAt; the test fails (red bar) before the helper is implemented.
--
--- [ ] 3. Implement `scripts/verify-output.mjs` helper (wave: 2)
--  Depends: 1, 2
--  Intent: Provide the single testable surface for mtime-based output verification so all skill files call the same logic rather than duplicating inline checks.
--  Verify: AC-3: `node scripts/verify-output.mjs --file=<path> --since=<epoch-ms>` exits 0 when the file exists and `mtime >= since`; exits 1 when file is absent, exits 2 when file exists but `mtime < since`; stdout is `{"ok":true|false,"reason":"..."}` JSON on every exit.
--
--- [ ] 4. Update implement, debug, refactor skills to use mtime check for post-coder verification (`skills/implement/SKILL.md`, `skills/debug/SKILL.md`, `skills/refactor/SKILL.md`) (wave: 3)
--  Depends: 3
--  Intent: Replace the `git diff --stat HEAD` false-negative with a filesystem mtime call so gitignored file writes are correctly detected.
--  Verify: AC-4: Post-coder verification in all three skills calls `node scripts/verify-output.mjs` for declared touched files; no `git diff --stat` used for the "did the agent write?" question; gitignored-doc writes are no longer treated as no-output.
--
--- [ ] 5. Update implement, debug, refactor skills to cross-check reviewer verdict file mtime (`skills/implement/SKILL.md`, `skills/debug/SKILL.md`, `skills/refactor/SKILL.md`) (wave: 4)
--  Depends: 4
--  Intent: Step 5b's verdict aggregation must confirm the verdict file was actually persisted after the reviewer started, not just that a signal was emitted, closing 756bd820 AC-1 through AC-3.
--  Verify: AC-5: Step 5b in each skill calls `node scripts/verify-output.mjs --file=<verdict-file> --since=<reviewer-startedAt>` before accepting a verdict; a file that fails mtime check is treated as no-verdict; the run proceeds to REVISE-unresolved if any reviewer yields no-verdict.
--
--- [ ] 6. Update apply skill to use mtime check for documenter output verification (`skills/apply/SKILL.md`) (wave: 3)
--  Depends: 3
--  Intent: Apply skill's documenter re-invoke decision currently uses `git diff`; switching to mtime eliminates false re-invokes on gitignored doc files (CHANGELOG, ARCHITECTURE, DECISIONS).
--  Verify: AC-6: The apply skill's documenter-verification step calls `node scripts/verify-output.mjs` for each expected doc file; documenter is not re-invoked when mtime shows the file was written; documenter IS re-invoked when mtime is unchanged.
--
--- [ ] 7. Tests green — all verify-output tests pass (`scripts/verify-output.test.mjs`) (wave: 5)
--  Depends: 3, 4, 5, 6
--  Intent: Confirm the TDD cycle is complete — every test written in Tasks 1 and 2 now passes with the helper implemented.
--  Verify: AC-7: `node --test scripts/verify-output.test.mjs` exits 0; all tests including the AC-4 stale-verdict regression test pass.
--
--### Research needed
+-### Violations
 -
 -None.
 -
--### Approach summary
--- Decision: Extract a standalone `scripts/verify-output.mjs` helper with deterministic exit codes (matching the pattern of `scripts/lean-risk-classify.mjs`) so skill markdown files invoke it via Bash and the logic is unit-testable independently of the LLM.
--- Trade-off: Skill files grow a Bash invocation per verification point; this is consistent with `completeness-check.mjs` and `reviewer-dispatch.mjs` precedent so not novel complexity.
--- Uncertainty: The apply skill commit-detection path (`skills/apply/SKILL.md:132`) uses `git diff` for both listing changed files AND detecting commits — the mtime fix applies only to the output-detection question; the commit-listing use is out of scope and must not be changed.
+-### Verified
 -
--### Resolution of plan-stage REVISE verdicts
+-- [x] **Hook function signature conformance** — Stub exports `runGuard(payload, env = process.env, _spawnImpl = null)` returning `Promise<{exitCode: number, stderr: string}>`. Signature matches all 12 test invocations. `_spawnImpl` is explicitly documented as "optional spawn override for testing timeout/ENOENT paths" and is correctly positioned as a third parameter (not env-var pollution), per handoff decision note. No breaking API surface for Phase 2.
 -
--Plan-stage reviewers (boundary, performance) returned REVISE — no BLOCKs. Conductor decisions follow; implementer should treat these as authoritative AC supplements.
+-- [x] **CommonJS module export** — Stub uses `module.exports = { runGuard }` (CJS format), matching the hook integration pattern. Tests load via `createRequire()` from ESM context. Compatible with Phase 2 hook invocation via `node hooks/tdd-guard.js` in the PreToolUse hook harness (hooks.json registration is Phase 2 Task 10).
 -
--**reviewer-boundary REVISE — wave ordering**: Tasks 4 and 5 both targeted wave 3 and both modify `skills/implement/SKILL.md`, `skills/debug/SKILL.md`, `skills/refactor/SKILL.md`. Resolution applied above: Task 5 bumped to wave 4 (Task 5 now depends on Task 4 completing). Task 6 stays at wave 3 (different file: `skills/apply/SKILL.md`). Task 7 bumped to wave 5 (depends on 3, 4, 5, 6).
+-- [x] **Test payload schema alignment** — All 12 test cases construct payloads matching bash-guard.js:316-327 and workflow-guard.js:191-194 PreToolUse stdin contract: `{ tool_name: 'Write', tool_input: { file_path: <path> }, cwd: <dir> }`. Tests also validate robustness cases (null payload, missing tool_input) which align with bash-guard.js's fail-open pattern (exitOk on parse error / missing extraction).
 -
--The implementer can either edit Tasks 4 and 5 in two passes through each skill file, or merge them into a single edit per skill (acceptable shortcut — the merged edit is still semantically two changes).
+-- [x] **Return type shape alignment with deny envelope** — Stub returns `{ exitCode: 0, stderr: '' }`. Phase 2 will emit either exit 0 (allow) or exit 2 + deny envelope per bash-guard.js:11-27 (JSON + console.error + exit 2). The `stderr` field prepares for Phase 2's deny-message logging. No contract mismatch.
 -
--**reviewer-performance REVISE — batch invocation (advisory)**: helper invocation is one node spawn per verified file. For a typical implement run this is ~3–10 spawns per check round. Precedent scripts (`scripts/completeness-check.mjs`, `scripts/reviewer-dispatch.mjs`) use the same per-item pattern. Resolution: **keep single-file-per-invocation contract** for consistency. If profiling shows >500 ms aggregate cost during implementation, the implementer MAY add a batch mode `--files=<p1>:<p2>:... --since=<epoch-ms>` returning a JSON map. Not a blocker — defer until measured.
+-- [x] **Filesystem isolation and cleanup** — Tests use `os.tmpdir() + fs.mkdtemp()` for isolation, store results in project-local variables, and unconditionally clean up via `fs.rm(..., { recursive: true, force: true })` in finally blocks (lines 73-76, 94-99, 114-121, etc.). No temp-dir leaks. Cross-platform temp paths via `os.tmpdir()` (GENERAL.md platform-differences rule).
 -
--**reviewer-performance REVISE — same-second mtime tolerance (advisory)**: helper compares `mtime >= since`. On NTFS (Windows, this project's primary target) mtime resolution is 100 ns, so same-second collisions are vanishingly rare. Resolution: **use `>=` (inclusive)** in the helper; document the assumption inline in `scripts/verify-output.mjs` that filesystem mtime resolution is finer than the caller's `since` precision. If cross-platform CI is added later, the implementer should revisit (e.g. subtract 1 s from `since` on filesystems with second-only resolution).
+-- [x] **Test case enumeration vs. plan AC-8b** — Handoff lists 12 test cases; PLAN.md AC-8b specifies 11 enumerated cases + test-file-exemption as case (6). Actual test count: cases (1-6) cover the six explicit scenarios, cases (7-11) cover the five fail-open + bypass scenarios, case (10b) is an additional robustness variant (malformed tool_input). This expansion of case 10 into (10, 10b) is a test-design refinement within scope — both variants verify the same "fail-open on parse error" boundary. All 11 enumerated cases from AC-8b are present and will fail against the stub (cases 1-3) or pass (cases 4-11), establishing the intended red bar.
 -
--These resolutions supersede any conflicting text above. The implementer should reference this section when there's ambiguity.
+-- [x] **Plan-stage reviewer REVISE resolution** — Earlier plan-stage verdict flagged source-file detection scope ambiguity between tdd-guard and workflow-guard. PLAN.md lines 123-124 now contains the resolution: "tdd-guard.js gates *every* Write/Edit/MultiEdit on plugin source code regardless of pipeline stage ... two hooks serve different policies and are intentionally disjoint in their source-file detection rules." Stub file (lines 3-12) includes an identical scope note in comments. No continuing ambiguity.
 -
-----
-+(Stale prior feature blocks removed by conductor at gate1 of r-38ea3166. Already shipped today: per-run context isolation via merge 476dca08; mtime cross-check via merge ab6fc19c. The active plan below targets the TDD Guard Hook — a separate feature.)
- 
- ### Feature: TDD Guard Hook
- 
-@@ -102,7 +8,7 @@ Summary: Build `hooks/tdd-guard.js`, a PreToolUse hook that blocks Write/Edit on
- 
- #### Hook contract (from `hooks/bash-guard.js:316-327` and `hooks/bash-guard.js:11-27`)
- 
--- **stdin:** JSON payload with at minimum `tool_input.file_path` (used by **both** Write and Edit) and `cwd`. Confirmed by `hooks/workflow-guard.js:191-194` and `hooks/control-file-guard-test.js:146` — both tools use `file_path`. Coder should still apply a defensive `tool_input.file_path || tool_input.path` extraction to match the existing pattern in `workflow-guard.js`. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)
-+- **stdin:** JSON payload with at minimum `tool_input.file_path` (used by **both** Write and Edit) and `cwd`. Confirmed by `hooks/workflow-guard.js:191-194` and `hooks/control-file-guard-test.js:146` — both tools use `file_path`. Coder should apply a defensive `tool_input.file_path || tool_input.path` extraction (per `workflow-guard.js:191-194` pattern) for robustness only; both Write and Edit use `file_path` as primary field. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)
- - **exit 0:** allow the tool call through.
- - **exit 2 + stdout JSON deny envelope + stderr message:** block the tool call. Deny envelope shape from `bash-guard.js:16-26`: `{ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "<msg>" } }`. `console.error(msg)` provides the legacy stderr backup (`bash-guard.js:26`). Exit 2 alone is silently discarded by the current runtime (`bash-guard.js:15`).
- - **stdin reading:** readline + timeout pattern, fail-open on parse error (`bash-guard.js:456-466`). Timeout constant from `hook-utils.js` (`STDIN_TIMEOUT_LONG`).
-@@ -212,7 +118,7 @@ Plan-stage reviewers returned REVISE — `reviewer-boundary` 1 warning, `reviewe
- 
- **reviewer-logic warning — bypass precedence:** Resolution applied. AC-9 specifies bypass is evaluated **before** stdin parsing so a malformed payload + bypass still allows. AC-8b test case (7) verifies this.
- 
--**reviewer-logic warning — line 105 stale text:** Already resolved in the prior research-findings pass; line 105 now correctly states both Write and Edit use `file_path`. No further action needed.
-+**reviewer-logic warning — line 105 stale text:** Already resolved in the prior research-findings pass; the hook-contract section now correctly states both Write and Edit use `file_path`. No further action needed.
- 
- **reviewer-boundary warning — source-file detection scope vs `workflow-guard.js`:** `workflow-guard.js:14-31` excludes `/hooks/`, `/bin/`, `/mcp/` from its `isSourceFile` check because that hook gates **end-of-pipeline workflow steps** (apply-stage commit signals), not TDD coverage. `tdd-guard.js` operates at a different boundary — it gates *every* Write/Edit on plugin source code regardless of pipeline stage. The two scopes are intentionally disjoint and serve different policies. Resolution applied: noted here. Implementer must include a comment in `tdd-guard.js` explaining the deliberate scope difference so future readers don't try to "reconcile" the two scope rules.
- 
-diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
-index c2ef44ab..cc67b854 100644
---- a/docs/context/git-diff.txt
-+++ b/docs/context/git-diff.txt
-@@ -1,1226 +0,0 @@
--warning: in the working copy of 'docs/SIGNAL-PROTOCOL.md', CRLF will be replaced by LF the next time Git touches it
--warning: in the working copy of 'docs/gotchas/GENERAL.md', CRLF will be replaced by LF the next time Git touches it
--diff --git a/docs/PLAN.md b/docs/PLAN.md
--index 94e4ea02..7faada74 100644
----- a/docs/PLAN.md
--+++ b/docs/PLAN.md
--@@ -1,159 +1,6 @@
-- ## Active Plan
-- 
---### Feature: Per-run context isolation
---
---Summary: Move reviewer-output, researcher-status, and verdict files from shared project-root paths to per-run worktree-scoped paths so concurrent runs cannot collide.
---
---#### Discovery — current read/write sites
---
---**`docs/context/reviewer-output/`** (producers)
---- `agents/reviewer-safety.md:49–53` — resolves dir from `[reviewer-output-dir: <path>]` prompt signal or falls back to `docs/context/reviewer-output/`
---- `agents/reviewer-boundary.md:67–69` — same pattern
---- `agents/reviewer-logic.md:64–66` — same pattern
---- `agents/reviewer-performance.md:45–47` — same pattern
---- `agents/_archived/reviewer-style.md:100` — hardcoded `docs/context/reviewer-output/reviewer-style.md`
---
---**`docs/context/reviewer-output/`** (consumers / cleanup)
---- `skills/implement/SKILL.md:172` — clears dir between phases via `find ... -delete || del ...`
---- `skills/implement/SKILL.md:240,248,249,252` — aggregates verdicts; writes `reviewer-style.md`
---- `skills/refactor/SKILL.md:120,128,129,132` — same pattern
---- `skills/debug/SKILL.md:126,127,130` — same pattern
---- `skills/plan/SKILL.md:130` — clears stale files before plan-stage reviewer dispatch
---- `scripts/post-apply-lifecycle.mjs:26–86` — archives to `.pipeline/review-archive/<ts>/` then deletes originals
---- `.pipeline/agent-roles.json:3–7,24` — reviewer agents and documenter are allowed `docs/context/reviewer-output/**`
---
---**`docs/context/researcher-status.json`** (producer)
---- `agents/researcher.md:26,35,128` — researcher writes this file
---
---**`docs/context/researcher-status.json`** (consumers)
---- `agents/coder.md:98` — coder reads it to detect BLOCKED state; stops if BLOCKED
---- `hooks/subagent-stop.js:273` — truncation detection reads expected artifact at `docs/context/researcher-status.json` relative to `baseDir` (already uses `data.worktreePath || projectDir`)
---- `scripts/post-apply-lifecycle.mjs:96` — sidecar cleanup list
---
---**Verdict body persistence** — no current persistence beyond the reviewer-output file. The `subagent-stop.js` hook records verdict letter (APPROVED/BLOCK/REVISE) in `run-active.json` via `entry.outcome` but does not store the full markdown body.
---
---#### Target layout
---
---All per-run context artifacts move under the worktree `.pipeline/context/` directory:
---
---```
---<worktreePath>/
---  .pipeline/
---    context/
---      reviewer-output/          ← replaces docs/context/reviewer-output/
---        reviewer-safety.md
---        reviewer-boundary.md
---        ...
---      researcher-status.json    ← replaces docs/context/researcher-status.json
---      verdicts/                 ← NEW: full markdown body per reviewer per phase
---        <runId>-<reviewer>-<phase>.md
---```
---
---The existing `docs/context/` tree is unchanged for all other sidecars (`handoff.md`, `scout.json`, `coder-status.json`, `git-diff.txt`, `slice-brief.md`, `criteria.json`, `checkpoint.md`). Those are already scoped to the worktree (`<worktreePath>/docs/context/`) and do not need to move.
---
---**Why `.pipeline/context/` not `docs/context/`:** reviewer-output and researcher-status are pipeline-state artifacts, not doc artifacts. `.pipeline/` is the convention for pipeline state in this project (confirmed: `run-active.json`, `gate-pending.json`, `lean-gate.json` all live under `.pipeline/`). Placing them under `.pipeline/context/` makes the isolation obvious and consistent.
---
---#### Acceptance criteria
---
---- Two parallel plan runs each writing reviewer-output files produce no collision: run A's `.pipeline/context/reviewer-output/reviewer-safety.md` and run B's `.pipeline/context/reviewer-output/reviewer-safety.md` are independent files in separate worktrees.
---- `researcher-status.json` from run A is not visible to run B's coder or subagent-stop hook.
---- Verdict bodies persist under `.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md` and survive the run for post-hoc inspection.
---- The plan-stage cleanup (`find ... -delete`) targets the per-run path, eliminating the shared-dir race.
---- `post-apply-lifecycle.mjs` archives from and clears `.pipeline/context/reviewer-output/` (not `docs/context/reviewer-output/`).
---- `agent-roles.json` allows reviewers and documenter to write to `.pipeline/context/reviewer-output/**`.
---- `subagent-stop.js` artifact-detection for `researcher` resolves to the new path.
---- No backward-compat shim needed: `docs/context/reviewer-output/` directory can be absent; all callers use the new path.
---
------
---
---- [ ] 1. Add `resolveContextPaths(worktreePath)` helper (`mcp/lib/context-paths.js`) (wave: 1)
---  Intent: Centralise the per-run context path formulas so no caller duplicates `path.join` logic for the new layout.
---  Verify: AC-1: Module exports `reviewerOutputDir`, `researcherStatusPath`, and `verdictPath(reviewer, phase)` all resolving under `<worktreePath>/.pipeline/context/`; importable from both ESM and CommonJS callers via dual-mode export or explicit `require`.
---
---- [ ] 2. Update `agent-roles.json` allowed paths for reviewer agents and documenter (`.pipeline/agent-roles.json`) (wave: 1)
---  Intent: The PreToolUse hook enforces write-target patterns; the new paths must be in the manifest or reviewers will be blocked at runtime.
---  Verify: AC-2: `reviewer-boundary`, `reviewer-safety`, `reviewer-logic`, `reviewer-style`, `reviewer-performance` and `documenter` each list `.pipeline/context/reviewer-output/**` (and optionally `.pipeline/context/verdicts/**`); old `docs/context/reviewer-output/**` entries are removed.
---
---- [ ] 3. Update reviewer agents to write to per-run path (`agents/reviewer-safety.md`, `agents/reviewer-boundary.md`, `agents/reviewer-logic.md`, `agents/reviewer-performance.md`) (wave: 2)
---  Depends: 1, 2
---  Intent: Each reviewer must write its verdict file into the per-run `.pipeline/context/reviewer-output/` directory so concurrent runs cannot overwrite each other's verdicts.
---  Verify: AC-3: All four agents resolve their output dir from `[reviewer-output-dir: <path>]` prompt signal with no fallback to `docs/context/reviewer-output/`; the fallback line is removed or updated to the new default.
---
---- [ ] 4. Update implement, refactor, debug skills to inject `[reviewer-output-dir]` signal and use new paths (`skills/implement/SKILL.md`, `skills/refactor/SKILL.md`, `skills/debug/SKILL.md`) (wave: 2)
---  Depends: 1
---  Intent: Skills must pass the per-run output dir to reviewers via prompt signal and read verdicts from the same location, replacing every hard-coded `<worktreePath>/docs/context/reviewer-output/` reference.
---  Verify: AC-4: Each skill prepends `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]` to reviewer prompts; all verdict-aggregation and REVISE/BLOCK logic reads from that path; the inter-phase clear also targets that path.
---
---- [ ] 5. Update plan skill to use per-run reviewer-output path (`skills/plan/SKILL.md`) (wave: 2)
---  Depends: 1
---  Intent: Plan-stage reviewer dispatch clears stale files and reads verdicts from the per-run path, removing the shared-dir race that caused silent Write failures.
---  Verify: AC-5: Plan skill Step 5 clears `<worktreePath>/.pipeline/context/reviewer-output/` (not `docs/context/reviewer-output/`); the `find ... -delete` command targets the new path.
---
---- [ ] 6. Update researcher agent to write `researcher-status.json` to per-run path (`agents/researcher.md`) (wave: 2)
---  Depends: 1
---  Intent: Researcher status must be per-run so concurrent researcher invocations do not overwrite each other.
---  Verify: AC-6: Researcher writes `researcher-status.json` to `<worktreePath>/.pipeline/context/researcher-status.json`; the path is resolved from a prompt-injected variable or from the helper, not hardcoded to `docs/context/`.
---
---- [ ] 7. Update coder agent to read `researcher-status.json` from per-run path (`agents/coder.md`) (wave: 2)
---  Depends: 1
---  Intent: Coder's BLOCKED guard must read from the same per-run path the researcher writes to, or the guard is silently skipped.
---  Verify: AC-7: Coder resolves `researcher-status.json` from `<worktreePath>/.pipeline/context/researcher-status.json`; BLOCKED guard still fires correctly.
---
---- [ ] 8. Update `subagent-stop.js` artifact-detection map for `researcher` (`hooks/subagent-stop.js`) (wave: 2)
---  Depends: 1
---  Intent: Truncation detection for the researcher agent must resolve to the same path the researcher writes to, or it always reports truncation (file not found).
---  Verify: AC-8: `EXPECTED_ARTIFACTS['researcher']` resolves to `.pipeline/context/researcher-status.json` under `data.worktreePath || projectDir`; test harness `hooks/subagent-stop-verdict-test.js` is updated to match.
---
---- [ ] 9. Add verdict body persistence step in skills (`skills/implement/SKILL.md`, `skills/refactor/SKILL.md`, `skills/debug/SKILL.md`) (wave: 3)
---  Depends: 4
---  Intent: Full reviewer markdown must survive the run under a stable per-run key so failed runs can be inspected without re-running.
---  Verify: AC-9: After collecting reviewer verdicts, each skill copies each verdict file to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md` (where phase is `"implement"` / `"debug"` / `"refactor"` and a per-phase index if applicable); copied files persist after the reviewer-output dir is cleared between phases.
---
---- [ ] 10. Update `post-apply-lifecycle.mjs` to archive and clear from new path (`scripts/post-apply-lifecycle.mjs`) (wave: 2)
---  Depends: 1
---  Intent: The apply lifecycle must clean the new per-run location; archiving from the old `docs/context/reviewer-output/` path would archive nothing (dir is now empty).
---  Verify: AC-10: `archiveReviewerOutput()` reads from `<projectDir>/.pipeline/context/reviewer-output/`; `deleteSidecars()` entry for `researcher-status.json` resolves to `.pipeline/context/researcher-status.json`; no references to `docs/context/reviewer-output/` remain in this file.
---
---- [ ] 11. Update `agent-roles.json` researcher entry to allow `.pipeline/context/` writes (`.pipeline/agent-roles.json`) (wave: 1)
---  Intent: The researcher is currently allowed to write only `docs/RESEARCH/**`; it also needs write access to its status file under `.pipeline/context/`.
---  Verify: AC-11: `researcher` entry in `agent-roles.json` includes `.pipeline/context/researcher-status.json` in `allowedPaths` alongside the existing `docs/RESEARCH/**` entry.
---
---### Research needed
---
---- **Plan-skill path injection mechanism**: The plan skill (Step 5) runs `find ... -delete` against a hardcoded path. The worktreePath is available inside the worker but it is unclear whether the plan skill currently has `worktreePath` in scope at Step 5 (before Gate #1). Confirm: does `skills/plan/SKILL.md` have access to `<worktreePath>` at the reviewer dispatch step, or does it need to be inferred from CWD?
---- **`mcp/lib/context-paths.js` module format**: `mcp/lib/worker-paths.js` is already ESM (imported via `import` in `mcp/forge-worker.mjs`); hooks are CommonJS (`require`). The new helper must be importable from both. Confirm whether a `.cjs` dual export or a simple CommonJS module (no `import`/`export`) is the right pattern for shared lib files in this repo — check `mcp/lib/worker-paths.js` module syntax.
---- **Verdict body persistence — phase label**: In phased implement runs, the phase index is available in the skill; in single-pass runs there is no phase. Confirm the naming convention for single-pass verdicts (e.g., `<runId>-reviewer-safety-1.md` vs `<runId>-reviewer-safety-main.md`).
---
---### Approach summary
---- Decision: Extend the existing `<worktreePath>/.pipeline/` convention — all per-run context moves to `.pipeline/context/` inside the worktree; reviewers already accept a `[reviewer-output-dir]` prompt signal, so no new protocol is needed.
---- Trade-off: `docs/context/reviewer-output/` at the project root becomes unused; no backward shim since this is a clean worktree-scoped system (old shared path was the bug).
---- Uncertainty: Dual-module format for `context-paths.js` helper needs verification against existing `mcp/lib/` conventions before the coder chooses the export style.
---
---### Resolution of plan-stage reviewer-boundary BLOCK
---
---The plan-stage reviewer-boundary review (in `<worktreePath>/docs/context/reviewer-output/reviewer-boundary.md`) flagged 3 BLOCK-level + 6 REVISE-level concerns. Conductor decisions follow, verified against current code this session — implementer should treat these as authoritative AC supplements:
---
---**BLOCK 1 — AC-1 module format for `mcp/lib/context-paths.js`**: ESM-only export, NOT dual-export. Verified: `mcp/lib/worker-paths.js:1` reads `import { join } from 'node:path';` — existing helpers in `mcp/lib/` are ESM. New helper follows the same pattern. CJS callers (hooks, scripts) construct the paths inline using `path.join(worktreePath, '.pipeline', 'context', 'reviewer-output')` etc — duplication is ~3 lines per hook, acceptable. If duplication grows painful later, refactor to `.cjs` dual-export. Helper exports: `reviewerOutputDir(worktreePath)`, `researcherStatusPath(worktreePath)`, `verdictPath(worktreePath, reviewer, phase)` — all returning absolute paths.
---
---**BLOCK 2 — AC-5 plan skill timing — REJECTED AS FALSE POSITIVE**: Reviewer claimed plan skill Step 5 runs in conductor session before worker is dispatched. Verified incorrect: `skills/plan/SKILL.md:114` reads `## STEP 2 — Run planner pipeline (worker)`. Conductor only does Step 1 (classification + `forge_create_run` with `spawnWorker: true`); Steps 2-6 (including Step 5 reviewer dispatch) run inside the worker, which has resolved `worktreePath` via Step 1b's `forge_create_worktree` call. No timing constraint exists. Task 5's edit goes ahead as written.
---
---**BLOCK 3 — AC-9 verdict persistence signal mechanism**: Option (b) — skill constructs verdict paths independently. The skill (running in worker) already has: `runId` (from worker-task), `worktreePath` (from `forge_get_run`), the list of reviewers it dispatched, and the current phase (from `skills/implement/SKILL.md:116` phase-detection logic). After collecting verdicts, each skill (`implement`/`refactor`/`debug`) copies `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md`. No new prompt signal needed. No reviewer-agent changes beyond the path update in Task 3.
---
---**Phase value for AC-9**: `implement` / `refactor` / `debug` for non-phased runs; `phase-<index>` (e.g. `phase-1`, `phase-2`) when a phased plan is detected. Skills already track which phase is running.
---
---**REVISE-level decisions** (verified against current code):
---
---- **AC-3** (reviewer fallback): KEEP existing fallback to `docs/context/reviewer-output/` in reviewer agent prompts. Verified at `agents/reviewer-safety.md:49-51` (and equivalents). Backward-compat for any caller that doesn't inject `[reviewer-output-dir]` signal. Safe default; doesn't conflict with the new path being primary.
---- **AC-4** (skills' worktreePath source): skills run in worker context (per BLOCK 2 clarification); they obtain `worktreePath` from `forge_get_run` already called at Step 1b. No new mechanism.
---- **AC-6** (researcher path injection): researcher receives standard `Your working directory for this run is: <worktreePath>` prompt injection per the existing pattern at `skills/implement/SKILL.md:179-184`. Researcher constructs the path as `<injected-cwd>/.pipeline/context/researcher-status.json`.
---- **AC-7** (coder path resolution): same as AC-6 — coder uses standard `<worktreePath>` injection, hard-codes the relative path. No new prompt signal.
---- **AC-8** (`subagent-stop.js` payload contract): VERIFIED already correct — `hooks/subagent-stop.js:218,279` use `data.worktreePath || projectDir` fallback. Only the `EXPECTED_ARTIFACTS['researcher']` value at line 268+ needs updating to the new relative path. No payload contract changes.
---- **AC-10** (`post-apply-lifecycle.mjs` verdict cleanup): `.pipeline/context/verdicts/` is PRESERVED, not deleted. Verdict bodies are audit trail; minimal disk cost. Update Task 10 Verify: `archiveReviewerOutput()` reads from per-run path; `deleteSidecars()` does NOT include the verdicts directory.
---- **AC-11** (researcher allowedPaths): `agent-roles.json` researcher entry includes BOTH `.pipeline/context/researcher-status.json` AND existing `docs/RESEARCH/**` (researcher writes both — research files go to `docs/RESEARCH/`, status file goes to per-run path). The plan's existing wording ("alongside the existing `docs/RESEARCH/**` entry") is correct.
---
---These resolutions supersede any conflicting text in the original task ACs. The implementer should reference this section when there's ambiguity.
---
------
--+(Stale "Per-run context isolation" feature block removed by conductor — already shipped today via r-83ef4be9 → commit 5679aaf2 → merge 476dca08. The active plan below targets a different feature.)
-- 
-- ### Feature: Worker output-verification mtime cross-check
-- 
--@@ -209,8 +56,8 @@ Extract a testable helper script (`scripts/verify-output.mjs`) that answers "is
--   Intent: Replace the `git diff --stat HEAD` false-negative with a filesystem mtime call so gitignored file writes are correctly detected.
--   Verify: AC-4: Post-coder verification in all three skills calls `node scripts/verify-output.mjs` for declared touched files; no `git diff --stat` used for the "did the agent write?" question; gitignored-doc writes are no longer treated as no-output.
-- 
---- [ ] 5. Update implement, debug, refactor skills to cross-check reviewer verdict file mtime (`skills/implement/SKILL.md`, `skills/debug/SKILL.md`, `skills/refactor/SKILL.md`) (wave: 3)
---  Depends: 3
--+- [ ] 5. Update implement, debug, refactor skills to cross-check reviewer verdict file mtime (`skills/implement/SKILL.md`, `skills/debug/SKILL.md`, `skills/refactor/SKILL.md`) (wave: 4)
--+  Depends: 4
--   Intent: Step 5b's verdict aggregation must confirm the verdict file was actually persisted after the reviewer started, not just that a signal was emitted, closing 756bd820 AC-1 through AC-3.
--   Verify: AC-5: Step 5b in each skill calls `node scripts/verify-output.mjs --file=<verdict-file> --since=<reviewer-startedAt>` before accepting a verdict; a file that fails mtime check is treated as no-verdict; the run proceeds to REVISE-unresolved if any reviewer yields no-verdict.
-- 
--@@ -219,7 +66,7 @@ Extract a testable helper script (`scripts/verify-output.mjs`) that answers "is
--   Intent: Apply skill's documenter re-invoke decision currently uses `git diff`; switching to mtime eliminates false re-invokes on gitignored doc files (CHANGELOG, ARCHITECTURE, DECISIONS).
--   Verify: AC-6: The apply skill's documenter-verification step calls `node scripts/verify-output.mjs` for each expected doc file; documenter is not re-invoked when mtime shows the file was written; documenter IS re-invoked when mtime is unchanged.
-- 
---- [ ] 7. Tests green — all verify-output tests pass (`scripts/verify-output.test.mjs`) (wave: 4)
--+- [ ] 7. Tests green — all verify-output tests pass (`scripts/verify-output.test.mjs`) (wave: 5)
--   Depends: 3, 4, 5, 6
--   Intent: Confirm the TDD cycle is complete — every test written in Tasks 1 and 2 now passes with the helper implemented.
--   Verify: AC-7: `node --test scripts/verify-output.test.mjs` exits 0; all tests including the AC-4 stale-verdict regression test pass.
--@@ -232,3 +79,17 @@ None.
-- - Decision: Extract a standalone `scripts/verify-output.mjs` helper with deterministic exit codes (matching the pattern of `scripts/lean-risk-classify.mjs`) so skill markdown files invoke it via Bash and the logic is unit-testable independently of the LLM.
-- - Trade-off: Skill files grow a Bash invocation per verification point; this is consistent with `completeness-check.mjs` and `reviewer-dispatch.mjs` precedent so not novel complexity.
-- - Uncertainty: The apply skill commit-detection path (`skills/apply/SKILL.md:132`) uses `git diff` for both listing changed files AND detecting commits — the mtime fix applies only to the output-detection question; the commit-listing use is out of scope and must not be changed.
--+
--+### Resolution of plan-stage REVISE verdicts
--+
--+Plan-stage reviewers (boundary, performance) returned REVISE — no BLOCKs. Conductor decisions follow; implementer should treat these as authoritative AC supplements.
--+
--+**reviewer-boundary REVISE — wave ordering**: Tasks 4 and 5 both targeted wave 3 and both modify `skills/implement/SKILL.md`, `skills/debug/SKILL.md`, `skills/refactor/SKILL.md`. Resolution applied above: Task 5 bumped to wave 4 (Task 5 now depends on Task 4 completing). Task 6 stays at wave 3 (different file: `skills/apply/SKILL.md`). Task 7 bumped to wave 5 (depends on 3, 4, 5, 6).
--+
--+The implementer can either edit Tasks 4 and 5 in two passes through each skill file, or merge them into a single edit per skill (acceptable shortcut — the merged edit is still semantically two changes).
--+
--+**reviewer-performance REVISE — batch invocation (advisory)**: helper invocation is one node spawn per verified file. For a typical implement run this is ~3–10 spawns per check round. Precedent scripts (`scripts/completeness-check.mjs`, `scripts/reviewer-dispatch.mjs`) use the same per-item pattern. Resolution: **keep single-file-per-invocation contract** for consistency. If profiling shows >500 ms aggregate cost during implementation, the implementer MAY add a batch mode `--files=<p1>:<p2>:... --since=<epoch-ms>` returning a JSON map. Not a blocker — defer until measured.
--+
--+**reviewer-performance REVISE — same-second mtime tolerance (advisory)**: helper compares `mtime >= since`. On NTFS (Windows, this project's primary target) mtime resolution is 100 ns, so same-second collisions are vanishingly rare. Resolution: **use `>=` (inclusive)** in the helper; document the assumption inline in `scripts/verify-output.mjs` that filesystem mtime resolution is finer than the caller's `since` precision. If cross-platform CI is added later, the implementer should revisit (e.g. subtract 1 s from `since` on filesystems with second-only resolution).
--+
--+These resolutions supersede any conflicting text above. The implementer should reference this section when there's ambiguity.
--diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
--index 324cbb49..49f81464 100644
----- a/docs/context/git-diff.txt
--+++ b/docs/context/git-diff.txt
--@@ -1,878 +1 @@
---diff --git a/agents/coder.md b/agents/coder.md
---index a13094b3..315ae22e 100644
------ a/agents/coder.md
---+++ b/agents/coder.md
---@@ -95,7 +95,7 @@ No user is present during automated pipeline runs. If `scout.json` is empty (0 f
--- 
--- Before writing anything, verify that the inputs were produced by the pipeline:
--- 
----0. **Check `docs/context/researcher-status.json`** — if it exists and contains `"status": "BLOCKED"`, stop immediately, do NOT write `handoff.md`, and emit:
---+0. **Check `.pipeline/context/researcher-status.json`** — if it exists and contains `"status": "BLOCKED"`, stop immediately, do NOT write `handoff.md`, and emit:
--- 
--- `[suggest] revise plan: <feature name>`
--- 
---@@ -238,7 +238,7 @@ If you are approaching your context limit mid-task, write your progress to `docs
--- 
--- **If your invocation prompt begins with `[revision-mode: N]`**, you are revising after a reviewer REVISE verdict. Work more narrowly:
--- 
----1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `docs/context/reviewer-output/`).
---+1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `.pipeline/context/reviewer-output/`).
--- 2. Do NOT re-read GENERAL.md, SKILLS.md, PLAN.md, or any source files — they are unchanged and already reflected in your prior handoff.
--- 3. **Criteria scoping:** If `docs/context/criteria.json` exists, read it. Target only criteria with `status: "rejected"` or reviewer verdicts of `NOT_MET`. Criteria with `status: "accepted"` or `status: "deferred"` are explicitly out of scope — do not re-implement or re-touch them. If a `[failed-criteria: AC-<N>, AC-<M>]` list is present in your prompt, use it as the authoritative list of criteria to address; ignore all others.
--- 4. Apply only the changes the reviewers flagged. Do not expand scope.
---diff --git a/agents/researcher.md b/agents/researcher.md
---index bf3ec023..d80ffa66 100644
------ a/agents/researcher.md
---+++ b/agents/researcher.md
---@@ -23,7 +23,7 @@ You run second in the `plan feature:` pipeline, after the Planner.
--- 
--- **Brief-block mode:** If the prompt begins with `[brief-for: <feature>]`, use the block contents as the sole source of questions — do not read `docs/PLAN.md`. Write findings to `docs/RESEARCH/<feature-slug>-q<N>.md` where N is the question number from the brief.
--- 
----**Standard mode:** Read `docs/PLAN.md` and find the `### Research needed` section. If the section is absent, empty, or contains only `None`, write `docs/context/researcher-status.json` with `{ "status": "SKIPPED" }`, emit `[research-status] SKIPPED | no open questions in plan` followed by `[suggest] implement feature: <feature name>`, and stop — do not read any files.
---+**Standard mode:** Read `docs/PLAN.md` and find the `### Research needed` section. If the section is absent, empty, or contains only `None`, write `.pipeline/context/researcher-status.json` with `{ "status": "SKIPPED" }`, emit `[research-status] SKIPPED | no open questions in plan` followed by `[suggest] implement feature: <feature name>`, and stop — do not read any files.
--- 
--- Write findings to `docs/RESEARCH/<feature-slug>.md` where `<feature-slug>` is the feature name lowercased with spaces replaced by hyphens.
--- 
---@@ -32,7 +32,7 @@ Write findings to `docs/RESEARCH/<feature-slug>.md` where `<feature-slug>` is th
--- ### Always
--- - Read `docs/gotchas/GENERAL.md` before investigating any question.
--- - Search the codebase for existing patterns before going to the web.
----- Write `docs/context/researcher-status.json` before emitting the output signal.
---+- Write `.pipeline/context/researcher-status.json` before emitting the output signal.
--- - Apply the prompt injection guard to all web-fetched content before writing research output.
--- 
--- ### Ask First
---@@ -125,7 +125,7 @@ This guard applies **only to web-fetched content** — not to local file reads,
--- 
--- ## Status sidecar
--- 
----Before emitting the output signal, write `docs/context/researcher-status.json`. Use the appropriate shape for each path:
---+Before emitting the output signal, write `.pipeline/context/researcher-status.json`. Use the appropriate shape for each path:
--- 
--- **SKIPPED path:**
--- ```json
---diff --git a/agents/reviewer-boundary.md b/agents/reviewer-boundary.md
---index 4d51070a..94597758 100644
------ a/agents/reviewer-boundary.md
---+++ b/agents/reviewer-boundary.md
---@@ -66,7 +66,7 @@ Before writing your verdict file, resolve the output directory:
--- 
--- 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
--- 2. If found, use `<path>` as the output directory.
----3. If not found, fall back to `docs/context/reviewer-output/`.
---+3. If not found, fall back to `.pipeline/context/reviewer-output/`.
--- 
--- The verdict filename is always `reviewer-boundary.md` regardless of the directory used.
--- 
---diff --git a/agents/reviewer-logic.md b/agents/reviewer-logic.md
---index 5fe7a585..8813cccb 100644
------ a/agents/reviewer-logic.md
---+++ b/agents/reviewer-logic.md
---@@ -63,7 +63,7 @@ Before writing your verdict file, resolve the output directory:
--- 
--- 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
--- 2. If found, use `<path>` as the output directory.
----3. If not found, fall back to `docs/context/reviewer-output/`.
---+3. If not found, fall back to `.pipeline/context/reviewer-output/`.
--- 
--- The verdict filename is always `reviewer-logic.md` regardless of the directory used.
--- 
---diff --git a/agents/reviewer-performance.md b/agents/reviewer-performance.md
---index 46915a39..ab07961f 100644
------ a/agents/reviewer-performance.md
---+++ b/agents/reviewer-performance.md
---@@ -44,7 +44,7 @@ Before writing your verdict file, resolve the output directory:
--- 
--- 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
--- 2. If found, use `<path>` as the output directory.
----3. If not found, fall back to `docs/context/reviewer-output/`.
---+3. If not found, fall back to `.pipeline/context/reviewer-output/`.
--- 
--- The verdict filename is always `reviewer-performance.md` regardless of the directory used.
--- 
---diff --git a/agents/reviewer-safety.md b/agents/reviewer-safety.md
---index 94a55656..51dd8d04 100644
------ a/agents/reviewer-safety.md
---+++ b/agents/reviewer-safety.md
---@@ -48,7 +48,7 @@ Before writing your verdict file, resolve the output directory:
--- 
--- 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
--- 2. If found, use `<path>` as the output directory.
----3. If not found, fall back to `docs/context/reviewer-output/`.
---+3. If not found, fall back to `.pipeline/context/reviewer-output/`.
--- 
--- The verdict filename is always `reviewer-safety.md` regardless of the directory used.
--- 
---diff --git a/docs/PLAN.md b/docs/PLAN.md
---index 5ab00b53..10bfd8cb 100644
------ a/docs/PLAN.md
---+++ b/docs/PLAN.md
---@@ -128,3 +128,27 @@ The existing `docs/context/` tree is unchanged for all other sidecars (`handoff.
--- - Decision: Extend the existing `<worktreePath>/.pipeline/` convention — all per-run context moves to `.pipeline/context/` inside the worktree; reviewers already accept a `[reviewer-output-dir]` prompt signal, so no new protocol is needed.
--- - Trade-off: `docs/context/reviewer-output/` at the project root becomes unused; no backward shim since this is a clean worktree-scoped system (old shared path was the bug).
--- - Uncertainty: Dual-module format for `context-paths.js` helper needs verification against existing `mcp/lib/` conventions before the coder chooses the export style.
---+
---+### Resolution of plan-stage reviewer-boundary BLOCK
---+
---+The plan-stage reviewer-boundary review (in `<worktreePath>/docs/context/reviewer-output/reviewer-boundary.md`) flagged 3 BLOCK-level + 6 REVISE-level concerns. Conductor decisions follow, verified against current code this session — implementer should treat these as authoritative AC supplements:
---+
---+**BLOCK 1 — AC-1 module format for `mcp/lib/context-paths.js`**: ESM-only export, NOT dual-export. Verified: `mcp/lib/worker-paths.js:1` reads `import { join } from 'node:path';` — existing helpers in `mcp/lib/` are ESM. New helper follows the same pattern. CJS callers (hooks, scripts) construct the paths inline using `path.join(worktreePath, '.pipeline', 'context', 'reviewer-output')` etc — duplication is ~3 lines per hook, acceptable. If duplication grows painful later, refactor to `.cjs` dual-export. Helper exports: `reviewerOutputDir(worktreePath)`, `researcherStatusPath(worktreePath)`, `verdictPath(worktreePath, reviewer, phase)` — all returning absolute paths.
---+
---+**BLOCK 2 — AC-5 plan skill timing — REJECTED AS FALSE POSITIVE**: Reviewer claimed plan skill Step 5 runs in conductor session before worker is dispatched. Verified incorrect: `skills/plan/SKILL.md:114` reads `## STEP 2 — Run planner pipeline (worker)`. Conductor only does Step 1 (classification + `forge_create_run` with `spawnWorker: true`); Steps 2-6 (including Step 5 reviewer dispatch) run inside the worker, which has resolved `worktreePath` via Step 1b's `forge_create_worktree` call. No timing constraint exists. Task 5's edit goes ahead as written.
---+
---+**BLOCK 3 — AC-9 verdict persistence signal mechanism**: Option (b) — skill constructs verdict paths independently. The skill (running in worker) already has: `runId` (from worker-task), `worktreePath` (from `forge_get_run`), the list of reviewers it dispatched, and the current phase (from `skills/implement/SKILL.md:116` phase-detection logic). After collecting verdicts, each skill (`implement`/`refactor`/`debug`) copies `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md`. No new prompt signal needed. No reviewer-agent changes beyond the path update in Task 3.
---+
---+**Phase value for AC-9**: `implement` / `refactor` / `debug` for non-phased runs; `phase-<index>` (e.g. `phase-1`, `phase-2`) when a phased plan is detected. Skills already track which phase is running.
---+
---+**REVISE-level decisions** (verified against current code):
---+
---+- **AC-3** (reviewer fallback): KEEP existing fallback to `docs/context/reviewer-output/` in reviewer agent prompts. Verified at `agents/reviewer-safety.md:49-51` (and equivalents). Backward-compat for any caller that doesn't inject `[reviewer-output-dir]` signal. Safe default; doesn't conflict with the new path being primary.
---+- **AC-4** (skills' worktreePath source): skills run in worker context (per BLOCK 2 clarification); they obtain `worktreePath` from `forge_get_run` already called at Step 1b. No new mechanism.
---+- **AC-6** (researcher path injection): researcher receives standard `Your working directory for this run is: <worktreePath>` prompt injection per the existing pattern at `skills/implement/SKILL.md:179-184`. Researcher constructs the path as `<injected-cwd>/.pipeline/context/researcher-status.json`.
---+- **AC-7** (coder path resolution): same as AC-6 — coder uses standard `<worktreePath>` injection, hard-codes the relative path. No new prompt signal.
---+- **AC-8** (`subagent-stop.js` payload contract): VERIFIED already correct — `hooks/subagent-stop.js:218,279` use `data.worktreePath || projectDir` fallback. Only the `EXPECTED_ARTIFACTS['researcher']` value at line 268+ needs updating to the new relative path. No payload contract changes.
---+- **AC-10** (`post-apply-lifecycle.mjs` verdict cleanup): `.pipeline/context/verdicts/` is PRESERVED, not deleted. Verdict bodies are audit trail; minimal disk cost. Update Task 10 Verify: `archiveReviewerOutput()` reads from per-run path; `deleteSidecars()` does NOT include the verdicts directory.
---+- **AC-11** (researcher allowedPaths): `agent-roles.json` researcher entry includes BOTH `.pipeline/context/researcher-status.json` AND existing `docs/RESEARCH/**` (researcher writes both — research files go to `docs/RESEARCH/`, status file goes to per-run path). The plan's existing wording ("alongside the existing `docs/RESEARCH/**` entry") is correct.
---+
---+These resolutions supersede any conflicting text in the original task ACs. The implementer should reference this section when there's ambiguity.
---diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
---index ce8e83d2..801774b1 100644
------ a/docs/context/git-diff.txt
---+++ b/docs/context/git-diff.txt
---@@ -1,527 +0,0 @@
----diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
----index 3b2f737..e69de29 100644
------- a/docs/context/git-diff.txt
----+++ b/docs/context/git-diff.txt
----@@ -1,335 +0,0 @@
-----diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
-----index d57ed93..e69de29 100644
-------- a/docs/context/git-diff.txt
-----+++ b/docs/context/git-diff.txt
-----@@ -1,276 +0,0 @@
------diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
------index 5adc069..e69de29 100644
--------- a/docs/context/git-diff.txt
------+++ b/docs/context/git-diff.txt
------@@ -1,36 +0,0 @@
-------diff --git a/mcp/forge-worker.mjs b/mcp/forge-worker.mjs
-------index 26dccca..455c66f 100644
---------- a/mcp/forge-worker.mjs
-------+++ b/mcp/forge-worker.mjs
-------@@ -278,6 +278,11 @@ async function main() {
-------     });
-------   }
------- 
-------+  // Debounce tracking for terminal-status poll — updated each time readRunData()
-------+  // is called in the per-message loop. Initialised to 0 so the first message
-------+  // always triggers a check (Date.now() - 0 >> 500).
-------+  let lastStatusReadAt = 0;
-------+
-------   let exitCode = 0;
-------   const inputChannel = createMessageChannel();
-------   inputChannel.push({
-------@@ -331,6 +336,19 @@ async function main() {
-------         break;
-------       }
------- 
-------+      // Terminal-status poll: debounced to at most once per 500 ms so the check
-------+      // does not multiply with high-frequency stream messages during agent dispatch.
-------+      // Absent/unreadable run.json is treated as non-terminal (fail-open per GENERAL.md).
-------+      if (Date.now() - lastStatusReadAt >= 500) {
-------+        lastStatusReadAt = Date.now();
-------+        const terminalData = readRunData();
-------+        const terminalStatus = terminalData && terminalData.status;
-------+        if (terminalStatus === 'completed' || terminalStatus === 'failed' || terminalStatus === 'discarded') {
-------+          writeLog('[forge-worker] run is terminal (status=' + terminalStatus + ') — exiting');
-------+          break;
-------+        }
-------+      }
-------+
-------       if (gateHandled) continue;
------- 
-------       const runData = readRunData();
------diff --git a/mcp/lib/worker-pids.js b/mcp/lib/worker-pids.js
------new file mode 100644
------index 0000000..35da858
--------- /dev/null
------+++ b/mcp/lib/worker-pids.js
------@@ -0,0 +1,229 @@
------+import { readdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'node:fs';
------+import { join } from 'node:path';
------+
------+/**
------+ * Validates a runId against the canonical pattern.
------+ * @param {string} runId
------+ * @returns {boolean}
------+ */
------+function isValidRunId(runId) {
------+  return typeof runId === 'string' && /^r-[a-zA-Z0-9]+$/.test(runId);
------+}
------+
------+/**
------+ * Reads and parses a PID file, returning the content or null on error.
------+ * @param {string} filePath
------+ * @returns {{ runId: string, pid: number, startedAt: string } | null}
------+ */
------+function readPidFile(filePath) {
------+  try {
------+    return JSON.parse(readFileSync(filePath, 'utf-8'));
------+  } catch (_) {
------+    return null;
------+  }
------+}
------+
------+/**
------+ * Reads run.json for a given run, returning the parsed object or null on error.
------+ * @param {string} projectDir
------+ * @param {string} runId
------+ * @returns {{ status: string, [key: string]: unknown } | null}
------+ */
------+function readRunJson(projectDir, runId) {
------+  try {
------+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
------+    return JSON.parse(readFileSync(runPath, 'utf-8'));
------+  } catch (_) {
------+    return null;
------+  }
------+}
------+
------+/**
------+ * Writes an updated run.json, marking the run as failed.
------+ * @param {string} projectDir
------+ * @param {string} runId
------+ * @param {{ status: string, [key: string]: unknown }} runData
------+ * @returns {boolean} true on success, false on error
------+ */
------+function markRunFailed(projectDir, runId, runData) {
------+  try {
------+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
------+    const updated = {
------+      ...runData,
------+      status: 'failed',
------+      failureReason: 'worker process no longer alive (swept)',
------+    };
------+    writeFileSync(runPath, JSON.stringify(updated, null, 2), 'utf-8');
------+    return true;
------+  } catch (err) {
------+    console.error('[worker-pids] failed to update run.json for ' + runId + ':', err.message);
------+    return false;
------+  }
------+}
------+
------+/**
------+ * Probes whether a PID is alive using process.kill(pid, 0).
------+ *
------+ * Return values:
------+ *   'dead'    — ESRCH: process does not exist, safe to sweep
------+ *   'alive'   — no error: process exists and same user owns it
------+ *   'cross'   — EPERM: process exists but owned by another user — treat as live
------+ *   'unknown' — any other error: fail-open, skip this entry
------+ *
------+ * @param {number} pid
------+ * @returns {'dead' | 'alive' | 'cross' | 'unknown'}
------+ */
------+function probePid(pid) {
------+  try {
------+    process.kill(pid, 0);
------+    return 'alive';
------+  } catch (err) {
------+    const code = /** @type {{ code?: string }} */ (err).code;
------+    if (code === 'ESRCH') return 'dead';
------+    if (code === 'EPERM') return 'cross';
------+    return 'unknown';
------+  }
------+}
------+
------+/**
------+ * Sweeps stale PID files from `.pipeline/worker-pids/` in the given project directory.
------+ *
------+ * For each PID file found:
------+ * 1. Validates the PID value (must be a finite positive integer).
------+ * 2. Probes the PID with process.kill(pid, 0):
------+ *    - ESRCH → dead: if run status is 'running', marks run as failed, then deletes PID file.
------+ *    - EPERM → cross-user alive: do NOT sweep (avoid false-positive sweeps).
------+ *    - no error → alive: do NOT sweep.
------+ *    - other error → fail-open: log and skip.
------+ * 3. Order per dead PID is deterministic: read run.json → write run.json → delete PID file.
------+ *    This ensures run.json is durable before the PID file delete that signals "swept".
------+ *
------+ * After the liveness sweep, applies a retention policy: if worker-pids/ still contains
------+ * > 200 entries, deletes the oldest (by mtime) until the count is ≤ 200.
------+ *
------+ * @param {string} projectDir - Absolute path to the project root (main repo, not a worktree).
------+ * @returns {{ swept: number, alive: number, errors: number }}
------+ */
------+export function sweepStalePids(projectDir) {
------+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
------+
------+  let swept = 0;
------+  let alive = 0;
------+  let errors = 0;
------+
------+  /** @type {string[]} */
------+  let entries;
------+  try {
------+    entries = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
------+  } catch (err) {
------+    // Directory absent or unreadable — no PID files to sweep.
------+    const code = /** @type {{ code?: string }} */ (err).code;
------+    if (code !== 'ENOENT') {
------+      console.error('[worker-pids] could not read worker-pids dir:', err.message);
------+    }
------+    return { swept: 0, alive: 0, errors: 0 };
------+  }
------+
------+  for (const fileName of entries) {
------+    const filePath = join(pidsDir, fileName);
------+
------+    // Parse PID file.
------+    const pidData = readPidFile(filePath);
------+    if (pidData === null) {
------+      console.error('[worker-pids] could not parse PID file, skipping:', filePath);
------+      errors++;
------+      continue;
------+    }
------+
------+    // Validate runId.
------+    const { runId, pid } = pidData;
------+    if (!isValidRunId(runId)) {
------+      console.error('[worker-pids] invalid runId in PID file, skipping:', filePath, 'runId:', runId);
------+      errors++;
------+      continue;
------+    }
------+
------+    // Validate PID value.
------+    const pidInt = typeof pid === 'number' ? pid : parseInt(String(pid), 10);
------+    if (!Number.isFinite(pidInt) || pidInt <= 0 || !Number.isInteger(pidInt)) {
------+      console.error('[worker-pids] invalid PID value in file, skipping:', filePath, 'pid:', pid);
------+      errors++;
------+      continue;
------+    }
------+
------+    // Probe liveness.
------+    const probe = probePid(pidInt);
------+
------+    if (probe === 'alive' || probe === 'cross') {
------+      // Cross-user processes are treated as live to avoid false-positive sweeps.
------+      alive++;
------+      continue;
------+    }
------+
------+    if (probe === 'unknown') {
------+      // Unexpected error probing — fail-open.
------+      console.error('[worker-pids] unexpected error probing PID', pidInt, 'in', filePath, '— skipping');
------+      errors++;
------+      continue;
------+    }
------+
------+    // probe === 'dead': process no longer alive.
------+    // Order: read run.json → conditionally write run.json → delete PID file.
------+    const runData = readRunJson(projectDir, runId);
------+
------+    if (runData !== null && runData.status === 'running') {
------+      // Mark run as failed before deleting the PID file (durability before signal).
------+      const updated = markRunFailed(projectDir, runId, runData);
------+      if (updated) {
------+        console.error('[worker-pids] marked run ' + runId + ' as failed (worker PID ' + pidInt + ' is dead)');
------+      }
------+    }
------+
------+    // Delete the stale PID file.
------+    try {
------+      unlinkSync(filePath);
------+      console.error('[worker-pids] deleted stale PID file:', filePath);
------+      swept++;
------+    } catch (err) {
------+      console.error('[worker-pids] failed to delete stale PID file:', filePath, err.message);
------+      errors++;
------+    }
------+  }
------+
------+  // Retention policy: cap worker-pids/ to ≤ 200 entries.
------+  // Re-read directory after sweep to get current state.
------+  let remaining;
------+  try {
------+    remaining = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
------+  } catch (_) {
------+    // If we can't re-read, skip retention enforcement — already swept above.
------+    return { swept, alive, errors };
------+  }
------+
------+  if (remaining.length > 200) {
------+    // Sort by mtime ascending (oldest first).
------+    /** @type {Array<{ name: string, mtime: number }>} */
------+    const withMtime = [];
------+    for (const name of remaining) {
------+      try {
------+        const st = statSync(join(pidsDir, name));
------+        withMtime.push({ name, mtime: st.mtimeMs });
------+      } catch (_) {
------+        // Can't stat — skip this entry during retention sort.
------+      }
------+    }
------+    withMtime.sort((a, b) => a.mtime - b.mtime);
------+
------+    const toDelete = withMtime.slice(0, withMtime.length - 200);
------+    for (const { name } of toDelete) {
------+      try {
------+        unlinkSync(join(pidsDir, name));
------+        console.error('[worker-pids] retention policy: deleted old PID file:', name);
------+      } catch (err) {
------+        console.error('[worker-pids] retention policy: could not delete:', name, err.message);
------+      }
------+    }
------+  }
------+
------+  return { swept, alive, errors };
------+}
-----diff --git a/docs/context/scout.json b/docs/context/scout.json
-----index ba9d965..3bcfbd3 100644
-------- a/docs/context/scout.json
-----+++ b/docs/context/scout.json
-----@@ -1,6 +1,7 @@
----- {
-----   "files_to_read": [
-----     "mcp/forge-worker.mjs",
-----+    "mcp/lib/worker-pids.js",
-----     "mcp/server.js"
-----   ],
-----   "functions_to_modify": {},
-----diff --git a/mcp/server.js b/mcp/server.js
-----index 3fdae16..0d5764c 100644
-------- a/mcp/server.js
-----+++ b/mcp/server.js
-----@@ -17,6 +17,7 @@ import { buildDashboardState } from "./lib/dashboard-state.js";
----- import { sanitizeFeatureName } from "./lib/sanitize.js";
----- import { searchConstraints, searchPatterns, appendSolutionDoc } from "./lib/knowledge-store.js";
----- import { workerLogPath, killPillPath } from "./lib/worker-paths.js";
-----+import { sweepStalePids } from "./lib/worker-pids.js";
----- 
----- // -- Shared Zod schemas ------------------------------------------------------
----- 
-----@@ -1751,6 +1752,14 @@ server.registerTool(
-----         return textResult(started);
-----       }
----- 
-----+      // Sweep stale PID files before collision guard so zombie "running" entries
-----+      // do not falsely block new spawns.
-----+      const mainProjectDir = resolveMainProjectDir();
-----+      const sweepResult = sweepStalePids(mainProjectDir);
-----+      if (sweepResult.swept > 0) {
-----+        console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
-----+      }
-----+
-----       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
-----       //
-----       // The new run's intent at this point is captured by `useWorktree`:
-----@@ -2621,6 +2630,14 @@ server.registerTool(
-----         return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
-----       }
----- 
-----+      // Sweep stale PID files before collision guard so zombie "running" entries
-----+      // do not falsely block this advance path.
-----+      const mainProjectDirAdv = resolveMainProjectDir();
-----+      const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
-----+      if (sweepResultAdv.swept > 0) {
-----+        console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
-----+      }
-----+
-----       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
-----       //
-----       // At this point `run` has its final worktreePath/branchName. Apply the
----diff --git a/mcp/zombie-worker-prevention-test.mjs b/mcp/zombie-worker-prevention-test.mjs
----new file mode 100644
----index 0000000..817e014
------- /dev/null
----+++ b/mcp/zombie-worker-prevention-test.mjs
----@@ -0,0 +1,181 @@
----+#!/usr/bin/env node
----+// Unit test: sweepStalePids helper from mcp/lib/worker-pids.js
----+//
----+// Tests that the sweep correctly:
----+//   - identifies dead PIDs, marks runs failed, deletes PID files, returns swept=1
----+//   - leaves non-running runs (e.g. completed) untouched even when the PID is dead
----+//
----+// Run: node mcp/zombie-worker-prevention-test.mjs
----+// Auto-discovered by scripts/run-tests.mjs via mcp/*-test.mjs suffix.
----+
----+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
----+import { join } from 'node:path';
----+import { tmpdir } from 'node:os';
----+import { spawnSync } from 'node:child_process';
----+
----+import { sweepStalePids } from './lib/worker-pids.js';
----+
----+const LABEL = '[zombie-worker-prevention]';
----+
----+function fail(msg) {
----+  console.error(LABEL + ' FAIL');
----+  console.error('  ' + msg);
----+  process.exit(1);
----+}
----+
----+/**
----+ * Returns a PID that is guaranteed to be dead.
----+ *
----+ * Strategy: spawn `node -e "process.exit(0)"` synchronously and capture its
----+ * pid. spawnSync() waits for exit before returning, so by the time we read
----+ * .pid the child has already exited and the OS has reaped it (no zombie on
----+ * any POSIX system once the parent calls spawnSync). This is more reliable
----+ * than a magic constant because:
----+ *   - PID 2 is alive on Linux (kthreadd).
----+ *   - INT_MAX-style PIDs can theoretically be recycled on long-running boxes.
----+ *   - A freshly-exited child PID is guaranteed dead on all platforms this
----+ *     plugin targets (macOS, Linux, Windows via Node's kill(0) probe).
----+ *
----+ * @returns {number}
----+ */
----+function getDeadPid() {
----+  const result = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { timeout: 5000 });
----+  if (result.pid == null || result.pid <= 0) {
----+    // Fallback: use a very high PID that is almost certainly unused.
----+    // 2147483646 is near the 32-bit signed int max; unlikely to be a live PID.
----+    return 2147483646;
----+  }
----+  return result.pid;
----+}
----+
----+function seedPidFile(pidsDir, runId, pid) {
----+  const filePath = join(pidsDir, runId + '.json');
----+  writeFileSync(filePath, JSON.stringify({ runId, pid, startedAt: new Date().toISOString() }, null, 2), 'utf-8');
----+  return filePath;
----+}
----+
----+function seedRunJson(projectDir, runId, status) {
----+  const runDir = join(projectDir, '.pipeline', 'runs', runId);
----+  mkdirSync(runDir, { recursive: true });
----+  const runPath = join(runDir, 'run.json');
----+  writeFileSync(runPath, JSON.stringify({
----+    runId,
----+    status,
----+    feature: 'test-feature',
----+    createdAt: new Date().toISOString(),
----+  }, null, 2), 'utf-8');
----+  return runPath;
----+}
----+
----+function readRunJson(projectDir, runId) {
----+  const p = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
----+  if (!existsSync(p)) return null;
----+  return JSON.parse(readFileSync(p, 'utf-8'));
----+}
----+
----+async function main() {
----+  const projectDir = mkdtempSync(join(tmpdir(), 'forge-zombie-test-'));
----+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
----+  mkdirSync(pidsDir, { recursive: true });
----+
----+  const deadPid = getDeadPid();
----+
----+  // Seed run-A: status=running, dead PID — should be swept and marked failed.
----+  const runIdA = 'r-deadtest1';
----+  seedPidFile(pidsDir, runIdA, deadPid);
----+  const runPathA = seedRunJson(projectDir, runIdA, 'running');
----+  const pidFileA = join(pidsDir, runIdA + '.json');
----+
----+  // Seed run-B: status=completed, dead PID — PID file deleted but run.json NOT modified.
----+  const runIdB = 'r-deadtest2';
----+  seedPidFile(pidsDir, runIdB, deadPid);
----+  seedRunJson(projectDir, runIdB, 'completed');
----+  const pidFileB = join(pidsDir, runIdB + '.json');
----+
----+  let failure = null;
----+
----+  try {
----+    const result = sweepStalePids(projectDir);
----+
----+    // ── Assert 1: return shape has swept=2 (both dead PID files removed) ──────
----+    // Both PID files belong to dead PIDs; the sweep deletes them regardless of
----+    // run status. swept counts PID file deletions, not run-status changes.
----+    if (typeof result.swept !== 'number') {
----+      failure = 'return value.swept is not a number: ' + JSON.stringify(result);
----+    } else if (result.swept !== 2) {
----+      failure = 'expected swept=2 (both dead PID files deleted), got swept=' + result.swept;
----+    }
----+
----+    // ── Assert 2: run-A (running) is now marked failed ────────────────────────
----+    if (!failure) {
----+      const runA = readRunJson(projectDir, runIdA);
----+      if (!runA) {
----+        failure = 'run.json for ' + runIdA + ' missing after sweep';
----+      } else if (runA.status !== 'failed') {
----+        failure = 'run-A status should be "failed" after sweep, got: ' + runA.status;
----+      } else if (runA.failureReason !== 'worker process no longer alive (swept)') {
----+        failure = 'run-A failureReason unexpected: ' + runA.failureReason;
----+      } else {
----+        console.error(LABEL + ' assert 2 PASS — run-A (running) marked failed');
----+      }
----+    }
----+
----+    // ── Assert 3: PID file for run-A is deleted ───────────────────────────────
----+    if (!failure) {
----+      if (existsSync(pidFileA)) {
----+        failure = 'PID file for run-A should be deleted after sweep, but still exists';
----+      } else {
----+        console.error(LABEL + ' assert 3 PASS — PID file for run-A deleted');
----+      }
----+    }
----+
----+    // ── Assert 4: run-B (completed) run.json is NOT changed ───────────────────
----+    // The sweep marks only 'running' runs as failed; completed/failed runs are
----+    // left untouched (PID file is still deleted since the PID is dead).
----+    if (!failure) {
----+      const runB = readRunJson(projectDir, runIdB);
----+      if (!runB) {
----+        failure = 'run.json for ' + runIdB + ' missing after sweep';
----+      } else if (runB.status !== 'completed') {
----+        failure = 'run-B status should remain "completed", got: ' + runB.status;
----+      } else {
----+        console.error(LABEL + ' assert 4 PASS — run-B (completed) left untouched');
----+      }
----+    }
----+
----+    // ── Assert 5: PID file for run-B is deleted (dead PID, any run status) ────
----+    if (!failure) {
----+      if (existsSync(pidFileB)) {
----+        failure = 'PID file for run-B should be deleted after sweep, but still exists';
----+      } else {
----+        console.error(LABEL + ' assert 5 PASS — PID file for run-B deleted');
----+      }
----+    }
----+
----+    // ── Assert 6: no errors in return value ───────────────────────────────────
----+    if (!failure && result.errors !== 0) {
----+      failure = 'expected errors=0, got errors=' + result.errors;
----+    }
----+
----+    if (!failure) {
----+      console.error(LABEL + ' PASS');
----+      console.error('  deadPid: ' + deadPid);
----+      console.error('  swept:   ' + result.swept);
----+      console.error('  alive:   ' + result.alive);
----+      console.error('  errors:  ' + result.errors);
----+    }
----+
----+  } catch (err) {
----+    failure = 'test harness error: ' + (err && err.stack || String(err));
----+  } finally {
----+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
----+  }
----+
----+  if (failure) fail(failure);
----+  process.exit(0);
----+}
----+
----+main().catch((err) => {
----+  console.error(LABEL + ' unexpected throw:', err);
----+  process.exit(1);
----+});
---diff --git a/hooks/subagent-stop-verdict-test.js b/hooks/subagent-stop-verdict-test.js
---index 2ef0691a..ed5656cf 100644
------ a/hooks/subagent-stop-verdict-test.js
---+++ b/hooks/subagent-stop-verdict-test.js
---@@ -225,7 +225,7 @@ async function test() {
---   {
---     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
---     makeProject(tmp, 'agent-res-1', 'researcher');
----    // docs/context/researcher-status.json does NOT exist
---+    // .pipeline/context/researcher-status.json does NOT exist
---     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-1',
---       agent_type: 'researcher', last_assistant_message: 'Partial research output',
---       session_id: 'test' }, tmp);
---@@ -240,8 +240,8 @@ async function test() {
---   {
---     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
---     makeProject(tmp, 'agent-res-2', 'researcher');
----    mkdirSync(join(tmp, 'docs', 'context'), { recursive: true });
----    writeFileSync(join(tmp, 'docs', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
---+    mkdirSync(join(tmp, '.pipeline', 'context'), { recursive: true });
---+    writeFileSync(join(tmp, '.pipeline', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
---     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-2',
---       agent_type: 'researcher',
---       last_assistant_message: '[research-status] READY\n[suggest] implement feature: test',
---diff --git a/hooks/subagent-stop.js b/hooks/subagent-stop.js
---index 847358dc..5a479a48 100644
------ a/hooks/subagent-stop.js
---+++ b/hooks/subagent-stop.js
---@@ -270,7 +270,7 @@ async function main(rawInput) {
---     'debug': 'docs/context/handoff.md',
---     'refactor': 'docs/context/handoff.md',
---     'implementation-architect': 'docs/context/slice-brief.md',
----    'researcher': 'docs/context/researcher-status.json',
---+    'researcher': '.pipeline/context/researcher-status.json',
---   };
--- 
---   const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];
---diff --git a/scripts/post-apply-lifecycle.mjs b/scripts/post-apply-lifecycle.mjs
---index 8a248c29..3741a764 100644
------ a/scripts/post-apply-lifecycle.mjs
---+++ b/scripts/post-apply-lifecycle.mjs
---@@ -24,7 +24,7 @@ function log(msg) {
--- // --- Job 1: Archive and wipe reviewer output ---------------------------------
--- function archiveReviewerOutput() {
---   try {
----    const reviewerOutputDir = path.join(projectDir, 'docs', 'context', 'reviewer-output');
---+    const reviewerOutputDir = path.join(projectDir, '.pipeline', 'context', 'reviewer-output');
---     const archiveBase = path.join(projectDir, '.pipeline', 'review-archive');
---     const ts = String(Date.now());
---     const archiveDir = path.join(archiveBase, ts);
---@@ -93,7 +93,7 @@ function deleteSidecars() {
---       'docs/context/slice-brief.md',
---       'docs/context/supervisor-brief.md',
---       'docs/context/triage-dispatch.json',
----      'docs/context/researcher-status.json',
---+      '.pipeline/context/researcher-status.json',
---       'docs/context/coder-status.json',
---       'docs/context/scout.json',
---       'docs/context/run-metrics.json',
---diff --git a/skills/debug/SKILL.md b/skills/debug/SKILL.md
---index 3228dced..d49e9220 100644
------ a/skills/debug/SKILL.md
---+++ b/skills/debug/SKILL.md
---@@ -119,15 +119,27 @@ Do NOT proceed without resolving `<worktreePath>`.
---    - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers.
--- 5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
--- 
---+   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
---+
---+   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
---+
---+5b-pre. **Persist verdict bodies for audit trail:**
---+
---+   Before processing the verdicts (BLOCK/REVISE/APPROVED branching), copy each reviewer's output file to a per-run verdict directory:
---+
---+   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
---+   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-debug.md`.
---+   - These files persist beyond Gate #2 — they are the audit trail for failed runs.
---+
--- 5b. **Reviewer verdict handling** (only when step 5 ran):
--- 
---    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
--- 
----   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
----   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
---+   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
---+   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
---    - If ANY reviewer emitted **REVISE** (and none BLOCK):
---      - If `N < 2`: increment `N` to `N+1`.
----       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
---+       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
---        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
---        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 5c.
---      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.
---diff --git a/skills/implement/SKILL.md b/skills/implement/SKILL.md
---index 8b60ba1d..d41fffd7 100644
------ a/skills/implement/SKILL.md
---+++ b/skills/implement/SKILL.md
---@@ -169,7 +169,7 @@ The coder-scout, reviewer dispatch, test stage, and reviewers operate on the sam
---   Continue to the next phase.
--- 
--- **d. Reset per-phase state between phases:**
----Before starting the next phase, clear `<worktreePath>/docs/context/reviewer-output/` (delete all files in the directory) so reviewer verdicts from the previous phase do not bleed into the next. Reset the revision counter `N` to 0 and the test counter `T` to 0 for each new phase.
---+Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer-output/` (delete all files in the directory) so reviewer verdicts from the previous phase do not bleed into the next. Verdict bodies have already been persisted in step 5b-pre, so they survive this clear. Reset the revision counter `N` to 0 and the test counter `T` to 0 for each new phase.
--- 
--- **After the loop completes** (all phases done — BLOCK and REVISE-unresolved verdicts exit the worker before reaching here): proceed to the completeness-checker (Step 3.3 — run once against the full plan, not per-phase) and then Gate #2 (Step 6).
--- 
---@@ -235,21 +235,34 @@ Before starting the next phase, clear `<worktreePath>/docs/context/reviewer-outp
---    - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers. Do NOT add or remove reviewers — the script output is authoritative.
--- 5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
--- 
---+   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
---+
---+   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
---+
---    **Special case — `reviewer-style`:** When `reviewer-style` appears in the dispatch list, run the deterministic script first:
---    - Run via Bash: `node scripts/reviewer-style-check.mjs --root <worktreePath>` with `timeout: 30000`.
----   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/docs/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
---+   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/.pipeline/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
---    - If exit non-zero or `ok: false` or stdout is malformed: log `[reviewer-style-check] script fallback`. Spawn the `reviewer-style` agent as normal fallback.
---    - Other reviewers in the list run in parallel as usual (only `reviewer-style` uses the script path).
--- 
---+5b-pre. **Persist verdict bodies for audit trail:**
---+
---+   Before processing the verdicts (BLOCK/REVISE/APPROVED branching) or clearing the reviewer-output dir between phases, copy each reviewer's output file to a per-run verdict directory:
---+
---+   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
---+   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md`.
---+   - Phase value: `implement` for non-phased runs; `phase-<index>` (e.g. `phase-1`) when running inside the Phase Execution Loop.
---+   - These files persist beyond the inter-phase reviewer-output clear and beyond Gate #2 — they are the audit trail for failed runs.
---+
--- 5b. **Reviewer verdict handling** (only when step 5 ran):
--- 
---    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
--- 
----   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
----   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
---+   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
---+   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
---    - If ANY reviewer emitted **REVISE** (and none BLOCK):
---      - If `N < 2`: increment `N` to `N+1`.
----       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
---+       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
---        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
---        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 5c.
---      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.
---diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
---index 7318e7bd..5197362f 100644
------ a/skills/plan/SKILL.md
---+++ b/skills/plan/SKILL.md
---@@ -127,10 +127,14 @@ Exit — do not proceed to further steps.
--- 2. **Conditional researcher:** read `### Research needed` in PLAN.md. Skip if absent/empty.
--- 4. **Gotcha-checker + Researcher (concurrent when both needed):** If both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially.
--- 5. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
----   - **Clear stale reviewer output first.** Delete every `*.md` file under `docs/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash from the project root: `find docs/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || del /q docs\context\reviewer-output\*.md 2>nul` — first command for POSIX shells, second for Windows. Either succeeding (or both being no-ops on an empty directory) is acceptable; do not block on the cleanup.
----   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=docs/PLAN.md --stage=plan`.
---+   - **Clear stale reviewer output first.** Delete every `*.md` file under `<worktreePath>/.pipeline/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash: `find <worktreePath>/.pipeline/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || true` — if the directory doesn't exist yet, the command is a no-op. Do not block on the cleanup.
---+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=<worktreePath>/docs/PLAN.md --stage=plan`.
---    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`).
---    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
---+   - **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
---+
---+     > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
---+
---    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
--- 6. **Gate #1:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
---    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md"}` (absolute path so the user can locate the worktree's PLAN.md unambiguously).
---diff --git a/skills/refactor/SKILL.md b/skills/refactor/SKILL.md
---index 8f8a48d4..85098d89 100644
------ a/skills/refactor/SKILL.md
---+++ b/skills/refactor/SKILL.md
---@@ -115,21 +115,33 @@ Do NOT proceed without resolving `<worktreePath>`.
---    - If `reviewers` is non-empty: proceed to step 4 with exactly those reviewers.
--- 4. **Reviewers:** dispatch exactly the reviewers listed in step 3's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
--- 
---+   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
---+
---+   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
---+
---    **Special case — `reviewer-style`:** When `reviewer-style` appears in the dispatch list (it always does for refactor pipelines), run the deterministic script first:
---    - Run via Bash: `node scripts/reviewer-style-check.mjs --root <worktreePath>` with `timeout: 30000`.
----   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/docs/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
---+   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/.pipeline/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
---    - If exit non-zero or `ok: false` or stdout is malformed: log `[reviewer-style-check] script fallback`. Spawn the `reviewer-style` agent as normal fallback.
---    - Other reviewers in the list run in parallel as usual.
--- 
---+4b-pre. **Persist verdict bodies for audit trail:**
---+
---+   Before processing the verdicts (BLOCK/REVISE/APPROVED branching), copy each reviewer's output file to a per-run verdict directory:
---+
---+   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
---+   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-refactor.md`.
---+   - These files persist beyond Gate #2 — they are the audit trail for failed runs.
---+
--- 4b. **Reviewer verdict handling** (only when step 4 ran):
--- 
---    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
--- 
----   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
----   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
---+   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
---+   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
---    - If ANY reviewer emitted **REVISE** (and none BLOCK):
---      - If `N < 2`: increment `N` to `N+1`.
----       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
---+       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
---        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
---        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 4c.
---      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.
--+warning: in the working copy of 'docs/SIGNAL-PROTOCOL.md', CRLF will be replaced by LF the next time Git touches it
--diff --git a/skills/apply/SKILL.md b/skills/apply/SKILL.md
--index b410a02b..e0f57cce 100644
----- a/skills/apply/SKILL.md
--+++ b/skills/apply/SKILL.md
--@@ -110,7 +110,19 @@ Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project`
--    - On failure (non-zero exit): show full output, emit `[suggest] debug — tests failed after apply`. Do NOT auto-fix or retry.
-- 
-- 3. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution.
---   After documenter completes, proceed to step 3b.
--+
--+   Record `documenterStartedAt = Date.now()` (epoch-ms) immediately before spawning the documenter.
--+
--+   After documenter completes, verify its output via mtime check — do NOT use `git diff` (gitignored files never appear in git diff output):
--+
--+   For each expected doc file the documenter should have written (typically `CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and any solution file under `docs/solutions/`), run:
--+   ```
--+   node scripts/verify-output.mjs --file=<absoluteDocFilePath> --since=<documenterStartedAt>
--+   ```
--+   - Exit 0 (`ok: true`): file was written or updated — continue.
--+   - Exit 1 (file absent) or exit 2 (`mtime < since`): documenter did NOT write this file. Re-invoke the documenter once with a note identifying the missing or stale file. If the second run also fails the mtime check, log `[apply] documenter output unverified: <file>` and continue — do NOT loop further.
--+
--+   After mtime verification passes (or the single retry is exhausted), proceed to step 3b.
-- 
-- 3b. **Post-apply lifecycle cleanup** (always runs, not gated by gitIntegration):
--    - Run via Bash: `node scripts/post-apply-lifecycle.mjs "<safe-feature>"` (use the sanitized `feature` from Step 1). Set `timeout: 30000`.
--diff --git a/skills/debug/SKILL.md b/skills/debug/SKILL.md
--index d49e9220..270f9897 100644
----- a/skills/debug/SKILL.md
--+++ b/skills/debug/SKILL.md
--@@ -81,7 +81,12 @@ Do NOT proceed without resolving `<worktreePath>`.
-- 2. **Debug agent:** reads the scout report from `<worktreePath>/docs/context/scout-report.md` (and researcher findings if present), traces root cause, writes fix plan to `<worktreePath>/docs/context/handoff.md`
-- 
-- 3. **Coder:** reads the debug agent's fix plan from `<worktreePath>/docs/context/handoff.md`, implements the fix by writing changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then rewrites `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary of the actual changes made.
---   - Post-coder verification: run `git diff --stat HEAD` in `<worktreePath>`. An empty diff means no source files were modified (likely truncation — re-invoke the coder or surface the issue before continuing). A non-empty diff confirms changes exist — proceed to step 3b.
--+   - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
--+     `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
--+     where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
--+     - Exit 0 (`ok: true`): file was written or updated — continue.
--+     - Exit 1 (file absent) or exit 2 (`mtime < since`): file was NOT written — treat as truncation; re-invoke the coder or surface the issue before continuing.
--+     - If ALL declared files pass mtime check, changes are confirmed — proceed to step 3b.
-- 
-- 3b. **Test stage** (between coder and reviewer dispatch):
-- 
--@@ -135,9 +140,15 @@ Do NOT proceed without resolving `<worktreePath>`.
-- 
--    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
-- 
---   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
--+   - Before reading `[reviewer-verdict]` signals, mtime-check each reviewer's verdict file. For each reviewer in the dispatched list, run:
--+     `node scripts/verify-output.mjs --file=<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md --since=<reviewerStartedAtMs>`
--+     where `reviewerStartedAtMs` is the epoch-ms timestamp recorded when that reviewer was spawned.
--+     - Exit 0: verdict file is fresh — accept the signal.
--+     - Exit 1 or exit 2: verdict file is absent or stale — treat as **no-verdict** (do NOT read the signal from this file, even if one is present). Log: `[verdict-check] <reviewer> verdict file stale or missing — treating as no-verdict`.
--+     A reviewer with no-verdict is treated as REVISE-unresolved: proceed to the REVISE branch below (with the no-verdict reviewer counted as unresolved).
--+   - Collect all `[reviewer-verdict]` signals from reviewer outputs that passed the mtime check (in `<worktreePath>/.pipeline/context/reviewer-output/`)
--    - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
---   - If ANY reviewer emitted **REVISE** (and none BLOCK):
--+   - If ANY reviewer emitted **REVISE** or yielded no-verdict (and none BLOCK):
--      - If `N < 2`: increment `N` to `N+1`.
--        1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
--        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
--diff --git a/skills/implement/SKILL.md b/skills/implement/SKILL.md
--index d41fffd7..e11d65a0 100644
----- a/skills/implement/SKILL.md
--+++ b/skills/implement/SKILL.md
--@@ -189,9 +189,14 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
--    - If exit 0 and stdout JSON has `ok: true`: log the `signal` field from stdout. `scout.json` is written — proceed to step 2.
--    - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[coder-scout] script failed: <reason from stdout or stderr>`. Skip scout and proceed to coder without scout context — the coder can still function without it.
-- 2. **Coder:** writes changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then writes `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary.
---   - Post-coder verification: run `git diff --stat HEAD` in `<worktreePath>`. An empty diff means no source files were modified (likely truncation — re-invoke the coder or surface the issue before continuing). A non-empty diff confirms changes exist — save the full diff:
---     - Run via Bash in `<worktreePath>`: `git diff HEAD > <worktreePath>/docs/context/git-diff.txt`
---     - This file is consumed by reviewer-dispatch and all reviewer agents.
--+   - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
--+     `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
--+     where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
--+     - Exit 0 (`ok: true`): file was written or updated — continue.
--+     - Exit 1 (file absent) or exit 2 (`mtime < since`): file was NOT written — treat as truncation; re-invoke the coder or surface the issue before continuing.
--+     - If ALL declared files pass mtime check, changes are confirmed. Save the full git diff for reviewer-dispatch (this captures tracked files; mtime check handled gitignored ones):
--+       Run via Bash in `<worktreePath>`: `git diff HEAD > <worktreePath>/docs/context/git-diff.txt`
--+       This file is consumed by reviewer-dispatch and all reviewer agents.
--    - Proceed to step 2b.
-- 
-- 2b. **Test stage** (between coder and completeness-checker):
--@@ -258,9 +263,15 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
-- 
--    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
-- 
---   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
--+   - Before reading `[reviewer-verdict]` signals, mtime-check each reviewer's verdict file. For each reviewer in the dispatched list, run:
--+     `node scripts/verify-output.mjs --file=<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md --since=<reviewerStartedAtMs>`
--+     where `reviewerStartedAtMs` is the epoch-ms timestamp recorded when that reviewer was spawned.
--+     - Exit 0: verdict file is fresh — accept the signal.
--+     - Exit 1 or exit 2: verdict file is absent or stale — treat as **no-verdict** (do NOT read the signal from this file, even if one is present). Log: `[verdict-check] <reviewer> verdict file stale or missing — treating as no-verdict`.
--+     A reviewer with no-verdict is treated as REVISE-unresolved: proceed to the REVISE branch below (with the no-verdict reviewer counted as unresolved).
--+   - Collect all `[reviewer-verdict]` signals from reviewer outputs that passed the mtime check (in `<worktreePath>/.pipeline/context/reviewer-output/`)
--    - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
---   - If ANY reviewer emitted **REVISE** (and none BLOCK):
--+   - If ANY reviewer emitted **REVISE** or yielded no-verdict (and none BLOCK):
--      - If `N < 2`: increment `N` to `N+1`.
--        1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
--        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
--diff --git a/skills/refactor/SKILL.md b/skills/refactor/SKILL.md
--index 85098d89..1ffecfc0 100644
----- a/skills/refactor/SKILL.md
--+++ b/skills/refactor/SKILL.md
--@@ -77,7 +77,12 @@ Do NOT proceed without resolving `<worktreePath>`.
-- 1. **Refactor agent:** analyzes the target file or area, writes refactor plan to `<worktreePath>/docs/context/handoff.md`
-- 
-- 2. **Coder:** reads the refactor agent's plan from `<worktreePath>/docs/context/handoff.md`, implements the refactoring by writing changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then rewrites `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary of the actual changes made.
---   - Post-coder verification: run `git diff --stat HEAD` in `<worktreePath>`. An empty diff means no source files were modified (likely truncation — re-invoke the coder or surface the issue before continuing). A non-empty diff confirms changes exist — proceed to step 2b.
--+   - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
--+     `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
--+     where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
--+     - Exit 0 (`ok: true`): file was written or updated — continue.
--+     - Exit 1 (file absent) or exit 2 (`mtime < since`): file was NOT written — treat as truncation; re-invoke the coder or surface the issue before continuing.
--+     - If ALL declared files pass mtime check, changes are confirmed — proceed to step 2b.
-- 
-- 2b. **Test stage** (between coder and reviewer dispatch):
-- 
--@@ -137,9 +142,15 @@ Do NOT proceed without resolving `<worktreePath>`.
-- 
--    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
-- 
---   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
--+   - Before reading `[reviewer-verdict]` signals, mtime-check each reviewer's verdict file. For each reviewer in the dispatched list, run:
--+     `node scripts/verify-output.mjs --file=<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md --since=<reviewerStartedAtMs>`
--+     where `reviewerStartedAtMs` is the epoch-ms timestamp recorded when that reviewer was spawned.
--+     - Exit 0: verdict file is fresh — accept the signal.
--+     - Exit 1 or exit 2: verdict file is absent or stale — treat as **no-verdict** (do NOT read the signal from this file, even if one is present). Log: `[verdict-check] <reviewer> verdict file stale or missing — treating as no-verdict`.
--+     A reviewer with no-verdict is treated as REVISE-unresolved: proceed to the REVISE branch below (with the no-verdict reviewer counted as unresolved).
--+   - Collect all `[reviewer-verdict]` signals from reviewer outputs that passed the mtime check (in `<worktreePath>/.pipeline/context/reviewer-output/`)
--    - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
---   - If ANY reviewer emitted **REVISE** (and none BLOCK):
--+   - If ANY reviewer emitted **REVISE** or yielded no-verdict (and none BLOCK):
--      - If `N < 2`: increment `N` to `N+1`.
--        1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
--        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
+-- [x] **Hook contract documentation** — Stub JSDoc (lines 19-29) clearly documents: parameter types (`unknown`, `object`, `Function|null`), purpose, and return shape. PLAN.md sections "Hook contract" (lines 9-14) and "Source-file detection rule" (lines 16-18) remain the authoritative scope reference. Phase 2 implementer has sufficient surface definition to write the production logic.
+-
+-### Per-criterion verdicts
+-
+-**AC-8a** (create stub `hooks/tdd-guard.js`): **MET** — Stub file exists, exports `runGuard(payload, env, _spawnImpl)` returning `{exitCode: 0, stderr: ''}`. No production logic included (as required for Phase 1 TDD red bar).
+-
+-**AC-8b** (write failing tests in `hooks/tdd-guard.test.mjs`): **MET** — Test file exists with 12 test cases covering all AC-8b enumerated scenarios. Tests will fail against the stub for cases (1-3) — no test file exists, test file green, test file skipped — establishing the intended red bar. All 11 AC-8b-enumerated cases are present; assertions are not removed, tests not marked `.skip`, no test cases deleted (AC-9 constraint pre-validated). Filesystem isolation via tmpdir + cleanup. `_spawnImpl` injection validated for timeout and ENOENT paths.
+-
+-### Verdict
+-
+-**APPROVED** — Phase 1 boundary review passes. All architecture boundaries, contract definitions, and test-surface schemas align with the established FORGE hook integration patterns. The stub provides a valid API surface for Phase 2 implementation. The plan-stage reviewer's REVISE warning about scope ambiguity has been resolved via PLAN.md and stub comments. No violations found.
+-
+diff --git a/.pipeline/context/reviewer-output/reviewer-logic.md b/.pipeline/context/reviewer-output/reviewer-logic.md
+deleted file mode 100644
+index c27cefc6..00000000
+--- a/.pipeline/context/reviewer-output/reviewer-logic.md
++++ /dev/null
+@@ -1,69 +0,0 @@
+-## Logic Review: TDD Guard Hook
+-
+-### Issues
+-
+-- [ ] **Phase ordering: Task 8 tests require stub** — Lines 151, 158: Task 8 AC-8 requires `node --test hooks/tdd-guard.test.mjs` to "exit non-zero with the following test cases failing" immediately after Task 8. But the test file must import `hooks/tdd-guard.js` to unit-test the hook logic. If Task 9 (implementation) hasn't run yet, `require('hooks/tdd-guard.js')` fails and test file cannot even parse. Plan does not address: is there a stub created in Task 8? Or are tests written but not expected to run until Task 9? Or should tests mock the module? The red-bar requirement (exit non-zero) is unachievable without a stub or clarification. **Fix:** Task 8 should either (1) include a sub-step to create `hooks/tdd-guard.js` stub that exports a testable function, (2) state that tests are written but not run during wave 1, or (3) clarify how test file imports the hook when it doesn't exist.
+-
+-- [ ] **Edge case: test file imports non-existent source file** — Lines 116-121: "Failing test exists" decision tree doesn't explicitly address: target `hooks/foo.js` doesn't exist yet (new module), test file exists at `tests/foo.test.js`, and test imports `require('hooks/foo.js')`. `node --test` exits non-zero (module-not-found error, non-zero exit code). Hook treats this as "failing test exists → allow write." Semantically correct for TDD red phase, but plan should confirm this is the intended behavior (vs. failing-closed or raising an error message about missing source file). Currently implicit and not documented in failure modes (lines 134-142).
+-
+-- [ ] **Test file with no tests (empty file)** — Lines 134-142, 151: Test file exists but contains no executable tests (empty file or only helper functions). `node --test` exits 0 (no tests = success). Hook blocks the write. Plan does not explicitly document this scenario. Should clarify: is "no tests" treated as "all green" (block is correct), or should it fail-closed with a message directing agent to write tests? Current logic is correct and conservative, but AC-8 test case #7 (lines 151) should enumerate this.
+-
+-- [ ] **No validation that failing test is about target module** — Lines 116-121: Hook looks for test file by filename mapping (`hooks/foo.js` → `tests/foo.test.js`), then checks `node --test` exit code. If test file contains an unrelated failing test (e.g., leftover broken test for a different module), hook allows write to `foo.js` even though the failing test has no connection to `foo.js`. The plan's test-presence check cannot distinguish "failing test is about target module" from "test file contains any failing test." This is a limitation of the file-path-based mapping approach vs. semantic test-code analysis. Plan should document or accept this as a known limitation (acceptable for v1, could be improved with test-name parsing in v2).
+-
+-- [ ] **Multiple test file matches — no resolution order** — Lines 110-114: "for a target file `hooks/foo.js`, the hook looks for `hooks/foo.test.js` or `tests/foo.test.js` or `scripts/foo.test.mjs`." Plan does not specify: if multiple paths exist, which takes priority? Typical convention: one file per module, but plan should define deterministic behavior (e.g., "check in order: hooks/foo.test.js, then tests/foo.test.js, then scripts/foo.test.mjs; use first match").
+-
+-- [ ] **AC-9 allows pathological passing tests** — Line 158: "All test cases from Task 8 pass" does not prevent implementer from deleting all assertions and marking tests as `.skip`. Tests would execute (exit 0), AC-9 passes, but hook enforces no TDD at all. **Recommend adding to AC-9:** "Test suite must include a minimum of N test cases per scenario (no test file exists, test file exists+all pass, test file exists+at least one fails); each test case includes at least one assertion that would fail if the hook logic is broken."
+-
+-- [ ] **Plan line 105 contains stale/incorrect text** — Line 105: "Coder should still apply a defensive `tool_input.file_path || tool_input.path` extraction to match the existing pattern in `workflow-guard.js`. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)" But line 105 also states "Edit uses `path`" — this is incorrect per research doc Q2 which confirms "Edit uses `file_path`" (not `path`). Edit the plan text at line 105 to remove the false claim, or keep only the defensive fallback comment.
+-
+-### Verified
+-
+-- [x] Bypass mechanism (`TDD_GUARD_BYPASS=1`) aligns with research doc §4.1 pattern and bash-guard.js precedent (env var check) — ✓
+-- [x] `node --test <test-file>` mechanism matches research doc §3.2 / §4.1 recommendation ("the harness, not the agent, runs the tests") — ✓
+-- [x] Fail-open on timeout/crash/ENOENT matches bash-guard.js:456-466 readline+timeout pattern — ✓
+-- [x] Deny envelope shape (JSON + stderr + exit 2) matches bash-guard.js:16-26 pattern — ✓
+-- [x] Three PreToolUse matchers (Write, Edit, MultiEdit) confirmed by research doc (tdd-guard-hook-unknowns.md Q1) — ✓
+-- [x] Both Write and Edit use `file_path` in tool_input confirmed by research doc (tdd-guard-hook-unknowns.md Q2) — ✓
+-- [x] agent-roles.json entry not required for hooks confirmed by research doc (tdd-guard-hook-unknowns.md Q3); Task 11 correctly dropped — ✓
+-- [x] Hook-enforced TDD pattern (lines 116-121) aligns with research doc §6.1 (github.com/nizos/tdd-guard) architecture — ✓
+-- [x] Red+Green collapse prevention (research §3.2) addressed by tdd-guard blocking writes until failing test is observed — ✓
+-
+-### Per-criterion verdicts
+-
+-- **AC-8:** MET — AC-8 specifies seven test cases (block when no test file, block when test passes, allow when test fails, allow on test files themselves, allow when TDD_GUARD_BYPASS=1, fail-open on timeout, fail-open on parse error). Once the phase-ordering issue (Task 8 stub) is resolved, these are measurable. BUT **conditional:** AC-8 text should explicitly enumerate the edge case of test file with no tests (empty file) as test case #8.
+-
+-- **AC-9:** PARTIALLY_MET — AC-9 lists criteria (all tests pass, stdin pattern, deny envelope shape, fail-open) but the "all test cases pass" criterion is too weak (allows assertion deletion). Recommend tightening AC-9 as noted in Issues section.
+-
+-- **AC-10:** MET — AC-10 specifies three matchers (Write, Edit, MultiEdit) and JSON validation. Clear and testable.
+-
+-### Recommended plan edits (if REVISE / BLOCKED)
+-
+-1. **Lines 147-151 (Phase ordering):** Insert a sub-step or clarification in Task 8:
+-   - Option A: "Task 8a: Create stub `hooks/tdd-guard.js` that exports a testable function (minimally: accept stdin, return exit code). Task 8b: Write failing tests that import the stub."
+-   - Option B: "Note: Test cases are written in this wave but *not* expected to pass until Task 9 implementation is complete. Tests will fail to parse/import in wave 1 because the module doesn't exist yet; this is expected and correct for TDD red-bar structure."
+-   - Recommend Option A (stub) for faster feedback loop.
+-
+-2. **Line 105:** Remove or correct the claim about Edit using `path`. Current text:
+-   > "Coder should still apply a defensive `tool_input.file_path || tool_input.path` extraction to match the existing pattern in `workflow-guard.js`. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)"
+-   
+-   Should be:
+-   > "Coder should apply a defensive `tool_input.file_path || toolInput.path` extraction (per `workflow-guard.js:191-194` pattern). Both Write and Edit use `file_path` as primary field (confirmed by research doc Q2); the `|| toolInput.path` fallback is for robustness only."
+-
+-3. **Line 114, Task 10 AC-10:** Expand to enumerate the three matchers explicitly:
+-   > "AC-10: `hooks/hooks.json` contains three new PreToolUse entries matching: `"Write"`, `"Edit"`, and `"MultiEdit"` — all invoking `node "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js"`; JSON validates (`node -e "require('./hooks/hooks.json')"` exits 0)."
+-
+-4. **Line 151, Task 8 AC-8:** Add test case for empty test file:
+-   > "Verify: AC-8: `node --test hooks/tdd-guard.test.mjs` exits non-zero with test cases covering: (1) blocks Write when no test file exists; (2) blocks Write when test file exists but all tests pass (green); (3) blocks Write when test file exists but contains no tests (empty file); (4) allows Write when test file exists and at least one test fails (red); (5) allows Write on test files themselves; (6) allows Write when TDD_GUARD_BYPASS=1; (7) fail-open when node test runner times out; (8) fail-open on hook stdin parse error."
+-
+-5. **Line 158, Task 9 AC-9:** Tighten to prevent assertion-deletion pathology:
+-   > "Verify: AC-9: All test cases from Task 8 pass (`node --test hooks/tdd-guard.test.mjs` exits 0); hook reads stdin via readline+timeout pattern matching bash-guard.js:456-466; deny envelope matches bash-guard.js:16-26 shape; fail-open on timeout/crash. Each test case includes at least one assertion that would fail if the hook exits 0 incorrectly or fails to read/parse stdin correctly. No assertions are deleted or marked `.skip` to achieve passing status."
+-
+-6. **Lines 134-142 (Failure modes table):** Add row for empty test file:
+-   > "| Test file exists but is empty (no test definitions) | Block write — treated as 'all green', same as a file with only skipped tests. Correctly prevents writes when no red phase is observed. |"
+-
+-### Verdict
+-
+-REVISE — six issues identified, most are edge-case clarifications and one is a logical dependency (phase ordering) that requires a clarification or stub-creation step. The core logic is sound and aligned with research, but plan text needs tightening for implementer clarity.
+-
+-- **Blockers:** 1 (phase-ordering Task 8 stub dependency must be resolved to satisfy red-bar requirement)
+-- **Warnings:** 6 (edge cases, AC criteria tightening, text corrections)
+diff --git a/.pipeline/context/reviewer-output/reviewer-safety.md b/.pipeline/context/reviewer-output/reviewer-safety.md
+deleted file mode 100644
+index 4806cd2d..00000000
+--- a/.pipeline/context/reviewer-output/reviewer-safety.md
++++ /dev/null
+@@ -1,22 +0,0 @@
+-# Safety Review: TDD Guard Hook (Phase 1)
+-
+-## Issues
+-- [ ] None identified.
+-
+-## Verified
+-- [x] **Shell injection** — No subprocess spawning in Phase 1 stub. Tests inject `_spawnImpl` as explicit third positional arg (not derivable from stdin/env); injection point is test-only and cannot be triggered from production.
+-- [x] **Secrets and credentials** — No API keys, tokens, or credentials hardcoded. `TDD_GUARD_BYPASS` env var is plaintext flag, not a secret. No credential leakage to disk or logs.
+-- [x] **Content injection** — Stub does not parse, render, or process payload content. Tests construct synthetic payloads within `os.tmpdir()` isolation. No user-supplied content reaches markup or display surfaces. No INJECTION-WARNING markers found in project research files.
+-- [x] **File system safety** — All test writes scoped to `os.tmpdir()` via `mkdtemp(path.join(os.tmpdir(), 'tdd-guard-test-'))`. Zero project-root writes. All cleanup via `fs.rm(dir, { recursive: true, force: true })` in try/finally blocks (tests 1–9, 11; tests 10, 10b create no temp dirs). Path construction uses `path.join()` — no traversal risk. All test files remain isolated outside project tree.
+-- [x] **Input validation** — Stub accepts unknown payload, env object, optional _spawnImpl function. Tests pass null, empty object, and missing tool_input — stub correctly returns `{exitCode: 0}` for all cases. No dynamic code execution on external data. Payload parsing deferred to Phase 2.
+-- [x] **Trust boundary (test API)** — `_spawnImpl` is explicit third positional arg, not env-var or property. Cannot be supplied from PreToolUse JSON stdin. Tests use injection only for timeout/ENOENT simulation (cases 9, 11). No side-channel to production code path.
+-- [x] **Env-var naming and collision** — `TDD_GUARD_BYPASS` checked against `hook-utils.js`, `bash-guard.js`, and active hooks. No collision found. Does not conflict with existing FORGE env vars (FORGE_*, CLAUDE_*). Naming follows session-toggle pattern from research doc.
+-- [x] **Test file leakage** — `makeTempProject()` uses `os.tmpdir()` isolation; `removeTempProject()` called in try/finally in all 11 cases (tests 10/10b have no temp dir, no cleanup needed). All created files destroyed on test completion. Zero test artifacts left behind on test runner exit or test failure.
+-
+-## Per-criterion verdicts
+-
+-- AC-8a: MET — `hooks/tdd-guard.js` exists, exports `runGuard(payload, env, _spawnImpl)` returning `{exitCode: 0, stderr: ''}`, stub body unconditional.
+-- AC-8b: MET — `hooks/tdd-guard.test.mjs` contains 12 test cases (test cases 1–11, plus 10b variant). Test cases 1–3 expected to fail against stub (red bar); test cases 4–11 expected to pass. Each test uses proper cleanup and isolation. All assertions present and unchanged.
+-
+-## Verdict
+-APPROVED — no safety issues found. Phase 1 stub and test suite are well-isolated, properly cleaned up, and introduce zero production risk. All file-system operations, input handling, and process-spawning safety concerns are correctly scoped to Phase 2 implementation.
+diff --git a/hooks/hooks.json b/hooks/hooks.json
+index 06094b91..ddfd48b6 100644
+--- a/hooks/hooks.json
++++ b/hooks/hooks.json
+@@ -269,6 +269,33 @@
+           }
+         ]
+       },
++      {
++        "matcher": "Write",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js\""
++          }
++        ]
++      },
++      {
++        "matcher": "Edit",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js\""
++          }
++        ]
++      },
++      {
++        "matcher": "MultiEdit",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js\""
++          }
++        ]
++      },
+       {
+         "matcher": "Agent",
+         "hooks": [
 diff --git a/hooks/tdd-guard.js b/hooks/tdd-guard.js
-new file mode 100644
-index 00000000..52d84c83
---- /dev/null
+index 52d84c83..1a945780 100644
+--- a/hooks/tdd-guard.js
 +++ b/hooks/tdd-guard.js
-@@ -0,0 +1,41 @@
-+'use strict';
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-// tdd-guard.js — PreToolUse hook stub (Phase 1 / TDD red-bar scaffold)
++// tdd-guard.js — PreToolUse hook (Phase 2 implementation)
+ //
+ // Scope note: this hook intentionally uses a NARROWER, ADDITIVE rule compared
+ // to hooks/workflow-guard.js. workflow-guard.js excludes /hooks/, /bin/, /mcp/
+@@ -10,16 +10,163 @@
+ // and /scripts/ are IN scope here. The two hooks serve different policies and
+ // are intentionally disjoint in their source-file detection rules.
+ // (See PLAN.md "reviewer-boundary warning — source-file detection scope" resolution.)
+-//
+-// This stub exports runGuard() returning {exitCode: 0} unconditionally.
+-// Phase 2 will replace the stub body with full TDD guard logic.
+-// The function signature and the _spawnImpl injection point are intentional API
+-// surface — do not remove them.
 +
-+// tdd-guard.js — PreToolUse hook stub (Phase 1 / TDD red-bar scaffold)
-+//
-+// Scope note: this hook intentionally uses a NARROWER, ADDITIVE rule compared
-+// to hooks/workflow-guard.js. workflow-guard.js excludes /hooks/, /bin/, /mcp/
-+// from its isSourceFile check because it gates end-of-pipeline workflow steps
-+// (apply-stage commit signals). tdd-guard.js gates *every* Write/Edit/MultiEdit
-+// on plugin source code regardless of pipeline stage — so /hooks/, /bin/, /mcp/,
-+// and /scripts/ are IN scope here. The two hooks serve different policies and
-+// are intentionally disjoint in their source-file detection rules.
-+// (See PLAN.md "reviewer-boundary warning — source-file detection scope" resolution.)
-+//
-+// This stub exports runGuard() returning {exitCode: 0} unconditionally.
-+// Phase 2 will replace the stub body with full TDD guard logic.
-+// The function signature and the _spawnImpl injection point are intentional API
-+// surface — do not remove them.
++const readline = require('readline');
++const path = require('path');
++const fs = require('fs');
++const { spawn } = require('child_process');
++const { STDIN_TIMEOUT_LONG } = require('./hook-utils');
+ 
+ /**
+  * @typedef {{ exitCode: number, stderr: string }} GuardResult
+  */
+ 
++// Dirs that tdd-guard covers (narrower than workflow-guard which EXCLUDES these).
++const GUARDED_DIRS = ['hooks', 'bin', 'scripts', 'mcp'];
++
++// Patterns that identify test files by name.
++const TEST_FILE_RE = /(?:\.test\.[cm]?js|\.test\.mjs|-test\.[cm]?js|-test\.mjs)$/;
 +
 +/**
-+ * @typedef {{ exitCode: number, stderr: string }} GuardResult
++ * Returns true if the given relative or absolute path segment is under a tests dir.
++ * @param {string} filePath
 + */
++function isTestDir(filePath) {
++  const parts = filePath.split(/[\\/]/);
++  return parts.includes('__tests__') || parts.includes('tests');
++}
 +
 +/**
-+ * Run the TDD guard check against the given PreToolUse payload.
-+ *
-+ * @param {unknown} payload  - Parsed stdin JSON payload from Claude Code
-+ * @param {object}  env      - Environment variables (defaults to process.env)
-+ * @param {Function|null} _spawnImpl - Optional spawn override for testing timeout/ENOENT paths
-+ * @returns {Promise<GuardResult>}
++ * Returns true if the file path should be treated as a test file (exempt from guard).
++ * @param {string} filePath
 + */
-+async function runGuard(payload, env = process.env, _spawnImpl = null) {
-+  // STUB: unconditionally allow. Phase 2 implements the real guard logic.
-+  // Tests for block cases (1, 2, 3) will fail against this stub — that is the
-+  // intended red bar for TDD Phase 1.
-+  void payload;
-+  void env;
-+  void _spawnImpl;
-+  return { exitCode: 0, stderr: '' };
++function isTestFile(filePath) {
++  return TEST_FILE_RE.test(filePath) || isTestDir(filePath);
 +}
 +
-+module.exports = { runGuard };
-diff --git a/hooks/tdd-guard.test.mjs b/hooks/tdd-guard.test.mjs
-new file mode 100644
-index 00000000..fcd0cf78
---- /dev/null
-+++ b/hooks/tdd-guard.test.mjs
-@@ -0,0 +1,296 @@
 +/**
-+ * tdd-guard.test.mjs — Failing tests for hooks/tdd-guard.js (TDD Phase 1 red bar)
-+ *
-+ * Tests call runGuard(payload, env, _spawnImpl) directly — the exported function
-+ * is the unit under test, not the CLI bootstrap.
-+ *
-+ * Design decisions:
-+ * - _spawnImpl injection: runGuard accepts an optional third arg for the spawn
-+ *   implementation. For timeout/ENOENT tests (cases 9, 11) we inject a fake
-+ *   that either hangs indefinitely or throws ENOENT. This keeps tests fast and
-+ *   deterministic without OS-level process spawning. The injection point is
-+ *   an explicit third arg (not an env var) to keep the production path clean.
-+ * - Filesystem isolation: each test that exercises filesystem-dependent behaviour
-+ *   creates its own tmpdir via os.tmpdir() + mkdtemp and cleans up afterward.
-+ * - Block cases (1, 2, 3) fail against the stub because the stub returns exitCode 0
-+ *   but the tests assert exitCode === 2. Allow cases (4-11) pass against the stub
-+ *   because the stub returns 0 and those tests assert exitCode === 0.
-+ *   The three failing block cases establish the TDD red bar.
++ * Returns true if the file is under one of the guarded source dirs relative to cwd.
++ * @param {string} filePath  - absolute path
++ * @param {string} cwd       - project root
 + */
-+
-+import { describe, test, before, after, beforeEach, afterEach } from 'node:test';
-+import assert from 'node:assert/strict';
-+import fs from 'node:fs/promises';
-+import path from 'node:path';
-+import os from 'node:os';
-+import { createRequire } from 'node:module';
-+
-+// Load the stub via CommonJS require (hook is 'use strict' CJS)
-+const require = createRequire(import.meta.url);
-+const { runGuard } = require('./tdd-guard.js');
-+
-+// ---------------------------------------------------------------------------
-+// Helpers
-+// ---------------------------------------------------------------------------
-+
-+/** Build a minimal Write payload targeting the given absolute file path. */
-+function writePayload(filePath, cwd) {
-+  return {
-+    tool_name: 'Write',
-+    tool_input: { file_path: filePath },
-+    cwd: cwd ?? path.dirname(filePath),
-+  };
++function isGuardedSourceFile(filePath, cwd) {
++  const rel = path.relative(cwd, filePath);
++  // Reject absolute-path escapes and parent traversal
++  if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
++  const topDir = rel.split(/[\\/]/)[0];
++  return GUARDED_DIRS.includes(topDir);
 +}
 +
-+/** Create a temp dir with the given relative files populated with given content. */
-+async function makeTempProject(files = {}) {
-+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tdd-guard-test-'));
-+  for (const [rel, content] of Object.entries(files)) {
-+    const full = path.join(dir, rel);
-+    await fs.mkdir(path.dirname(full), { recursive: true });
-+    await fs.writeFile(full, content, 'utf8');
++/**
++ * Check if filePath matches any line in .tddguardignore (exact relative-path match).
++ * Lines starting with # or blank lines are skipped.
++ * v1: exact string equality on relative path (glob matching deferred to v2).
++ * @param {string} filePath
++ * @param {string} cwd
++ * @returns {boolean}
++ */
++function isIgnored(filePath, cwd) {
++  const ignorePath = path.join(cwd, '.tddguardignore');
++  let content;
++  try {
++    content = fs.readFileSync(ignorePath, 'utf8');
++  } catch {
++    return false;
 +  }
-+  return dir;
++  const rel = path.relative(cwd, filePath).replace(/\\/g, '/');
++  for (const line of content.split('\n')) {
++    const pattern = line.trim();
++    if (!pattern || pattern.startsWith('#')) continue;
++    // v1: exact relative-path match (documented simplification — glob in v2)
++    if (pattern === rel) return true;
++  }
++  return false;
 +}
 +
-+/** Remove a temp dir created by makeTempProject. */
-+async function removeTempProject(dir) {
-+  await fs.rm(dir, { recursive: true, force: true });
++/**
++ * Resolve the test file for a given source file, using the deterministic order:
++ *   1. Adjacent: <dir>/<name>.test.js or <dir>/<name>.test.mjs
++ *   2. Sibling tests dir: <projectRoot>/tests/<name>.test.js or .test.mjs
++ *   3. <dir>/__tests__/<name>.test.js or .test.mjs
++ * Returns the first path that exists on disk, or null.
++ * @param {string} filePath  - absolute source path
++ * @param {string} cwd       - project root
++ * @returns {string|null}
++ */
++function resolveTestFile(filePath, cwd) {
++  const dir = path.dirname(filePath);
++  const name = path.basename(filePath).replace(/\.[cm]?js$/, '');
++
++  const candidates = [
++    path.join(dir, `${name}.test.js`),
++    path.join(dir, `${name}.test.mjs`),
++    path.join(cwd, 'tests', `${name}.test.js`),
++    path.join(cwd, 'tests', `${name}.test.mjs`),
++    path.join(dir, '__tests__', `${name}.test.js`),
++    path.join(dir, '__tests__', `${name}.test.mjs`),
++  ];
++
++  for (const candidate of candidates) {
++    try {
++      fs.accessSync(candidate);
++      return candidate;
++    } catch {
++      // not found — try next
++    }
++  }
++  return null;
 +}
 +
-+// ---------------------------------------------------------------------------
-+// Test case (1): blocks Write when no test file exists for target
-+// ---------------------------------------------------------------------------
-+test('(1) blocks Write when no test file exists for target source file', async () => {
-+  const dir = await makeTempProject({
-+    // Target source file exists but no adjacent test file
-+    'hooks/foo.js': '// source',
-+  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'foo.js'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must block (exitCode 2) — stub returns 0 so this assertion will FAIL against stub
-+    assert.equal(result.exitCode, 2, 'should block when no test file exists');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (2): blocks Write when test file exists but all tests pass (green)
-+// ---------------------------------------------------------------------------
-+test('(2) blocks Write when test file exists but all tests pass (green)', async () => {
-+  const dir = await makeTempProject({
-+    'hooks/bar.js': '// source',
-+    // A test file where all tests pass — node --test will exit 0
-+    'hooks/bar.test.mjs': `
-+import { test } from 'node:test';
-+import assert from 'node:assert/strict';
-+test('passing test', () => { assert.ok(true); });
-+`,
-+  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'bar.js'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must block (exitCode 2) — stub returns 0 so this assertion will FAIL against stub
-+    assert.equal(result.exitCode, 2, 'should block when all tests are green');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (3): blocks Write when test file exists but contains zero executing tests
-+// ---------------------------------------------------------------------------
-+test('(3) blocks Write when test file contains only skipped tests', async () => {
-+  const dir = await makeTempProject({
-+    'hooks/baz.js': '// source',
-+    // Test file with only .skip — node --test exits 0 with no executing tests
-+    'hooks/baz.test.mjs': `
-+import { test } from 'node:test';
-+test.skip('skipped test', () => {});
-+`,
-+  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'baz.js'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must block (exitCode 2) — stub returns 0 so this assertion will FAIL against stub
-+    assert.equal(result.exitCode, 2, 'should block when test file has no executing tests');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (4): allows Write when test file exists and at least one test fails (red)
-+// ---------------------------------------------------------------------------
-+test('(4) allows Write when test file has at least one failing test (red bar confirmed)', async () => {
-+  const dir = await makeTempProject({
-+    'hooks/qux.js': '// source',
-+    // Test file with a failing assertion — node --test exits non-zero
-+    'hooks/qux.test.mjs': `
-+import { test } from 'node:test';
-+import assert from 'node:assert/strict';
-+test('failing test', () => { assert.equal(1, 2, 'intentionally failing'); });
-+`,
-+  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'qux.js'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must allow (exitCode 0)
-+    assert.equal(result.exitCode, 0, 'should allow when a failing test confirms red bar');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (5): allows Write when test file imports not-yet-existing source module
-+// ---------------------------------------------------------------------------
-+test('(5) allows Write when test file imports not-yet-existing source module (module-not-found = red)', async () => {
-+  const dir = await makeTempProject({
-+    // Source file does NOT exist yet (first write scenario)
-+    // Test file tries to import the not-yet-existing source — node --test exits non-zero
-+    'hooks/newmod.test.mjs': `
-+import './newmod.js'; // will throw MODULE_NOT_FOUND
-+import { test } from 'node:test';
-+test('placeholder', () => {});
-+`,
-+  });
-+  try {
-+    // Payload targets the not-yet-existing source file
-+    const payload = writePayload(path.join(dir, 'hooks', 'newmod.js'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must allow (exitCode 0) — module-not-found exit non-zero counts as red bar
-+    assert.equal(result.exitCode, 0, 'should allow when test imports a not-yet-existing module');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (6): allows Write on test files themselves
-+// ---------------------------------------------------------------------------
-+test('(6) allows Write on test files themselves (*.test.mjs)', async () => {
-+  const dir = await makeTempProject({
-+    'hooks/somehook.js': '// source',
-+  });
-+  try {
-+    // Target is a test file — should be exempt
-+    const payload = writePayload(path.join(dir, 'hooks', 'somehook.test.mjs'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must allow (exitCode 0)
-+    assert.equal(result.exitCode, 0, 'should allow writes to test files');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (7): allows Write when TDD_GUARD_BYPASS=1 (checked before stdin parsing)
-+// ---------------------------------------------------------------------------
-+test('(7) allows Write when TDD_GUARD_BYPASS=1, even with malformed payload', async () => {
-+  // Pass null as payload — would fail parsing/extraction in a strict implementation.
-+  // Bypass must be evaluated BEFORE payload is inspected.
-+  const result = await runGuard(null, { TDD_GUARD_BYPASS: '1' });
-+  // Must allow (exitCode 0)
-+  assert.equal(result.exitCode, 0, 'bypass=1 should allow even with null payload');
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (8): allows Write when path matches a .tddguardignore glob
-+// ---------------------------------------------------------------------------
-+test('(8) allows Write when path matches a .tddguardignore glob', async () => {
-+  const dir = await makeTempProject({
-+    // Source file in hooks/ but no adjacent test
-+    'hooks/legacy.js': '// legacy source with no tests',
-+    // .tddguardignore lists the pattern
-+    '.tddguardignore': 'hooks/legacy.js\n',
-+  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'legacy.js'), dir);
-+    const result = await runGuard(payload, {});
-+    // Must allow (exitCode 0) — path is ignored
-+    assert.equal(result.exitCode, 0, 'should allow write for .tddguardignore-matched path');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
-+
-+// ---------------------------------------------------------------------------
-+// Test case (9): fail-open when node --test times out
-+// ---------------------------------------------------------------------------
-+test('(9) fail-open (allow) when node --test times out', async () => {
-+  const dir = await makeTempProject({
-+    'hooks/slow.js': '// source',
-+    'hooks/slow.test.mjs': 'import { test } from "node:test"; test("x", () => {});',
-+  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'slow.js'), dir);
-+
-+    // Inject a spawn implementation that simulates a timeout:
-+    // returns an object whose promise never resolves (until killed).
-+    // The hook must detect timeout and fail-open.
-+    const timeoutSpawn = () => {
-+      // Returns a fake child process that never emits 'close'
-+      const fakeChild = {
-+        stdout: null,
-+        stderr: null,
-+        on: () => fakeChild,
-+        kill: () => {},
-+        // A promise that represents the "never-resolving" test run
-+        _exitPromise: new Promise(() => {}), // never resolves
-+      };
-+      return fakeChild;
++/**
++ * Spawn `node --test <testFile>` and return the exit code.
++ * Returns 'TIMEOUT' on timeout, 'SPAWN_ERROR' on ENOENT/throw.
++ * @param {string} testFile
++ * @param {Function} spawnImpl
++ * @returns {Promise<number|'TIMEOUT'|'SPAWN_ERROR'>}
++ */
++function runNodeTest(testFile, spawnImpl) {
++  return new Promise((resolve) => {
++    let settled = false;
++    const finish = (result) => {
++      if (!settled) {
++        settled = true;
++        resolve(result);
++      }
 +    };
 +
-+    const result = await runGuard(payload, {}, timeoutSpawn);
-+    // Must fail-open (exitCode 0) on timeout
-+    assert.equal(result.exitCode, 0, 'should fail-open when test runner times out');
-+  } finally {
-+    await removeTempProject(dir);
-+  }
-+});
++    let child;
++    try {
++      // Strip NODE_TEST_CONTEXT so the child runs as a top-level test process
++      // and propagates exit codes normally (1 on failing test, 0 on green).
++      // Without this, when tdd-guard.test.mjs is itself run under `node --test`,
++      // the child inherits NODE_TEST_CONTEXT=child-v8 and behaves as a test
++      // worker — suppressing exit-code propagation (always exits 0).
++      const childEnv = { ...process.env };
++      delete childEnv.NODE_TEST_CONTEXT;
++      // Use process.execPath so the correct node binary is found regardless of PATH
++      child = spawnImpl(process.execPath, ['--test', testFile], { stdio: 'ignore', env: childEnv });
++    } catch {
++      // ENOENT or similar — fail-open
++      return finish('SPAWN_ERROR');
++    }
 +
-+// ---------------------------------------------------------------------------
-+// Test case (10): fail-open on hook stdin parse error (malformed/missing payload)
-+// ---------------------------------------------------------------------------
-+test('(10) fail-open when payload is malformed (null)', async () => {
-+  // Passing null simulates a stdin parse error where payload extraction fails.
-+  // The hook must fail-open.
-+  const result = await runGuard(null, {});
-+  // Must fail-open (exitCode 0)
-+  assert.equal(result.exitCode, 0, 'should fail-open on null/malformed payload');
-+});
++    const timer = setTimeout(() => {
++      try { child.kill && child.kill(); } catch { /* ignore kill errors */ }
++      finish('TIMEOUT');
++    }, 2000);
 +
-+test('(10b) fail-open when payload has no tool_input', async () => {
-+  const result = await runGuard({}, {});
-+  // Must fail-open or allow (exitCode 0)
-+  assert.equal(result.exitCode, 0, 'should fail-open when tool_input is missing');
-+});
++    child.on('close', (code) => {
++      clearTimeout(timer);
++      finish(typeof code === 'number' ? code : 1);
++    });
 +
-+// ---------------------------------------------------------------------------
-+// Test case (11): fail-open when spawn throws ENOENT (node not on PATH)
-+// ---------------------------------------------------------------------------
-+test('(11) fail-open when spawn throws ENOENT (node not on PATH)', async () => {
-+  const dir = await makeTempProject({
-+    'hooks/node-missing.js': '// source',
-+    'hooks/node-missing.test.mjs': 'import { test } from "node:test"; test("x", () => {});',
++    child.on('error', () => {
++      clearTimeout(timer);
++      finish('SPAWN_ERROR');
++    });
 +  });
-+  try {
-+    const payload = writePayload(path.join(dir, 'hooks', 'node-missing.js'), dir);
++}
 +
-+    // Inject a spawn implementation that throws ENOENT synchronously
-+    const enoentSpawn = () => {
-+      const err = new Error('spawn node ENOENT');
-+      err.code = 'ENOENT';
-+      throw err;
-+    };
-+
-+    const result = await runGuard(payload, {}, enoentSpawn);
-+    // Must fail-open (exitCode 0) when spawn fails with ENOENT
-+    assert.equal(result.exitCode, 0, 'should fail-open when spawn throws ENOENT');
-+  } finally {
-+    await removeTempProject(dir);
+ /**
+  * Run the TDD guard check against the given PreToolUse payload.
+  *
+@@ -29,13 +176,123 @@
+  * @returns {Promise<GuardResult>}
+  */
+ async function runGuard(payload, env = process.env, _spawnImpl = null) {
+-  // STUB: unconditionally allow. Phase 2 implements the real guard logic.
+-  // Tests for block cases (1, 2, 3) will fail against this stub — that is the
+-  // intended red bar for TDD Phase 1.
+-  void payload;
+-  void env;
+-  void _spawnImpl;
++  // (a) Bypass first — checked before any payload inspection
++  if (env.TDD_GUARD_BYPASS === '1') {
++    return { exitCode: 0, stderr: '' };
 +  }
-+});
++
++  // (b) Defensive payload extraction — fail-open on missing/invalid payload
++  if (!payload || typeof payload !== 'object') {
++    return { exitCode: 0, stderr: '' };
++  }
++  const toolInput = payload.tool_input;
++  if (!toolInput || typeof toolInput !== 'object') {
++    return { exitCode: 0, stderr: '' };
++  }
++  const filePath = toolInput.file_path || toolInput.path;
++  const cwd = payload.cwd;
++  if (!filePath || typeof filePath !== 'string' || !cwd || typeof cwd !== 'string') {
++    return { exitCode: 0, stderr: '' };
++  }
++
++  // (c) Test-file exemption — always allow writes to test files
++  if (isTestFile(filePath)) {
++    return { exitCode: 0, stderr: '' };
++  }
++
++  // (d) Source-file detection — only intercept guarded dirs
++  if (!isGuardedSourceFile(filePath, cwd)) {
++    return { exitCode: 0, stderr: '' };
++  }
++
++  // (e) .tddguardignore glob match (v1: exact relative-path equality)
++  if (isIgnored(filePath, cwd)) {
++    return { exitCode: 0, stderr: '' };
++  }
++
++  // (f) Test-file resolution — deterministic order, first match wins
++  const testFile = resolveTestFile(filePath, cwd);
++  if (!testFile) {
++    const msg = [
++      `TDD Guard: no test file found for ${path.relative(cwd, filePath)}.`,
++      'Write a failing test first, then re-attempt this edit.',
++      '(v1 note: any failing test in the resolved test file counts — hook cannot verify the test is semantically about this module.)',
++    ].join(' ');
++    return { exitCode: 2, stderr: msg };
++  }
++
++  // (g) Run the test file
++  const spawnImpl = _spawnImpl || spawn;
++  const exitResult = await runNodeTest(testFile, spawnImpl);
++
++  // Fail-open on timeout or spawn error
++  if (exitResult === 'TIMEOUT' || exitResult === 'SPAWN_ERROR') {
++    const warn = exitResult === 'TIMEOUT'
++      ? 'TDD Guard: test runner timed out — failing open (allowing write).'
++      : 'TDD Guard: could not spawn node (ENOENT?) — failing open (allowing write).';
++    return { exitCode: 0, stderr: warn };
++  }
++
++  if (exitResult === 0) {
++    // All tests green (or no executing tests) — block
++    const msg = [
++      `TDD Guard: test file ${path.relative(cwd, testFile)} has no failing tests (exit 0).`,
++      'Ensure at least one test is failing (red bar) before writing source.',
++      '(v1 note: this hook checks any failing test in the resolved test file; v1 cannot semantically verify the failing test is *about* the target module.)',
++    ].join(' ');
++    return { exitCode: 2, stderr: msg };
++  }
++
++  // Non-zero exit ⇒ failing test exists ⇒ allow
+   return { exitCode: 0, stderr: '' };
+ }
+ 
+ module.exports = { runGuard };
++
++// ---------------------------------------------------------------------------
++// CLI bootstrap — only when invoked directly (not when require()'d by tests)
++// ---------------------------------------------------------------------------
++if (require.main === module) {
++  let inputData = '';
++
++  const timer = setTimeout(() => {
++    runGuard(tryParse(inputData), process.env)
++      .then(handleResult)
++      .catch(() => process.exit(0));
++  }, STDIN_TIMEOUT_LONG);
++
++  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
++  rl.on('line', (line) => { inputData += line + '\n'; });
++  rl.on('close', () => {
++    clearTimeout(timer);
++    runGuard(tryParse(inputData), process.env)
++      .then(handleResult)
++      .catch(() => process.exit(0));
++  });
++
++  function tryParse(raw) {
++    try {
++      return JSON.parse(raw || '{}');
++    } catch {
++      return {};
++    }
++  }
++
++  function handleResult(result) {
++    if (result.exitCode === 2) {
++      process.stdout.write(
++        JSON.stringify({
++          hookSpecificOutput: {
++            hookEventName: 'PreToolUse',
++            permissionDecision: 'deny',
++            permissionDecisionReason: result.stderr,
++          },
++        }) + '\n'
++      );
++      console.error(result.stderr);
++      process.exit(2);
++    } else {
++      process.exit(0);
++    }
++  }
++}
