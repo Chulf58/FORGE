@@ -117,7 +117,17 @@ Based on `hooks/workflow-guard.js:14-31` (`isSourceFile` function), which explic
 
 **Option (a): run the test file** — confirmed by research doc §4.1 (tdd-agentic-llm-setups.md:92-96): "Test reporter integration parses Vitest/Jest/pytest/etc. results. File-pattern validation: rule says 'edits to `src/foo.py` require a failing test in `tests/test_foo.py`.'" Research doc §3.1 (tdd-agentic-llm-setups.md:44-46) states: "the harness, not the agent, runs the tests; the harness, not the agent, decides green/red." Option (a) is the research-recommended mechanism.
 
-Concrete: for a target file `hooks/foo.js`, the hook looks for `hooks/foo.test.js` or `tests/foo.test.js` or `scripts/foo.test.mjs`. If found, runs `node --test <test-file>` with a short timeout. If the test runner exits non-zero, a failing test exists — allow the write. If exits 0 (all tests pass), block — no red phase. If test file absent — block with a message directing the agent to write a failing test first.
+Concrete: for a target file `hooks/foo.js`, the hook resolves a test file in this **deterministic order** (first match wins):
+  1. Adjacent: `<dir>/<name>.test.js` or `<dir>/<name>.test.mjs` (e.g., `hooks/foo.test.js`)
+  2. Sibling tests dir: `tests/<name>.test.js` or `tests/<name>.test.mjs`
+  3. `__tests__/<name>.test.js` under the same directory
+
+If found, runs `node --test <test-file>` with a short timeout. Decision tree:
+  - Exit non-zero ⇒ a failing test exists ⇒ **allow** the write (TDD red phase confirmed). This includes the case where the test file imports a not-yet-existing source module (module-not-found ⇒ non-zero exit ⇒ valid red bar for the very-first write).
+  - Exit 0 ⇒ all tests green OR no tests defined ⇒ **block** — no red phase observed.
+  - Test file absent ⇒ **block** with a message directing the agent to write a failing test first.
+
+**Known v1 limitation:** the hook cannot semantically verify that the failing test is *about* the target module — any failing test in the resolved test file counts. This is acceptable for v1 (file-path mapping); a v2 could parse test names. Document this in the deny message so agents understand the contract.
 
 **Option (b) mtime:** rejected — research doc §3.3 (tdd-agentic-llm-setups.md:52-54) flags "tests that pass before implementation" as a failure mode that mtime cannot detect. A newer-than-source test file may contain only green tests.
 
@@ -140,22 +150,30 @@ Env var `TDD_GUARD_BYPASS=1` — matches the session-toggle pattern described in
 | Hook itself crashes / unhandled exception | Fail-open: `.catch(() => process.exit(0))` wraps main (same pattern as `bash-guard.js:466`) |
 | Timeout (>2 s) | Fail-open: log warning, allow write |
 | No test file found | Fail-closed: block write, message directs agent to write failing test first |
+| Test file exists but contains zero test definitions (empty / only `.skip`) | Fail-closed: `node --test` exits 0 ⇒ treated as "all green" ⇒ **block**. Message: "test file has no executing tests — write a failing test first." |
+| Test file imports not-yet-existing source module | Allow: module-not-found exits non-zero ⇒ counts as red bar (correct behavior for first-write TDD scaffold). |
 | TDD_GUARD_BYPASS=1 | Fail-open: skip all checks, allow write |
+| `.tddguardignore` glob match | Fail-open: skip checks for paths matched by glob; treated as a deliberate opt-out for documented exceptions. |
 
 ---
 
 #### Phase 1 — Test cases for the hook (written first — TDD structure)
 
-- [ ] 8. Write failing tests for `hooks/tdd-guard.js` (`hooks/tdd-guard.test.mjs`) (wave: 1)
-  Intent: Establish the red bar for the hook itself — tests must fail before any production code is written, satisfying the TDD-structured requirement.
-  Verify: AC-8: `node --test hooks/tdd-guard.test.mjs` exits non-zero with the following test cases failing: (1) blocks Write when no test file exists for target; (2) blocks Write when test file exists but all tests pass (green); (3) allows Write when test file exists and at least one test fails (red); (4) allows Write on test files themselves; (5) allows Write when TDD_GUARD_BYPASS=1; (6) fail-open when node test runner times out; (7) fail-open on hook parse error.
+- [ ] 8a. Create minimal stub `hooks/tdd-guard.js` (wave: 1)
+  Intent: Provide an importable module so Task 8b's tests can be authored against a real (but un-implemented) surface. Resolves reviewer-logic phase-ordering blocker — without a stub, `node --test hooks/tdd-guard.test.mjs` would fail with a module-load error rather than meaningful red-bar assertions.
+  Verify: AC-8a: `hooks/tdd-guard.js` exists and exports the symbols the tests will exercise (e.g., `runGuard(payload, env): Promise<{exitCode, stderr}>`). The stub returns `exitCode: 0` unconditionally so that Task 8b's failure tests fail for the *right reason* (assertion mismatch, not import error). No production logic in the stub.
+
+- [ ] 8b. Write failing tests for `hooks/tdd-guard.js` (`hooks/tdd-guard.test.mjs`) (wave: 1)
+  Depends: 8a
+  Intent: Establish the red bar for the hook itself — tests must fail because the stub returns the wrong answer, satisfying the TDD-structured requirement (research doc §3.2).
+  Verify: AC-8b: `node --test hooks/tdd-guard.test.mjs` exits non-zero with the following test cases failing against the stub: (1) blocks Write when no test file exists for target; (2) blocks Write when test file exists but all tests pass (green); (3) blocks Write when test file exists but contains zero executing tests (empty / only `.skip`); (4) allows Write when test file exists and at least one test fails (red); (5) allows Write when test file imports not-yet-existing source module (module-not-found ⇒ non-zero exit); (6) allows Write on test files themselves; (7) allows Write when `TDD_GUARD_BYPASS=1` (bypass is checked **before** stdin parsing so a malformed payload + bypass still allows); (8) allows Write when path matches a `.tddguardignore` glob; (9) fail-open when `node --test` times out; (10) fail-open on hook stdin parse error; (11) fail-open when `spawn` throws ENOENT (node not on PATH). Each test case has at least one assertion; no `.skip`; no test deletion permitted to satisfy AC-9.
 
 #### Phase 2 — Hook implementation
 
 - [ ] 9. Implement `hooks/tdd-guard.js` (`hooks/tdd-guard.js`) (wave: 2)
-  Depends: 8
+  Depends: 8a, 8b
   Intent: Enforce the Red phase by blocking source-file writes until a failing test for the target module is observed, closing the Red+Green collapse failure mode documented in tdd-agentic-llm-setups.md:48-50.
-  Verify: AC-9: All test cases from Task 8 pass (`node --test hooks/tdd-guard.test.mjs` exits 0); hook reads stdin via readline+timeout pattern matching bash-guard.js:456-466; deny envelope matches bash-guard.js:16-26 shape; fail-open on timeout/crash.
+  Verify: AC-9: All test cases from Task 8b pass (`node --test hooks/tdd-guard.test.mjs` exits 0) **without removing assertions, marking tests `.skip`, or deleting test cases authored in Task 8b**. The 11 test cases enumerated in AC-8b must all be present and execute at least one assertion each. Hook reads stdin via readline+timeout pattern matching bash-guard.js:456-466; deny envelope matches bash-guard.js:16-26 shape; fail-open on timeout/crash. Bypass evaluated before stdin parsing.
 
 - [ ] 10. Register hook in `hooks/hooks.json` (`hooks/hooks.json`) (wave: 3)
   Depends: 9
@@ -175,6 +193,28 @@ Researcher (`docs/RESEARCH/tdd-guard-hook-unknowns.md`) and gotcha-checker concu
 1. **MultiEdit is a distinct PreToolUse event.** Task 10 AC-10 updated to require three matchers (`Write`, `Edit`, `MultiEdit`).
 2. **Both Write and Edit use `tool_input.file_path`** (not `path`). Hook-contract section updated; coder should keep the defensive `file_path || path` fallback that `workflow-guard.js:191-194` uses.
 3. **agent-roles.json entry is not required for hook processes.** Task 11 dropped (hooks have no `agent_type`; `ctx-pre-tool.js:93-94` short-circuits without one).
+
+### Resolution of plan-stage reviewer verdicts
+
+Plan-stage reviewers returned REVISE — `reviewer-boundary` 1 warning, `reviewer-logic` 1 blocker + 6 warnings. Verdict files: `.pipeline/context/reviewer-output/reviewer-boundary.md`, `.pipeline/context/reviewer-output/reviewer-logic.md`. Conductor decisions follow; implementer should treat these as authoritative AC supplements.
+
+**reviewer-logic BLOCKER — Task 8 phase ordering:** Tests in the original Task 8 cannot fail meaningfully without an importable stub. Resolution applied: Task 8 split into **Task 8a** (create stub `hooks/tdd-guard.js` exporting `runGuard(payload, env)` returning `{exitCode: 0}` unconditionally) and **Task 8b** (write tests against the stub). Reviewer's recommended Option A.
+
+**reviewer-logic warning — assertion-deletion in AC-9:** Resolution applied. AC-9 now explicitly forbids removing assertions, `.skip`-ing tests, or deleting test cases from Task 8b to satisfy the green-bar criterion. The 11 enumerated test cases must all be present.
+
+**reviewer-logic warning — empty test file:** Resolution applied. Failure-mode table now has a row for "test file with zero executing tests"; behavior is fail-closed (block) with a specific deny message. AC-8b test case (3) covers this.
+
+**reviewer-logic warning — test-file imports non-existent source:** Resolution applied. Decision tree now explicitly states this case is allowed (module-not-found ⇒ non-zero exit ⇒ valid red bar for first-write TDD). AC-8b test case (5) covers this.
+
+**reviewer-logic warning — multiple test file matches:** Resolution applied. Test-file resolution order is now deterministic and documented (adjacent → `tests/` → `__tests__/`, first match wins).
+
+**reviewer-logic warning — no semantic validation that failing test is about target:** Resolution applied. Documented as a known v1 limitation in the chosen-mechanism section; deny message will surface this so agents understand the contract. v2 could parse test names — out of scope for this run.
+
+**reviewer-logic warning — bypass precedence:** Resolution applied. AC-9 specifies bypass is evaluated **before** stdin parsing so a malformed payload + bypass still allows. AC-8b test case (7) verifies this.
+
+**reviewer-logic warning — line 105 stale text:** Already resolved in the prior research-findings pass; line 105 now correctly states both Write and Edit use `file_path`. No further action needed.
+
+**reviewer-boundary warning — source-file detection scope vs `workflow-guard.js`:** `workflow-guard.js:14-31` excludes `/hooks/`, `/bin/`, `/mcp/` from its `isSourceFile` check because that hook gates **end-of-pipeline workflow steps** (apply-stage commit signals), not TDD coverage. `tdd-guard.js` operates at a different boundary — it gates *every* Write/Edit on plugin source code regardless of pipeline stage. The two scopes are intentionally disjoint and serve different policies. Resolution applied: noted here. Implementer must include a comment in `tdd-guard.js` explaining the deliberate scope difference so future readers don't try to "reconcile" the two scope rules.
 
 These resolutions are authoritative; implementer must reference them when there's ambiguity.
 
