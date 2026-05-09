@@ -128,3 +128,27 @@ The existing `docs/context/` tree is unchanged for all other sidecars (`handoff.
 - Decision: Extend the existing `<worktreePath>/.pipeline/` convention — all per-run context moves to `.pipeline/context/` inside the worktree; reviewers already accept a `[reviewer-output-dir]` prompt signal, so no new protocol is needed.
 - Trade-off: `docs/context/reviewer-output/` at the project root becomes unused; no backward shim since this is a clean worktree-scoped system (old shared path was the bug).
 - Uncertainty: Dual-module format for `context-paths.js` helper needs verification against existing `mcp/lib/` conventions before the coder chooses the export style.
+
+### Resolution of plan-stage reviewer-boundary BLOCK
+
+The plan-stage reviewer-boundary review (in `<worktreePath>/docs/context/reviewer-output/reviewer-boundary.md`) flagged 3 BLOCK-level + 6 REVISE-level concerns. Conductor decisions follow, verified against current code this session — implementer should treat these as authoritative AC supplements:
+
+**BLOCK 1 — AC-1 module format for `mcp/lib/context-paths.js`**: ESM-only export, NOT dual-export. Verified: `mcp/lib/worker-paths.js:1` reads `import { join } from 'node:path';` — existing helpers in `mcp/lib/` are ESM. New helper follows the same pattern. CJS callers (hooks, scripts) construct the paths inline using `path.join(worktreePath, '.pipeline', 'context', 'reviewer-output')` etc — duplication is ~3 lines per hook, acceptable. If duplication grows painful later, refactor to `.cjs` dual-export. Helper exports: `reviewerOutputDir(worktreePath)`, `researcherStatusPath(worktreePath)`, `verdictPath(worktreePath, reviewer, phase)` — all returning absolute paths.
+
+**BLOCK 2 — AC-5 plan skill timing — REJECTED AS FALSE POSITIVE**: Reviewer claimed plan skill Step 5 runs in conductor session before worker is dispatched. Verified incorrect: `skills/plan/SKILL.md:114` reads `## STEP 2 — Run planner pipeline (worker)`. Conductor only does Step 1 (classification + `forge_create_run` with `spawnWorker: true`); Steps 2-6 (including Step 5 reviewer dispatch) run inside the worker, which has resolved `worktreePath` via Step 1b's `forge_create_worktree` call. No timing constraint exists. Task 5's edit goes ahead as written.
+
+**BLOCK 3 — AC-9 verdict persistence signal mechanism**: Option (b) — skill constructs verdict paths independently. The skill (running in worker) already has: `runId` (from worker-task), `worktreePath` (from `forge_get_run`), the list of reviewers it dispatched, and the current phase (from `skills/implement/SKILL.md:116` phase-detection logic). After collecting verdicts, each skill (`implement`/`refactor`/`debug`) copies `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md`. No new prompt signal needed. No reviewer-agent changes beyond the path update in Task 3.
+
+**Phase value for AC-9**: `implement` / `refactor` / `debug` for non-phased runs; `phase-<index>` (e.g. `phase-1`, `phase-2`) when a phased plan is detected. Skills already track which phase is running.
+
+**REVISE-level decisions** (verified against current code):
+
+- **AC-3** (reviewer fallback): KEEP existing fallback to `docs/context/reviewer-output/` in reviewer agent prompts. Verified at `agents/reviewer-safety.md:49-51` (and equivalents). Backward-compat for any caller that doesn't inject `[reviewer-output-dir]` signal. Safe default; doesn't conflict with the new path being primary.
+- **AC-4** (skills' worktreePath source): skills run in worker context (per BLOCK 2 clarification); they obtain `worktreePath` from `forge_get_run` already called at Step 1b. No new mechanism.
+- **AC-6** (researcher path injection): researcher receives standard `Your working directory for this run is: <worktreePath>` prompt injection per the existing pattern at `skills/implement/SKILL.md:179-184`. Researcher constructs the path as `<injected-cwd>/.pipeline/context/researcher-status.json`.
+- **AC-7** (coder path resolution): same as AC-6 — coder uses standard `<worktreePath>` injection, hard-codes the relative path. No new prompt signal.
+- **AC-8** (`subagent-stop.js` payload contract): VERIFIED already correct — `hooks/subagent-stop.js:218,279` use `data.worktreePath || projectDir` fallback. Only the `EXPECTED_ARTIFACTS['researcher']` value at line 268+ needs updating to the new relative path. No payload contract changes.
+- **AC-10** (`post-apply-lifecycle.mjs` verdict cleanup): `.pipeline/context/verdicts/` is PRESERVED, not deleted. Verdict bodies are audit trail; minimal disk cost. Update Task 10 Verify: `archiveReviewerOutput()` reads from per-run path; `deleteSidecars()` does NOT include the verdicts directory.
+- **AC-11** (researcher allowedPaths): `agent-roles.json` researcher entry includes BOTH `.pipeline/context/researcher-status.json` AND existing `docs/RESEARCH/**` (researcher writes both — research files go to `docs/RESEARCH/`, status file goes to per-run path). The plan's existing wording ("alongside the existing `docs/RESEARCH/**` entry") is correct.
+
+These resolutions supersede any conflicting text in the original task ACs. The implementer should reference this section when there's ambiguity.

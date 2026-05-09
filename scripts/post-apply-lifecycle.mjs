@@ -24,7 +24,7 @@ function log(msg) {
 // --- Job 1: Archive and wipe reviewer output ---------------------------------
 function archiveReviewerOutput() {
   try {
-    const reviewerOutputDir = path.join(projectDir, 'docs', 'context', 'reviewer-output');
+    const reviewerOutputDir = path.join(projectDir, '.pipeline', 'context', 'reviewer-output');
     const archiveBase = path.join(projectDir, '.pipeline', 'review-archive');
     const ts = String(Date.now());
     const archiveDir = path.join(archiveBase, ts);
@@ -93,7 +93,7 @@ function deleteSidecars() {
       'docs/context/slice-brief.md',
       'docs/context/supervisor-brief.md',
       'docs/context/triage-dispatch.json',
-      'docs/context/researcher-status.json',
+      '.pipeline/context/researcher-status.json',
       'docs/context/coder-status.json',
       'docs/context/scout.json',
       'docs/context/run-metrics.json',

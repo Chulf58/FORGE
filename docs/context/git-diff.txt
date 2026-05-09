@@ -1,527 +1,878 @@
+diff --git a/agents/coder.md b/agents/coder.md
+index a13094b3..315ae22e 100644
+--- a/agents/coder.md
++++ b/agents/coder.md
+@@ -95,7 +95,7 @@ No user is present during automated pipeline runs. If `scout.json` is empty (0 f
+ 
+ Before writing anything, verify that the inputs were produced by the pipeline:
+ 
+-0. **Check `docs/context/researcher-status.json`** — if it exists and contains `"status": "BLOCKED"`, stop immediately, do NOT write `handoff.md`, and emit:
++0. **Check `.pipeline/context/researcher-status.json`** — if it exists and contains `"status": "BLOCKED"`, stop immediately, do NOT write `handoff.md`, and emit:
+ 
+ `[suggest] revise plan: <feature name>`
+ 
+@@ -238,7 +238,7 @@ If you are approaching your context limit mid-task, write your progress to `docs
+ 
+ **If your invocation prompt begins with `[revision-mode: N]`**, you are revising after a reviewer REVISE verdict. Work more narrowly:
+ 
+-1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `docs/context/reviewer-output/`).
++1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `.pipeline/context/reviewer-output/`).
+ 2. Do NOT re-read GENERAL.md, SKILLS.md, PLAN.md, or any source files — they are unchanged and already reflected in your prior handoff.
+ 3. **Criteria scoping:** If `docs/context/criteria.json` exists, read it. Target only criteria with `status: "rejected"` or reviewer verdicts of `NOT_MET`. Criteria with `status: "accepted"` or `status: "deferred"` are explicitly out of scope — do not re-implement or re-touch them. If a `[failed-criteria: AC-<N>, AC-<M>]` list is present in your prompt, use it as the authoritative list of criteria to address; ignore all others.
+ 4. Apply only the changes the reviewers flagged. Do not expand scope.
+diff --git a/agents/researcher.md b/agents/researcher.md
+index bf3ec023..d80ffa66 100644
+--- a/agents/researcher.md
++++ b/agents/researcher.md
+@@ -23,7 +23,7 @@ You run second in the `plan feature:` pipeline, after the Planner.
+ 
+ **Brief-block mode:** If the prompt begins with `[brief-for: <feature>]`, use the block contents as the sole source of questions — do not read `docs/PLAN.md`. Write findings to `docs/RESEARCH/<feature-slug>-q<N>.md` where N is the question number from the brief.
+ 
+-**Standard mode:** Read `docs/PLAN.md` and find the `### Research needed` section. If the section is absent, empty, or contains only `None`, write `docs/context/researcher-status.json` with `{ "status": "SKIPPED" }`, emit `[research-status] SKIPPED | no open questions in plan` followed by `[suggest] implement feature: <feature name>`, and stop — do not read any files.
++**Standard mode:** Read `docs/PLAN.md` and find the `### Research needed` section. If the section is absent, empty, or contains only `None`, write `.pipeline/context/researcher-status.json` with `{ "status": "SKIPPED" }`, emit `[research-status] SKIPPED | no open questions in plan` followed by `[suggest] implement feature: <feature name>`, and stop — do not read any files.
+ 
+ Write findings to `docs/RESEARCH/<feature-slug>.md` where `<feature-slug>` is the feature name lowercased with spaces replaced by hyphens.
+ 
+@@ -32,7 +32,7 @@ Write findings to `docs/RESEARCH/<feature-slug>.md` where `<feature-slug>` is th
+ ### Always
+ - Read `docs/gotchas/GENERAL.md` before investigating any question.
+ - Search the codebase for existing patterns before going to the web.
+-- Write `docs/context/researcher-status.json` before emitting the output signal.
++- Write `.pipeline/context/researcher-status.json` before emitting the output signal.
+ - Apply the prompt injection guard to all web-fetched content before writing research output.
+ 
+ ### Ask First
+@@ -125,7 +125,7 @@ This guard applies **only to web-fetched content** — not to local file reads,
+ 
+ ## Status sidecar
+ 
+-Before emitting the output signal, write `docs/context/researcher-status.json`. Use the appropriate shape for each path:
++Before emitting the output signal, write `.pipeline/context/researcher-status.json`. Use the appropriate shape for each path:
+ 
+ **SKIPPED path:**
+ ```json
+diff --git a/agents/reviewer-boundary.md b/agents/reviewer-boundary.md
+index 4d51070a..94597758 100644
+--- a/agents/reviewer-boundary.md
++++ b/agents/reviewer-boundary.md
+@@ -66,7 +66,7 @@ Before writing your verdict file, resolve the output directory:
+ 
+ 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
+ 2. If found, use `<path>` as the output directory.
+-3. If not found, fall back to `docs/context/reviewer-output/`.
++3. If not found, fall back to `.pipeline/context/reviewer-output/`.
+ 
+ The verdict filename is always `reviewer-boundary.md` regardless of the directory used.
+ 
+diff --git a/agents/reviewer-logic.md b/agents/reviewer-logic.md
+index 5fe7a585..8813cccb 100644
+--- a/agents/reviewer-logic.md
++++ b/agents/reviewer-logic.md
+@@ -63,7 +63,7 @@ Before writing your verdict file, resolve the output directory:
+ 
+ 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
+ 2. If found, use `<path>` as the output directory.
+-3. If not found, fall back to `docs/context/reviewer-output/`.
++3. If not found, fall back to `.pipeline/context/reviewer-output/`.
+ 
+ The verdict filename is always `reviewer-logic.md` regardless of the directory used.
+ 
+diff --git a/agents/reviewer-performance.md b/agents/reviewer-performance.md
+index 46915a39..ab07961f 100644
+--- a/agents/reviewer-performance.md
++++ b/agents/reviewer-performance.md
+@@ -44,7 +44,7 @@ Before writing your verdict file, resolve the output directory:
+ 
+ 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
+ 2. If found, use `<path>` as the output directory.
+-3. If not found, fall back to `docs/context/reviewer-output/`.
++3. If not found, fall back to `.pipeline/context/reviewer-output/`.
+ 
+ The verdict filename is always `reviewer-performance.md` regardless of the directory used.
+ 
+diff --git a/agents/reviewer-safety.md b/agents/reviewer-safety.md
+index 94a55656..51dd8d04 100644
+--- a/agents/reviewer-safety.md
++++ b/agents/reviewer-safety.md
+@@ -48,7 +48,7 @@ Before writing your verdict file, resolve the output directory:
+ 
+ 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
+ 2. If found, use `<path>` as the output directory.
+-3. If not found, fall back to `docs/context/reviewer-output/`.
++3. If not found, fall back to `.pipeline/context/reviewer-output/`.
+ 
+ The verdict filename is always `reviewer-safety.md` regardless of the directory used.
+ 
+diff --git a/docs/PLAN.md b/docs/PLAN.md
+index 5ab00b53..10bfd8cb 100644
+--- a/docs/PLAN.md
++++ b/docs/PLAN.md
+@@ -128,3 +128,27 @@ The existing `docs/context/` tree is unchanged for all other sidecars (`handoff.
+ - Decision: Extend the existing `<worktreePath>/.pipeline/` convention — all per-run context moves to `.pipeline/context/` inside the worktree; reviewers already accept a `[reviewer-output-dir]` prompt signal, so no new protocol is needed.
+ - Trade-off: `docs/context/reviewer-output/` at the project root becomes unused; no backward shim since this is a clean worktree-scoped system (old shared path was the bug).
+ - Uncertainty: Dual-module format for `context-paths.js` helper needs verification against existing `mcp/lib/` conventions before the coder chooses the export style.
++
++### Resolution of plan-stage reviewer-boundary BLOCK
++
++The plan-stage reviewer-boundary review (in `<worktreePath>/docs/context/reviewer-output/reviewer-boundary.md`) flagged 3 BLOCK-level + 6 REVISE-level concerns. Conductor decisions follow, verified against current code this session — implementer should treat these as authoritative AC supplements:
++
++**BLOCK 1 — AC-1 module format for `mcp/lib/context-paths.js`**: ESM-only export, NOT dual-export. Verified: `mcp/lib/worker-paths.js:1` reads `import { join } from 'node:path';` — existing helpers in `mcp/lib/` are ESM. New helper follows the same pattern. CJS callers (hooks, scripts) construct the paths inline using `path.join(worktreePath, '.pipeline', 'context', 'reviewer-output')` etc — duplication is ~3 lines per hook, acceptable. If duplication grows painful later, refactor to `.cjs` dual-export. Helper exports: `reviewerOutputDir(worktreePath)`, `researcherStatusPath(worktreePath)`, `verdictPath(worktreePath, reviewer, phase)` — all returning absolute paths.
++
++**BLOCK 2 — AC-5 plan skill timing — REJECTED AS FALSE POSITIVE**: Reviewer claimed plan skill Step 5 runs in conductor session before worker is dispatched. Verified incorrect: `skills/plan/SKILL.md:114` reads `## STEP 2 — Run planner pipeline (worker)`. Conductor only does Step 1 (classification + `forge_create_run` with `spawnWorker: true`); Steps 2-6 (including Step 5 reviewer dispatch) run inside the worker, which has resolved `worktreePath` via Step 1b's `forge_create_worktree` call. No timing constraint exists. Task 5's edit goes ahead as written.
++
++**BLOCK 3 — AC-9 verdict persistence signal mechanism**: Option (b) — skill constructs verdict paths independently. The skill (running in worker) already has: `runId` (from worker-task), `worktreePath` (from `forge_get_run`), the list of reviewers it dispatched, and the current phase (from `skills/implement/SKILL.md:116` phase-detection logic). After collecting verdicts, each skill (`implement`/`refactor`/`debug`) copies `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md`. No new prompt signal needed. No reviewer-agent changes beyond the path update in Task 3.
++
++**Phase value for AC-9**: `implement` / `refactor` / `debug` for non-phased runs; `phase-<index>` (e.g. `phase-1`, `phase-2`) when a phased plan is detected. Skills already track which phase is running.
++
++**REVISE-level decisions** (verified against current code):
++
++- **AC-3** (reviewer fallback): KEEP existing fallback to `docs/context/reviewer-output/` in reviewer agent prompts. Verified at `agents/reviewer-safety.md:49-51` (and equivalents). Backward-compat for any caller that doesn't inject `[reviewer-output-dir]` signal. Safe default; doesn't conflict with the new path being primary.
++- **AC-4** (skills' worktreePath source): skills run in worker context (per BLOCK 2 clarification); they obtain `worktreePath` from `forge_get_run` already called at Step 1b. No new mechanism.
++- **AC-6** (researcher path injection): researcher receives standard `Your working directory for this run is: <worktreePath>` prompt injection per the existing pattern at `skills/implement/SKILL.md:179-184`. Researcher constructs the path as `<injected-cwd>/.pipeline/context/researcher-status.json`.
++- **AC-7** (coder path resolution): same as AC-6 — coder uses standard `<worktreePath>` injection, hard-codes the relative path. No new prompt signal.
++- **AC-8** (`subagent-stop.js` payload contract): VERIFIED already correct — `hooks/subagent-stop.js:218,279` use `data.worktreePath || projectDir` fallback. Only the `EXPECTED_ARTIFACTS['researcher']` value at line 268+ needs updating to the new relative path. No payload contract changes.
++- **AC-10** (`post-apply-lifecycle.mjs` verdict cleanup): `.pipeline/context/verdicts/` is PRESERVED, not deleted. Verdict bodies are audit trail; minimal disk cost. Update Task 10 Verify: `archiveReviewerOutput()` reads from per-run path; `deleteSidecars()` does NOT include the verdicts directory.
++- **AC-11** (researcher allowedPaths): `agent-roles.json` researcher entry includes BOTH `.pipeline/context/researcher-status.json` AND existing `docs/RESEARCH/**` (researcher writes both — research files go to `docs/RESEARCH/`, status file goes to per-run path). The plan's existing wording ("alongside the existing `docs/RESEARCH/**` entry") is correct.
++
++These resolutions supersede any conflicting text in the original task ACs. The implementer should reference this section when there's ambiguity.
 diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
-index 3b2f737..e69de29 100644
+index ce8e83d2..801774b1 100644
 --- a/docs/context/git-diff.txt
 +++ b/docs/context/git-diff.txt
-@@ -1,335 +0,0 @@
+@@ -1,527 +0,0 @@
 -diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
--index d57ed93..e69de29 100644
+-index 3b2f737..e69de29 100644
 ---- a/docs/context/git-diff.txt
 -+++ b/docs/context/git-diff.txt
--@@ -1,276 +0,0 @@
+-@@ -1,335 +0,0 @@
 --diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
---index 5adc069..e69de29 100644
+--index d57ed93..e69de29 100644
 ----- a/docs/context/git-diff.txt
 --+++ b/docs/context/git-diff.txt
---@@ -1,36 +0,0 @@
----diff --git a/mcp/forge-worker.mjs b/mcp/forge-worker.mjs
----index 26dccca..455c66f 100644
------- a/mcp/forge-worker.mjs
----+++ b/mcp/forge-worker.mjs
----@@ -278,6 +278,11 @@ async function main() {
----     });
----   }
---- 
----+  // Debounce tracking for terminal-status poll — updated each time readRunData()
----+  // is called in the per-message loop. Initialised to 0 so the first message
----+  // always triggers a check (Date.now() - 0 >> 500).
----+  let lastStatusReadAt = 0;
+--@@ -1,276 +0,0 @@
+---diff --git a/docs/context/git-diff.txt b/docs/context/git-diff.txt
+---index 5adc069..e69de29 100644
+------ a/docs/context/git-diff.txt
+---+++ b/docs/context/git-diff.txt
+---@@ -1,36 +0,0 @@
+----diff --git a/mcp/forge-worker.mjs b/mcp/forge-worker.mjs
+----index 26dccca..455c66f 100644
+------- a/mcp/forge-worker.mjs
+----+++ b/mcp/forge-worker.mjs
+----@@ -278,6 +278,11 @@ async function main() {
+----     });
+----   }
+---- 
+----+  // Debounce tracking for terminal-status poll — updated each time readRunData()
+----+  // is called in the per-message loop. Initialised to 0 so the first message
+----+  // always triggers a check (Date.now() - 0 >> 500).
+----+  let lastStatusReadAt = 0;
+----+
+----   let exitCode = 0;
+----   const inputChannel = createMessageChannel();
+----   inputChannel.push({
+----@@ -331,6 +336,19 @@ async function main() {
+----         break;
+----       }
+---- 
+----+      // Terminal-status poll: debounced to at most once per 500 ms so the check
+----+      // does not multiply with high-frequency stream messages during agent dispatch.
+----+      // Absent/unreadable run.json is treated as non-terminal (fail-open per GENERAL.md).
+----+      if (Date.now() - lastStatusReadAt >= 500) {
+----+        lastStatusReadAt = Date.now();
+----+        const terminalData = readRunData();
+----+        const terminalStatus = terminalData && terminalData.status;
+----+        if (terminalStatus === 'completed' || terminalStatus === 'failed' || terminalStatus === 'discarded') {
+----+          writeLog('[forge-worker] run is terminal (status=' + terminalStatus + ') — exiting');
+----+          break;
+----+        }
+----+      }
+----+
+----       if (gateHandled) continue;
+---- 
+----       const runData = readRunData();
+---diff --git a/mcp/lib/worker-pids.js b/mcp/lib/worker-pids.js
+---new file mode 100644
+---index 0000000..35da858
+------ /dev/null
+---+++ b/mcp/lib/worker-pids.js
+---@@ -0,0 +1,229 @@
+---+import { readdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'node:fs';
+---+import { join } from 'node:path';
 ---+
----   let exitCode = 0;
----   const inputChannel = createMessageChannel();
----   inputChannel.push({
----@@ -331,6 +336,19 @@ async function main() {
----         break;
----       }
---- 
----+      // Terminal-status poll: debounced to at most once per 500 ms so the check
----+      // does not multiply with high-frequency stream messages during agent dispatch.
----+      // Absent/unreadable run.json is treated as non-terminal (fail-open per GENERAL.md).
----+      if (Date.now() - lastStatusReadAt >= 500) {
----+        lastStatusReadAt = Date.now();
----+        const terminalData = readRunData();
----+        const terminalStatus = terminalData && terminalData.status;
----+        if (terminalStatus === 'completed' || terminalStatus === 'failed' || terminalStatus === 'discarded') {
----+          writeLog('[forge-worker] run is terminal (status=' + terminalStatus + ') — exiting');
----+          break;
----+        }
+---+/**
+---+ * Validates a runId against the canonical pattern.
+---+ * @param {string} runId
+---+ * @returns {boolean}
+---+ */
+---+function isValidRunId(runId) {
+---+  return typeof runId === 'string' && /^r-[a-zA-Z0-9]+$/.test(runId);
+---+}
+---+
+---+/**
+---+ * Reads and parses a PID file, returning the content or null on error.
+---+ * @param {string} filePath
+---+ * @returns {{ runId: string, pid: number, startedAt: string } | null}
+---+ */
+---+function readPidFile(filePath) {
+---+  try {
+---+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+---+  } catch (_) {
+---+    return null;
+---+  }
+---+}
+---+
+---+/**
+---+ * Reads run.json for a given run, returning the parsed object or null on error.
+---+ * @param {string} projectDir
+---+ * @param {string} runId
+---+ * @returns {{ status: string, [key: string]: unknown } | null}
+---+ */
+---+function readRunJson(projectDir, runId) {
+---+  try {
+---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+---+    return JSON.parse(readFileSync(runPath, 'utf-8'));
+---+  } catch (_) {
+---+    return null;
+---+  }
+---+}
+---+
+---+/**
+---+ * Writes an updated run.json, marking the run as failed.
+---+ * @param {string} projectDir
+---+ * @param {string} runId
+---+ * @param {{ status: string, [key: string]: unknown }} runData
+---+ * @returns {boolean} true on success, false on error
+---+ */
+---+function markRunFailed(projectDir, runId, runData) {
+---+  try {
+---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+---+    const updated = {
+---+      ...runData,
+---+      status: 'failed',
+---+      failureReason: 'worker process no longer alive (swept)',
+---+    };
+---+    writeFileSync(runPath, JSON.stringify(updated, null, 2), 'utf-8');
+---+    return true;
+---+  } catch (err) {
+---+    console.error('[worker-pids] failed to update run.json for ' + runId + ':', err.message);
+---+    return false;
+---+  }
+---+}
+---+
+---+/**
+---+ * Probes whether a PID is alive using process.kill(pid, 0).
+---+ *
+---+ * Return values:
+---+ *   'dead'    — ESRCH: process does not exist, safe to sweep
+---+ *   'alive'   — no error: process exists and same user owns it
+---+ *   'cross'   — EPERM: process exists but owned by another user — treat as live
+---+ *   'unknown' — any other error: fail-open, skip this entry
+---+ *
+---+ * @param {number} pid
+---+ * @returns {'dead' | 'alive' | 'cross' | 'unknown'}
+---+ */
+---+function probePid(pid) {
+---+  try {
+---+    process.kill(pid, 0);
+---+    return 'alive';
+---+  } catch (err) {
+---+    const code = /** @type {{ code?: string }} */ (err).code;
+---+    if (code === 'ESRCH') return 'dead';
+---+    if (code === 'EPERM') return 'cross';
+---+    return 'unknown';
+---+  }
+---+}
+---+
+---+/**
+---+ * Sweeps stale PID files from `.pipeline/worker-pids/` in the given project directory.
+---+ *
+---+ * For each PID file found:
+---+ * 1. Validates the PID value (must be a finite positive integer).
+---+ * 2. Probes the PID with process.kill(pid, 0):
+---+ *    - ESRCH → dead: if run status is 'running', marks run as failed, then deletes PID file.
+---+ *    - EPERM → cross-user alive: do NOT sweep (avoid false-positive sweeps).
+---+ *    - no error → alive: do NOT sweep.
+---+ *    - other error → fail-open: log and skip.
+---+ * 3. Order per dead PID is deterministic: read run.json → write run.json → delete PID file.
+---+ *    This ensures run.json is durable before the PID file delete that signals "swept".
+---+ *
+---+ * After the liveness sweep, applies a retention policy: if worker-pids/ still contains
+---+ * > 200 entries, deletes the oldest (by mtime) until the count is ≤ 200.
+---+ *
+---+ * @param {string} projectDir - Absolute path to the project root (main repo, not a worktree).
+---+ * @returns {{ swept: number, alive: number, errors: number }}
+---+ */
+---+export function sweepStalePids(projectDir) {
+---+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
+---+
+---+  let swept = 0;
+---+  let alive = 0;
+---+  let errors = 0;
+---+
+---+  /** @type {string[]} */
+---+  let entries;
+---+  try {
+---+    entries = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
+---+  } catch (err) {
+---+    // Directory absent or unreadable — no PID files to sweep.
+---+    const code = /** @type {{ code?: string }} */ (err).code;
+---+    if (code !== 'ENOENT') {
+---+      console.error('[worker-pids] could not read worker-pids dir:', err.message);
+---+    }
+---+    return { swept: 0, alive: 0, errors: 0 };
+---+  }
+---+
+---+  for (const fileName of entries) {
+---+    const filePath = join(pidsDir, fileName);
+---+
+---+    // Parse PID file.
+---+    const pidData = readPidFile(filePath);
+---+    if (pidData === null) {
+---+      console.error('[worker-pids] could not parse PID file, skipping:', filePath);
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // Validate runId.
+---+    const { runId, pid } = pidData;
+---+    if (!isValidRunId(runId)) {
+---+      console.error('[worker-pids] invalid runId in PID file, skipping:', filePath, 'runId:', runId);
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // Validate PID value.
+---+    const pidInt = typeof pid === 'number' ? pid : parseInt(String(pid), 10);
+---+    if (!Number.isFinite(pidInt) || pidInt <= 0 || !Number.isInteger(pidInt)) {
+---+      console.error('[worker-pids] invalid PID value in file, skipping:', filePath, 'pid:', pid);
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // Probe liveness.
+---+    const probe = probePid(pidInt);
+---+
+---+    if (probe === 'alive' || probe === 'cross') {
+---+      // Cross-user processes are treated as live to avoid false-positive sweeps.
+---+      alive++;
+---+      continue;
+---+    }
+---+
+---+    if (probe === 'unknown') {
+---+      // Unexpected error probing — fail-open.
+---+      console.error('[worker-pids] unexpected error probing PID', pidInt, 'in', filePath, '— skipping');
+---+      errors++;
+---+      continue;
+---+    }
+---+
+---+    // probe === 'dead': process no longer alive.
+---+    // Order: read run.json → conditionally write run.json → delete PID file.
+---+    const runData = readRunJson(projectDir, runId);
+---+
+---+    if (runData !== null && runData.status === 'running') {
+---+      // Mark run as failed before deleting the PID file (durability before signal).
+---+      const updated = markRunFailed(projectDir, runId, runData);
+---+      if (updated) {
+---+        console.error('[worker-pids] marked run ' + runId + ' as failed (worker PID ' + pidInt + ' is dead)');
 ---+      }
+---+    }
 ---+
----       if (gateHandled) continue;
---- 
----       const runData = readRunData();
---diff --git a/mcp/lib/worker-pids.js b/mcp/lib/worker-pids.js
---new file mode 100644
---index 0000000..35da858
------ /dev/null
---+++ b/mcp/lib/worker-pids.js
---@@ -0,0 +1,229 @@
---+import { readdirSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'node:fs';
---+import { join } from 'node:path';
---+
---+/**
---+ * Validates a runId against the canonical pattern.
---+ * @param {string} runId
---+ * @returns {boolean}
---+ */
---+function isValidRunId(runId) {
---+  return typeof runId === 'string' && /^r-[a-zA-Z0-9]+$/.test(runId);
---+}
---+
---+/**
---+ * Reads and parses a PID file, returning the content or null on error.
---+ * @param {string} filePath
---+ * @returns {{ runId: string, pid: number, startedAt: string } | null}
---+ */
---+function readPidFile(filePath) {
---+  try {
---+    return JSON.parse(readFileSync(filePath, 'utf-8'));
---+  } catch (_) {
---+    return null;
---+  }
---+}
---+
---+/**
---+ * Reads run.json for a given run, returning the parsed object or null on error.
---+ * @param {string} projectDir
---+ * @param {string} runId
---+ * @returns {{ status: string, [key: string]: unknown } | null}
---+ */
---+function readRunJson(projectDir, runId) {
---+  try {
---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
---+    return JSON.parse(readFileSync(runPath, 'utf-8'));
---+  } catch (_) {
---+    return null;
---+  }
---+}
---+
---+/**
---+ * Writes an updated run.json, marking the run as failed.
---+ * @param {string} projectDir
---+ * @param {string} runId
---+ * @param {{ status: string, [key: string]: unknown }} runData
---+ * @returns {boolean} true on success, false on error
---+ */
---+function markRunFailed(projectDir, runId, runData) {
---+  try {
---+    const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
---+    const updated = {
---+      ...runData,
---+      status: 'failed',
---+      failureReason: 'worker process no longer alive (swept)',
---+    };
---+    writeFileSync(runPath, JSON.stringify(updated, null, 2), 'utf-8');
---+    return true;
---+  } catch (err) {
---+    console.error('[worker-pids] failed to update run.json for ' + runId + ':', err.message);
---+    return false;
---+  }
---+}
---+
---+/**
---+ * Probes whether a PID is alive using process.kill(pid, 0).
---+ *
---+ * Return values:
---+ *   'dead'    — ESRCH: process does not exist, safe to sweep
---+ *   'alive'   — no error: process exists and same user owns it
---+ *   'cross'   — EPERM: process exists but owned by another user — treat as live
---+ *   'unknown' — any other error: fail-open, skip this entry
---+ *
---+ * @param {number} pid
---+ * @returns {'dead' | 'alive' | 'cross' | 'unknown'}
---+ */
---+function probePid(pid) {
---+  try {
---+    process.kill(pid, 0);
---+    return 'alive';
---+  } catch (err) {
---+    const code = /** @type {{ code?: string }} */ (err).code;
---+    if (code === 'ESRCH') return 'dead';
---+    if (code === 'EPERM') return 'cross';
---+    return 'unknown';
---+  }
---+}
---+
---+/**
---+ * Sweeps stale PID files from `.pipeline/worker-pids/` in the given project directory.
---+ *
---+ * For each PID file found:
---+ * 1. Validates the PID value (must be a finite positive integer).
---+ * 2. Probes the PID with process.kill(pid, 0):
---+ *    - ESRCH → dead: if run status is 'running', marks run as failed, then deletes PID file.
---+ *    - EPERM → cross-user alive: do NOT sweep (avoid false-positive sweeps).
---+ *    - no error → alive: do NOT sweep.
---+ *    - other error → fail-open: log and skip.
---+ * 3. Order per dead PID is deterministic: read run.json → write run.json → delete PID file.
---+ *    This ensures run.json is durable before the PID file delete that signals "swept".
---+ *
---+ * After the liveness sweep, applies a retention policy: if worker-pids/ still contains
---+ * > 200 entries, deletes the oldest (by mtime) until the count is ≤ 200.
---+ *
---+ * @param {string} projectDir - Absolute path to the project root (main repo, not a worktree).
---+ * @returns {{ swept: number, alive: number, errors: number }}
---+ */
---+export function sweepStalePids(projectDir) {
---+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
---+
---+  let swept = 0;
---+  let alive = 0;
---+  let errors = 0;
---+
---+  /** @type {string[]} */
---+  let entries;
---+  try {
---+    entries = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
---+  } catch (err) {
---+    // Directory absent or unreadable — no PID files to sweep.
---+    const code = /** @type {{ code?: string }} */ (err).code;
---+    if (code !== 'ENOENT') {
---+      console.error('[worker-pids] could not read worker-pids dir:', err.message);
---+    }
---+    return { swept: 0, alive: 0, errors: 0 };
---+  }
---+
---+  for (const fileName of entries) {
---+    const filePath = join(pidsDir, fileName);
---+
---+    // Parse PID file.
---+    const pidData = readPidFile(filePath);
---+    if (pidData === null) {
---+      console.error('[worker-pids] could not parse PID file, skipping:', filePath);
---+      errors++;
---+      continue;
---+    }
---+
---+    // Validate runId.
---+    const { runId, pid } = pidData;
---+    if (!isValidRunId(runId)) {
---+      console.error('[worker-pids] invalid runId in PID file, skipping:', filePath, 'runId:', runId);
---+      errors++;
---+      continue;
---+    }
---+
---+    // Validate PID value.
---+    const pidInt = typeof pid === 'number' ? pid : parseInt(String(pid), 10);
---+    if (!Number.isFinite(pidInt) || pidInt <= 0 || !Number.isInteger(pidInt)) {
---+      console.error('[worker-pids] invalid PID value in file, skipping:', filePath, 'pid:', pid);
---+      errors++;
---+      continue;
---+    }
---+
---+    // Probe liveness.
---+    const probe = probePid(pidInt);
---+
---+    if (probe === 'alive' || probe === 'cross') {
---+      // Cross-user processes are treated as live to avoid false-positive sweeps.
---+      alive++;
---+      continue;
---+    }
---+
---+    if (probe === 'unknown') {
---+      // Unexpected error probing — fail-open.
---+      console.error('[worker-pids] unexpected error probing PID', pidInt, 'in', filePath, '— skipping');
---+      errors++;
---+      continue;
---+    }
---+
---+    // probe === 'dead': process no longer alive.
---+    // Order: read run.json → conditionally write run.json → delete PID file.
---+    const runData = readRunJson(projectDir, runId);
---+
---+    if (runData !== null && runData.status === 'running') {
---+      // Mark run as failed before deleting the PID file (durability before signal).
---+      const updated = markRunFailed(projectDir, runId, runData);
---+      if (updated) {
---+        console.error('[worker-pids] marked run ' + runId + ' as failed (worker PID ' + pidInt + ' is dead)');
+---+    // Delete the stale PID file.
+---+    try {
+---+      unlinkSync(filePath);
+---+      console.error('[worker-pids] deleted stale PID file:', filePath);
+---+      swept++;
+---+    } catch (err) {
+---+      console.error('[worker-pids] failed to delete stale PID file:', filePath, err.message);
+---+      errors++;
+---+    }
+---+  }
+---+
+---+  // Retention policy: cap worker-pids/ to ≤ 200 entries.
+---+  // Re-read directory after sweep to get current state.
+---+  let remaining;
+---+  try {
+---+    remaining = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
+---+  } catch (_) {
+---+    // If we can't re-read, skip retention enforcement — already swept above.
+---+    return { swept, alive, errors };
+---+  }
+---+
+---+  if (remaining.length > 200) {
+---+    // Sort by mtime ascending (oldest first).
+---+    /** @type {Array<{ name: string, mtime: number }>} */
+---+    const withMtime = [];
+---+    for (const name of remaining) {
+---+      try {
+---+        const st = statSync(join(pidsDir, name));
+---+        withMtime.push({ name, mtime: st.mtimeMs });
+---+      } catch (_) {
+---+        // Can't stat — skip this entry during retention sort.
+---+      }
+---+    }
+---+    withMtime.sort((a, b) => a.mtime - b.mtime);
+---+
+---+    const toDelete = withMtime.slice(0, withMtime.length - 200);
+---+    for (const { name } of toDelete) {
+---+      try {
+---+        unlinkSync(join(pidsDir, name));
+---+        console.error('[worker-pids] retention policy: deleted old PID file:', name);
+---+      } catch (err) {
+---+        console.error('[worker-pids] retention policy: could not delete:', name, err.message);
+---+      }
+---+    }
+---+  }
+---+
+---+  return { swept, alive, errors };
+---+}
+--diff --git a/docs/context/scout.json b/docs/context/scout.json
+--index ba9d965..3bcfbd3 100644
+----- a/docs/context/scout.json
+--+++ b/docs/context/scout.json
+--@@ -1,6 +1,7 @@
+-- {
+--   "files_to_read": [
+--     "mcp/forge-worker.mjs",
+--+    "mcp/lib/worker-pids.js",
+--     "mcp/server.js"
+--   ],
+--   "functions_to_modify": {},
+--diff --git a/mcp/server.js b/mcp/server.js
+--index 3fdae16..0d5764c 100644
+----- a/mcp/server.js
+--+++ b/mcp/server.js
+--@@ -17,6 +17,7 @@ import { buildDashboardState } from "./lib/dashboard-state.js";
+-- import { sanitizeFeatureName } from "./lib/sanitize.js";
+-- import { searchConstraints, searchPatterns, appendSolutionDoc } from "./lib/knowledge-store.js";
+-- import { workerLogPath, killPillPath } from "./lib/worker-paths.js";
+--+import { sweepStalePids } from "./lib/worker-pids.js";
+-- 
+-- // -- Shared Zod schemas ------------------------------------------------------
+-- 
+--@@ -1751,6 +1752,14 @@ server.registerTool(
+--         return textResult(started);
+--       }
+-- 
+--+      // Sweep stale PID files before collision guard so zombie "running" entries
+--+      // do not falsely block new spawns.
+--+      const mainProjectDir = resolveMainProjectDir();
+--+      const sweepResult = sweepStalePids(mainProjectDir);
+--+      if (sweepResult.swept > 0) {
+--+        console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
 --+      }
---+    }
 --+
---+    // Delete the stale PID file.
---+    try {
---+      unlinkSync(filePath);
---+      console.error('[worker-pids] deleted stale PID file:', filePath);
---+      swept++;
---+    } catch (err) {
---+      console.error('[worker-pids] failed to delete stale PID file:', filePath, err.message);
---+      errors++;
---+    }
---+  }
---+
---+  // Retention policy: cap worker-pids/ to ≤ 200 entries.
---+  // Re-read directory after sweep to get current state.
---+  let remaining;
---+  try {
---+    remaining = readdirSync(pidsDir).filter(name => name.endsWith('.json'));
---+  } catch (_) {
---+    // If we can't re-read, skip retention enforcement — already swept above.
---+    return { swept, alive, errors };
---+  }
---+
---+  if (remaining.length > 200) {
---+    // Sort by mtime ascending (oldest first).
---+    /** @type {Array<{ name: string, mtime: number }>} */
---+    const withMtime = [];
---+    for (const name of remaining) {
---+      try {
---+        const st = statSync(join(pidsDir, name));
---+        withMtime.push({ name, mtime: st.mtimeMs });
---+      } catch (_) {
---+        // Can't stat — skip this entry during retention sort.
+--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
+--       //
+--       // The new run's intent at this point is captured by `useWorktree`:
+--@@ -2621,6 +2630,14 @@ server.registerTool(
+--         return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
+--       }
+-- 
+--+      // Sweep stale PID files before collision guard so zombie "running" entries
+--+      // do not falsely block this advance path.
+--+      const mainProjectDirAdv = resolveMainProjectDir();
+--+      const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
+--+      if (sweepResultAdv.swept > 0) {
+--+        console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
 --+      }
---+    }
---+    withMtime.sort((a, b) => a.mtime - b.mtime);
 --+
---+    const toDelete = withMtime.slice(0, withMtime.length - 200);
---+    for (const { name } of toDelete) {
---+      try {
---+        unlinkSync(join(pidsDir, name));
---+        console.error('[worker-pids] retention policy: deleted old PID file:', name);
---+      } catch (err) {
---+        console.error('[worker-pids] retention policy: could not delete:', name, err.message);
---+      }
---+    }
---+  }
---+
---+  return { swept, alive, errors };
---+}
--diff --git a/docs/context/scout.json b/docs/context/scout.json
--index ba9d965..3bcfbd3 100644
----- a/docs/context/scout.json
--+++ b/docs/context/scout.json
--@@ -1,6 +1,7 @@
-- {
--   "files_to_read": [
--     "mcp/forge-worker.mjs",
--+    "mcp/lib/worker-pids.js",
--     "mcp/server.js"
--   ],
--   "functions_to_modify": {},
--diff --git a/mcp/server.js b/mcp/server.js
--index 3fdae16..0d5764c 100644
----- a/mcp/server.js
--+++ b/mcp/server.js
--@@ -17,6 +17,7 @@ import { buildDashboardState } from "./lib/dashboard-state.js";
-- import { sanitizeFeatureName } from "./lib/sanitize.js";
-- import { searchConstraints, searchPatterns, appendSolutionDoc } from "./lib/knowledge-store.js";
-- import { workerLogPath, killPillPath } from "./lib/worker-paths.js";
--+import { sweepStalePids } from "./lib/worker-pids.js";
-- 
-- // -- Shared Zod schemas ------------------------------------------------------
-- 
--@@ -1751,6 +1752,14 @@ server.registerTool(
--         return textResult(started);
--       }
-- 
--+      // Sweep stale PID files before collision guard so zombie "running" entries
--+      // do not falsely block new spawns.
--+      const mainProjectDir = resolveMainProjectDir();
--+      const sweepResult = sweepStalePids(mainProjectDir);
--+      if (sweepResult.swept > 0) {
--+        console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
--+      }
+--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
+--       //
+--       // At this point `run` has its final worktreePath/branchName. Apply the
+-diff --git a/mcp/zombie-worker-prevention-test.mjs b/mcp/zombie-worker-prevention-test.mjs
+-new file mode 100644
+-index 0000000..817e014
+---- /dev/null
+-+++ b/mcp/zombie-worker-prevention-test.mjs
+-@@ -0,0 +1,181 @@
+-+#!/usr/bin/env node
+-+// Unit test: sweepStalePids helper from mcp/lib/worker-pids.js
+-+//
+-+// Tests that the sweep correctly:
+-+//   - identifies dead PIDs, marks runs failed, deletes PID files, returns swept=1
+-+//   - leaves non-running runs (e.g. completed) untouched even when the PID is dead
+-+//
+-+// Run: node mcp/zombie-worker-prevention-test.mjs
+-+// Auto-discovered by scripts/run-tests.mjs via mcp/*-test.mjs suffix.
 -+
--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
--       //
--       // The new run's intent at this point is captured by `useWorktree`:
--@@ -2621,6 +2630,14 @@ server.registerTool(
--         return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
--       }
-- 
--+      // Sweep stale PID files before collision guard so zombie "running" entries
--+      // do not falsely block this advance path.
--+      const mainProjectDirAdv = resolveMainProjectDir();
--+      const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
--+      if (sweepResultAdv.swept > 0) {
--+        console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
--+      }
+-+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+-+import { join } from 'node:path';
+-+import { tmpdir } from 'node:os';
+-+import { spawnSync } from 'node:child_process';
 -+
--       // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
--       //
--       // At this point `run` has its final worktreePath/branchName. Apply the
-diff --git a/mcp/zombie-worker-prevention-test.mjs b/mcp/zombie-worker-prevention-test.mjs
-new file mode 100644
-index 0000000..817e014
---- /dev/null
-+++ b/mcp/zombie-worker-prevention-test.mjs
-@@ -0,0 +1,181 @@
-+#!/usr/bin/env node
-+// Unit test: sweepStalePids helper from mcp/lib/worker-pids.js
-+//
-+// Tests that the sweep correctly:
-+//   - identifies dead PIDs, marks runs failed, deletes PID files, returns swept=1
-+//   - leaves non-running runs (e.g. completed) untouched even when the PID is dead
-+//
-+// Run: node mcp/zombie-worker-prevention-test.mjs
-+// Auto-discovered by scripts/run-tests.mjs via mcp/*-test.mjs suffix.
+-+import { sweepStalePids } from './lib/worker-pids.js';
+-+
+-+const LABEL = '[zombie-worker-prevention]';
+-+
+-+function fail(msg) {
+-+  console.error(LABEL + ' FAIL');
+-+  console.error('  ' + msg);
+-+  process.exit(1);
+-+}
+-+
+-+/**
+-+ * Returns a PID that is guaranteed to be dead.
+-+ *
+-+ * Strategy: spawn `node -e "process.exit(0)"` synchronously and capture its
+-+ * pid. spawnSync() waits for exit before returning, so by the time we read
+-+ * .pid the child has already exited and the OS has reaped it (no zombie on
+-+ * any POSIX system once the parent calls spawnSync). This is more reliable
+-+ * than a magic constant because:
+-+ *   - PID 2 is alive on Linux (kthreadd).
+-+ *   - INT_MAX-style PIDs can theoretically be recycled on long-running boxes.
+-+ *   - A freshly-exited child PID is guaranteed dead on all platforms this
+-+ *     plugin targets (macOS, Linux, Windows via Node's kill(0) probe).
+-+ *
+-+ * @returns {number}
+-+ */
+-+function getDeadPid() {
+-+  const result = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { timeout: 5000 });
+-+  if (result.pid == null || result.pid <= 0) {
+-+    // Fallback: use a very high PID that is almost certainly unused.
+-+    // 2147483646 is near the 32-bit signed int max; unlikely to be a live PID.
+-+    return 2147483646;
+-+  }
+-+  return result.pid;
+-+}
+-+
+-+function seedPidFile(pidsDir, runId, pid) {
+-+  const filePath = join(pidsDir, runId + '.json');
+-+  writeFileSync(filePath, JSON.stringify({ runId, pid, startedAt: new Date().toISOString() }, null, 2), 'utf-8');
+-+  return filePath;
+-+}
+-+
+-+function seedRunJson(projectDir, runId, status) {
+-+  const runDir = join(projectDir, '.pipeline', 'runs', runId);
+-+  mkdirSync(runDir, { recursive: true });
+-+  const runPath = join(runDir, 'run.json');
+-+  writeFileSync(runPath, JSON.stringify({
+-+    runId,
+-+    status,
+-+    feature: 'test-feature',
+-+    createdAt: new Date().toISOString(),
+-+  }, null, 2), 'utf-8');
+-+  return runPath;
+-+}
+-+
+-+function readRunJson(projectDir, runId) {
+-+  const p = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+-+  if (!existsSync(p)) return null;
+-+  return JSON.parse(readFileSync(p, 'utf-8'));
+-+}
+-+
+-+async function main() {
+-+  const projectDir = mkdtempSync(join(tmpdir(), 'forge-zombie-test-'));
+-+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
+-+  mkdirSync(pidsDir, { recursive: true });
+-+
+-+  const deadPid = getDeadPid();
+-+
+-+  // Seed run-A: status=running, dead PID — should be swept and marked failed.
+-+  const runIdA = 'r-deadtest1';
+-+  seedPidFile(pidsDir, runIdA, deadPid);
+-+  const runPathA = seedRunJson(projectDir, runIdA, 'running');
+-+  const pidFileA = join(pidsDir, runIdA + '.json');
+-+
+-+  // Seed run-B: status=completed, dead PID — PID file deleted but run.json NOT modified.
+-+  const runIdB = 'r-deadtest2';
+-+  seedPidFile(pidsDir, runIdB, deadPid);
+-+  seedRunJson(projectDir, runIdB, 'completed');
+-+  const pidFileB = join(pidsDir, runIdB + '.json');
+-+
+-+  let failure = null;
+-+
+-+  try {
+-+    const result = sweepStalePids(projectDir);
+-+
+-+    // ── Assert 1: return shape has swept=2 (both dead PID files removed) ──────
+-+    // Both PID files belong to dead PIDs; the sweep deletes them regardless of
+-+    // run status. swept counts PID file deletions, not run-status changes.
+-+    if (typeof result.swept !== 'number') {
+-+      failure = 'return value.swept is not a number: ' + JSON.stringify(result);
+-+    } else if (result.swept !== 2) {
+-+      failure = 'expected swept=2 (both dead PID files deleted), got swept=' + result.swept;
+-+    }
+-+
+-+    // ── Assert 2: run-A (running) is now marked failed ────────────────────────
+-+    if (!failure) {
+-+      const runA = readRunJson(projectDir, runIdA);
+-+      if (!runA) {
+-+        failure = 'run.json for ' + runIdA + ' missing after sweep';
+-+      } else if (runA.status !== 'failed') {
+-+        failure = 'run-A status should be "failed" after sweep, got: ' + runA.status;
+-+      } else if (runA.failureReason !== 'worker process no longer alive (swept)') {
+-+        failure = 'run-A failureReason unexpected: ' + runA.failureReason;
+-+      } else {
+-+        console.error(LABEL + ' assert 2 PASS — run-A (running) marked failed');
+-+      }
+-+    }
+-+
+-+    // ── Assert 3: PID file for run-A is deleted ───────────────────────────────
+-+    if (!failure) {
+-+      if (existsSync(pidFileA)) {
+-+        failure = 'PID file for run-A should be deleted after sweep, but still exists';
+-+      } else {
+-+        console.error(LABEL + ' assert 3 PASS — PID file for run-A deleted');
+-+      }
+-+    }
+-+
+-+    // ── Assert 4: run-B (completed) run.json is NOT changed ───────────────────
+-+    // The sweep marks only 'running' runs as failed; completed/failed runs are
+-+    // left untouched (PID file is still deleted since the PID is dead).
+-+    if (!failure) {
+-+      const runB = readRunJson(projectDir, runIdB);
+-+      if (!runB) {
+-+        failure = 'run.json for ' + runIdB + ' missing after sweep';
+-+      } else if (runB.status !== 'completed') {
+-+        failure = 'run-B status should remain "completed", got: ' + runB.status;
+-+      } else {
+-+        console.error(LABEL + ' assert 4 PASS — run-B (completed) left untouched');
+-+      }
+-+    }
+-+
+-+    // ── Assert 5: PID file for run-B is deleted (dead PID, any run status) ────
+-+    if (!failure) {
+-+      if (existsSync(pidFileB)) {
+-+        failure = 'PID file for run-B should be deleted after sweep, but still exists';
+-+      } else {
+-+        console.error(LABEL + ' assert 5 PASS — PID file for run-B deleted');
+-+      }
+-+    }
+-+
+-+    // ── Assert 6: no errors in return value ───────────────────────────────────
+-+    if (!failure && result.errors !== 0) {
+-+      failure = 'expected errors=0, got errors=' + result.errors;
+-+    }
+-+
+-+    if (!failure) {
+-+      console.error(LABEL + ' PASS');
+-+      console.error('  deadPid: ' + deadPid);
+-+      console.error('  swept:   ' + result.swept);
+-+      console.error('  alive:   ' + result.alive);
+-+      console.error('  errors:  ' + result.errors);
+-+    }
+-+
+-+  } catch (err) {
+-+    failure = 'test harness error: ' + (err && err.stack || String(err));
+-+  } finally {
+-+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+-+  }
+-+
+-+  if (failure) fail(failure);
+-+  process.exit(0);
+-+}
+-+
+-+main().catch((err) => {
+-+  console.error(LABEL + ' unexpected throw:', err);
+-+  process.exit(1);
+-+});
+diff --git a/hooks/subagent-stop-verdict-test.js b/hooks/subagent-stop-verdict-test.js
+index 2ef0691a..ed5656cf 100644
+--- a/hooks/subagent-stop-verdict-test.js
++++ b/hooks/subagent-stop-verdict-test.js
+@@ -225,7 +225,7 @@ async function test() {
+   {
+     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+     makeProject(tmp, 'agent-res-1', 'researcher');
+-    // docs/context/researcher-status.json does NOT exist
++    // .pipeline/context/researcher-status.json does NOT exist
+     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-1',
+       agent_type: 'researcher', last_assistant_message: 'Partial research output',
+       session_id: 'test' }, tmp);
+@@ -240,8 +240,8 @@ async function test() {
+   {
+     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+     makeProject(tmp, 'agent-res-2', 'researcher');
+-    mkdirSync(join(tmp, 'docs', 'context'), { recursive: true });
+-    writeFileSync(join(tmp, 'docs', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
++    mkdirSync(join(tmp, '.pipeline', 'context'), { recursive: true });
++    writeFileSync(join(tmp, '.pipeline', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
+     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-2',
+       agent_type: 'researcher',
+       last_assistant_message: '[research-status] READY\n[suggest] implement feature: test',
+diff --git a/hooks/subagent-stop.js b/hooks/subagent-stop.js
+index 847358dc..5a479a48 100644
+--- a/hooks/subagent-stop.js
++++ b/hooks/subagent-stop.js
+@@ -270,7 +270,7 @@ async function main(rawInput) {
+     'debug': 'docs/context/handoff.md',
+     'refactor': 'docs/context/handoff.md',
+     'implementation-architect': 'docs/context/slice-brief.md',
+-    'researcher': 'docs/context/researcher-status.json',
++    'researcher': '.pipeline/context/researcher-status.json',
+   };
+ 
+   const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];
+diff --git a/scripts/post-apply-lifecycle.mjs b/scripts/post-apply-lifecycle.mjs
+index 8a248c29..3741a764 100644
+--- a/scripts/post-apply-lifecycle.mjs
++++ b/scripts/post-apply-lifecycle.mjs
+@@ -24,7 +24,7 @@ function log(msg) {
+ // --- Job 1: Archive and wipe reviewer output ---------------------------------
+ function archiveReviewerOutput() {
+   try {
+-    const reviewerOutputDir = path.join(projectDir, 'docs', 'context', 'reviewer-output');
++    const reviewerOutputDir = path.join(projectDir, '.pipeline', 'context', 'reviewer-output');
+     const archiveBase = path.join(projectDir, '.pipeline', 'review-archive');
+     const ts = String(Date.now());
+     const archiveDir = path.join(archiveBase, ts);
+@@ -93,7 +93,7 @@ function deleteSidecars() {
+       'docs/context/slice-brief.md',
+       'docs/context/supervisor-brief.md',
+       'docs/context/triage-dispatch.json',
+-      'docs/context/researcher-status.json',
++      '.pipeline/context/researcher-status.json',
+       'docs/context/coder-status.json',
+       'docs/context/scout.json',
+       'docs/context/run-metrics.json',
+diff --git a/skills/debug/SKILL.md b/skills/debug/SKILL.md
+index 3228dced..d49e9220 100644
+--- a/skills/debug/SKILL.md
++++ b/skills/debug/SKILL.md
+@@ -119,15 +119,27 @@ Do NOT proceed without resolving `<worktreePath>`.
+    - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers.
+ 5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
+ 
++   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
 +
-+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-+import { join } from 'node:path';
-+import { tmpdir } from 'node:os';
-+import { spawnSync } from 'node:child_process';
++   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
 +
-+import { sweepStalePids } from './lib/worker-pids.js';
++5b-pre. **Persist verdict bodies for audit trail:**
 +
-+const LABEL = '[zombie-worker-prevention]';
++   Before processing the verdicts (BLOCK/REVISE/APPROVED branching), copy each reviewer's output file to a per-run verdict directory:
 +
-+function fail(msg) {
-+  console.error(LABEL + ' FAIL');
-+  console.error('  ' + msg);
-+  process.exit(1);
-+}
++   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
++   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-debug.md`.
++   - These files persist beyond Gate #2 — they are the audit trail for failed runs.
 +
-+/**
-+ * Returns a PID that is guaranteed to be dead.
-+ *
-+ * Strategy: spawn `node -e "process.exit(0)"` synchronously and capture its
-+ * pid. spawnSync() waits for exit before returning, so by the time we read
-+ * .pid the child has already exited and the OS has reaped it (no zombie on
-+ * any POSIX system once the parent calls spawnSync). This is more reliable
-+ * than a magic constant because:
-+ *   - PID 2 is alive on Linux (kthreadd).
-+ *   - INT_MAX-style PIDs can theoretically be recycled on long-running boxes.
-+ *   - A freshly-exited child PID is guaranteed dead on all platforms this
-+ *     plugin targets (macOS, Linux, Windows via Node's kill(0) probe).
-+ *
-+ * @returns {number}
-+ */
-+function getDeadPid() {
-+  const result = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { timeout: 5000 });
-+  if (result.pid == null || result.pid <= 0) {
-+    // Fallback: use a very high PID that is almost certainly unused.
-+    // 2147483646 is near the 32-bit signed int max; unlikely to be a live PID.
-+    return 2147483646;
-+  }
-+  return result.pid;
-+}
+ 5b. **Reviewer verdict handling** (only when step 5 ran):
+ 
+    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
+ 
+-   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
+-   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
++   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
++   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
+    - If ANY reviewer emitted **REVISE** (and none BLOCK):
+      - If `N < 2`: increment `N` to `N+1`.
+-       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
++       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
+        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
+        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 5c.
+      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.
+diff --git a/skills/implement/SKILL.md b/skills/implement/SKILL.md
+index 8b60ba1d..d41fffd7 100644
+--- a/skills/implement/SKILL.md
++++ b/skills/implement/SKILL.md
+@@ -169,7 +169,7 @@ The coder-scout, reviewer dispatch, test stage, and reviewers operate on the sam
+   Continue to the next phase.
+ 
+ **d. Reset per-phase state between phases:**
+-Before starting the next phase, clear `<worktreePath>/docs/context/reviewer-output/` (delete all files in the directory) so reviewer verdicts from the previous phase do not bleed into the next. Reset the revision counter `N` to 0 and the test counter `T` to 0 for each new phase.
++Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer-output/` (delete all files in the directory) so reviewer verdicts from the previous phase do not bleed into the next. Verdict bodies have already been persisted in step 5b-pre, so they survive this clear. Reset the revision counter `N` to 0 and the test counter `T` to 0 for each new phase.
+ 
+ **After the loop completes** (all phases done — BLOCK and REVISE-unresolved verdicts exit the worker before reaching here): proceed to the completeness-checker (Step 3.3 — run once against the full plan, not per-phase) and then Gate #2 (Step 6).
+ 
+@@ -235,21 +235,34 @@ Before starting the next phase, clear `<worktreePath>/docs/context/reviewer-outp
+    - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers. Do NOT add or remove reviewers — the script output is authoritative.
+ 5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
+ 
++   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
 +
-+function seedPidFile(pidsDir, runId, pid) {
-+  const filePath = join(pidsDir, runId + '.json');
-+  writeFileSync(filePath, JSON.stringify({ runId, pid, startedAt: new Date().toISOString() }, null, 2), 'utf-8');
-+  return filePath;
-+}
++   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
 +
-+function seedRunJson(projectDir, runId, status) {
-+  const runDir = join(projectDir, '.pipeline', 'runs', runId);
-+  mkdirSync(runDir, { recursive: true });
-+  const runPath = join(runDir, 'run.json');
-+  writeFileSync(runPath, JSON.stringify({
-+    runId,
-+    status,
-+    feature: 'test-feature',
-+    createdAt: new Date().toISOString(),
-+  }, null, 2), 'utf-8');
-+  return runPath;
-+}
+    **Special case — `reviewer-style`:** When `reviewer-style` appears in the dispatch list, run the deterministic script first:
+    - Run via Bash: `node scripts/reviewer-style-check.mjs --root <worktreePath>` with `timeout: 30000`.
+-   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/docs/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
++   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/.pipeline/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
+    - If exit non-zero or `ok: false` or stdout is malformed: log `[reviewer-style-check] script fallback`. Spawn the `reviewer-style` agent as normal fallback.
+    - Other reviewers in the list run in parallel as usual (only `reviewer-style` uses the script path).
+ 
++5b-pre. **Persist verdict bodies for audit trail:**
 +
-+function readRunJson(projectDir, runId) {
-+  const p = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
-+  if (!existsSync(p)) return null;
-+  return JSON.parse(readFileSync(p, 'utf-8'));
-+}
++   Before processing the verdicts (BLOCK/REVISE/APPROVED branching) or clearing the reviewer-output dir between phases, copy each reviewer's output file to a per-run verdict directory:
 +
-+async function main() {
-+  const projectDir = mkdtempSync(join(tmpdir(), 'forge-zombie-test-'));
-+  const pidsDir = join(projectDir, '.pipeline', 'worker-pids');
-+  mkdirSync(pidsDir, { recursive: true });
++   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
++   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-<phase>.md`.
++   - Phase value: `implement` for non-phased runs; `phase-<index>` (e.g. `phase-1`) when running inside the Phase Execution Loop.
++   - These files persist beyond the inter-phase reviewer-output clear and beyond Gate #2 — they are the audit trail for failed runs.
 +
-+  const deadPid = getDeadPid();
+ 5b. **Reviewer verdict handling** (only when step 5 ran):
+ 
+    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
+ 
+-   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
+-   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
++   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
++   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
+    - If ANY reviewer emitted **REVISE** (and none BLOCK):
+      - If `N < 2`: increment `N` to `N+1`.
+-       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
++       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
+        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
+        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 5c.
+      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.
+diff --git a/skills/plan/SKILL.md b/skills/plan/SKILL.md
+index 7318e7bd..5197362f 100644
+--- a/skills/plan/SKILL.md
++++ b/skills/plan/SKILL.md
+@@ -127,10 +127,14 @@ Exit — do not proceed to further steps.
+ 2. **Conditional researcher:** read `### Research needed` in PLAN.md. Skip if absent/empty.
+ 4. **Gotcha-checker + Researcher (concurrent when both needed):** If both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially.
+ 5. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
+-   - **Clear stale reviewer output first.** Delete every `*.md` file under `docs/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash from the project root: `find docs/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || del /q docs\context\reviewer-output\*.md 2>nul` — first command for POSIX shells, second for Windows. Either succeeding (or both being no-ops on an empty directory) is acceptable; do not block on the cleanup.
+-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=docs/PLAN.md --stage=plan`.
++   - **Clear stale reviewer output first.** Delete every `*.md` file under `<worktreePath>/.pipeline/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash: `find <worktreePath>/.pipeline/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || true` — if the directory doesn't exist yet, the command is a no-op. Do not block on the cleanup.
++   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=<worktreePath>/docs/PLAN.md --stage=plan`.
+    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`).
+    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
++   - **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
 +
-+  // Seed run-A: status=running, dead PID — should be swept and marked failed.
-+  const runIdA = 'r-deadtest1';
-+  seedPidFile(pidsDir, runIdA, deadPid);
-+  const runPathA = seedRunJson(projectDir, runIdA, 'running');
-+  const pidFileA = join(pidsDir, runIdA + '.json');
++     > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
 +
-+  // Seed run-B: status=completed, dead PID — PID file deleted but run.json NOT modified.
-+  const runIdB = 'r-deadtest2';
-+  seedPidFile(pidsDir, runIdB, deadPid);
-+  seedRunJson(projectDir, runIdB, 'completed');
-+  const pidFileB = join(pidsDir, runIdB + '.json');
+    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
+ 6. **Gate #1:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
+    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md"}` (absolute path so the user can locate the worktree's PLAN.md unambiguously).
+diff --git a/skills/refactor/SKILL.md b/skills/refactor/SKILL.md
+index 8f8a48d4..85098d89 100644
+--- a/skills/refactor/SKILL.md
++++ b/skills/refactor/SKILL.md
+@@ -115,21 +115,33 @@ Do NOT proceed without resolving `<worktreePath>`.
+    - If `reviewers` is non-empty: proceed to step 4 with exactly those reviewers.
+ 4. **Reviewers:** dispatch exactly the reviewers listed in step 3's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
+ 
++   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
 +
-+  let failure = null;
++   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
 +
-+  try {
-+    const result = sweepStalePids(projectDir);
+    **Special case — `reviewer-style`:** When `reviewer-style` appears in the dispatch list (it always does for refactor pipelines), run the deterministic script first:
+    - Run via Bash: `node scripts/reviewer-style-check.mjs --root <worktreePath>` with `timeout: 30000`.
+-   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/docs/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
++   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/.pipeline/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
+    - If exit non-zero or `ok: false` or stdout is malformed: log `[reviewer-style-check] script fallback`. Spawn the `reviewer-style` agent as normal fallback.
+    - Other reviewers in the list run in parallel as usual.
+ 
++4b-pre. **Persist verdict bodies for audit trail:**
 +
-+    // ── Assert 1: return shape has swept=2 (both dead PID files removed) ──────
-+    // Both PID files belong to dead PIDs; the sweep deletes them regardless of
-+    // run status. swept counts PID file deletions, not run-status changes.
-+    if (typeof result.swept !== 'number') {
-+      failure = 'return value.swept is not a number: ' + JSON.stringify(result);
-+    } else if (result.swept !== 2) {
-+      failure = 'expected swept=2 (both dead PID files deleted), got swept=' + result.swept;
-+    }
++   Before processing the verdicts (BLOCK/REVISE/APPROVED branching), copy each reviewer's output file to a per-run verdict directory:
 +
-+    // ── Assert 2: run-A (running) is now marked failed ────────────────────────
-+    if (!failure) {
-+      const runA = readRunJson(projectDir, runIdA);
-+      if (!runA) {
-+        failure = 'run.json for ' + runIdA + ' missing after sweep';
-+      } else if (runA.status !== 'failed') {
-+        failure = 'run-A status should be "failed" after sweep, got: ' + runA.status;
-+      } else if (runA.failureReason !== 'worker process no longer alive (swept)') {
-+        failure = 'run-A failureReason unexpected: ' + runA.failureReason;
-+      } else {
-+        console.error(LABEL + ' assert 2 PASS — run-A (running) marked failed');
-+      }
-+    }
++   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
++   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-refactor.md`.
++   - These files persist beyond Gate #2 — they are the audit trail for failed runs.
 +
-+    // ── Assert 3: PID file for run-A is deleted ───────────────────────────────
-+    if (!failure) {
-+      if (existsSync(pidFileA)) {
-+        failure = 'PID file for run-A should be deleted after sweep, but still exists';
-+      } else {
-+        console.error(LABEL + ' assert 3 PASS — PID file for run-A deleted');
-+      }
-+    }
-+
-+    // ── Assert 4: run-B (completed) run.json is NOT changed ───────────────────
-+    // The sweep marks only 'running' runs as failed; completed/failed runs are
-+    // left untouched (PID file is still deleted since the PID is dead).
-+    if (!failure) {
-+      const runB = readRunJson(projectDir, runIdB);
-+      if (!runB) {
-+        failure = 'run.json for ' + runIdB + ' missing after sweep';
-+      } else if (runB.status !== 'completed') {
-+        failure = 'run-B status should remain "completed", got: ' + runB.status;
-+      } else {
-+        console.error(LABEL + ' assert 4 PASS — run-B (completed) left untouched');
-+      }
-+    }
-+
-+    // ── Assert 5: PID file for run-B is deleted (dead PID, any run status) ────
-+    if (!failure) {
-+      if (existsSync(pidFileB)) {
-+        failure = 'PID file for run-B should be deleted after sweep, but still exists';
-+      } else {
-+        console.error(LABEL + ' assert 5 PASS — PID file for run-B deleted');
-+      }
-+    }
-+
-+    // ── Assert 6: no errors in return value ───────────────────────────────────
-+    if (!failure && result.errors !== 0) {
-+      failure = 'expected errors=0, got errors=' + result.errors;
-+    }
-+
-+    if (!failure) {
-+      console.error(LABEL + ' PASS');
-+      console.error('  deadPid: ' + deadPid);
-+      console.error('  swept:   ' + result.swept);
-+      console.error('  alive:   ' + result.alive);
-+      console.error('  errors:  ' + result.errors);
-+    }
-+
-+  } catch (err) {
-+    failure = 'test harness error: ' + (err && err.stack || String(err));
-+  } finally {
-+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
-+  }
-+
-+  if (failure) fail(failure);
-+  process.exit(0);
-+}
-+
-+main().catch((err) => {
-+  console.error(LABEL + ' unexpected throw:', err);
-+  process.exit(1);
-+});
+ 4b. **Reviewer verdict handling** (only when step 4 ran):
+ 
+    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
+ 
+-   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
+-   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
++   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
++   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
+    - If ANY reviewer emitted **REVISE** (and none BLOCK):
+      - If `N < 2`: increment `N` to `N+1`.
+-       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
++       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
+        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
+        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 4c.
+      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.

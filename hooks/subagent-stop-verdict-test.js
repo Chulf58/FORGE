@@ -225,7 +225,7 @@ async function test() {
   {
     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
     makeProject(tmp, 'agent-res-1', 'researcher');
-    // docs/context/researcher-status.json does NOT exist
+    // .pipeline/context/researcher-status.json does NOT exist
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-1',
       agent_type: 'researcher', last_assistant_message: 'Partial research output',
       session_id: 'test' }, tmp);
@@ -240,8 +240,8 @@ async function test() {
   {
     const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
     makeProject(tmp, 'agent-res-2', 'researcher');
-    mkdirSync(join(tmp, 'docs', 'context'), { recursive: true });
-    writeFileSync(join(tmp, 'docs', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
+    mkdirSync(join(tmp, '.pipeline', 'context'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'context', 'researcher-status.json'), JSON.stringify({ status: 'READY' }));
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-2',
       agent_type: 'researcher',
       last_assistant_message: '[research-status] READY\n[suggest] implement feature: test',
