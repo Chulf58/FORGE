@@ -248,14 +248,21 @@ async function main() {
   }
 
   /**
-   * Polls a gate file until its status is 'approved' or 'discarded',
-   * or until the worker timeout fires.
+   * Polls a gate file until its status is 'approved' or 'discarded' for the
+   * EXPECTED gate name, or until the worker timeout fires.
+   *
+   * The gate-name check is defence against stale gate-pending.json content:
+   * if a prior phase's approved file is left on disk (e.g. gate1/approved
+   * persisting while the worker now waits for gate2), the status field would
+   * read 'approved' but the gate name would not match — so we keep polling
+   * instead of auto-resolving. See TODO 9a9d29b2 — observed gate2 auto-skip
+   * on r-7299690b 2026-05-09.
    *
    * Uses watchFile (stat-polling, cross-platform) for change detection,
    * with a 3 s setInterval fallback to guard against missed events.
    * Resolves with 'approved', 'discarded', or 'timeout'.
    */
-  function waitForGateDecision(gatePath) {
+  function waitForGateDecision(gatePath, expectedGate) {
     return new Promise((resolve) => {
       let resolved = false;
 
@@ -276,6 +283,11 @@ async function main() {
         try {
           const raw = readFileSync(gatePath, 'utf-8');
           const gate = JSON.parse(raw);
+          // Defence: file's gate name must match the gate we are waiting for.
+          // Wrong-gate or stale content → keep polling.
+          if (gate.gate !== expectedGate) {
+            return;
+          }
           if (gate.status === 'approved') {
             resolved = true;
             cleanup();
@@ -652,8 +664,8 @@ async function main() {
           gatePath = join(workDir, '.pipeline', 'gate-pending.json');
         }
 
-        writeLog('[forge-worker] polling gate file: ' + gatePath);
-        const decision = await waitForGateDecision(gatePath);
+        writeLog('[forge-worker] polling gate file: ' + gatePath + ' (expecting gate=' + gateName + ')');
+        const decision = await waitForGateDecision(gatePath, gateName);
         writeLog('[forge-worker] gate decision: ' + decision);
 
         if (decision === 'approved') {
