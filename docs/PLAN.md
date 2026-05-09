@@ -37,7 +37,7 @@ Summary: Add a diff-aware `reviewer-tests` agent that BLOCKs handoffs containing
 | Category | Patterns | Verdict |
 |---|---|---|
 | Assertion deletion | `-\s*(expect\|assert\|should\|assertEquals\|assertThat)\s*\(` removed lines in test files | BLOCK |
-| Assertion loosening | `toMatchSnapshot`, `toEqual(true)→toEqual(false)`, expected value replaced with `.*` wildcard or `any()` | REVISE |
+| Assertion loosening | `toMatchSnapshot`, `toEqual(false)` replacing `toEqual(true)`, expected value replaced with `.*` wildcard or `any()` | REVISE |
 | New mock of production path | `+.*\b(jest\.mock|vi\.mock|sinon\.stub|unittest\.mock\.patch|patch\s*\()` | BLOCK |
 | Lint/type disable | `+.*\b(eslint-disable|noqa|@ts-ignore|@ts-expect-error|type:\s*ignore)` | REVISE (BLOCK if on assertion line) |
 | Skip/xfail marker | `+.*\b(it\.skip|describe\.skip|xit\b|xdescribe|test\.skip|@pytest\.mark\.(skip|xfail)|t\.Skip\(\))` | BLOCK |
@@ -111,3 +111,94 @@ These resolutions are authoritative; implementer must reference them when there'
 - Decision: New `reviewer-tests` agent following existing reviewer pattern; dispatch routing added to `reviewer-dispatch.mjs` only (no `lean-risk-classify.mjs` change needed); built TDD-first with Wave 1 dispatch tests, Wave 2 implementation, Wave 3 regression.
 - Trade-off: Detection is pattern-based on the diff text; semantic analysis (e.g. detecting that a new mock wraps a previously-direct call) requires reading the full file which the agent can do but adds latency.
 - Uncertainty: All plan-stage unknowns resolved (research findings + reviewer warnings pinned in Resolution sections above).
+
+---
+
+### Feature: test-author agent and pipeline split
+
+Summary: Add a `test-author` agent and split the implement pipeline into test-author (red) → coder (green) waves, closing board TODO `2e73852d`.
+
+## Context
+
+Board TODO `2e73852d` — research §3.2 (Red+Green collapse), §3.3 (tests that pass before implementation), §4.2 (subagent isolation), §6.2 (FORGE-shaped pipeline-staged pattern), §9.2 (test-author on Haiku). Sibling work: `reviewer-tests` agent (TODO `48bddb1b`) ships diff-aware test-weakening detection; `tdd-guard` hook (TODO `e0450cf5`) is already DONE. This feature adds the upstream structural split: a separate agent authors the failing tests before the coder sees the feature.
+
+The single-agent coder context failure: even with TDD-structured planning, the coder sees the plan, mentally drafts the implementation, then writes tests the mental implementation will satisfy (§3.3). Subagent isolation (§4.2) eliminates this by having a different agent — with no memory of the coder conversation — write the implementation. The coder receives only test file paths + failure log, not the test-author's reasoning trace.
+
+## Acceptance criteria
+
+- AC-1: `agents/test-author.md` exists with valid YAML frontmatter (`name`, `description`, `model`, `tools`) and a `## Permissions` section with `### Always`/`### Ask First`/`### Never` per GENERAL.md schema. `allowedPaths` in the prompt body restricts writes to test-file patterns only (`*-test.js`, `*-test.mjs`, `scripts/*-test.mjs`, `hooks/*-test.js`).
+- AC-2: `skills/implement/SKILL.md` Step 3 (coder dispatch, currently line ~191) is split into two phases: test-author first (must observe red bar), gate verification, then coder second (must observe green bar).
+- AC-3: Handoff artefact at `docs/context/test-author-handoff.md` is written by `test-author` with test file paths and failure log; coder reads this file but NOT the test-author's session transcript.
+- AC-4: Red-phase verification: after test-author runs, the worker runs the relevant test file(s); if exit 0 (no failures), the skill emits a warning and aborts (test is too weak, per §3.3). The abort message identifies which test file passed without implementation.
+- AC-5: Green-phase verification: after coder runs, the same test command must exit 0 for the new test files; if exit non-zero, the coder revision loop (max 2 passes, per existing SKILL.md Step 5b) applies.
+- AC-6: `scripts/test-author-wave.test.mjs` contains failing tests for wave-split mechanics (test-author called before coder; red-phase abort when test passes without implementation); exits non-zero before implementation.
+- AC-7: `.pipeline/agent-roles.json` includes `test-author` with `allowedPaths` covering the test-file discovery patterns used by `scripts/run-tests.mjs` (i.e., `hooks/*-test.js`, `mcp/*-test.mjs`, `scripts/*-test.mjs`).
+
+## Out of scope
+
+- Renaming `coder` agent — keep the name; only change invocation context.
+- Auto-generating tests when missing from the plan (separate concern).
+- Replacing `reviewer-style` with `reviewer-tests` (sibling TODO `48bddb1b`, already done).
+- `skills/debug/SKILL.md` and `skills/refactor/SKILL.md` wave split — the test-author pattern applies only to feature implementation. Debug and refactor pipelines do not have a red-phase authoring step; they already have an existing failing state.
+- `forge-config.default.json` model routing entry — `agentModelMap` drives `forge_get_model_recommendation` results; `test-author` will fall back to frontmatter `model:` field per CLAUDE.md routing rule 4. A dedicated `agentModelMap` entry is a follow-up optimisation, not a blocker.
+
+## Surface
+
+| File | Change | Citation |
+|---|---|---|
+| `agents/test-author.md` | New file — ~80 lines | AC-1 |
+| `skills/implement/SKILL.md` | Split Step 3.2 (line ~191) into test-author + red gate + coder | AC-2, AC-4, AC-5 |
+| `.pipeline/agent-roles.json` | Add `test-author` entry | AC-7 |
+| `scripts/test-author-wave.test.mjs` | New test file — wave-split mechanics | AC-6 |
+| `docs/context/test-author-handoff.md` | Runtime artefact path (no source edit) | AC-3 |
+
+`scripts/run-tests.mjs` discovery pattern (lines 23-26): `hooks/*-test.js`, `mcp/*-test.mjs`, `scripts/*-test.mjs`. No `--files=` flag exists — AC-4 uses `node --test <absolute-path>` directly, not `run-tests.mjs`. This is the correct invocation for a single file.
+
+## Risks
+
+- `skills/implement/SKILL.md` Phase Execution Loop (lines 139-174) already handles multi-phase plans with per-phase coder invocations. The test-author split must integrate with the loop — not bypass it. The split applies at the coder-dispatch sub-step within each phase, not as a new outer loop.
+- `coder` agent's `allowedPaths` in `agent-roles.json` is `["docs/context/handoff.md"]` (line 19). This is narrower than the coder's actual source-write behavior. Pre-existing inconsistency — do not change it as part of this feature.
+
+---
+
+#### Phase 1 — Failing tests (TDD wave 1 — red bar)
+
+- [ ] 1. Write failing tests for wave-split mechanics (`scripts/test-author-wave.test.mjs`) (wave: 1)
+  Intent: Establish the red bar before any implementation — confirms TDD wave separation per research §3.2 and §4.2; tests must fail because the test-author agent and wave-split skill logic do not yet exist.
+  Verify: AC-6: `node --test scripts/test-author-wave.test.mjs` exits non-zero; test cases assert (a) the wave-split step list includes a `test-author` invocation before the coder step, (b) the red-phase abort fires when a test file exits 0 without source changes, (c) the coder receives `docs/context/test-author-handoff.md` path and not the full test-author transcript. No `.skip` markers; at least one assertion per case.
+
+#### Phase 2 — Implementation (TDD wave 2 — green bar)
+
+- [ ] 2. Create `agents/test-author.md` (`agents/test-author.md`) (wave: 2)
+  Intent: Provide the isolated test-author agent so the pipeline can dispatch it with a context window that contains no implementation reasoning, eliminating the §3.3 failure mode.
+  Verify: AC-1: File exists with valid YAML frontmatter (`name: test-author`, `model: claude-haiku-4-5-20251001`, `tools: [Read, Write, Glob, Grep, Bash]`), `## Permissions` with `### Always`/`### Ask First`/`### Never` per GENERAL.md schema; `### Never` prohibits editing source files (non-test paths); agent writes test files to discovery-pattern paths only and writes `docs/context/test-author-handoff.md` as its output artefact.
+
+- [ ] 3. Add `test-author` to `.pipeline/agent-roles.json` (`.pipeline/agent-roles.json`) (wave: 2)
+  Intent: Permit `test-author` to write test files and its handoff artefact without being blocked by `hooks/ctx-pre-tool.js` write-target enforcement.
+  Verify: AC-7: `.pipeline/agent-roles.json` contains `"test-author": { "allowedPaths": ["hooks/*-test.js", "mcp/*-test.mjs", "scripts/*-test.mjs", "docs/context/test-author-handoff.md"] }`; JSON is valid; no other entries modified.
+
+- [ ] 4. Split coder dispatch in `skills/implement/SKILL.md` into test-author + coder waves (`skills/implement/SKILL.md`) (wave: 2)
+  Intent: Enforce subagent isolation (§4.2) in the implement skill by inserting the test-author step before coder dispatch and adding red-phase and green-phase verification checkpoints.
+  Verify: AC-2, AC-4, AC-5: `skills/implement/SKILL.md` Step 3 contains (a) test-author dispatch before coder dispatch; (b) red-phase check: run `node --test <test-file-path>` on new test files, abort with warning if exit 0; (c) coder receives `[test-author-handoff: <path>]` signal in its prompt but not the test-author session; (d) green-phase check after coder runs confirms test exit 0; (e) the split integrates with the Phase Execution Loop (lines 139-174) without bypassing it.
+  Depends: 2, 3
+
+- [ ] 5. Write `docs/context/test-author-handoff.md` artefact spec into `agents/test-author.md` (`agents/test-author.md`) (wave: 3)
+  Intent: Guarantee the handoff artefact contains exactly the information the coder needs (test file paths + failure messages) and nothing that leaks the test-author's implementation reasoning.
+  Verify: AC-3: `agents/test-author.md` `### Always` section specifies writing `docs/context/test-author-handoff.md` with: (a) a `## Test files written` section listing absolute paths; (b) a `## Failure output` section with the raw `node --test` exit output; (c) no `## Reasoning` or design narrative sections. Coder's prompt in `skills/implement/SKILL.md` includes `[test-author-handoff: docs/context/test-author-handoff.md]` and instructs coder to read only that file, not the test-author session.
+  Depends: 2, 4
+
+#### Phase 3 — Regression (TDD wave N)
+
+- [ ] 6. Full regression suite green (`scripts/test-author-wave.test.mjs`, `hooks/tdd-guard.test.mjs`, `scripts/lean-risk-classify.test.mjs`, `scripts/reviewer-tests-dispatch.test.mjs`) (wave: 4)
+  Depends: 4, 5
+  Intent: Confirm that the wave-split implementation satisfies the failing tests from Phase 1 and does not break existing TDD-guard, classifier, or reviewer-dispatch tests.
+  Verify: `node --test scripts/test-author-wave.test.mjs` exits 0 AND `node scripts/run-tests.mjs` exits 0 (all discovered test files pass); no test cases skipped or deleted.
+
+### Research needed
+
+(None — all questions resolved from required reads. Key finding: `scripts/run-tests.mjs` has no `--files=` flag; AC-4 red-phase verification uses `node --test <absolute-path>` directly. `forge-config.default.json` model routing deferred to follow-up per out-of-scope decision above.)
+
+### Approach summary
+- Decision: New `test-author` agent (Haiku, isolated context) inserted before coder in `skills/implement/SKILL.md`; handoff artefact carries only test paths + failure output; built TDD-first per GENERAL.md §TDD discipline.
+- Trade-off: `skills/debug/SKILL.md` and `skills/refactor/SKILL.md` are out of scope — they start from an existing failure state and the test-author pattern does not apply.
+- Uncertainty: The Phase Execution Loop in `skills/implement/SKILL.md` (lines 139-174) already handles per-phase coder dispatch; the split must nest inside that loop cleanly — integration complexity is the main open risk.
