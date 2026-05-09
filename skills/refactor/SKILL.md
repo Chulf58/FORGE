@@ -115,21 +115,33 @@ Do NOT proceed without resolving `<worktreePath>`.
    - If `reviewers` is non-empty: proceed to step 4 with exactly those reviewers.
 4. **Reviewers:** dispatch exactly the reviewers listed in step 3's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
 
+   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
+
+   > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
+
    **Special case — `reviewer-style`:** When `reviewer-style` appears in the dispatch list (it always does for refactor pipelines), run the deterministic script first:
    - Run via Bash: `node scripts/reviewer-style-check.mjs --root <worktreePath>` with `timeout: 30000`.
-   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/docs/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
+   - If exit 0 and stdout JSON has `ok: true`: use the script's `[reviewer-verdict]` signal directly. Write the script output to `<worktreePath>/.pipeline/context/reviewer-output/reviewer-style.md` (the script does this automatically). Skip spawning the `reviewer-style` agent for this run.
    - If exit non-zero or `ok: false` or stdout is malformed: log `[reviewer-style-check] script fallback`. Spawn the `reviewer-style` agent as normal fallback.
    - Other reviewers in the list run in parallel as usual.
+
+4b-pre. **Persist verdict bodies for audit trail:**
+
+   Before processing the verdicts (BLOCK/REVISE/APPROVED branching), copy each reviewer's output file to a per-run verdict directory:
+
+   - Run `mkdir -p <worktreePath>/.pipeline/context/verdicts/` via Bash.
+   - For each reviewer in the dispatched list, copy `<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md` to `<worktreePath>/.pipeline/context/verdicts/<runId>-<reviewer>-refactor.md`.
+   - These files persist beyond Gate #2 — they are the audit trail for failed runs.
 
 4b. **Reviewer verdict handling** (only when step 4 ran):
 
    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
 
-   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/docs/context/reviewer-output/`)
-   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/docs/context/reviewer-output/` for post-failure inspection.
+   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
+   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
    - If ANY reviewer emitted **REVISE** (and none BLOCK):
      - If `N < 2`: increment `N` to `N+1`.
-       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/docs/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
+       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
        3. Re-invoke the coder with `[revision-mode: N]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]` (e.g. `[failed-criteria: AC-2, AC-4]`). Pass all REVISE warnings as context. Then proceed to step 4c.
      - If `N >= 2`: call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT open Gate #2. Log the unresolved AC-IDs and exit the worker.

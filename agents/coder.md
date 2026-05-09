@@ -95,7 +95,7 @@ No user is present during automated pipeline runs. If `scout.json` is empty (0 f
 
 Before writing anything, verify that the inputs were produced by the pipeline:
 
-0. **Check `docs/context/researcher-status.json`** — if it exists and contains `"status": "BLOCKED"`, stop immediately, do NOT write `handoff.md`, and emit:
+0. **Check `.pipeline/context/researcher-status.json`** — if it exists and contains `"status": "BLOCKED"`, stop immediately, do NOT write `handoff.md`, and emit:
 
 `[suggest] revise plan: <feature name>`
 
@@ -238,7 +238,7 @@ If you are approaching your context limit mid-task, write your progress to `docs
 
 **If your invocation prompt begins with `[revision-mode: N]`**, you are revising after a reviewer REVISE verdict. Work more narrowly:
 
-1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `docs/context/reviewer-output/`).
+1. Read ONLY `docs/context/handoff.md` (your prior output) and the reviewer verdict files that triggered revision (listed in the prompt or available in `.pipeline/context/reviewer-output/`).
 2. Do NOT re-read GENERAL.md, SKILLS.md, PLAN.md, or any source files — they are unchanged and already reflected in your prior handoff.
 3. **Criteria scoping:** If `docs/context/criteria.json` exists, read it. Target only criteria with `status: "rejected"` or reviewer verdicts of `NOT_MET`. Criteria with `status: "accepted"` or `status: "deferred"` are explicitly out of scope — do not re-implement or re-touch them. If a `[failed-criteria: AC-<N>, AC-<M>]` list is present in your prompt, use it as the authoritative list of criteria to address; ignore all others.
 4. Apply only the changes the reviewers flagged. Do not expand scope.

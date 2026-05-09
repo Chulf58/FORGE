@@ -270,7 +270,7 @@ async function main(rawInput) {
     'debug': 'docs/context/handoff.md',
     'refactor': 'docs/context/handoff.md',
     'implementation-architect': 'docs/context/slice-brief.md',
-    'researcher': 'docs/context/researcher-status.json',
+    'researcher': '.pipeline/context/researcher-status.json',
   };
 
   const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];

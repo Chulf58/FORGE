@@ -127,10 +127,14 @@ Exit — do not proceed to further steps.
 2. **Conditional researcher:** read `### Research needed` in PLAN.md. Skip if absent/empty.
 4. **Gotcha-checker + Researcher (concurrent when both needed):** If both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially.
 5. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
-   - **Clear stale reviewer output first.** Delete every `*.md` file under `docs/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash from the project root: `find docs/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || del /q docs\context\reviewer-output\*.md 2>nul` — first command for POSIX shells, second for Windows. Either succeeding (or both being no-ops on an empty directory) is acceptable; do not block on the cleanup.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=docs/PLAN.md --stage=plan`.
+   - **Clear stale reviewer output first.** Delete every `*.md` file under `<worktreePath>/.pipeline/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash: `find <worktreePath>/.pipeline/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || true` — if the directory doesn't exist yet, the command is a no-op. Do not block on the cleanup.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=<worktreePath>/docs/PLAN.md --stage=plan`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`).
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
+   - **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
+
+     > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
+
    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
 6. **Gate #1:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
    - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md"}` (absolute path so the user can locate the worktree's PLAN.md unambiguously).

@@ -63,7 +63,7 @@ Before writing your verdict file, resolve the output directory:
 
 1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
 2. If found, use `<path>` as the output directory.
-3. If not found, fall back to `docs/context/reviewer-output/`.
+3. If not found, fall back to `.pipeline/context/reviewer-output/`.
 
 The verdict filename is always `reviewer-logic.md` regardless of the directory used.
 
