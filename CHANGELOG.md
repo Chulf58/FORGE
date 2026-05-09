@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **reviewer-tests agent — diff-aware test-weakening detection (Phase 2 green bar)** — new agent scans for assertion deletions, mock injections of production code, lint/type suppressions, and skip/xfail markers in diffs; dispatch routing added to scripts/reviewer-dispatch.mjs with narrowed conditions (test-file hunks only, plan-stage requires test+keyword on same line); registered in agent-roles.json.
 - **Per-run reviewer-output directory — Phase 1 (foundation only)** — reviewer agents and the style-check script now accept a per-run output directory; pipeline-skill wiring is not yet in place, so reviewers continue to write to the shared `docs/context/reviewer-output/` in practice. (1) Reviewer agents (`agents/reviewer-{safety,boundary,logic,performance}.md`) resolve their output directory from a `[reviewer-output-dir: <path>]` prompt prefix and fall back to the shared dir when the prefix is absent. (2) `scripts/reviewer-style-check.mjs` accepts a new `--output-dir=<path>` flag; falls back to the shared dir when absent. **Phase 2** (pipeline skills inject the prefix and create the per-run dir) was reviewer-BLOCKed in r-ea6f9284 and is deferred. **Phase 3** (lifecycle archive script + agent-roles permissions + coder revision-step + shared-dir deletion) is also deferred. Until Phase 2 lands, the per-run routing is not exercised and the concurrent-worker race condition still exists.
 
 ### Fixed

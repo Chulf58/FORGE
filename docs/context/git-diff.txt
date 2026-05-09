@@ -1,492 +1,413 @@
-diff --git a/.pipeline/context/reviewer-output/reviewer-boundary.md b/.pipeline/context/reviewer-output/reviewer-boundary.md
-deleted file mode 100644
-index 0503ab4a..00000000
---- a/.pipeline/context/reviewer-output/reviewer-boundary.md
-+++ /dev/null
-@@ -1,34 +0,0 @@
--## Boundary Review: TDD Guard Hook — Phase 1
--
--### Violations
--
--None.
--
--### Verified
--
--- [x] **Hook function signature conformance** — Stub exports `runGuard(payload, env = process.env, _spawnImpl = null)` returning `Promise<{exitCode: number, stderr: string}>`. Signature matches all 12 test invocations. `_spawnImpl` is explicitly documented as "optional spawn override for testing timeout/ENOENT paths" and is correctly positioned as a third parameter (not env-var pollution), per handoff decision note. No breaking API surface for Phase 2.
--
--- [x] **CommonJS module export** — Stub uses `module.exports = { runGuard }` (CJS format), matching the hook integration pattern. Tests load via `createRequire()` from ESM context. Compatible with Phase 2 hook invocation via `node hooks/tdd-guard.js` in the PreToolUse hook harness (hooks.json registration is Phase 2 Task 10).
--
--- [x] **Test payload schema alignment** — All 12 test cases construct payloads matching bash-guard.js:316-327 and workflow-guard.js:191-194 PreToolUse stdin contract: `{ tool_name: 'Write', tool_input: { file_path: <path> }, cwd: <dir> }`. Tests also validate robustness cases (null payload, missing tool_input) which align with bash-guard.js's fail-open pattern (exitOk on parse error / missing extraction).
--
--- [x] **Return type shape alignment with deny envelope** — Stub returns `{ exitCode: 0, stderr: '' }`. Phase 2 will emit either exit 0 (allow) or exit 2 + deny envelope per bash-guard.js:11-27 (JSON + console.error + exit 2). The `stderr` field prepares for Phase 2's deny-message logging. No contract mismatch.
--
--- [x] **Filesystem isolation and cleanup** — Tests use `os.tmpdir() + fs.mkdtemp()` for isolation, store results in project-local variables, and unconditionally clean up via `fs.rm(..., { recursive: true, force: true })` in finally blocks (lines 73-76, 94-99, 114-121, etc.). No temp-dir leaks. Cross-platform temp paths via `os.tmpdir()` (GENERAL.md platform-differences rule).
--
--- [x] **Test case enumeration vs. plan AC-8b** — Handoff lists 12 test cases; PLAN.md AC-8b specifies 11 enumerated cases + test-file-exemption as case (6). Actual test count: cases (1-6) cover the six explicit scenarios, cases (7-11) cover the five fail-open + bypass scenarios, case (10b) is an additional robustness variant (malformed tool_input). This expansion of case 10 into (10, 10b) is a test-design refinement within scope — both variants verify the same "fail-open on parse error" boundary. All 11 enumerated cases from AC-8b are present and will fail against the stub (cases 1-3) or pass (cases 4-11), establishing the intended red bar.
--
--- [x] **Plan-stage reviewer REVISE resolution** — Earlier plan-stage verdict flagged source-file detection scope ambiguity between tdd-guard and workflow-guard. PLAN.md lines 123-124 now contains the resolution: "tdd-guard.js gates *every* Write/Edit/MultiEdit on plugin source code regardless of pipeline stage ... two hooks serve different policies and are intentionally disjoint in their source-file detection rules." Stub file (lines 3-12) includes an identical scope note in comments. No continuing ambiguity.
--
--- [x] **Hook contract documentation** — Stub JSDoc (lines 19-29) clearly documents: parameter types (`unknown`, `object`, `Function|null`), purpose, and return shape. PLAN.md sections "Hook contract" (lines 9-14) and "Source-file detection rule" (lines 16-18) remain the authoritative scope reference. Phase 2 implementer has sufficient surface definition to write the production logic.
--
--### Per-criterion verdicts
--
--**AC-8a** (create stub `hooks/tdd-guard.js`): **MET** — Stub file exists, exports `runGuard(payload, env, _spawnImpl)` returning `{exitCode: 0, stderr: ''}`. No production logic included (as required for Phase 1 TDD red bar).
--
--**AC-8b** (write failing tests in `hooks/tdd-guard.test.mjs`): **MET** — Test file exists with 12 test cases covering all AC-8b enumerated scenarios. Tests will fail against the stub for cases (1-3) — no test file exists, test file green, test file skipped — establishing the intended red bar. All 11 AC-8b-enumerated cases are present; assertions are not removed, tests not marked `.skip`, no test cases deleted (AC-9 constraint pre-validated). Filesystem isolation via tmpdir + cleanup. `_spawnImpl` injection validated for timeout and ENOENT paths.
--
--### Verdict
--
--**APPROVED** — Phase 1 boundary review passes. All architecture boundaries, contract definitions, and test-surface schemas align with the established FORGE hook integration patterns. The stub provides a valid API surface for Phase 2 implementation. The plan-stage reviewer's REVISE warning about scope ambiguity has been resolved via PLAN.md and stub comments. No violations found.
--
-diff --git a/.pipeline/context/reviewer-output/reviewer-logic.md b/.pipeline/context/reviewer-output/reviewer-logic.md
-deleted file mode 100644
-index c27cefc6..00000000
---- a/.pipeline/context/reviewer-output/reviewer-logic.md
-+++ /dev/null
-@@ -1,69 +0,0 @@
--## Logic Review: TDD Guard Hook
--
--### Issues
--
--- [ ] **Phase ordering: Task 8 tests require stub** — Lines 151, 158: Task 8 AC-8 requires `node --test hooks/tdd-guard.test.mjs` to "exit non-zero with the following test cases failing" immediately after Task 8. But the test file must import `hooks/tdd-guard.js` to unit-test the hook logic. If Task 9 (implementation) hasn't run yet, `require('hooks/tdd-guard.js')` fails and test file cannot even parse. Plan does not address: is there a stub created in Task 8? Or are tests written but not expected to run until Task 9? Or should tests mock the module? The red-bar requirement (exit non-zero) is unachievable without a stub or clarification. **Fix:** Task 8 should either (1) include a sub-step to create `hooks/tdd-guard.js` stub that exports a testable function, (2) state that tests are written but not run during wave 1, or (3) clarify how test file imports the hook when it doesn't exist.
--
--- [ ] **Edge case: test file imports non-existent source file** — Lines 116-121: "Failing test exists" decision tree doesn't explicitly address: target `hooks/foo.js` doesn't exist yet (new module), test file exists at `tests/foo.test.js`, and test imports `require('hooks/foo.js')`. `node --test` exits non-zero (module-not-found error, non-zero exit code). Hook treats this as "failing test exists → allow write." Semantically correct for TDD red phase, but plan should confirm this is the intended behavior (vs. failing-closed or raising an error message about missing source file). Currently implicit and not documented in failure modes (lines 134-142).
--
--- [ ] **Test file with no tests (empty file)** — Lines 134-142, 151: Test file exists but contains no executable tests (empty file or only helper functions). `node --test` exits 0 (no tests = success). Hook blocks the write. Plan does not explicitly document this scenario. Should clarify: is "no tests" treated as "all green" (block is correct), or should it fail-closed with a message directing agent to write tests? Current logic is correct and conservative, but AC-8 test case #7 (lines 151) should enumerate this.
--
--- [ ] **No validation that failing test is about target module** — Lines 116-121: Hook looks for test file by filename mapping (`hooks/foo.js` → `tests/foo.test.js`), then checks `node --test` exit code. If test file contains an unrelated failing test (e.g., leftover broken test for a different module), hook allows write to `foo.js` even though the failing test has no connection to `foo.js`. The plan's test-presence check cannot distinguish "failing test is about target module" from "test file contains any failing test." This is a limitation of the file-path-based mapping approach vs. semantic test-code analysis. Plan should document or accept this as a known limitation (acceptable for v1, could be improved with test-name parsing in v2).
--
--- [ ] **Multiple test file matches — no resolution order** — Lines 110-114: "for a target file `hooks/foo.js`, the hook looks for `hooks/foo.test.js` or `tests/foo.test.js` or `scripts/foo.test.mjs`." Plan does not specify: if multiple paths exist, which takes priority? Typical convention: one file per module, but plan should define deterministic behavior (e.g., "check in order: hooks/foo.test.js, then tests/foo.test.js, then scripts/foo.test.mjs; use first match").
--
--- [ ] **AC-9 allows pathological passing tests** — Line 158: "All test cases from Task 8 pass" does not prevent implementer from deleting all assertions and marking tests as `.skip`. Tests would execute (exit 0), AC-9 passes, but hook enforces no TDD at all. **Recommend adding to AC-9:** "Test suite must include a minimum of N test cases per scenario (no test file exists, test file exists+all pass, test file exists+at least one fails); each test case includes at least one assertion that would fail if the hook logic is broken."
--
--- [ ] **Plan line 105 contains stale/incorrect text** — Line 105: "Coder should still apply a defensive `tool_input.file_path || tool_input.path` extraction to match the existing pattern in `workflow-guard.js`. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)" But line 105 also states "Edit uses `path`" — this is incorrect per research doc Q2 which confirms "Edit uses `file_path`" (not `path`). Edit the plan text at line 105 to remove the false claim, or keep only the defensive fallback comment.
--
--### Verified
--
--- [x] Bypass mechanism (`TDD_GUARD_BYPASS=1`) aligns with research doc §4.1 pattern and bash-guard.js precedent (env var check) — ✓
--- [x] `node --test <test-file>` mechanism matches research doc §3.2 / §4.1 recommendation ("the harness, not the agent, runs the tests") — ✓
--- [x] Fail-open on timeout/crash/ENOENT matches bash-guard.js:456-466 readline+timeout pattern — ✓
--- [x] Deny envelope shape (JSON + stderr + exit 2) matches bash-guard.js:16-26 pattern — ✓
--- [x] Three PreToolUse matchers (Write, Edit, MultiEdit) confirmed by research doc (tdd-guard-hook-unknowns.md Q1) — ✓
--- [x] Both Write and Edit use `file_path` in tool_input confirmed by research doc (tdd-guard-hook-unknowns.md Q2) — ✓
--- [x] agent-roles.json entry not required for hooks confirmed by research doc (tdd-guard-hook-unknowns.md Q3); Task 11 correctly dropped — ✓
--- [x] Hook-enforced TDD pattern (lines 116-121) aligns with research doc §6.1 (github.com/nizos/tdd-guard) architecture — ✓
--- [x] Red+Green collapse prevention (research §3.2) addressed by tdd-guard blocking writes until failing test is observed — ✓
--
--### Per-criterion verdicts
--
--- **AC-8:** MET — AC-8 specifies seven test cases (block when no test file, block when test passes, allow when test fails, allow on test files themselves, allow when TDD_GUARD_BYPASS=1, fail-open on timeout, fail-open on parse error). Once the phase-ordering issue (Task 8 stub) is resolved, these are measurable. BUT **conditional:** AC-8 text should explicitly enumerate the edge case of test file with no tests (empty file) as test case #8.
--
--- **AC-9:** PARTIALLY_MET — AC-9 lists criteria (all tests pass, stdin pattern, deny envelope shape, fail-open) but the "all test cases pass" criterion is too weak (allows assertion deletion). Recommend tightening AC-9 as noted in Issues section.
--
--- **AC-10:** MET — AC-10 specifies three matchers (Write, Edit, MultiEdit) and JSON validation. Clear and testable.
--
--### Recommended plan edits (if REVISE / BLOCKED)
--
--1. **Lines 147-151 (Phase ordering):** Insert a sub-step or clarification in Task 8:
--   - Option A: "Task 8a: Create stub `hooks/tdd-guard.js` that exports a testable function (minimally: accept stdin, return exit code). Task 8b: Write failing tests that import the stub."
--   - Option B: "Note: Test cases are written in this wave but *not* expected to pass until Task 9 implementation is complete. Tests will fail to parse/import in wave 1 because the module doesn't exist yet; this is expected and correct for TDD red-bar structure."
--   - Recommend Option A (stub) for faster feedback loop.
--
--2. **Line 105:** Remove or correct the claim about Edit using `path`. Current text:
--   > "Coder should still apply a defensive `tool_input.file_path || tool_input.path` extraction to match the existing pattern in `workflow-guard.js`. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)"
--   
--   Should be:
--   > "Coder should apply a defensive `tool_input.file_path || toolInput.path` extraction (per `workflow-guard.js:191-194` pattern). Both Write and Edit use `file_path` as primary field (confirmed by research doc Q2); the `|| toolInput.path` fallback is for robustness only."
--
--3. **Line 114, Task 10 AC-10:** Expand to enumerate the three matchers explicitly:
--   > "AC-10: `hooks/hooks.json` contains three new PreToolUse entries matching: `"Write"`, `"Edit"`, and `"MultiEdit"` — all invoking `node "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js"`; JSON validates (`node -e "require('./hooks/hooks.json')"` exits 0)."
--
--4. **Line 151, Task 8 AC-8:** Add test case for empty test file:
--   > "Verify: AC-8: `node --test hooks/tdd-guard.test.mjs` exits non-zero with test cases covering: (1) blocks Write when no test file exists; (2) blocks Write when test file exists but all tests pass (green); (3) blocks Write when test file exists but contains no tests (empty file); (4) allows Write when test file exists and at least one test fails (red); (5) allows Write on test files themselves; (6) allows Write when TDD_GUARD_BYPASS=1; (7) fail-open when node test runner times out; (8) fail-open on hook stdin parse error."
--
--5. **Line 158, Task 9 AC-9:** Tighten to prevent assertion-deletion pathology:
--   > "Verify: AC-9: All test cases from Task 8 pass (`node --test hooks/tdd-guard.test.mjs` exits 0); hook reads stdin via readline+timeout pattern matching bash-guard.js:456-466; deny envelope matches bash-guard.js:16-26 shape; fail-open on timeout/crash. Each test case includes at least one assertion that would fail if the hook exits 0 incorrectly or fails to read/parse stdin correctly. No assertions are deleted or marked `.skip` to achieve passing status."
--
--6. **Lines 134-142 (Failure modes table):** Add row for empty test file:
--   > "| Test file exists but is empty (no test definitions) | Block write — treated as 'all green', same as a file with only skipped tests. Correctly prevents writes when no red phase is observed. |"
--
--### Verdict
--
--REVISE — six issues identified, most are edge-case clarifications and one is a logical dependency (phase ordering) that requires a clarification or stub-creation step. The core logic is sound and aligned with research, but plan text needs tightening for implementer clarity.
--
--- **Blockers:** 1 (phase-ordering Task 8 stub dependency must be resolved to satisfy red-bar requirement)
--- **Warnings:** 6 (edge cases, AC criteria tightening, text corrections)
-diff --git a/.pipeline/context/reviewer-output/reviewer-safety.md b/.pipeline/context/reviewer-output/reviewer-safety.md
-deleted file mode 100644
-index 4806cd2d..00000000
---- a/.pipeline/context/reviewer-output/reviewer-safety.md
-+++ /dev/null
-@@ -1,22 +0,0 @@
--# Safety Review: TDD Guard Hook (Phase 1)
--
--## Issues
--- [ ] None identified.
--
--## Verified
--- [x] **Shell injection** — No subprocess spawning in Phase 1 stub. Tests inject `_spawnImpl` as explicit third positional arg (not derivable from stdin/env); injection point is test-only and cannot be triggered from production.
--- [x] **Secrets and credentials** — No API keys, tokens, or credentials hardcoded. `TDD_GUARD_BYPASS` env var is plaintext flag, not a secret. No credential leakage to disk or logs.
--- [x] **Content injection** — Stub does not parse, render, or process payload content. Tests construct synthetic payloads within `os.tmpdir()` isolation. No user-supplied content reaches markup or display surfaces. No INJECTION-WARNING markers found in project research files.
--- [x] **File system safety** — All test writes scoped to `os.tmpdir()` via `mkdtemp(path.join(os.tmpdir(), 'tdd-guard-test-'))`. Zero project-root writes. All cleanup via `fs.rm(dir, { recursive: true, force: true })` in try/finally blocks (tests 1–9, 11; tests 10, 10b create no temp dirs). Path construction uses `path.join()` — no traversal risk. All test files remain isolated outside project tree.
--- [x] **Input validation** — Stub accepts unknown payload, env object, optional _spawnImpl function. Tests pass null, empty object, and missing tool_input — stub correctly returns `{exitCode: 0}` for all cases. No dynamic code execution on external data. Payload parsing deferred to Phase 2.
--- [x] **Trust boundary (test API)** — `_spawnImpl` is explicit third positional arg, not env-var or property. Cannot be supplied from PreToolUse JSON stdin. Tests use injection only for timeout/ENOENT simulation (cases 9, 11). No side-channel to production code path.
--- [x] **Env-var naming and collision** — `TDD_GUARD_BYPASS` checked against `hook-utils.js`, `bash-guard.js`, and active hooks. No collision found. Does not conflict with existing FORGE env vars (FORGE_*, CLAUDE_*). Naming follows session-toggle pattern from research doc.
--- [x] **Test file leakage** — `makeTempProject()` uses `os.tmpdir()` isolation; `removeTempProject()` called in try/finally in all 11 cases (tests 10/10b have no temp dir, no cleanup needed). All created files destroyed on test completion. Zero test artifacts left behind on test runner exit or test failure.
--
--## Per-criterion verdicts
--
--- AC-8a: MET — `hooks/tdd-guard.js` exists, exports `runGuard(payload, env, _spawnImpl)` returning `{exitCode: 0, stderr: ''}`, stub body unconditional.
--- AC-8b: MET — `hooks/tdd-guard.test.mjs` contains 12 test cases (test cases 1–11, plus 10b variant). Test cases 1–3 expected to fail against stub (red bar); test cases 4–11 expected to pass. Each test uses proper cleanup and isolation. All assertions present and unchanged.
--
--## Verdict
--APPROVED — no safety issues found. Phase 1 stub and test suite are well-isolated, properly cleaned up, and introduce zero production risk. All file-system operations, input handling, and process-spawning safety concerns are correctly scoped to Phase 2 implementation.
-diff --git a/hooks/hooks.json b/hooks/hooks.json
-index 06094b91..ddfd48b6 100644
---- a/hooks/hooks.json
-+++ b/hooks/hooks.json
-@@ -269,6 +269,33 @@
-           }
-         ]
-       },
-+      {
-+        "matcher": "Write",
-+        "hooks": [
-+          {
-+            "type": "command",
-+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js\""
-+          }
-+        ]
-+      },
-+      {
-+        "matcher": "Edit",
-+        "hooks": [
-+          {
-+            "type": "command",
-+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js\""
-+          }
-+        ]
-+      },
-+      {
-+        "matcher": "MultiEdit",
-+        "hooks": [
-+          {
-+            "type": "command",
-+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js\""
-+          }
-+        ]
-+      },
-       {
-         "matcher": "Agent",
-         "hooks": [
-diff --git a/hooks/tdd-guard.js b/hooks/tdd-guard.js
-index 52d84c83..1a945780 100644
---- a/hooks/tdd-guard.js
-+++ b/hooks/tdd-guard.js
-@@ -1,6 +1,6 @@
- 'use strict';
+diff --git a/agents/reviewer-tests.md b/agents/reviewer-tests.md
+new file mode 100644
+index 00000000..65b5fc03
+--- /dev/null
++++ b/agents/reviewer-tests.md
+@@ -0,0 +1,158 @@
++---
++name: reviewer-tests
++description: "Diff-aware test-weakening reviewer. Use when: a handoff touches test files or adds suppression keywords (skip, mock, eslint-disable, noqa, @ts-ignore)."
++model: claude-haiku-4-5-20251001
++tools:
++  - Read
++  - Glob
++  - Grep
++  - Write
++maxTurns: 1
++effort: low
++memory: project
++skills:
++  - forge:gotchas
++---
++
++You are the Tests Reviewer agent. You run as part of the FORGE pipeline for the active project.
++
++You run in the `implement feature:` pipeline after the Coder, in parallel with other reviewers, whenever a handoff diff touches test files or adds suppression keywords.
++
++## Plan-stage detection — check this first
++
++**If your prompt contains `[plan-stage review]`:** you are in **plan-stage mode**.
++
++- **Do NOT read `docs/context/git-diff.txt`** — it does not apply to plan review.
++- Read `docs/PLAN.md` directly.
++- Scan active `[ ]` task lines for the word `test` AND any of: `skip`, `mock`, `eslint-disable`, `noqa`, `@ts-ignore`. Only flag if BOTH appear on the same task line.
++- Bare keyword match without `test` on the same line does NOT trigger a finding.
++- Emit `APPROVED` if no test-weakening patterns are introduced by the plan, `REVISE` for minor concerns, `BLOCK` only if the plan explicitly describes deleting or disabling tests.
++- Still emit the `[reviewer-verdict]` signal at the end.
++
++## Reading discipline — read each file ONCE, write output ONCE
++
++**maxTurns: 1 — complete all work in a single turn.**
++
++Read all input files first. Then perform your analysis. Then write the output file with a single Write tool call. Then emit the signal. Do not interleave reads and writes.
++
++1. Read `docs/context/git-diff.txt` (or `docs/PLAN.md` in plan-stage mode).
++2. Read `docs/gotchas/GENERAL.md` for project context.
++3. Perform analysis (no tool calls during analysis).
++4. Write the complete review to `<outputDir>/reviewer-tests.md` with a single Write tool call.
++5. Emit the `[reviewer-verdict]` signal as your final text output.
++
++## Your role
++
++Test-weakening is detected separately from logic review because weak tests pass but hide bugs — pattern-based detection of deleted assertions, new mocks, and skip markers is sufficient for v1, and dedicated dispatch prevents reviewer fatigue.
++
++Read `docs/context/git-diff.txt` and `docs/gotchas/GENERAL.md` for project context. Extract changed file paths from `+++ b/<path>` diff headers.
++
++You are checking for test-weakening patterns (deleted or loosened assertions, new mocks of production paths, added lint/type-check disable comments, and added skip/xfail markers, as defined in the Detection rules section below) only. You do not check for security, logic correctness, or architecture boundaries.
++
++## Output path resolution
++
++Before writing your verdict file, resolve the output directory:
++
++1. Scan your prompt for a line matching `[reviewer-output-dir: <path>]`.
++2. If found, use `<path>` as the output directory.
++3. If not found, fall back to `.pipeline/context/reviewer-output/`.
++
++The verdict filename is always `reviewer-tests.md` regardless of the directory used.
++
++## Permissions
++
++### Always
++- Read `docs/context/git-diff.txt` (or `docs/PLAN.md` in plan-stage mode) and `docs/gotchas/GENERAL.md` before starting the review.
++- Check every detection category in the detection rules — do not skip any.
++- Resolve the output directory using `## Output path resolution` above, then write the complete review to `<outputDir>/reviewer-tests.md` before emitting the signal.
++- Emit the `[reviewer-verdict]` signal as the final text output.
++
++### Ask First
++- Automated pipeline agent — no user present. If the diff is ambiguous about whether a pattern is a test-weakening change, apply the conservative interpretation (flag it) and note the assumption in the verdict output.
++
++### Never
++- Never review for security — that's reviewer-safety.
++- Never review for logic bugs — that's reviewer-logic.
++- Never review for architecture/boundary correctness — that's reviewer-boundary.
++- Never review for style — that's reviewer-style.
++- Never modify source files.
++- Never rewrite the handoff.
++- Never read files not listed in the review protocol.
++
++## Detection rules
++
++Scan the diff for these five categories. Apply verdicts per the table below.
++
++**Scope: test-file hunks only (for categories 2–5)**
++
++A "test-file hunk" is a block of the diff whose `+++ b/<path>` header matches one of these patterns:
++- `*.test.*` (e.g. `foo.test.js`, `bar.test.ts`)
++- `*_test.*` (e.g. `foo_test.go`)
++- `*.spec.*` (e.g. `foo.spec.ts`)
++- `tests/**` (any file under a `tests/` directory)
++
++Categories 2–5 apply only to `+` lines inside test-file hunks. Exception: Category 3 (new mock) applies to any `+` line anywhere in the diff — mocking a production module from a test helper or fixture file still weakens the test suite.
++
++### Detection table
++
++| # | Category | Pattern (on diff lines) | Verdict |
++|---|---|---|---|
++| 1 | Assertion deletion | `-` line removing `expect(`, `assert(`, `should(`, `assertEquals(`, `assertThat(` from a test file | BLOCK |
++| 2 | Assertion loosening | `+` line adding `toMatchSnapshot`, `toEqual(false)` replacing `toEqual(true)`, expected value replaced with `.*` wildcard or `.any(` | REVISE |
++| 3 | New mock of production path | `+` line matching `jest.mock(`, `vi.mock(`, `sinon.stub(`, `unittest.mock.patch(`, `patch(` | BLOCK |
++| 4 | Lint/type disable | `+` line matching `eslint-disable`, `noqa`, `@ts-ignore`, `@ts-expect-error`, `type: ignore` inside a test-file hunk | REVISE; upgrade to BLOCK if the same hunk also has a `-` line removing an assertion |
++| 5 | Skip/xfail marker | `+` line matching `it.skip(`, `describe.skip(`, `xit(`, `xdescribe(`, `test.skip(`, `@pytest.mark.skip`, `@pytest.mark.xfail`, `t.Skip()` inside a test-file hunk | BLOCK |
++
++### How to cite findings
++
++For each finding, emit: `file:line — pattern matched — diff line (truncated to 120 chars)`
++
++If the exact line number is not available from the diff context, cite the `+++ b/<path>` filename and the diff hunk header (e.g. `@@ -10,5 +12,7 @@`).
++
++## Output format
++
++```
++## Tests Review: <Feature Name>
++
++### Issues
++- [ ] **<category name>** — <file:line or file@hunk> — <what was found and why it weakens the test suite>
++
++### Verified
++- [x] <category> — <brief confirmation that no weakening patterns were found>
++
++### Per-criterion verdicts
++
++List each AC-ID found in the plan's Verify lines. For each:
++- `AC-<N>: MET` — when the handoff satisfies the criterion
++- `AC-<N>: NOT_MET — <reason>` — when it does not
++- `AC-<N>: SKIPPED` — when you are in plan-stage mode or the criterion is outside your domain
++
++Only emit AC-IDs that are within your test-weakening domain.
++Emit `AC-<N>: SKIPPED` for criteria that are clearly outside test-review scope.
++
++### Verdict
++APPROVED — no test-weakening patterns found.
++// or
++BLOCK — <N> test-weakening issues found that would reduce test coverage or hide failures.
++// or
++REVISE — minor test-weakening concerns, safe to address before merge. <list>
++```
++
++**BLOCK threshold (strict):** Use BLOCK only for: assertion deletion (category 1), new mock of production path (category 3), skip/xfail markers (category 5), or lint/type disable on an assertion line (category 4 upgraded). Use REVISE for assertion loosening (category 2) and bare lint/type disables that do not affect assertions.
++
++## Output protocol
++
++1. Resolve the output directory per `## Output path resolution` above. Write your complete review — all content from `## Tests Review:` through `### Verdict` — to `<outputDir>/reviewer-tests.md` using the Write tool.
++2. After the Write tool call completes, output **only** the `[reviewer-verdict]` signal line as your entire text response — no prose, no summary, no blank lines before or after the signal:
++
++```
++[reviewer-verdict] {"agent":"reviewer-tests","verdict":"<APPROVED|BLOCK|REVISE>","blockers":<N>,"warnings":<N>,"feature":"<feature name>","model":"claude-haiku-4-5-20251001"}
++```
++
++Rules for the signal fields:
++- `verdict` must exactly match the verdict word from your `### Verdict` block — write it in UPPERCASE (`APPROVED`, `BLOCK`, or `REVISE`).
++- `feature` is the feature name taken verbatim from the `## Tests Review: <Feature Name>` heading you wrote in the file — do not paraphrase it.
++- `blockers` is the count of distinct BLOCK-level findings in your `### Issues` section. If the verdict is `APPROVED`, `blockers` is `0`.
++- `warnings` is the count of distinct REVISE-level findings in your `### Issues` section. If the verdict is `APPROVED`, `warnings` is `0`. A `REVISE` verdict must have at least 1 warning.
++- The signal line must be the very last character sequence in your text output. End with a single newline after the closing `}`. No blank lines before or after the signal line.
++- Even when APPROVED, the full analysis goes to the file, not to text output.
+diff --git a/scripts/reviewer-dispatch.mjs b/scripts/reviewer-dispatch.mjs
+index 63dc4789..c2b44194 100644
+--- a/scripts/reviewer-dispatch.mjs
++++ b/scripts/reviewer-dispatch.mjs
+@@ -37,6 +37,66 @@ const RULE_TO_REVIEWERS = {
+   'merge-apply-worktree-boundary': ['reviewer-safety', 'reviewer-boundary'],
+ };
  
--// tdd-guard.js — PreToolUse hook stub (Phase 1 / TDD red-bar scaffold)
-+// tdd-guard.js — PreToolUse hook (Phase 2 implementation)
- //
- // Scope note: this hook intentionally uses a NARROWER, ADDITIVE rule compared
- // to hooks/workflow-guard.js. workflow-guard.js excludes /hooks/, /bin/, /mcp/
-@@ -10,16 +10,163 @@
- // and /scripts/ are IN scope here. The two hooks serve different policies and
- // are intentionally disjoint in their source-file detection rules.
- // (See PLAN.md "reviewer-boundary warning — source-file detection scope" resolution.)
--//
--// This stub exports runGuard() returning {exitCode: 0} unconditionally.
--// Phase 2 will replace the stub body with full TDD guard logic.
--// The function signature and the _spawnImpl injection point are intentional API
--// surface — do not remove them.
++// Test-file pattern — matches test-file paths in +++ b/ diff headers.
++// Used by addReviewerTestsIfNeeded to scope keyword detection to test hunks only (AC-7).
++const TEST_FILE_PATTERN = /(?:\.test\.|_test\.|\.spec\.|\/tests\/|\/spec\/)/;
 +
-+const readline = require('readline');
-+const path = require('path');
-+const fs = require('fs');
-+const { spawn } = require('child_process');
-+const { STDIN_TIMEOUT_LONG } = require('./hook-utils');
- 
- /**
-  * @typedef {{ exitCode: number, stderr: string }} GuardResult
-  */
- 
-+// Dirs that tdd-guard covers (narrower than workflow-guard which EXCLUDES these).
-+const GUARDED_DIRS = ['hooks', 'bin', 'scripts', 'mcp'];
-+
-+// Patterns that identify test files by name.
-+const TEST_FILE_RE = /(?:\.test\.[cm]?js|\.test\.mjs|-test\.[cm]?js|-test\.mjs)$/;
++// Suppression keywords that trigger reviewer-tests when found on + lines in test-file hunks.
++const TEST_SUPPRESSION_KEYWORDS = [
++  'it.skip', 'describe.skip', 'xit(', 'xdescribe(', 'test.skip',
++  'pytest.mark.skip', 'pytest.mark.xfail', 't.Skip(',
++  'jest.mock(', 'vi.mock(', 'sinon.stub(', 'unittest.mock.patch', 'patch(',
++  'eslint-disable', 'noqa', '@ts-ignore', '@ts-expect-error', 'type: ignore',
++];
 +
 +/**
-+ * Returns true if the given relative or absolute path segment is under a tests dir.
-+ * @param {string} filePath
++ * Add reviewer-tests to the reviewer set when the diff touches test files
++ * or adds suppression keywords inside test-file hunks (AC-7 narrowed).
++ *
++ * Rule (a): any +++ b/<path> header matching TEST_FILE_PATTERN → add reviewer-tests.
++ * Rule (b): suppression keywords on `+` lines inside a test-file hunk → add reviewer-tests.
++ * Keywords in non-test files do NOT trigger reviewer-tests.
++ *
++ * @param {Set<string>} reviewerSet
++ * @param {string[]} reasons
++ * @param {string} diffContent
 + */
-+function isTestDir(filePath) {
-+  const parts = filePath.split(/[\\/]/);
-+  return parts.includes('__tests__') || parts.includes('tests');
-+}
++function addReviewerTestsIfNeeded(reviewerSet, reasons, diffContent) {
++  if (!diffContent) return;
 +
-+/**
-+ * Returns true if the file path should be treated as a test file (exempt from guard).
-+ * @param {string} filePath
-+ */
-+function isTestFile(filePath) {
-+  return TEST_FILE_RE.test(filePath) || isTestDir(filePath);
-+}
++  const lines = diffContent.split('\n');
++  let currentFileIsTestFile = false;
++  let triggered = false;
 +
-+/**
-+ * Returns true if the file is under one of the guarded source dirs relative to cwd.
-+ * @param {string} filePath  - absolute path
-+ * @param {string} cwd       - project root
-+ */
-+function isGuardedSourceFile(filePath, cwd) {
-+  const rel = path.relative(cwd, filePath);
-+  // Reject absolute-path escapes and parent traversal
-+  if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
-+  const topDir = rel.split(/[\\/]/)[0];
-+  return GUARDED_DIRS.includes(topDir);
-+}
-+
-+/**
-+ * Check if filePath matches any line in .tddguardignore (exact relative-path match).
-+ * Lines starting with # or blank lines are skipped.
-+ * v1: exact string equality on relative path (glob matching deferred to v2).
-+ * @param {string} filePath
-+ * @param {string} cwd
-+ * @returns {boolean}
-+ */
-+function isIgnored(filePath, cwd) {
-+  const ignorePath = path.join(cwd, '.tddguardignore');
-+  let content;
-+  try {
-+    content = fs.readFileSync(ignorePath, 'utf8');
-+  } catch {
-+    return false;
-+  }
-+  const rel = path.relative(cwd, filePath).replace(/\\/g, '/');
-+  for (const line of content.split('\n')) {
-+    const pattern = line.trim();
-+    if (!pattern || pattern.startsWith('#')) continue;
-+    // v1: exact relative-path match (documented simplification — glob in v2)
-+    if (pattern === rel) return true;
-+  }
-+  return false;
-+}
-+
-+/**
-+ * Resolve the test file for a given source file, using the deterministic order:
-+ *   1. Adjacent: <dir>/<name>.test.js or <dir>/<name>.test.mjs
-+ *   2. Sibling tests dir: <projectRoot>/tests/<name>.test.js or .test.mjs
-+ *   3. <dir>/__tests__/<name>.test.js or .test.mjs
-+ * Returns the first path that exists on disk, or null.
-+ * @param {string} filePath  - absolute source path
-+ * @param {string} cwd       - project root
-+ * @returns {string|null}
-+ */
-+function resolveTestFile(filePath, cwd) {
-+  const dir = path.dirname(filePath);
-+  const name = path.basename(filePath).replace(/\.[cm]?js$/, '');
-+
-+  const candidates = [
-+    path.join(dir, `${name}.test.js`),
-+    path.join(dir, `${name}.test.mjs`),
-+    path.join(cwd, 'tests', `${name}.test.js`),
-+    path.join(cwd, 'tests', `${name}.test.mjs`),
-+    path.join(dir, '__tests__', `${name}.test.js`),
-+    path.join(dir, '__tests__', `${name}.test.mjs`),
-+  ];
-+
-+  for (const candidate of candidates) {
-+    try {
-+      fs.accessSync(candidate);
-+      return candidate;
-+    } catch {
-+      // not found — try next
-+    }
-+  }
-+  return null;
-+}
-+
-+/**
-+ * Spawn `node --test <testFile>` and return the exit code.
-+ * Returns 'TIMEOUT' on timeout, 'SPAWN_ERROR' on ENOENT/throw.
-+ * @param {string} testFile
-+ * @param {Function} spawnImpl
-+ * @returns {Promise<number|'TIMEOUT'|'SPAWN_ERROR'>}
-+ */
-+function runNodeTest(testFile, spawnImpl) {
-+  return new Promise((resolve) => {
-+    let settled = false;
-+    const finish = (result) => {
-+      if (!settled) {
-+        settled = true;
-+        resolve(result);
++  for (const line of lines) {
++    // Detect file header lines (+++ b/<path>)
++    if (line.startsWith('+++ b/')) {
++      const filePath = line.slice(6); // strip '+++ b/'
++      currentFileIsTestFile = TEST_FILE_PATTERN.test(filePath);
++      if (currentFileIsTestFile && !triggered) {
++        // Rule (a): test-file path present in diff
++        reviewerSet.add('reviewer-tests');
++        reasons.push('test-file-or-suppression-keyword → reviewer-tests');
++        triggered = true;
 +      }
-+    };
-+
-+    let child;
-+    try {
-+      // Strip NODE_TEST_CONTEXT so the child runs as a top-level test process
-+      // and propagates exit codes normally (1 on failing test, 0 on green).
-+      // Without this, when tdd-guard.test.mjs is itself run under `node --test`,
-+      // the child inherits NODE_TEST_CONTEXT=child-v8 and behaves as a test
-+      // worker — suppressing exit-code propagation (always exits 0).
-+      const childEnv = { ...process.env };
-+      delete childEnv.NODE_TEST_CONTEXT;
-+      // Use process.execPath so the correct node binary is found regardless of PATH
-+      child = spawnImpl(process.execPath, ['--test', testFile], { stdio: 'ignore', env: childEnv });
-+    } catch {
-+      // ENOENT or similar — fail-open
-+      return finish('SPAWN_ERROR');
++      continue;
 +    }
 +
-+    const timer = setTimeout(() => {
-+      try { child.kill && child.kill(); } catch { /* ignore kill errors */ }
-+      finish('TIMEOUT');
-+    }, 2000);
-+
-+    child.on('close', (code) => {
-+      clearTimeout(timer);
-+      finish(typeof code === 'number' ? code : 1);
-+    });
-+
-+    child.on('error', () => {
-+      clearTimeout(timer);
-+      finish('SPAWN_ERROR');
-+    });
-+  });
++    // Rule (b): suppression keyword on a `+` line inside a test-file hunk
++    if (!triggered && currentFileIsTestFile && line.startsWith('+') && !line.startsWith('+++')) {
++      const lower = line.toLowerCase();
++      for (const kw of TEST_SUPPRESSION_KEYWORDS) {
++        if (lower.includes(kw.toLowerCase())) {
++          reviewerSet.add('reviewer-tests');
++          reasons.push('test-file-or-suppression-keyword → reviewer-tests');
++          triggered = true;
++          break;
++        }
++      }
++    }
++  }
 +}
 +
- /**
-  * Run the TDD guard check against the given PreToolUse payload.
-  *
-@@ -29,13 +176,123 @@
-  * @returns {Promise<GuardResult>}
-  */
- async function runGuard(payload, env = process.env, _spawnImpl = null) {
--  // STUB: unconditionally allow. Phase 2 implements the real guard logic.
--  // Tests for block cases (1, 2, 3) will fail against this stub — that is the
--  // intended red bar for TDD Phase 1.
--  void payload;
--  void env;
--  void _spawnImpl;
-+  // (a) Bypass first — checked before any payload inspection
-+  if (env.TDD_GUARD_BYPASS === '1') {
-+    return { exitCode: 0, stderr: '' };
+ // --- Plan-stage keyword mapping ----------------------------------------------
+ const PLAN_REVIEWER_KEYWORDS = {
+   'reviewer-safety': [
+@@ -68,12 +128,36 @@ function dispatchForImplementStage(handoffContent, forceReview, pipeline, diffCo
+     ? classifyDiff({ diffContent, coderStatus, forceReview })
+     : classifyHandoff({ handoffContent, forceReview });
+ 
++  // reviewer-tests: always evaluated before skipReviewers short-circuit.
++  // A clean diff that touches test files still needs reviewer-tests even if
++  // no other risk-surface rules triggered (AC-7 narrowed).
++  const reviewerTestsSet = new Set();
++  const reviewerTestsReasons = [];
++  const diffForTests = diffContent !== undefined ? diffContent : '';
++  addReviewerTestsIfNeeded(reviewerTestsSet, reviewerTestsReasons, diffForTests);
++  const hasReviewerTests = reviewerTestsSet.has('reviewer-tests');
++
+   if (classification.skipReviewers && pipeline !== 'refactor') {
++    // Even on a clean diff, reviewer-tests may be needed for test-file changes.
++    if (hasReviewerTests) {
++      return {
++        reviewers: Array.from(reviewerTestsSet).sort(),
++        reasons: [...classification.reasons, ...reviewerTestsReasons],
++        classifiedBy: classification.classifiedBy,
++      };
++    }
+     return { reviewers: [], reasons: classification.reasons };
+   }
+ 
+   if (classification.skipReviewers && pipeline === 'refactor') {
+-    return { reviewers: ['reviewer-style'], reasons: ['refactor-style-mandatory'] };
++    const refactorSet = new Set(['reviewer-style']);
++    if (hasReviewerTests) refactorSet.add('reviewer-tests');
++    return {
++      reviewers: Array.from(refactorSet).sort(),
++      reasons: hasReviewerTests
++        ? ['refactor-style-mandatory', ...reviewerTestsReasons]
++        : ['refactor-style-mandatory'],
++    };
+   }
+ 
+   const reviewerSet = new Set();
+@@ -88,6 +172,12 @@ function dispatchForImplementStage(handoffContent, forceReview, pipeline, diffCo
+     }
+   }
+ 
++  // Merge reviewer-tests findings into the main reviewer set.
++  if (hasReviewerTests) {
++    reviewerSet.add('reviewer-tests');
++    for (const r of reviewerTestsReasons) reasons.push(r);
 +  }
 +
-+  // (b) Defensive payload extraction — fail-open on missing/invalid payload
-+  if (!payload || typeof payload !== 'object') {
-+    return { exitCode: 0, stderr: '' };
-+  }
-+  const toolInput = payload.tool_input;
-+  if (!toolInput || typeof toolInput !== 'object') {
-+    return { exitCode: 0, stderr: '' };
-+  }
-+  const filePath = toolInput.file_path || toolInput.path;
-+  const cwd = payload.cwd;
-+  if (!filePath || typeof filePath !== 'string' || !cwd || typeof cwd !== 'string') {
-+    return { exitCode: 0, stderr: '' };
-+  }
-+
-+  // (c) Test-file exemption — always allow writes to test files
-+  if (isTestFile(filePath)) {
-+    return { exitCode: 0, stderr: '' };
-+  }
-+
-+  // (d) Source-file detection — only intercept guarded dirs
-+  if (!isGuardedSourceFile(filePath, cwd)) {
-+    return { exitCode: 0, stderr: '' };
+   // Fallback: classifier said "don't skip" but no rules mapped to reviewers.
+   // This covers: verification-section-missing, verification-not-clean,
+   // blockers-present, or unmapped triggered rules.
+@@ -133,6 +223,20 @@ function dispatchForPlanStage(planContent) {
+     }
+   }
+ 
++  // reviewer-tests plan-stage: only dispatch if a task line contains BOTH
++  // the word "test" AND at least one suppression keyword.
++  // Bare keyword match without "test" does NOT trigger.
++  // Note: taskLines is already lowercased upstream (see line ~211); keywords below MUST stay lowercase.
++  const testSuppressionPlanKeywords = ['skip', 'mock', 'eslint-disable', 'noqa', '@ts-ignore'];
++  const hasTestAndKeyword = taskLines.some((line) =>
++    line.includes('test') &&
++    testSuppressionPlanKeywords.some((kw) => line.includes(kw)),
++  );
++  if (hasTestAndKeyword) {
++    reviewerSet.add('reviewer-tests');
++    reasons.push('plan-task contains "test" + suppression keyword → reviewer-tests');
 +  }
 +
-+  // (e) .tddguardignore glob match (v1: exact relative-path equality)
-+  if (isIgnored(filePath, cwd)) {
-+    return { exitCode: 0, stderr: '' };
-+  }
-+
-+  // (f) Test-file resolution — deterministic order, first match wins
-+  const testFile = resolveTestFile(filePath, cwd);
-+  if (!testFile) {
-+    const msg = [
-+      `TDD Guard: no test file found for ${path.relative(cwd, filePath)}.`,
-+      'Write a failing test first, then re-attempt this edit.',
-+      '(v1 note: any failing test in the resolved test file counts — hook cannot verify the test is semantically about this module.)',
-+    ].join(' ');
-+    return { exitCode: 2, stderr: msg };
-+  }
-+
-+  // (g) Run the test file
-+  const spawnImpl = _spawnImpl || spawn;
-+  const exitResult = await runNodeTest(testFile, spawnImpl);
-+
-+  // Fail-open on timeout or spawn error
-+  if (exitResult === 'TIMEOUT' || exitResult === 'SPAWN_ERROR') {
-+    const warn = exitResult === 'TIMEOUT'
-+      ? 'TDD Guard: test runner timed out — failing open (allowing write).'
-+      : 'TDD Guard: could not spawn node (ENOENT?) — failing open (allowing write).';
-+    return { exitCode: 0, stderr: warn };
-+  }
-+
-+  if (exitResult === 0) {
-+    // All tests green (or no executing tests) — block
-+    const msg = [
-+      `TDD Guard: test file ${path.relative(cwd, testFile)} has no failing tests (exit 0).`,
-+      'Ensure at least one test is failing (red bar) before writing source.',
-+      '(v1 note: this hook checks any failing test in the resolved test file; v1 cannot semantically verify the failing test is *about* the target module.)',
-+    ].join(' ');
-+    return { exitCode: 2, stderr: msg };
-+  }
-+
-+  // Non-zero exit ⇒ failing test exists ⇒ allow
-   return { exitCode: 0, stderr: '' };
+   return { reviewers: Array.from(reviewerSet).sort(), reasons };
  }
  
- module.exports = { runGuard };
+diff --git a/scripts/reviewer-dispatch.test.mjs b/scripts/reviewer-dispatch.test.mjs
+new file mode 100644
+index 00000000..4a25a098
+--- /dev/null
++++ b/scripts/reviewer-dispatch.test.mjs
+@@ -0,0 +1,100 @@
++// Test file for scripts/reviewer-dispatch.mjs
++// Required by tdd-guard.js so that modifications to reviewer-dispatch.mjs are gated.
++// These tests verify the reviewer-tests dispatch routing (AC-7, AC-10).
++// Full suite: scripts/reviewer-tests-dispatch.test.mjs
 +
-+// ---------------------------------------------------------------------------
-+// CLI bootstrap — only when invoked directly (not when require()'d by tests)
-+// ---------------------------------------------------------------------------
-+if (require.main === module) {
-+  let inputData = '';
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { spawnSync } from 'node:child_process';
++import { writeFileSync, unlinkSync, readFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
 +
-+  const timer = setTimeout(() => {
-+    runGuard(tryParse(inputData), process.env)
-+      .then(handleResult)
-+      .catch(() => process.exit(0));
-+  }, STDIN_TIMEOUT_LONG);
++const CODER_STATUS_CLEAN = JSON.stringify({
++  verificationClean: true,
++  hasBlockers: false,
++  archUpdate: false,
++  decision: false,
++  feature: 'test-feature',
++  filesTouched: [],
++  filesCreated: [],
++  tasksCovered: [1],
++  tasksDeferred: [],
++});
 +
-+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-+  rl.on('line', (line) => { inputData += line + '\n'; });
-+  rl.on('close', () => {
-+    clearTimeout(timer);
-+    runGuard(tryParse(inputData), process.env)
-+      .then(handleResult)
-+      .catch(() => process.exit(0));
-+  });
++function runDispatch(diffContent) {
++  const diffFile = join(tmpdir(), `rd-test-${process.pid}-${Date.now()}.txt`);
++  const statusFile = join(tmpdir(), `rd-status-${process.pid}-${Date.now()}.json`);
 +
-+  function tryParse(raw) {
-+    try {
-+      return JSON.parse(raw || '{}');
-+    } catch {
-+      return {};
++  try {
++    writeFileSync(diffFile, diffContent, 'utf8');
++    writeFileSync(statusFile, CODER_STATUS_CLEAN, 'utf8');
++
++    const result = spawnSync(
++      process.execPath,
++      [
++        join(process.cwd(), 'scripts', 'reviewer-dispatch.mjs'),
++        `--diff=${diffFile}`,
++        `--coder-status=${statusFile}`,
++        '--stage=implement',
++      ],
++      { encoding: 'utf8', cwd: process.cwd() },
++    );
++
++    if (result.error) {
++      throw result.error;
 +    }
-+  }
 +
-+  function handleResult(result) {
-+    if (result.exitCode === 2) {
-+      process.stdout.write(
-+        JSON.stringify({
-+          hookSpecificOutput: {
-+            hookEventName: 'PreToolUse',
-+            permissionDecision: 'deny',
-+            permissionDecisionReason: result.stderr,
-+          },
-+        }) + '\n'
-+      );
-+      console.error(result.stderr);
-+      process.exit(2);
-+    } else {
-+      process.exit(0);
-+    }
++    return JSON.parse(result.stdout);
++  } finally {
++    try { unlinkSync(diffFile); } catch (_) { /* ignore */ }
++    try { unlinkSync(statusFile); } catch (_) { /* ignore */ }
 +  }
 +}
++
++// (revision pass 1) verifies taskLines lowercasing comment is present in source
++test('reviewer-dispatch: taskLines lowercasing comment present in source', () => {
++  const src = readFileSync(new URL('./reviewer-dispatch.mjs', import.meta.url), 'utf8');
++  assert.ok(
++    src.includes('taskLines is already lowercased upstream'),
++    'Expected lowercasing comment in dispatchForPlanStage',
++  );
++});
++
++// (a) Diff touching a test file — should dispatch reviewer-tests (AC-7a)
++test('reviewer-dispatch: test-file path triggers reviewer-tests', () => {
++  const diff = `diff --git a/foo.test.js b/foo.test.js
++index 1234567..abcdefg 100644
++--- a/foo.test.js
+++++ b/foo.test.js
++@@ -1,5 +1,6 @@
++ describe('foo', () => {
++   it('returns value', () => {
+++    expect(x).toBe(1);
++   });
++ });
++`;
++  const result = runDispatch(diff);
++  assert.ok(
++    result.reviewers.includes('reviewer-tests'),
++    `Expected reviewer-tests in ${JSON.stringify(result.reviewers)}`,
++  );
++});
++
++// (c) eslint-disable in non-test file — must NOT dispatch reviewer-tests (AC-7 tightening)
++test('reviewer-dispatch: eslint-disable in non-test file does NOT trigger reviewer-tests', () => {
++  const diff = `diff --git a/hooks/foo.js b/hooks/foo.js
++index 1234567..abcdefg 100644
++--- a/hooks/foo.js
+++++ b/hooks/foo.js
++@@ -1,3 +1,4 @@
++ 'use strict';
+++/* eslint-disable no-console */
++ module.exports = function() {};
++`;
++  const result = runDispatch(diff);
++  assert.ok(
++    !result.reviewers.includes('reviewer-tests'),
++    `Expected reviewer-tests NOT in ${JSON.stringify(result.reviewers)}`,
++  );
++});
