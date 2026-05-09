@@ -103,13 +103,15 @@ function bootstrapForgeConfig(pluginRoot) {
  *   - Fail-open: on any error (file I/O, JSON parse, validation), leaves live
  *     config untouched, logs the error, exits without throwing
  */
-function migrateForgeConfig(pluginRoot) {
+function migrateForgeConfig(pluginRoot, mainProjectDir) {
   try {
-    // Resolve live config path — mirrors mcp/lib/config-store.js resolvePluginDataDir()
+    // Resolve live config path — mirrors mcp/lib/config-store.js resolvePluginDataDir().
+    // Fallback uses mainProjectDir (resolved via resolveProjectDir(payload)) rather
+    // than process.cwd() so worker sessions don't write the config into the worktree.
     const pluginDataDir = process.env.CLAUDE_PLUGIN_DATA || null;
     const liveConfigPath = pluginDataDir
       ? path.join(pluginDataDir, 'forge-config.json')
-      : path.join(process.cwd(), '.pipeline', 'forge-config.json');
+      : path.join(mainProjectDir, '.pipeline', 'forge-config.json');
 
     // If live config doesn't exist, bootstrap handles first-run — skip
     if (!fs.existsSync(liveConfigPath)) {
@@ -446,8 +448,10 @@ async function main(rawInput) {
   // Bootstrap forge-config.json into CLAUDE_PLUGIN_DATA on first session
   bootstrapForgeConfig(pluginRoot);
 
-  // Diff-merge live config against default when schemaVersion differs
-  migrateForgeConfig(pluginRoot);
+  // Diff-merge live config against default when schemaVersion differs.
+  // Pass main project dir so worker sessions resolve to the project root,
+  // not the worktree (closes TODO da950b12).
+  migrateForgeConfig(pluginRoot, resolveProjectDir(payload));
 
   // Write a per-project observer launcher to .pipeline/forge-observer.cmd so
   // users can invoke the observer from any project without knowing the plugin
