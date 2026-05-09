@@ -1,6 +1,6 @@
 ## Active Plan
 
-(Stale prior feature blocks removed by conductor at gate1 of r-29e0e2c5. Already shipped today: TDD Guard Hook via merge 5072aad2; reviewer-tests agent via merge ab3b2213. The active plan below targets the test-author agent + pipeline split — TODO 2e73852d.)
+(Stale prior feature blocks removed by conductor at gate1 of r-29e0e2c5. Already shipped today: TDD Guard Hook via merge 5072aad2; reviewer-tests agent via merge ab3b2213; test-author agent + pipeline split via r-29e0e2c5. No active plan.)
 
 ### Feature: test-author agent and pipeline split
 
