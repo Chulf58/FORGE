@@ -94,6 +94,15 @@ Write a slice brief to `docs/context/slice-brief.md`. This is the single artifac
 - <Specific file, module, or area that must NOT be modified in this slice, with one-line reason>
 - <...>
 
+## TDD wave ordering (preserve when scoping)
+
+When the original plan is TDD-structured (Wave 1 = failing tests, Wave 2 = implementation, etc.), the slice MUST preserve the wave ordering. Specifically:
+- The slice cannot move a Wave 2 task into Wave 1 (would skip the red bar)
+- The slice cannot drop the Wave 1 test task and keep only the implementation task
+- If the slice covers only part of the plan, both the test task and the matching implementation task for the slice must be included
+
+If the slice would break wave ordering, flag it as out-of-scope and recommend a different slice. Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` §3.2; CLAUDE.md `## TDD discipline`.
+
 ## Dependency order
 1. <First thing to change, and why it must come first>
 2. <Second thing, and what it depends on from step 1>

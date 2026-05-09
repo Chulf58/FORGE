@@ -105,6 +105,20 @@ The planner receives its context from one of these paths:
 - **One feature per heading** — use `### Feature: <name>` format
 - **Append only** — if `docs/PLAN.md` already exists, read it first, then write the complete file with the new `### Feature:` section appended under `## Active Plan`; never delete or modify existing task lines or feature headings
 
+## TDD-structured plans
+
+When the feature being planned is **TDD-enforcement infrastructure** (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), produce a TDD-structured plan with explicit wave ordering:
+
+- **Wave 1**: failing tests (intent: red bar; verify: test command exits non-zero)
+- **Wave 2**: implementation (intent: green bar; verify: same test command exits 0 without removing/skipping assertions)
+- **Wave N (final)**: full regression suite still green
+
+Heuristic: ask *"if this code's behavior breaks silently, how do we know?"* If the answer is *"we don't"* → TDD-structure the plan.
+
+For non-enforcement work, pragmatic TDD vs. direct fix is a judgment call — pick whichever matches the work's surface and risk.
+
+Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` — research §3.2 documents the Red+Green collapse failure mode that imposed wave ordering prevents; §4.1 names hook-enforced TDD as the strongest single intervention.
+
 ## HARD FORMAT GATE — every task must pass this shape
 
 Each task is exactly: title line → `Intent:` → `Verify:` (+ optional `Depends:`). No other lines beneath a task. If a task you are about to write does not match this shape, delete it and rewrite.

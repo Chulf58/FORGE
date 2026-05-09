@@ -72,6 +72,11 @@ User-triggered actions must mention what happens on empty, null, or missing inpu
 
 **Flag:** Any plan task adding a user-triggered action with no mention of empty/null/missing handling.
 
+### Missing TDD wave ordering on enforcement plans
+Plans that touch TDD-enforcement infrastructure (any of `hooks/tdd-guard.js`, `hooks/agent-loop-guard.js`, `hooks/workflow-guard.js`, `hooks/bash-guard.js`, `scripts/run-tests.mjs`, `scripts/verify-output.mjs`, `scripts/cleanup-stale-pipeline-state.mjs`, agents named `reviewer-tests`/`test-author`, or any new file matching `*-guard*.js`/`*-test*.mjs`) MUST be TDD-structured: Wave 1 = failing tests, Wave 2 = implementation, final wave = full regression suite green.
+
+**Flag:** A plan that creates or modifies any file in the above list but has no `(wave: 1)` task whose Verify line confirms the test command exits non-zero (red bar). Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` §3.2 (Red+Green collapse failure mode); CLAUDE.md `## TDD discipline`.
+
 ## Small-plan skip
 
 Before running any checks: count all numbered task items (`1.`, `2.`, etc.) in the current feature. If the count is ≤ 2, skip the following checks entirely (they cannot produce findings on a plan this small): Scope sanity, Token budget, Nyquist compliance, File ownership cross-wave, Verification derivability. Run all other checks normally.

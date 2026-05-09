@@ -80,6 +80,18 @@ If any matches are found, note them before tracing — they narrow the search. I
 4. **Write a minimal fix** — the smallest change that corrects the behaviour
 5. **Check for regressions** — does the fix affect other flows?
 
+## TDD discipline (when fixing TDD-enforcement infra)
+
+When the bug is in TDD-enforcement code (a hook that gates edits, an agent that audits testing, a runner that scores regressions, a reviewer that scans diffs), apply red→green discipline to the fix:
+
+1. Write a failing test that reproduces the bug (red bar — confirm `node --test <test-file>` exits non-zero)
+2. Implement the fix until the test passes (green bar — confirm exit 0 without removing/skipping the new assertion)
+3. Run the full regression suite — confirm no other tests broke
+
+Anti-pattern (research §3.2): writing the failing test + the fix in the same turn, then running the suite once. The bug-reproducing test must exist and fail BEFORE the fix.
+
+For non-enforcement bugs, write a regression test alongside the fix (existing rule). Source: `docs/RESEARCH/tdd-agentic-llm-setups.md`.
+
 ## Tool preference
 
 Always use the Glob tool instead of bash find/ls, and the Grep tool instead of bash grep/rg. Bash should only be used for operations that have no dedicated tool equivalent (e.g. git commands, wc, process operations). Never use bash find, bash ls, or bash grep/rg.

@@ -12,6 +12,20 @@ Before editing any file, read it first. Before modifying a function, grep for al
 
 Before claiming anything about this codebase's state, history, what exists, or what happened — cite a file:line from a Read/Grep done THIS turn, or say "I don't know, checking" and call the tool. No "appears to", "likely", "probably", "I assume", "seems to have been". If you lack tool-call evidence this turn, you don't know — verify or disclaim.
 
+## TDD discipline
+
+When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), you MUST build it test-first:
+
+- Write failing tests first (red bar — confirm the test command exits non-zero before the implementation exists)
+- Implement until tests pass (green bar — confirm same test command exits 0)
+- Run the full regression suite — confirm no regression
+
+Anti-pattern to avoid (research §3.2 — Red+Green collapse): writing tests + implementation in the same turn, then running the suite once and claiming success. Tests must be created and observed-failing BEFORE the implementation exists.
+
+For non-enforcement work, pragmatic TDD vs. direct fix is a judgment call — see the planner's guidance in `docs/PLAN.md` for the run.
+
+Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` — research catalogues 11 failure modes; §3.2 documents Red+Green collapse as the second-most-common; §4.1 names hook-enforced TDD as the strongest single intervention.
+
 ## Tool efficiency
 
 Use dedicated tools over Bash: `Read` not `cat`, `Glob` not `find`, `Grep` not `grep`, `Edit` not `sed`. Prefer `forge_*` MCP tools for pipeline state; fall back to direct file reads if MCP unavailable. `hooks/bash-guard.js` enforces this as a backstop.

@@ -155,3 +155,19 @@ The frontmatter `tools:` list is documentation, not runtime enforcement.
 ## agent-roles.json must include all active agents
 
 `hooks/ctx-pre-tool.js` fails open for agents not in `.pipeline/agent-roles.json`. When adding a new `agents/*.md`, add a matching entry to the manifest with either `readonly: true` or an `allowedPaths` array. Active agents added this session: critic, brainstormer, implementation-architect, red-team, supervisor, compound-refresh.
+
+---
+
+## TDD discipline for enforcement infrastructure
+
+When the work itself is TDD-enforcement (hooks, agents, runners, reviewers that gate or audit testing), build it test-first. The discipline must apply to the enforcement code:
+
+- **Wave 1**: failing tests, observed red (run the test command, exit non-zero)
+- **Wave 2**: implement until tests pass, observed green
+- **Wave N**: full regression suite still green
+
+Anti-pattern from research §3.2 (Red+Green collapse): writing tests + implementation in the same turn collapses the phases — the agent designs tests around the implementation it has already mentally drafted.
+
+For non-enforcement work, pragmatic TDD vs. direct fix is a judgment call.
+
+Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` — 11 failure modes catalogued; §4.1 names hook-enforced TDD as the strongest single intervention.

@@ -161,6 +161,20 @@ Before each agent invocation, resolve which model and execution path to use:
    - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
 4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
 
+## TDD discipline
+
+When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), build it **test-first**. The discipline must apply to the enforcement code:
+
+- Wave 1: failing tests (red bar verified — run the test command, confirm exit non-zero)
+- Wave 2: implementation (green bar verified — same test command exits 0)
+- Wave N: full regression suite still green
+
+For non-enforcement work, pragmatic TDD vs. direct-fix is a judgment call (see memory `feedback_inline_edit_block_resolution.md`). For enforcement work, TDD is non-negotiable — a tool that silently fails open is worse than no tool.
+
+Decision heuristic for the planner: *"if this code's behavior breaks silently, how do we know?"* If the answer is *"we don't"* → TDD-structure the plan.
+
+Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` (run `r-e3068c22`, 2026-05-09) — research catalogues 11 failure modes; §4.1 names hook-enforced TDD as the strongest single intervention.
+
 ## Tool efficiency
 
 Use dedicated tools over Bash: `Read` not `cat`, `Glob` not `find`, `Grep` not `grep`, `Edit` not `sed`. Prefer `forge_*` MCP tools for pipeline state; fall back to direct file reads if MCP unavailable. `hooks/bash-guard.js` enforces this as a backstop.

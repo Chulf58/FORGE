@@ -229,6 +229,7 @@ After implementing all source changes and before writing the handoff, write a te
 3. **Style:** Follow existing test conventions in the project — import the module, call functions with known inputs, assert expected outputs. Use `node:assert` and `node:test` (or the pattern used in existing `*-test.mjs` files in the same directory).
 4. **Skip when:** The change is purely documentation, configuration (`.json`, `.md`), or prompt/instruction files (`agents/*.md`, `skills/**/*.md`). Only write tests when source code (`.js`, `.mjs`, `.ts`) is created or modified.
 5. **Include in handoff:** List the test file under `## Files to create` with full content, tagged with the task it validates.
+6. **TDD-structured plans (red→green ordering):** when the plan is TDD-structured (wave 1 = failing tests, wave 2 = implementation), invert step 1's "after implementing" rule: write the failing tests in wave 1 BEFORE writing any source code. Run `node --test <test-file>` and confirm exit non-zero (red bar) before starting wave 2. After wave 2 implementation, run the same command and confirm exit 0 (green bar). Do NOT collapse: do not write tests + implementation in the same turn — research §3.2 (`docs/RESEARCH/tdd-agentic-llm-setups.md`) documents this as the second-most-common agentic-TDD failure mode (Red+Green collapse). Do NOT delete or weaken assertions to satisfy the green bar.
 
 ## Context checkpoint
 

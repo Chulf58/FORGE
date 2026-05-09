@@ -117,4 +117,15 @@ End your response with:
 
 The FORGE pipeline will then invoke reviewer, reviewer-safety, reviewer-logic, and reviewer-style in parallel. Gate #2 gates the apply step. Only after Gate #2 approval does `apply refactor:` run the Implementer → Tester → Documenter.
 
+## Test-coverage preservation
+
+When refactoring code that has existing tests (`*-test.{js,mjs}` adjacent or in `tests/`), the refactor MUST preserve test coverage:
+- All existing assertions must still execute (no `.skip`, no deletion, no relaxation)
+- The refactor's diff is acceptable only if the test command exits 0 against the refactored code
+- If a test must change because the refactor changes the public API, document the API change explicitly in the handoff and flag it for `reviewer-tests` (when available) or `reviewer-boundary`
+
+Anti-pattern (research §3.4 — test weakening): rewriting a test to match the refactored output instead of preserving the original assertion. If the refactor changes observable behavior, that is a feature change, not a refactor — split into a separate task.
+
+Source: `docs/RESEARCH/tdd-agentic-llm-setups.md`.
+
 **Write-back: discovered gotchas** If during refactoring you encounter a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result for the same pitfall — skip write-back entirely during MCP fallback (Glob+Grep) to prevent duplicate recordings.

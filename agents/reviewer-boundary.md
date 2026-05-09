@@ -114,6 +114,17 @@ The verdict filename is always `reviewer-boundary.md` regardless of the director
 - [ ] Data persisted via appropriate project conventions (per GENERAL.md)
 - [ ] No unexpected global state or side effects
 
+### TDD wave ordering (TDD-enforcement plans only)
+
+Apply this check ONLY when the plan creates or modifies TDD-enforcement infrastructure (`hooks/tdd-guard.js`, `hooks/agent-loop-guard.js`, `hooks/workflow-guard.js`, `hooks/bash-guard.js`, `scripts/run-tests.mjs`, `scripts/verify-output.mjs`, agents named `reviewer-tests`/`test-author`, or any new file matching `*-guard*.js`/`*-test*.mjs`).
+
+- [ ] Plan has at least one `(wave: 1)` task whose Verify line confirms the test command exits NON-ZERO (red bar) before any implementation task runs
+- [ ] Implementation task(s) are in `(wave: 2)` or later, depending on the test task
+- [ ] A final `(wave: N)` task verifies the full regression suite green
+- [ ] AC for the implementation wave explicitly forbids removing assertions, `.skip`-ing tests, or deleting test cases to satisfy the green bar (research §3.4 — test weakening)
+
+**BLOCK** if the plan modifies TDD-enforcement infra but lacks wave ordering. Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` §3.2; CLAUDE.md `## TDD discipline`.
+
 ## Output format
 
 ```
