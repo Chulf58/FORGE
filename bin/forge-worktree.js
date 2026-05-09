@@ -37,6 +37,26 @@ function run(binary, args, opts = {}) {
   }
 }
 
+// Detect tracked-file deletions in main's working tree after worktree-remove
+// and restore them. Defensive belt-and-suspenders for TODO 35ce2751: a failed
+// merge cascade once left 52 mcp/node_modules files deleted (still in HEAD,
+// missing on disk), blocking the next worker spawn.
+function restoreAccidentalDeletions() {
+  const status = run('git', ['status', '--short'], { allowFail: true });
+  if (!status) return [];
+  const restored = [];
+  for (const line of status.split('\n')) {
+    // ` D ` = unstaged working-tree deletion of a tracked file
+    if (line.startsWith(' D ')) {
+      const filePath = line.slice(3).trim();
+      if (!filePath) continue;
+      run('git', ['restore', filePath], { allowFail: true });
+      restored.push(filePath);
+    }
+  }
+  return restored;
+}
+
 function ensureGitRepo() {
   try {
     run('git', ['rev-parse', '--git-dir']);
@@ -249,11 +269,18 @@ function merge() {
   run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
   run('git', ['branch', '-d', branch], { allowFail: true });
 
+  const restoredFiles = restoreAccidentalDeletions();
+  if (restoredFiles.length > 0) {
+    console.error('[forge-worktree] Auto-restored ' + restoredFiles.length +
+      ' accidentally-deleted file(s) after worktree removal: ' + restoredFiles.join(', '));
+  }
+
   console.log(JSON.stringify({
     ok: true,
     merged: branch,
     into: currentBranch,
     worktreeRemoved: true,
+    ...(restoredFiles.length > 0 ? { restoredFiles } : {}),
     ...(autoResolved ? { autoResolved: true, strategy: 'theirs' } : {}),
   }));
 }
@@ -276,7 +303,19 @@ function deleteWorktree() {
   run('git', ['branch', '-D', branch], { allowFail: true });
   run('git', ['worktree', 'prune'], { allowFail: true });
 
-  console.log(JSON.stringify({ ok: true, deleted: slug, worktreeRemoved: true, branchDeleted: branch }));
+  const restoredFiles = restoreAccidentalDeletions();
+  if (restoredFiles.length > 0) {
+    console.error('[forge-worktree] Auto-restored ' + restoredFiles.length +
+      ' accidentally-deleted file(s) after worktree removal: ' + restoredFiles.join(', '));
+  }
+
+  console.log(JSON.stringify({
+    ok: true,
+    deleted: slug,
+    worktreeRemoved: true,
+    branchDeleted: branch,
+    ...(restoredFiles.length > 0 ? { restoredFiles } : {}),
+  }));
 }
 
 function cleanup() {
