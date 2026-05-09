@@ -37,8 +37,14 @@ function runHook(payload, projectDir) {
 }
 
 function makeProject(tmp, agentId, agentType) {
-  mkdirSync(join(tmp, '.pipeline'), { recursive: true });
-  writeFileSync(join(tmp, '.pipeline', 'run-active.json'), JSON.stringify({
+  mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+  // run.json — required by findActiveRun() in hook-utils.js (enumerates
+  // .pipeline/runs/<runId>/run.json for any non-terminal status).
+  writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+    runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+  }));
+  // run-active.json — agent dispatch log; mutated by subagent-stop.
+  writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
     runId: 'r-test', startedAt: Date.now(), pipelineType: 'plan',
     feature: 'test', agents: [
       { agent_id: agentId, agent_type: agentType, startedAt: Date.now() },
@@ -58,7 +64,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-1',
       agent_type: 'forge:reviewer-safety', last_assistant_message: BLOCK_VERDICT,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-1');
     assert(entry && entry.outcome === 'BLOCK',
       'reviewer-safety with [reviewer-verdict]: outcome is BLOCK');
@@ -73,7 +79,7 @@ async function test() {
       agent_type: 'reviewer-logic',
       last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-logic","verdict":"APPROVED","blockers":0,"warnings":1,"feature":"test","model":"claude-haiku-4-5-20251001"}',
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-2');
     assert(entry && entry.outcome === 'APPROVED',
       'reviewer-logic with [reviewer-verdict]: outcome is APPROVED');
@@ -88,7 +94,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-plan-1',
       agent_type: 'forge:planner', last_assistant_message: BLOCK_VERDICT,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-plan-1');
     assert(entry && entry.outcome === 'truncated',
       'planner with forged [reviewer-verdict]: outcome is "truncated" (signal ignored, artifact missing)');
@@ -104,7 +110,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-coder-1',
       agent_type: 'coder', last_assistant_message: BLOCK_VERDICT,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-coder-1');
     assert(entry && entry.outcome === 'completed',
       'coder with forged [reviewer-verdict]: outcome is "completed"');
@@ -119,7 +125,7 @@ async function test() {
       agent_type: 'reviewer-boundary',
       last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-boundary","verdict":"REVISE","blockers":0,"warnings":2,"feature":"test","model":"claude-haiku-4-5-20251001"}',
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-3');
     assert(entry && entry.outcome === 'REVISE',
       'reviewer-boundary (bare name): outcome is REVISE');
@@ -138,7 +144,7 @@ async function test() {
       agent_type: 'forge:reviewer-safety',
       last_assistant_message: crossAgentVerdict,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-4');
     assert(entry && entry.outcome === 'no-verdict',
       'reviewer-safety with cross-agent verdict (reviewer-logic): outcome is "no-verdict" (agent mismatch rejected)');
@@ -154,7 +160,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-5',
       agent_type: 'forge:reviewer-safety', last_assistant_message: BLOCK_VERDICT,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-5');
     assert(entry && entry.outcome === 'BLOCK',
       'reviewer-safety with matching agent field: BLOCK still extracted');
@@ -170,7 +176,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-cc-1',
       agent_type: 'completeness-checker', last_assistant_message: ccVerdict,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-cc-1');
     assert(entry && entry.outcome === 'APPROVED',
       'completeness-checker with [reviewer-verdict]: outcome is APPROVED');
@@ -184,7 +190,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-cc-2',
       agent_type: 'completeness-checker', last_assistant_message: 'Partial output with no verdict',
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-cc-2');
     assert(entry && entry.outcome === 'no-verdict',
       'completeness-checker without verdict: outcome is "no-verdict" (truncation detected)');
@@ -199,7 +205,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-gc-1',
       agent_type: 'gotcha-checker', last_assistant_message: gcMsg,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-gc-1');
     assert(entry && entry.outcome === 'completed',
       'gotcha-checker with "### Verdict" section: outcome is "completed"');
@@ -214,7 +220,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-gc-2',
       agent_type: 'gotcha-checker', last_assistant_message: truncatedMsg,
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-gc-2');
     assert(entry && entry.outcome === 'truncated',
       'gotcha-checker without "### Verdict" section: outcome is "truncated"');
@@ -229,7 +235,7 @@ async function test() {
     await runHook({ tool_name: 'agent_stop', agent_id: 'agent-res-1',
       agent_type: 'researcher', last_assistant_message: 'Partial research output',
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-res-1');
     assert(entry && entry.outcome === 'truncated',
       'researcher without researcher-status.json: outcome is "truncated"');
@@ -246,7 +252,7 @@ async function test() {
       agent_type: 'researcher',
       last_assistant_message: '[research-status] READY\n[suggest] implement feature: test',
       session_id: 'test' }, tmp);
-    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'run-active.json'), 'utf8'));
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
     const entry = data.agents.find(a => a.agent_id === 'agent-res-2');
     assert(entry && entry.outcome === 'completed',
       'researcher with up-to-date researcher-status.json: outcome is "completed"');
