@@ -143,13 +143,43 @@ For each phase in index order:
 Call `forge_update_run` with `phases: [{ index: <N>, label: "<label>", status: "running" }]`.
 
 **b. Run Steps 2b through 5c scoped to this phase only:**
-Execute the scoping check (Step 2b), coder-scout (Step 3.1), coder (Step 3.2), test stage (Step 3.2b), reviewer dispatch (Step 3.4), reviewers (Step 3.5), and verdict handling (Steps 5b-5c) exactly as written in their respective sections below, with one modification: **scope every coder and implementation-architect prompt to this phase's task lines only.** Prepend the following to the coder prompt:
+Execute the scoping check (Step 2b), then the test-author wave (Step 3.0 below), then coder-scout (Step 3.1), coder (Step 3.2), test stage (Step 3.2b), reviewer dispatch (Step 3.4), reviewers (Step 3.5), and verdict handling (Steps 5b-5c) exactly as written in their respective sections below, with one modification: **scope every coder and implementation-architect prompt to this phase's task lines only.** Prepend the following to the coder prompt:
 
 > `[phase-scope: <label>]` Only implement the following tasks from the plan — do NOT implement tasks from other phases:
 >
 > (insert this phase `- [ ]` task lines here)
 
+**Step 3.0 — test-author wave (conditional):**
+
+Scan the current phase's `- [ ]` task lines for backtick-quoted file paths matching `*-test.{js,mjs}`.
+
+- **If at least one test-file task is found:** dispatch the `test-author` agent with the following prompt prefix:
+
+  > `[phase-scope: <label>]` Only write test files for the following tasks from the plan — do NOT implement any source files:
+  >
+  > (insert this phase `- [ ]` task lines here)
+
+  The test-author writes failing test files scoped to the phase's task lines and writes a JSON artefact to `.pipeline/context/test-author-output.json`.
+
+  **Red-phase verification:** after the test-author completes, run a single batched invocation:
+
+  ```
+  node --test <file1> <file2> ... <fileN>
+  ```
+
+  (where the file list is taken from `testFiles` in `.pipeline/context/test-author-output.json`).
+
+  Check the exit code using `scripts/wave-split.mjs` `redPhaseAbort({ exitCode, testFile })`. If `aborted: true` (exit 0), abort with: `[wave-split] handoff invalid — aborting phase` — the red-phase failed to fail. Do NOT proceed to the coder for this phase.
+
+  If exit non-zero (red bar confirmed), proceed to Step 3.1.
+
+  The coder receives the artefact path as a prompt signal: `[test-author-output: .pipeline/context/test-author-output.json]`. The coder reads the JSON artefact to discover which test files to make pass — it does NOT receive the test-author's session content, reasoning trace, or context. This isolation is the mechanism that prevents Red+Green collapse.
+
+- **If no test-file tasks are found:** log `[wave-split] phase has no test files — skipping test-author` and advance directly to Step 3.1 (coder-scout).
+
 The coder-scout, reviewer dispatch, test stage, and reviewers operate on the same `<worktreePath>` files as normal — no scoping modification needed for those steps.
+
+**Green-phase verification (after coder runs in Step 3.2):** re-run the same batched `node --test` invocation. The exit code must be 0. If non-zero, route through the standard reviewer-REVISE loop (Step 5b) — the coder revision loop applies until the tests pass or the maximum revision count is reached.
 
 **c. Handle the phase verdict (after Step 5b):**
 
@@ -188,7 +218,12 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
    - Run via Bash: `node scripts/coder-scout.mjs --root <worktreePath>` with `timeout: 30000`.
    - If exit 0 and stdout JSON has `ok: true`: log the `signal` field from stdout. `scout.json` is written — proceed to step 2.
    - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[coder-scout] script failed: <reason from stdout or stderr>`. Skip scout and proceed to coder without scout context — the coder can still function without it.
-2. **Coder:** writes changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then writes `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary.
+2. **Coder:** writes changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then writes `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary. When a test-author wave ran for this phase (Step 3.0), prepend the following signal to the coder's prompt so it knows where to find the test artefact:
+
+   > `[test-author-output: .pipeline/context/test-author-output.json]`
+
+   The coder reads the JSON artefact at that path to discover which test files to make pass. It does NOT receive the test-author's session content — the JSON artefact only.
+
    - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
      `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
      where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
