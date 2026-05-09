@@ -198,7 +198,50 @@ The single-agent coder context failure: even with TDD-structured planning, the c
 
 (None — all questions resolved from required reads. Key finding: `scripts/run-tests.mjs` has no `--files=` flag; AC-4 red-phase verification uses `node --test <absolute-path>` directly. `forge-config.default.json` model routing deferred to follow-up per out-of-scope decision above.)
 
+### Resolution of plan-stage reviewer verdicts (test-author feature)
+
+Plan-stage reviewers ran against this feature: `reviewer-safety` APPROVED (0/0); `reviewer-boundary` REVISE (0 blockers, 3 warnings); `reviewer-logic` REVISE (0 blockers, 2 warnings); `reviewer-performance` REVISE (0 blockers, 1 warning). No BLOCKERs — gate1 proceeds with the following spec-precision clarifications pinned into the plan body:
+
+**reviewer-boundary AC-1 — Permissions schema underspecified:** Resolution applied. AC-1 is **tightened** to mandate that `agents/test-author.md` declare:
+- YAML frontmatter with required fields `name: test-author`, `description: <one-line>`, `model: claude-haiku-4-5-20251001`, `tools: [Read, Write, Glob, Grep, Bash]` (no optional fields permitted unless added consciously).
+- `## Permissions` section with three required sub-headings in order: `### Always` (read test discovery paths, write within allowedPaths, run `node --test`), `### Ask First` (none — agent is autonomous within its allowedPaths), `### Never` (edit any non-test source file; read or write outside allowedPaths; emit reasoning narrative into the handoff artefact). Each sub-heading must contain at least one substantive bullet per GENERAL.md:105–126.
+
+**reviewer-boundary AC-2 + reviewer-logic phase-zero edge case — Phase Execution Loop integration point:** Resolution applied. AC-2 is **clarified**: test-author dispatch occurs as a new **Step 3.0** in the Phase Execution Loop, inserted between Step 2b (scoping check) and Step 3.1 (coder-scout). Step 3.0:
+- Receives `[phase-scope: <label>]` signal mirroring the coder pattern (SKILL.md line 147).
+- Runs **conditionally**: if the current phase has no test-file tasks (i.e., the phase's task lines do not target paths matching `*-test.{js,mjs}`), Step 3.0 is **skipped** (logged `[wave-split] phase has no test files — skipping test-author`) and the loop advances to Step 3.1 directly.
+- Writes test files scoped to the current phase's task lines only — not all phases.
+- The red-phase verification (AC-4) runs only on test files written by Step 3.0 in the current phase iteration.
+
+**reviewer-boundary AC-3 + reviewer-logic forward-reference — handoff artefact schema and timing:** Resolution applied. AC-3 is **tightened**:
+- Test-author writes a **JSON artefact** at `.pipeline/context/test-author-output.json` (machine-readable, not Markdown). Schema:
+  ```json
+  {
+    "phase": "<phase label>",
+    "testFiles": ["<absolute-path>", ...],
+    "failureOutput": "<raw node --test stderr/stdout combined>",
+    "exitCode": <number>
+  }
+  ```
+- The Markdown file `docs/context/test-author-handoff.md` is **dropped** in favor of the JSON artefact above. Sections like `## Reasoning` cannot exist because the schema has no such field.
+- Coder reads the JSON artefact via the prompt signal `[test-author-output: .pipeline/context/test-author-output.json]` and validates the schema before consuming. If the file is missing, malformed, or `exitCode === 0` (red-phase failed to fail), the coder aborts with `[wave-split] handoff invalid — aborting phase`.
+- **Timing fix:** the handoff schema is defined in **Task 2** (Wave 2 — when `agents/test-author.md` is created), not Task 5. Task 5 is **removed** as redundant; its content folds into Task 2.
+
+**reviewer-logic AC-6 — Test structure clarity:** Resolution applied. AC-6 is **tightened**. `scripts/test-author-wave.test.mjs` asserts at the **module-import level** by importing the relevant skill helpers (or, if the wave-split lives inline in SKILL.md prose, by AST-checking the SKILL.md text via regex). Specifically:
+- (a) Test asserts that a parsed-step list extracted from `skills/implement/SKILL.md` Phase Execution Loop section contains the literal token `test-author` at an index strictly less than the index of the literal token `coder`. Implementation: `readFileSync` SKILL.md, regex-extract step labels, assert ordering. Fails before SKILL.md edit because `test-author` does not appear.
+- (b) Test imports a small helper exported from a new `scripts/wave-split.mjs` (or inline in `scripts/run-tests.mjs` if minimal) that simulates `redPhaseAbort({ exitCode: 0, testFile })` and asserts the function returns `{ aborted: true, reason: /passed without implementation/ }`. Fails before implementation because the function does not exist.
+- (c) Test reads the coder prompt template (wherever it lives — likely `skills/implement/SKILL.md` Step 3.2 prose) and asserts the template contains the literal token `[test-author-output: .pipeline/context/test-author-output.json]` and does NOT contain the literal phrase `test-author transcript` or similar leakage indicators.
+
+**reviewer-performance — Test command batching:** Resolution applied. The red-phase verification (AC-4) **batches** test files: `node --test <file1> <file2> ... <fileN>` in a single invocation per phase. Implementation note added to Task 4: red-phase check uses a single `node --test` subprocess with all phase test files as arguments to amortize startup cost.
+
+**Surface deltas from these resolutions:**
+- Task 5 (originally Wave 3 handoff spec) is **removed**. Its content folds into Task 2.
+- New helper file `scripts/wave-split.mjs` may be needed for testable red-phase abort logic (Task 1 case b). Implementer's call: inline in SKILL.md prose if testable via AST regex; extracted helper if cleaner.
+- Handoff artefact path changes from `docs/context/test-author-handoff.md` (Markdown) to `.pipeline/context/test-author-output.json` (JSON). Update AC-3 and Task 2 accordingly. Update `.pipeline/agent-roles.json` `allowedPaths` for test-author to include `.pipeline/context/test-author-output.json` (replaces the markdown path in AC-7).
+- AC-7 `allowedPaths`: `["hooks/*-test.js", "mcp/*-test.mjs", "scripts/*-test.mjs", ".pipeline/context/test-author-output.json"]`.
+
+These resolutions are authoritative; implementer must reference them when there's ambiguity. Original AC text above is **superseded** by the narrowed wording in this section where they conflict.
+
 ### Approach summary
-- Decision: New `test-author` agent (Haiku, isolated context) inserted before coder in `skills/implement/SKILL.md`; handoff artefact carries only test paths + failure output; built TDD-first per GENERAL.md §TDD discipline.
+- Decision: New `test-author` agent (Haiku, isolated context) inserted as Step 3.0 in the Phase Execution Loop of `skills/implement/SKILL.md`; handoff is a JSON artefact at `.pipeline/context/test-author-output.json` carrying test paths + failure output + exit code; built TDD-first per GENERAL.md §TDD discipline.
 - Trade-off: `skills/debug/SKILL.md` and `skills/refactor/SKILL.md` are out of scope — they start from an existing failure state and the test-author pattern does not apply.
-- Uncertainty: The Phase Execution Loop in `skills/implement/SKILL.md` (lines 139-174) already handles per-phase coder dispatch; the split must nest inside that loop cleanly — integration complexity is the main open risk.
+- Uncertainty: The Phase Execution Loop in `skills/implement/SKILL.md` (lines 139-174) already handles per-phase coder dispatch; the split nests inside that loop as Step 3.0 with conditional skip when a phase has no test files (per Resolution above).
