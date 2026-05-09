@@ -1,12 +1,6 @@
 ## Active Plan
 
-(Stale prior feature blocks removed by conductor at gate1 of r-38ea3166. Already shipped today: per-run context isolation via merge 476dca08; mtime cross-check via merge ab6fc19c. The active plan below targets the TDD Guard Hook — a separate feature.)
-
-### Feature: TDD Guard Hook
-
-Summary: Build `hooks/tdd-guard.js`, a PreToolUse hook that blocks Write/Edit on source files when no failing test exists for the targeted module.
-
-#### Hook contract (from `hooks/bash-guard.js:316-327` and `hooks/bash-guard.js:11-27`)
+(All features from r-38ea3166 completed and merged.)
 
 - **stdin:** JSON payload with at minimum `tool_input.file_path` (used by **both** Write and Edit) and `cwd`. Confirmed by `hooks/workflow-guard.js:191-194` and `hooks/control-file-guard-test.js:146` — both tools use `file_path`. Coder should apply a defensive `tool_input.file_path || tool_input.path` extraction (per `workflow-guard.js:191-194` pattern) for robustness only; both Write and Edit use `file_path` as primary field. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)
 - **exit 0:** allow the tool call through.
