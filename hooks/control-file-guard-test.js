@@ -2,9 +2,13 @@
 'use strict';
 
 // Tests for control-file write guards in workflow-guard.js:
-//   - .pipeline/run-active.json: ALL direct Write/Edit blocked
 //   - .pipeline/gate-pending.json: only pending writes or token-authorized writes allowed
 //   - Other .pipeline/ files: unaffected
+//
+// (Removed singleton .pipeline/run-active.json blocking tests after commit
+// 8fc4f99c eliminated the singleton — per-run files at
+// .pipeline/runs/<runId>/run-active.json are managed by MCP tools, not
+// hook-blocked. See workflow-guard.js:265-267 for the rationale.)
 //
 // Run: node hooks/control-file-guard-test.js
 
@@ -63,50 +67,6 @@ function assert(cond, label) {
 
 async function test() {
   console.log('\n── control-file-guard-test.js ───────────────────────────────────────');
-
-  // --- run-active.json: ALL writes blocked ---
-
-  // 1. Write to run-active.json → blocked
-  {
-    const tmp = makeTmp();
-    const filePath = join(tmp, '.pipeline', 'run-active.json');
-    const content = JSON.stringify({ runId: 'r-test', pipelineType: 'plan' });
-    const { code, stdout } = await runHook({
-      tool_name: 'Write',
-      tool_input: { file_path: filePath, content },
-    }, tmp);
-    assert(code === 2, 'Write run-active.json → exit 2');
-    assert(stdout.includes('run-active.json'), 'Write run-active.json → mentions file');
-    assert(stdout.includes('forge_create_run') || stdout.includes('forge_resume_run'),
-      'Write run-active.json → suggests MCP tools');
-    rmSync(tmp, { recursive: true, force: true });
-  }
-
-  // 2. Edit to run-active.json → blocked
-  {
-    const tmp = makeTmp();
-    const filePath = join(tmp, '.pipeline', 'run-active.json');
-    const { code } = await runHook({
-      tool_name: 'Edit',
-      tool_input: { file_path: filePath, old_string: '"implement"', new_string: '"plan"' },
-    }, tmp);
-    assert(code === 2, 'Edit run-active.json → exit 2');
-    rmSync(tmp, { recursive: true, force: true });
-  }
-
-  // 3. Write run-active.json with approval token → still blocked (no token exemption)
-  {
-    const tmp = makeTmp();
-    writeApprovalToken(tmp, ['gate-approve', 'commit', 'push'], 120000);
-    const filePath = join(tmp, '.pipeline', 'run-active.json');
-    const content = JSON.stringify({ runId: 'r-test' });
-    const { code } = await runHook({
-      tool_name: 'Write',
-      tool_input: { file_path: filePath, content },
-    }, tmp);
-    assert(code === 2, 'Write run-active.json + token → still exit 2 (unconditional)');
-    rmSync(tmp, { recursive: true, force: true });
-  }
 
   // --- gate-pending.json: structural guard ---
 
@@ -315,18 +275,6 @@ async function test() {
       tool_input: { file_path: filePath, content: 'console.log("hello")' },
     }, tmp);
     assert(code === 0, 'Write regular file → exit 0 (unaffected)');
-    rmSync(tmp, { recursive: true, force: true });
-  }
-
-  // 20. Windows-style backslash path to run-active.json → still blocked
-  {
-    const tmp = makeTmp();
-    const filePath = join(tmp, '.pipeline', 'run-active.json'); // join uses OS separator
-    const { code } = await runHook({
-      tool_name: 'Write',
-      tool_input: { file_path: filePath, content: '{}' },
-    }, tmp);
-    assert(code === 2, 'Write run-active.json (OS path) → exit 2');
     rmSync(tmp, { recursive: true, force: true });
   }
 
