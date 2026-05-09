@@ -102,7 +102,7 @@ Summary: Build `hooks/tdd-guard.js`, a PreToolUse hook that blocks Write/Edit on
 
 #### Hook contract (from `hooks/bash-guard.js:316-327` and `hooks/bash-guard.js:11-27`)
 
-- **stdin:** JSON payload with at minimum `tool_input.file_path` (Write) or `tool_input.path` (Edit) and `cwd`. Shape confirmed from `bash-guard.js:325` (`payload.tool_input?.command`) — Write/Edit equivalents use `file_path`/`path`.
+- **stdin:** JSON payload with at minimum `tool_input.file_path` (used by **both** Write and Edit) and `cwd`. Confirmed by `hooks/workflow-guard.js:191-194` and `hooks/control-file-guard-test.js:146` — both tools use `file_path`. Coder should still apply a defensive `tool_input.file_path || tool_input.path` extraction to match the existing pattern in `workflow-guard.js`. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q2.)
 - **exit 0:** allow the tool call through.
 - **exit 2 + stdout JSON deny envelope + stderr message:** block the tool call. Deny envelope shape from `bash-guard.js:16-26`: `{ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "<msg>" } }`. `console.error(msg)` provides the legacy stderr backup (`bash-guard.js:26`). Exit 2 alone is silently discarded by the current runtime (`bash-guard.js:15`).
 - **stdin reading:** readline + timeout pattern, fail-open on parse error (`bash-guard.js:456-466`). Timeout constant from `hook-utils.js` (`STDIN_TIMEOUT_LONG`).
@@ -111,7 +111,7 @@ Summary: Build `hooks/tdd-guard.js`, a PreToolUse hook that blocks Write/Edit on
 
 Based on `hooks/workflow-guard.js:14-31` (`isSourceFile` function), which explicitly excludes `/.pipeline/`, `/docs/`, `/.claude/`, `/scaffolds/`, `/node_modules/`, `/.git/`, `/mcp/`, `/hooks/`, `/skills/`, `/bin/`. The tdd-guard must use a **narrower, additive rule**: intercept Write/Edit on files under `hooks/`, `bin/`, `scripts/`, `mcp/` that are NOT test files. Test file exclusion: path ends with `.test.js`, `.test.mjs`, or is under `__tests__/` or `tests/`. Config/doc exclusion: ends with `.md` or `.json` at project root level (matches workflow-guard.js:29-30 precedent).
 
-**Trigger tools:** Write and Edit (matching the existing PreToolUse matchers at `hooks/hooks.json:237-270`). MultiEdit — unknown, researcher should verify whether MultiEdit fires as a separate PreToolUse event or is an alias.
+**Trigger tools:** Write, Edit, **and MultiEdit** — `MultiEdit` is a distinct PreToolUse event (not an Edit alias), confirmed by Claude Code hooks reference; community practitioners use `"Edit|MultiEdit|Write"` as a three-part matcher. (See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q1.) `hooks/hooks.json` needs three matcher entries.
 
 #### "Failing test exists" check — chosen mechanism
 
@@ -159,21 +159,26 @@ Env var `TDD_GUARD_BYPASS=1` — matches the session-toggle pattern described in
 
 - [ ] 10. Register hook in `hooks/hooks.json` (`hooks/hooks.json`) (wave: 3)
   Depends: 9
-  Intent: Activate the hook in the Claude Code runtime so it fires on every Write and Edit PreToolUse event, matching the existing Write/Edit matcher pattern at hooks.json:237-270.
-  Verify: AC-10: `hooks/hooks.json` contains two new PreToolUse entries — one for matcher `"Write"` and one for `"Edit"` — both invoking `node "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js"`; JSON is valid (`node -e "require('./hooks/hooks.json')"` exits 0).
+  Intent: Activate the hook in the Claude Code runtime so it fires on every Write, Edit, and MultiEdit PreToolUse event, matching the existing Write/Edit matcher pattern at hooks.json:237-270 and including MultiEdit per researcher Q1.
+  Verify: AC-10: `hooks/hooks.json` contains three new PreToolUse entries — matchers `"Write"`, `"Edit"`, and `"MultiEdit"` — all invoking `node "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-guard.js"`; JSON is valid (`node -e "require('./hooks/hooks.json')"` exits 0).
 
-- [ ] 11. Add tdd-guard entry to `.pipeline/agent-roles.json` (`.pipeline/agent-roles.json`) (wave: 3)
-  Depends: 9
-  Intent: Keep agent-roles.json in sync so ctx-pre-tool.js does not fail open for any hook-process identity that references tdd-guard — per GENERAL.md line 157 requirement that all active agents appear in the manifest.
-  Verify: AC-11: `.pipeline/agent-roles.json` contains an entry for `tdd-guard` with `readonly: true`; `ctx-pre-tool.js` does not emit an "agent not found" warning when tdd-guard is the active hook process.
+- [ ] 11. ~~Add tdd-guard entry to `.pipeline/agent-roles.json`~~ — **DROPPED** per researcher Q3. Hook processes do not carry an `agent_type` in their stdin payload; `hooks/ctx-pre-tool.js:93-94` short-circuits when `agentType` is absent, so an agent-roles.json entry would have zero effect. See `docs/RESEARCH/tdd-guard-hook-unknowns.md` Q3.
 
 ### Research needed
 
-- **MultiEdit PreToolUse event:** does `MultiEdit` fire as a distinct PreToolUse event with its own tool name, or is it routed through the `Edit` matcher? If it is a separate tool name, `hooks/hooks.json` needs a third matcher entry. Unknown — researcher should verify by inspecting Claude Code hook documentation or existing hook behavior logs.
-- **stdin `file_path` vs `path` field name for Edit vs Write:** bash-guard.js reads `payload.tool_input?.command` for Bash. The Write tool uses `file_path` and Edit uses `path` — confirm the exact field names from Claude Code PreToolUse payload docs or an existing hook that reads Write/Edit file paths (e.g., `ctx-pre-tool.js`).
-- **`agent-roles.json` scope for hook processes:** GENERAL.md line 157 says new agents need an entry. Hooks are not agents — verify whether hook processes run under an agent identity that ctx-pre-tool.js checks, or whether the agent-roles.json entry is unnecessary for a hook script.
+(All resolved — see `docs/RESEARCH/tdd-guard-hook-unknowns.md` and the Resolution section below.)
+
+### Resolution of plan-stage research findings
+
+Researcher (`docs/RESEARCH/tdd-guard-hook-unknowns.md`) and gotcha-checker concur on three changes pinned into the plan body above:
+
+1. **MultiEdit is a distinct PreToolUse event.** Task 10 AC-10 updated to require three matchers (`Write`, `Edit`, `MultiEdit`).
+2. **Both Write and Edit use `tool_input.file_path`** (not `path`). Hook-contract section updated; coder should keep the defensive `file_path || path` fallback that `workflow-guard.js:191-194` uses.
+3. **agent-roles.json entry is not required for hook processes.** Task 11 dropped (hooks have no `agent_type`; `ctx-pre-tool.js:93-94` short-circuits without one).
+
+These resolutions are authoritative; implementer must reference them when there's ambiguity.
 
 ### Approach summary
 - Decision: Hook-enforced TDD guard (research §6.1 pattern) using `node --test <test-file>` to confirm a failing test exists before allowing source-file writes; fail-open on timeout/crash; `TDD_GUARD_BYPASS=1` env var for session opt-out.
-- Trade-off: Spawning a node subprocess per Write/Edit adds ~100–300 ms latency to every source-file write; acceptable given the <500 ms budget, but will be noticeable in tight edit loops.
-- Uncertainty: MultiEdit tool name for the PreToolUse matcher is unconfirmed; exact stdin field names for Write vs Edit payloads need researcher verification before the coder writes the file-path extraction logic.
+- Trade-off: Spawning a node subprocess per Write/Edit/MultiEdit adds ~100–300 ms latency to every source-file write; acceptable given the <500 ms budget, but will be noticeable in tight edit loops.
+- Uncertainty: All three plan-stage unknowns resolved (MultiEdit distinct, both tools use `file_path`, no agent-roles.json entry needed).
