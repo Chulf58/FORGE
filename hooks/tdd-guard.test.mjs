@@ -1,0 +1,296 @@
+/**
+ * tdd-guard.test.mjs — Failing tests for hooks/tdd-guard.js (TDD Phase 1 red bar)
+ *
+ * Tests call runGuard(payload, env, _spawnImpl) directly — the exported function
+ * is the unit under test, not the CLI bootstrap.
+ *
+ * Design decisions:
+ * - _spawnImpl injection: runGuard accepts an optional third arg for the spawn
+ *   implementation. For timeout/ENOENT tests (cases 9, 11) we inject a fake
+ *   that either hangs indefinitely or throws ENOENT. This keeps tests fast and
+ *   deterministic without OS-level process spawning. The injection point is
+ *   an explicit third arg (not an env var) to keep the production path clean.
+ * - Filesystem isolation: each test that exercises filesystem-dependent behaviour
+ *   creates its own tmpdir via os.tmpdir() + mkdtemp and cleans up afterward.
+ * - Block cases (1, 2, 3) fail against the stub because the stub returns exitCode 0
+ *   but the tests assert exitCode === 2. Allow cases (4-11) pass against the stub
+ *   because the stub returns 0 and those tests assert exitCode === 0.
+ *   The three failing block cases establish the TDD red bar.
+ */
+
+import { describe, test, before, after, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { createRequire } from 'node:module';
+
+// Load the stub via CommonJS require (hook is 'use strict' CJS)
+const require = createRequire(import.meta.url);
+const { runGuard } = require('./tdd-guard.js');
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Build a minimal Write payload targeting the given absolute file path. */
+function writePayload(filePath, cwd) {
+  return {
+    tool_name: 'Write',
+    tool_input: { file_path: filePath },
+    cwd: cwd ?? path.dirname(filePath),
+  };
+}
+
+/** Create a temp dir with the given relative files populated with given content. */
+async function makeTempProject(files = {}) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tdd-guard-test-'));
+  for (const [rel, content] of Object.entries(files)) {
+    const full = path.join(dir, rel);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, content, 'utf8');
+  }
+  return dir;
+}
+
+/** Remove a temp dir created by makeTempProject. */
+async function removeTempProject(dir) {
+  await fs.rm(dir, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------------------
+// Test case (1): blocks Write when no test file exists for target
+// ---------------------------------------------------------------------------
+test('(1) blocks Write when no test file exists for target source file', async () => {
+  const dir = await makeTempProject({
+    // Target source file exists but no adjacent test file
+    'hooks/foo.js': '// source',
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'foo.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must block (exitCode 2) — stub returns 0 so this assertion will FAIL against stub
+    assert.equal(result.exitCode, 2, 'should block when no test file exists');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (2): blocks Write when test file exists but all tests pass (green)
+// ---------------------------------------------------------------------------
+test('(2) blocks Write when test file exists but all tests pass (green)', async () => {
+  const dir = await makeTempProject({
+    'hooks/bar.js': '// source',
+    // A test file where all tests pass — node --test will exit 0
+    'hooks/bar.test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('passing test', () => { assert.ok(true); });
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'bar.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must block (exitCode 2) — stub returns 0 so this assertion will FAIL against stub
+    assert.equal(result.exitCode, 2, 'should block when all tests are green');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (3): blocks Write when test file exists but contains zero executing tests
+// ---------------------------------------------------------------------------
+test('(3) blocks Write when test file contains only skipped tests', async () => {
+  const dir = await makeTempProject({
+    'hooks/baz.js': '// source',
+    // Test file with only .skip — node --test exits 0 with no executing tests
+    'hooks/baz.test.mjs': `
+import { test } from 'node:test';
+test.skip('skipped test', () => {});
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'baz.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must block (exitCode 2) — stub returns 0 so this assertion will FAIL against stub
+    assert.equal(result.exitCode, 2, 'should block when test file has no executing tests');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (4): allows Write when test file exists and at least one test fails (red)
+// ---------------------------------------------------------------------------
+test('(4) allows Write when test file has at least one failing test (red bar confirmed)', async () => {
+  const dir = await makeTempProject({
+    'hooks/qux.js': '// source',
+    // Test file with a failing assertion — node --test exits non-zero
+    'hooks/qux.test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('failing test', () => { assert.equal(1, 2, 'intentionally failing'); });
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'qux.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must allow (exitCode 0)
+    assert.equal(result.exitCode, 0, 'should allow when a failing test confirms red bar');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (5): allows Write when test file imports not-yet-existing source module
+// ---------------------------------------------------------------------------
+test('(5) allows Write when test file imports not-yet-existing source module (module-not-found = red)', async () => {
+  const dir = await makeTempProject({
+    // Source file does NOT exist yet (first write scenario)
+    // Test file tries to import the not-yet-existing source — node --test exits non-zero
+    'hooks/newmod.test.mjs': `
+import './newmod.js'; // will throw MODULE_NOT_FOUND
+import { test } from 'node:test';
+test('placeholder', () => {});
+`,
+  });
+  try {
+    // Payload targets the not-yet-existing source file
+    const payload = writePayload(path.join(dir, 'hooks', 'newmod.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must allow (exitCode 0) — module-not-found exit non-zero counts as red bar
+    assert.equal(result.exitCode, 0, 'should allow when test imports a not-yet-existing module');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (6): allows Write on test files themselves
+// ---------------------------------------------------------------------------
+test('(6) allows Write on test files themselves (*.test.mjs)', async () => {
+  const dir = await makeTempProject({
+    'hooks/somehook.js': '// source',
+  });
+  try {
+    // Target is a test file — should be exempt
+    const payload = writePayload(path.join(dir, 'hooks', 'somehook.test.mjs'), dir);
+    const result = await runGuard(payload, {});
+    // Must allow (exitCode 0)
+    assert.equal(result.exitCode, 0, 'should allow writes to test files');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (7): allows Write when TDD_GUARD_BYPASS=1 (checked before stdin parsing)
+// ---------------------------------------------------------------------------
+test('(7) allows Write when TDD_GUARD_BYPASS=1, even with malformed payload', async () => {
+  // Pass null as payload — would fail parsing/extraction in a strict implementation.
+  // Bypass must be evaluated BEFORE payload is inspected.
+  const result = await runGuard(null, { TDD_GUARD_BYPASS: '1' });
+  // Must allow (exitCode 0)
+  assert.equal(result.exitCode, 0, 'bypass=1 should allow even with null payload');
+});
+
+// ---------------------------------------------------------------------------
+// Test case (8): allows Write when path matches a .tddguardignore glob
+// ---------------------------------------------------------------------------
+test('(8) allows Write when path matches a .tddguardignore glob', async () => {
+  const dir = await makeTempProject({
+    // Source file in hooks/ but no adjacent test
+    'hooks/legacy.js': '// legacy source with no tests',
+    // .tddguardignore lists the pattern
+    '.tddguardignore': 'hooks/legacy.js\n',
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'legacy.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must allow (exitCode 0) — path is ignored
+    assert.equal(result.exitCode, 0, 'should allow write for .tddguardignore-matched path');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (9): fail-open when node --test times out
+// ---------------------------------------------------------------------------
+test('(9) fail-open (allow) when node --test times out', async () => {
+  const dir = await makeTempProject({
+    'hooks/slow.js': '// source',
+    'hooks/slow.test.mjs': 'import { test } from "node:test"; test("x", () => {});',
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'slow.js'), dir);
+
+    // Inject a spawn implementation that simulates a timeout:
+    // returns an object whose promise never resolves (until killed).
+    // The hook must detect timeout and fail-open.
+    const timeoutSpawn = () => {
+      // Returns a fake child process that never emits 'close'
+      const fakeChild = {
+        stdout: null,
+        stderr: null,
+        on: () => fakeChild,
+        kill: () => {},
+        // A promise that represents the "never-resolving" test run
+        _exitPromise: new Promise(() => {}), // never resolves
+      };
+      return fakeChild;
+    };
+
+    const result = await runGuard(payload, {}, timeoutSpawn);
+    // Must fail-open (exitCode 0) on timeout
+    assert.equal(result.exitCode, 0, 'should fail-open when test runner times out');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (10): fail-open on hook stdin parse error (malformed/missing payload)
+// ---------------------------------------------------------------------------
+test('(10) fail-open when payload is malformed (null)', async () => {
+  // Passing null simulates a stdin parse error where payload extraction fails.
+  // The hook must fail-open.
+  const result = await runGuard(null, {});
+  // Must fail-open (exitCode 0)
+  assert.equal(result.exitCode, 0, 'should fail-open on null/malformed payload');
+});
+
+test('(10b) fail-open when payload has no tool_input', async () => {
+  const result = await runGuard({}, {});
+  // Must fail-open or allow (exitCode 0)
+  assert.equal(result.exitCode, 0, 'should fail-open when tool_input is missing');
+});
+
+// ---------------------------------------------------------------------------
+// Test case (11): fail-open when spawn throws ENOENT (node not on PATH)
+// ---------------------------------------------------------------------------
+test('(11) fail-open when spawn throws ENOENT (node not on PATH)', async () => {
+  const dir = await makeTempProject({
+    'hooks/node-missing.js': '// source',
+    'hooks/node-missing.test.mjs': 'import { test } from "node:test"; test("x", () => {});',
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'node-missing.js'), dir);
+
+    // Inject a spawn implementation that throws ENOENT synchronously
+    const enoentSpawn = () => {
+      const err = new Error('spawn node ENOENT');
+      err.code = 'ENOENT';
+      throw err;
+    };
+
+    const result = await runGuard(payload, {}, enoentSpawn);
+    // Must fail-open (exitCode 0) when spawn fails with ENOENT
+    assert.equal(result.exitCode, 0, 'should fail-open when spawn throws ENOENT');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
