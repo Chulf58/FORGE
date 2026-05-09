@@ -110,7 +110,19 @@ Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project`
    - On failure (non-zero exit): show full output, emit `[suggest] debug — tests failed after apply`. Do NOT auto-fix or retry.
 
 3. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution.
-   After documenter completes, proceed to step 3b.
+
+   Record `documenterStartedAt = Date.now()` (epoch-ms) immediately before spawning the documenter.
+
+   After documenter completes, verify its output via mtime check — do NOT use `git diff` (gitignored files never appear in git diff output):
+
+   For each expected doc file the documenter should have written (typically `CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and any solution file under `docs/solutions/`), run:
+   ```
+   node scripts/verify-output.mjs --file=<absoluteDocFilePath> --since=<documenterStartedAt>
+   ```
+   - Exit 0 (`ok: true`): file was written or updated — continue.
+   - Exit 1 (file absent) or exit 2 (`mtime < since`): documenter did NOT write this file. Re-invoke the documenter once with a note identifying the missing or stale file. If the second run also fails the mtime check, log `[apply] documenter output unverified: <file>` and continue — do NOT loop further.
+
+   After mtime verification passes (or the single retry is exhausted), proceed to step 3b.
 
 3b. **Post-apply lifecycle cleanup** (always runs, not gated by gitIntegration):
    - Run via Bash: `node scripts/post-apply-lifecycle.mjs "<safe-feature>"` (use the sanitized `feature` from Step 1). Set `timeout: 30000`.

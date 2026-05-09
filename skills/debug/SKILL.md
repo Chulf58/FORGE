@@ -81,7 +81,12 @@ Do NOT proceed without resolving `<worktreePath>`.
 2. **Debug agent:** reads the scout report from `<worktreePath>/docs/context/scout-report.md` (and researcher findings if present), traces root cause, writes fix plan to `<worktreePath>/docs/context/handoff.md`
 
 3. **Coder:** reads the debug agent's fix plan from `<worktreePath>/docs/context/handoff.md`, implements the fix by writing changes directly to `<worktreePath>` source files using Edit/Write/Bash tools, then rewrites `<worktreePath>/docs/context/handoff.md` as a reviewer-readable audit summary of the actual changes made.
-   - Post-coder verification: run `git diff --stat HEAD` in `<worktreePath>`. An empty diff means no source files were modified (likely truncation — re-invoke the coder or surface the issue before continuing). A non-empty diff confirms changes exist — proceed to step 3b.
+   - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
+     `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
+     where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
+     - Exit 0 (`ok: true`): file was written or updated — continue.
+     - Exit 1 (file absent) or exit 2 (`mtime < since`): file was NOT written — treat as truncation; re-invoke the coder or surface the issue before continuing.
+     - If ALL declared files pass mtime check, changes are confirmed — proceed to step 3b.
 
 3b. **Test stage** (between coder and reviewer dispatch):
 
@@ -135,9 +140,15 @@ Do NOT proceed without resolving `<worktreePath>`.
 
    Track a revision counter `N` (starts at 0, incremented before each coder re-invocation). Maximum iterations: 2.
 
-   - Collect all `[reviewer-verdict]` signals from reviewer outputs (in `<worktreePath>/.pipeline/context/reviewer-output/`)
+   - Before reading `[reviewer-verdict]` signals, mtime-check each reviewer's verdict file. For each reviewer in the dispatched list, run:
+     `node scripts/verify-output.mjs --file=<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md --since=<reviewerStartedAtMs>`
+     where `reviewerStartedAtMs` is the epoch-ms timestamp recorded when that reviewer was spawned.
+     - Exit 0: verdict file is fresh — accept the signal.
+     - Exit 1 or exit 2: verdict file is absent or stale — treat as **no-verdict** (do NOT read the signal from this file, even if one is present). Log: `[verdict-check] <reviewer> verdict file stale or missing — treating as no-verdict`.
+     A reviewer with no-verdict is treated as REVISE-unresolved: proceed to the REVISE branch below (with the no-verdict reviewer counted as unresolved).
+   - Collect all `[reviewer-verdict]` signals from reviewer outputs that passed the mtime check (in `<worktreePath>/.pipeline/context/reviewer-output/`)
    - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Do NOT call `forge_update_run` with `status: "gate-pending"`. Do NOT open Gate #2. Log the block reason and exit the worker. The reviewer output remains available at `<worktreePath>/.pipeline/context/reviewer-output/` for post-failure inspection.
-   - If ANY reviewer emitted **REVISE** (and none BLOCK):
+   - If ANY reviewer emitted **REVISE** or yielded no-verdict (and none BLOCK):
      - If `N < 2`: increment `N` to `N+1`.
        1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
        2. Read `<worktreePath>/docs/context/criteria.json` if it exists. Exclude any AC-ID whose `status` is `"accepted"` or `"deferred"` from the failed list.
