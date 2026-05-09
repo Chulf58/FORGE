@@ -1,0 +1,132 @@
+48fe3879 forge: Phase 2 — Implementation (TDD wave 2 — green bar) [r-29e0e2c5]
+9816f4f5 forge: Phase 1 — Failing tests (TDD wave 1 — red bar) [r-29e0e2c5]
+27dd0ec5 forge: Phase 2 — Implementation (TDD wave 2 — green bar) [r-a9fed562]
+9f842cca forge: Phase 1 — Failing tests (TDD wave 1 — red bar) [r-a9fed562]
+57b899f2 forge: Phase 2 — Hook implementation [r-38ea3166]
+41a96d72 forge: Phase 1 — Test cases for the hook (written first — TDD structure) [r-38ea3166]
+d2dd52b6 fix(forge): cleanup script for orphan singleton + stale counter files
+0e0a7775 feat(forge): worker-output-verification-mtime-cross-check [r-7299690b]
+46d6820e test(forge): add context-paths unit test and fix subagent-stop-verdict scaffolding
+5679aaf2 feat(forge): per-run context isolation - reviewer-output dir + verdict body persistence + researcher-status per-run [r-924a3782]
+95aff790 plan(forge): per-run context isolation [r-83ef4be9]
+ab9aaf11 fix(forge): close 4 gaps from CONTEXT-CHECKPOINT resume handler [r-025ec9cd]
+60a68dbd feat(forge): per-worktree PLAN.md isolation + main-root cleanup [r-0f5b26b8]
+9b4a07cc feat(forge): Fix sibling-worker task-file race in worker-task-inject.js [r-a11e9fd7]
+06684afc chore(forge): squashed snapshot of local plugin state
+a38ea576 feat(forge): critic pipeline redesign — citation grounding, focus-area steering, architecture challenge lens, dead code pre-scan, multi-model debate
+c58c6074 fix(forge): canUseTool returns { updatedInput: {} } instead of { behavior: 'allow' }
+b2498b4f fix(forge): allow gate-pending → completed when gate already approved
+3cc345d7 feat(forge): add memory and skills frontmatter to pipeline agents
+d5c6266b fix(forge): bump heartbeat stale threshold + add staleness issue doc and brainstorm
+18fd900f feat(forge): add /forge:ship skill for single-action approve+apply+commit
+ec9e5c4a feat(forge): convert reviewer-style to deterministic Node.js script
+a93b3515 feat(forge): split CLAUDE.md into conductor and worker sections
+307c2aca feat(forge): split commit+merge into dedicated /forge:commit skill
+39360987 feat(forge): anti-speculation stage 2 — mechanical audit script
+07d59ef8 feat(forge): pipeline redesign wave 2b — classifier integration and test stage
+8474ad4f feat(forge): pipeline redesign wave 2a — single runId lifecycle and forge_advance_stage
+7564c826 docs: add pipeline redesign brainstorm — conductor-driven agent selection
+ef189f1c feat(forge): forge_knowledge data layer — knowledge-store.js and solutions index
+0e20d4d0 feat(forge): add ideate to pipelineType enum + critic findings
+7631a4fa chore: add Agent SDK hooks test script
+5ad4e310 chore(deps): update mcp dependencies (zod, agent-sdk)
+e8dcde15 feat(forge): Agent SDK autonomous worker sessions
+b936da2f feat(forge): conductor hooks, worker spawn block, new skills
+8b856bda feat(forge): Claude Agent SDK autonomous worker sessions
+ed300dc4 feat(forge): block Agent tool in conductor sessions
+125dcd58 fix(forge): address 8 ideator findings from script conversion audit
+f2e9fdd6 feat(forge): add deterministic implementer triage script
+7f5ffb9e feat(forge): add deterministic completeness check script
+c2100f79 feat(forge): add deterministic coder scout script
+de2cad79 feat(forge): add deterministic integrity check script
+f73d884e feat(forge): Extract documenter lifecycle into post-apply-lifecycle script
+b591a1ad feat: replace reviewer-triage agent with deterministic dispatch script
+916dc6a5 chore: pipeline artifacts from signal protocol optimization
+a18e3d4c chore: pipeline state + signal protocol reference doc
+4c13ebb5 feat: session-start module coverage check hook
+21547437 refactor: redesign modules system — directory-based paths, no manual maintenance
+69f43514 refactor: centralize hook timeouts, dedup stage labels and model entries, add agent validation
+16f11122 fix(observer): TODO signal mismatch + conductor session-start injection
+c0b2db2c feat(forge): add worker spawning system, observer TUI improvements, and remove TRIVIAL pipeline mode
+107be559 fix(scaffolds): complete scaffold templates and trim CLAUDE.md to ≤200 lines
+7381b875 feat(forge): add /forge:note command and consolidate CLAUDE.md
+47208513 chore: add audit findings from red team and ideator agents
+67454d38 fix(security): harden 14 findings from red team and ideator audit
+aef9eae8 chore: bump version to 0.5.0 + add bump-version script
+a3107374 feat(forge): Display plugin version in FORGE SessionStart banner
+177f001a fix(dist): stop leaking plugin dev state to end users
+148f9f67 feat(install): add /forge:doctor command and MCP-missing messaging
+6bee2fdd feat(install): zero-config first-boot MCP server
+91ff54fc feat(hooks): trim GENERAL.md 439→91 lines + add doc-size-guard and truncation detection
+64a84b4d feat(forge): SessionStart auto-split observer pane (Windows Terminal)
+3ce2083c analysis(tokens): measure documenter after archive-append fix
+d9c1a8a0 feat(forge): Add SessionEnd and FileChanged lifecycle hooks
+c7ecb73a chore(pipeline): commit pre-merge working state
+e42ea8dc analysis(tokens): investigate documenter outlier root cause
+ba451252 analysis(tokens): evaluate lean-lite reviewer skip impact
+6e6cbf66 fix(worktree): two-pass merge with conflict handling and dirty-check
+3b6cd90b analysis(tokens): refresh hotspot ranking after coder and documenter tightening
+5cf2065e analysis(tokens): measure coder contract impact and refresh hotspot ranking
+21176f10 fix(protocol): block direct writes to critical control files
+35f9ecb0 fix(protocol): derive gate bypass mode from authoritative run state
+fa113540 fix(protocol): block under-scoped pipeline mode selection
+db800dd9 fix(protocol): harden highest-value prompt-dependent invariant
+e1ca805d feat(hooks): git guard + approval-token for bash-guard
+e3e77034 feat(lean): skip reviewers for non-risk clean changes
+e7823ea7 analysis(tokens): audit output hotspots and fan-out paths
+e53ff22d feat(hooks): PreToolUse gate-enforcement hook + todo 608ce66c
+0e9b5154 feat(hooks): anti-speculation UserPromptSubmit injection (Stage 1)
+093c784e feat(observer): bin/forge-observer.cmd launcher shim
+9980abc0 docs(research): k9s TUI patterns findings + inspiration index
+573e181b fix(routing): session-scope quotaExhausted via SessionStart hook
+acca0092 docs(research): codeburn TUI patterns findings for Ink observer
+39e74c0a feat(mcp): add validated model add and update tools
+35c1cf06 feat(hook): enforce recommendation before pipeline agent dispatch
+89eb80ef test(dispatch): smoke-test researcher-triage via gemini flash
+aca711bd feat(usage): track quota exhaustion per model
+f54c0460 fix(security): close final 4 low-severity findings from pass 4 audit
+dd58cd11 fix(security): red-team final pass — 6 additional hardening fixes
+53f48275 fix(security): validate runId format in mcp tools
+8212b534 fix(security): validate dashboard runId before path usage
+e17820da fix(security): validate forge-config against schema on load
+4155983b fix(security): restrict reviewer-verdict parsing to reviewer agents
+3171e1d2 fix(security): sanitize openai adapter error messages
+bafaba14 fix(security): enforce feature name sanitization in git paths
+42631882 fix(security): validate hook payload cwd against process cwd
+6e9b7399 fix: restore packages/forge-core — mcp/server.js and hooks still depend on it
+776c1b42 fix(security): move gemini api key to header and sanitize errors
+27c5ea99 feat(security): red-team audit — 22 findings, 1 critical, 8 high
+63cb79a2 feat(knowledge): add first solution doc + smoke test for lookup and promotion
+a6e1924e feat(openai): add reasoning effort and retry handling
+8bce8023 feat(router): add tier-locked multi-vendor recommendation logic
+6beb7166 feat(agents): gemini-backed supervisor agent + /forge:supervise skill
+bfbeaaf5 feat(mcp): gemini adapter for forge_call_external
+14f6ae7c spike(tui): ink port of observer for phase 2 library evaluation
+c8f68daf docs(research): phase 1 TUI library evaluation
+445fda2e feat(wrapper): add forge launcher entry point
+bcfccc0d feat(mcp): filter and field-select on forge_list_runs
+fb5b0517 feat(mcp): filter and field-select on forge_read_board
+148e02d7 docs(guidance): add positive tool-choice rules to power-automate template
+aa004299 docs(supervisor): operating instructions for chatgpt web supervisor
+5a18ae82 chore(assets): stash legacy truecolor FORGE banner for future TUI use
+bef2beae feat(dashboard): add terminal observer prototype
+c40077dc feat(wrapper): prototype split-pane pty embedding
+5c6cd7dc chore(asset-pipeline): add PNG-to-sprite converter
+edcbb086 feat(dashboard): add read-only terminal dashboard
+20b7213d docs(distribution): add self-hosted marketplace install guide
+45f03b24 feat(distribution): add marketplace manifest
+f7cdf2c4 feat(help): add /forge:help discoverability surface
+2bd41fb7 test(dashboard): cover merge-action retry failure flow
+9dca6367 test(dashboard): cover gate-action approve flow
+954c8249 test(dashboard): cover sidecar dashboard-state endpoint
+8e367038 feat(dashboard): add minimal read-only sidecar dashboard
+6e2581f4 feat(dashboard): add forge_dashboard_state MCP contract
+1f99b322 chore(test): add npm test entry for script-style regression runner
+dd5c4252 chore(test): add lightweight runner for script-style regression tests
+78de15c8 test(recovery): cover terminal stale-lock cleanup on session start
+a0ad2465 test(recovery): cover terminal stale-lock suppression on resume
+1de91882 feat(resume): add /forge:resume skill + forge_resume_run MCP tool
+597c1dff chore: 2026-04-13 catch-up baseline for plugin-era FORGE work
+b8205e20 hooks: close PostCompact reinjection as silent no-op + document runtime truth
+fbc54f32 Migrate commands/forge/ to skills/ — fix runtime skill shadowing
+b7da7149 Initial commit — FORGE Claude Code plugin
