@@ -206,7 +206,31 @@ Summary: Add a diff-aware `reviewer-tests` agent that BLOCKs handoffs containing
 - Should lint/type disable comments always BLOCK (strict), or only REVISE with the option to override? Current plan proposes REVISE unless the disable appears on the same line as a removed assertion (then BLOCK). Confirm or adjust.
 - Should `reviewer-tests` also run at **plan stage** (scanning PLAN.md task lines for keywords like "skip", "mock", "disable")? Current plan: yes (mirrors all other reviewers with plan-stage detection block), but the plan-stage scan will yield few real findings since plans don't contain test code.
 
+### Resolution of plan-stage research findings
+
+Researcher (`docs/RESEARCH/reviewer-tests-detection-patterns.md`) returned concrete answers to both unknowns:
+
+1. **Assertion-loosening regex set** — five patterns ranked by confidence (high/medium/low) and false-positive risk. Coder must use these as the canonical pattern set for AC-4 / detection-table "Assertion loosening" row. All five emit REVISE (not BLOCK); BLOCK is reserved for loosening combined with a `-` line deleting a stricter assertion on the same test.
+2. **Reviewer-output schema** — `scripts/verify-output.mjs` checks file mtime only, never parses content. The de facto schema is the four-section verdict file (`## <Type> Review: <Feature>`, `### Issues`, `### Verified`, `### Per-criterion verdicts`, `### Verdict`) plus a single `[reviewer-verdict] {...}` JSON signal line on stdout. Coder must mirror the structure used by `agents/reviewer-logic.md` / `agents/reviewer-boundary.md`.
+
+### Resolution of plan-stage reviewer verdicts
+
+Plan-stage reviewers: `reviewer-boundary` APPROVED (0/0); `reviewer-logic` REVISE (0 blockers, 2 warnings); `reviewer-performance` REVISE (0 blockers, 2 warnings). No BLOCKERs — gate1 proceeds with the following spec-precision clarifications pinned into the plan body:
+
+**reviewer-logic warning — AC-2 test rename detection underspecified:** Resolution applied. AC-2 is **narrowed**: BLOCK if assertion deletion is detected on a test function (regardless of whether the function name changed). The agent does not attempt rename-vs-deletion-vs-addition disambiguation — that requires AST analysis beyond v1 scope. Detection-table row "Test rename without coverage" is removed; assertion-deletion row already covers the failure mode.
+
+**reviewer-logic + reviewer-performance warning — AC-7 dispatch over-triggers:** Resolution applied. AC-7 is **tightened** as follows:
+- AC-7(a) (test-file path match) is unchanged: `*.test.*`, `*_test.*`, `*spec*`, `tests/**` paths in `+++ b/` lines trigger reviewer-tests.
+- AC-7(b) (keyword scan) is **narrowed to require keywords on newly-added (`+`) lines AND inside hunks that touch a test-file path** — i.e., the keyword must appear in a `+` line of a hunk whose enclosing file is a test file per AC-7(a). Keywords in non-test files (e.g. `eslint-disable` in `hooks/foo.js`) do NOT trigger reviewer-tests.
+- Plan-stage scan: only dispatch reviewer-tests if a task description explicitly contains the word `test` alongside any of the keywords. Bare keyword match in plan text does not trigger.
+
+This eliminates the false-positive fan-out flagged by both reviewers. Task 3 coder must implement the AND logic; Task 1 test cases must be updated to assert the narrowed behavior (clean-diff-with-eslint-disable-in-non-test-file does NOT dispatch).
+
+**reviewer-performance warning — AC-8 frontmatter budget unspecified:** Resolution applied. AC-8 now mandates: `model: claude-haiku-4-5-20251001`, `maxTurns: 1`, `effort: "low"`, `tools: [Read, Glob, Grep, Write]`. These match the existing reviewer pattern and keep latency within the 30–90s reviewer budget.
+
+These resolutions are authoritative; implementer must reference them when there's ambiguity. AC-2 and AC-7 in the original AC list above are **superseded** by the narrowed wording in this section.
+
 ### Approach summary
 - Decision: New `reviewer-tests` agent following existing reviewer pattern; dispatch routing added to `reviewer-dispatch.mjs` only (no `lean-risk-classify.mjs` change needed); built TDD-first with Wave 1 dispatch tests, Wave 2 implementation, Wave 3 regression.
 - Trade-off: Detection is pattern-based on the diff text; semantic analysis (e.g. detecting that a new mock wraps a previously-direct call) requires reading the full file which the agent can do but adds latency.
-- Uncertainty: "Assertion loosening" heuristic boundary is fuzzy — flagged in Research needed.
+- Uncertainty: All plan-stage unknowns resolved (research findings + reviewer warnings pinned in Resolution sections above).
