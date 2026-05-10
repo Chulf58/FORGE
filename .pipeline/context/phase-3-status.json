@@ -1,0 +1,40 @@
+{
+  "phase": "Phase 3 — Regression (TDD wave N)",
+  "ac": "AC-11",
+  "results": {
+    "featureTests": {
+      "command": "node --test scripts/covers-parser-test.mjs scripts/covers-map-test.mjs scripts/covers-verify-test.mjs",
+      "exitCode": 0,
+      "tests": 12,
+      "passed": 12,
+      "failed": 0,
+      "verdict": "PASS"
+    },
+    "fullSuite": {
+      "command": "node scripts/run-tests.mjs",
+      "exitCode": 1,
+      "passed": 22,
+      "failed": 14,
+      "verdict": "FAIL — pre-existing baseline failures unrelated to this feature"
+    }
+  },
+  "preExistingFailures": [
+    "hooks/apply-context-inject-test.js",
+    "hooks/ctx-session-start-terminal-cleanup-test.js",
+    "mcp/apply-guard-test.mjs",
+    "mcp/canUseTool-return-test.mjs",
+    "mcp/dashboard-state-shape-test.mjs",
+    "mcp/forge-list-runs-filter-test.mjs",
+    "mcp/forge-read-board-filter-test.mjs",
+    "mcp/gate-pending-guard-test.mjs",
+    "mcp/per-run-state-lifecycle-test.mjs",
+    "mcp/resume-terminal-suppression-test.mjs",
+    "mcp/run-active-helpers-test.mjs",
+    "mcp/runid-schema-test.mjs",
+    "mcp/update-run-merge-test.mjs",
+    "scripts/dashboard-server-runid-test.mjs"
+  ],
+  "rootCause": "All 14 failures are 'Cannot find package zod' or 'Cannot find module @modelcontextprotocol/sdk' — workspace/package resolution issues in packages/forge-core/src/runs/schemas.js and mcp/node_modules. Diagnosed by inspecting .pipeline/context/phase-3-run-tests.txt: every failure trace includes ERR_MODULE_NOT_FOUND for zod or @modelcontextprotocol/sdk. None of the failing test files were touched by this feature's diff (which only adds scripts/covers-*.mjs, .tddguardignore, and modifies agents/coder.md + skills/implement/SKILL.md).",
+  "verdictSummary": "AC-11 part 1 (feature tests) PASS. AC-11 part 2 (full suite) FAIL with pre-existing baseline failures. The feature itself is green-bar verified and introduces no regressions — the failing tests fail identically before and after this change because they cannot resolve zod/@modelcontextprotocol/sdk. Recommend: surface as non-blocking warning at Gate #2; pre-existing zod resolution issue should be addressed in a separate run.",
+  "decision": "phase-completed-with-warning"
+}
