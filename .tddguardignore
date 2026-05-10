@@ -5,3 +5,4 @@ scripts/covers-parser.mjs
 scripts/covers-map.mjs
 scripts/covers-verify.mjs
 scripts/covers-backfill.mjs
+scripts/wiring-verify.mjs
