@@ -103,15 +103,32 @@ function bootstrapForgeConfig(pluginRoot) {
  *   - Fail-open: on any error (file I/O, JSON parse, validation), leaves live
  *     config untouched, logs the error, exits without throwing
  */
+/**
+ * Resolve the live forge-config.json path. When CLAUDE_PLUGIN_DATA is set,
+ * use it (matches mcp/lib/config-store.js resolvePluginDataDir()). Otherwise
+ * fall back to <mainProjectDir>/.pipeline/forge-config.json — explicitly
+ * NOT process.cwd(), because in worker sessions cwd points at the worktree
+ * and config writes would land in the wrong place.
+ *
+ * Extracted as a pure helper for regression coverage (closes d9683d2a part A).
+ *
+ * @param {string|null} pluginDataDir — value of process.env.CLAUDE_PLUGIN_DATA, or null
+ * @param {string} mainProjectDir — resolved via resolveProjectDir(payload), the canonical main project root
+ * @returns {string} absolute path to forge-config.json
+ */
+function resolveLiveConfigPath(pluginDataDir, mainProjectDir) {
+  return pluginDataDir
+    ? path.join(pluginDataDir, 'forge-config.json')
+    : path.join(mainProjectDir, '.pipeline', 'forge-config.json');
+}
+
 function migrateForgeConfig(pluginRoot, mainProjectDir) {
   try {
     // Resolve live config path — mirrors mcp/lib/config-store.js resolvePluginDataDir().
     // Fallback uses mainProjectDir (resolved via resolveProjectDir(payload)) rather
     // than process.cwd() so worker sessions don't write the config into the worktree.
     const pluginDataDir = process.env.CLAUDE_PLUGIN_DATA || null;
-    const liveConfigPath = pluginDataDir
-      ? path.join(pluginDataDir, 'forge-config.json')
-      : path.join(mainProjectDir, '.pipeline', 'forge-config.json');
+    const liveConfigPath = resolveLiveConfigPath(pluginDataDir, mainProjectDir);
 
     // If live config doesn't exist, bootstrap handles first-run — skip
     if (!fs.existsSync(liveConfigPath)) {
@@ -477,15 +494,24 @@ async function main(rawInput) {
   exitOk();
 }
 
-// -- Stdin reader with timeout guard -----------------------------------------
-let inputData = '';
-const timer = setTimeout(() => {
-  main(inputData || '{}').catch(() => process.exit(0));
-}, 5000);
+// Export pure helpers for regression-test access. Must come before the
+// require-main guard below so module.exports is populated even when this file
+// is imported (not invoked directly). Closes d9683d2a part A.
+module.exports = { resolveLiveConfigPath };
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-rl.on('line', line => { inputData += line + '\n'; });
-rl.on('close', () => {
-  clearTimeout(timer);
-  main(inputData || '{}').catch(() => process.exit(0));
-});
+// -- Stdin reader with timeout guard -----------------------------------------
+// Guard with require.main === module so unit tests can `require()` this file
+// without triggering the readline setup or the hook-side launcher writers.
+if (require.main === module) {
+  let inputData = '';
+  const timer = setTimeout(() => {
+    main(inputData || '{}').catch(() => process.exit(0));
+  }, 5000);
+
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  rl.on('line', line => { inputData += line + '\n'; });
+  rl.on('close', () => {
+    clearTimeout(timer);
+    main(inputData || '{}').catch(() => process.exit(0));
+  });
+}

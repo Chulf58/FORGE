@@ -42,7 +42,21 @@ function run(binary, args, opts = {}) {
 // merge cascade once left 52 mcp/node_modules files deleted (still in HEAD,
 // missing on disk), blocking the next worker spawn.
 function restoreAccidentalDeletions() {
-  const status = run('git', ['status', '--short'], { allowFail: true });
+  // Use raw execFileSync (NOT the run() wrapper) so we keep the leading space
+  // on the first line of `git status --short`. The wrapper's trim() would
+  // strip it, making the first ` D <file>` line look like `D <file>` (which
+  // signals INDEX deletion, not working-tree deletion). Single-file scenarios
+  // would silently miss the deletion. Verified by regression test
+  // scripts/forge-worktree-restore-test.mjs (closes d9683d2a part B).
+  let status;
+  try {
+    status = execFileSync('git', ['status', '--short'], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (_) {
+    return [];
+  }
   if (!status) return [];
   const restored = [];
   for (const line of status.split('\n')) {
@@ -370,14 +384,21 @@ function copyDirSync(src, dst, skip) {
   }
 }
 
-// Dispatch
-switch (cmd) {
-  case 'create': create(); break;
-  case 'list': list(); break;
-  case 'merge': merge(); break;
-  case 'delete': deleteWorktree(); break;
-  case 'cleanup': cleanup(); break;
-  default:
-    console.error('Usage: forge-worktree.js <create|list|merge|delete|cleanup> [slug]');
-    process.exit(1);
+// Export pure helpers for regression-test access. Closes d9683d2a part B.
+// Importable as a module without triggering the CLI dispatch below thanks to
+// the require.main === module guard.
+module.exports = { restoreAccidentalDeletions };
+
+// Dispatch — only when invoked directly via the CLI, not on require().
+if (require.main === module) {
+  switch (cmd) {
+    case 'create': create(); break;
+    case 'list': list(); break;
+    case 'merge': merge(); break;
+    case 'delete': deleteWorktree(); break;
+    case 'cleanup': cleanup(); break;
+    default:
+      console.error('Usage: forge-worktree.js <create|list|merge|delete|cleanup> [slug]');
+      process.exit(1);
+  }
 }
