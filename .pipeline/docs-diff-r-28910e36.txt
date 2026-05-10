@@ -1,2 +1,0 @@
-warning: in the working copy of 'docs/SIGNAL-PROTOCOL.md', CRLF will be replaced by LF the next time Git touches it
-warning: in the working copy of 'docs/gotchas/GENERAL.md', CRLF will be replaced by LF the next time Git touches it
