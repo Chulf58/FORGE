@@ -2591,22 +2591,34 @@ server.registerTool(
         );
       }
 
-      // Validate no other stage is currently running
+      // Validate no other stage is currently running.
+      // Auto-complete the prior running stage when the run is gate-pending with an
+      // approved gateState — this is the conductor flow after gate1/gate2 approval
+      // where the worker exits without flipping the prior stage's status to
+      // 'completed'. Without auto-complete, the conductor must manually patch
+      // stages.<prior>.status='completed' before every forge_advance_stage call.
+      // Closes 7fe538ee sub-bug 3.
       const stages = run.stages || {};
       const runningStage = Object.entries(stages).find(
         ([name, s]) => s.status === "running" && name !== targetStage,
       );
-      if (runningStage) {
+      const gateApproved =
+        run.gateState &&
+        run.gateState.status === "approved";
+      if (runningStage && !gateApproved) {
         return errorResult(
           "Stage `" + runningStage[0] + "` is still running — complete it before advancing",
         );
       }
 
-      // Mark target stage as running
+      // Mark target stage as running; auto-complete the prior running stage if any.
       const stagesPatch = {
         ...stages,
         [targetStage]: { status: "running", agents: Array.isArray(agents) ? agents : [] },
       };
+      if (runningStage) {
+        stagesPatch[runningStage[0]] = { ...runningStage[1], status: "completed" };
+      }
       const updatedRun = updateRun(projectDir, runId, { stages: stagesPatch, status: "running" });
 
       // Refresh per-run active file stages so subagent hooks see the updated allowlist.
