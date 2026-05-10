@@ -142,6 +142,54 @@ async function emitStaleUnitNoticeIfAny(projectDir) {
   }
 }
 
+/**
+ * Orphan-singleton cleanup (closes dd3e7bd7).
+ *
+ * The legacy <projectDir>/.pipeline/run-active.json singleton was deprecated
+ * by the singleton-elimination work (commit 8fc4f99c, 2026-05-09); per-run
+ * state now lives at .pipeline/runs/<runId>/run-active.json. The singleton
+ * is intentionally not READ by emitStaleUnitNoticeIfAny (line 75 doc), but
+ * stale orphan singletons can persist on disk from pre-elimination installs,
+ * manual creation, or interrupted writes — and bin/forge-status.js:165-189
+ * still consults the singleton as a bounded fallback when the registry has
+ * no active runs.
+ *
+ * Cleanup contract: if the singleton exists AND its referenced runId points
+ * to a terminal-status run (completed/failed/discarded), delete the orphan.
+ * Forge-status's fallback already filters terminal-pointed singletons via
+ * canSynthesize (line 184-185), so deletion is redundant safety, not a
+ * behavior change for forge-status.
+ *
+ * Safe to call unconditionally: best-effort, never throws, no-op when the
+ * singleton is absent or points to a non-terminal run.
+ */
+async function cleanupStaleSingleton(projectDir) {
+  try {
+    const singletonPath = path.join(projectDir, '.pipeline', 'run-active.json');
+    let raw;
+    try {
+      raw = await fs.promises.readFile(singletonPath, 'utf8');
+    } catch (_) {
+      return; // Singleton absent — nothing to clean.
+    }
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      // Malformed singleton — delete to recover (no consumer can use it).
+      try { await fs.promises.unlink(singletonPath); } catch (_) {}
+      return;
+    }
+    if (!data || typeof data.runId !== 'string') return;
+    const status = readRunStatus(projectDir, data.runId);
+    if (status && TERMINAL_STATUSES.has(status)) {
+      try { await fs.promises.unlink(singletonPath); } catch (_) {}
+    }
+  } catch (_) {
+    // Best-effort — never throw.
+  }
+}
+
 async function main(rawInput) {
   let payload;
   try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
@@ -152,6 +200,7 @@ async function main(rawInput) {
   // Stale-lock notice is independent of context-window logic and session_id —
   // fire it first so it appears even when we exit early below.
   const projectDir = resolveProjectDir(payload);
+  await cleanupStaleSingleton(projectDir);
   await emitStaleUnitNoticeIfAny(projectDir);
 
   // Clean stale worker-session marker from prior sessions. If this is a worker,
