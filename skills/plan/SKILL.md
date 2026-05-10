@@ -67,7 +67,12 @@ Exit — do not proceed to further steps.
 The brainstormer MUST run in the conductor session because it needs interactive Q&A with the user. Workers cannot relay questions back.
 
 1. Use `forge_get_model_recommendation` with agent name `brainstormer` to get the model.
-2. Invoke the **brainstormer** agent in-session via `Agent(subagent_type="brainstormer", model=<family>)`. It emits `[questions]` for the user to answer, then writes a requirements doc to `docs/brainstorms/`.
+2. Before invoking the brainstormer agent, write `.pipeline/dispatch-context.json` in the project root with:
+   ```json
+   { "runId": "<runId-if-known-else-omit>", "createdAt": "<now ISO>" }
+   ```
+   Invoke the **brainstormer** agent in-session via `Agent(subagent_type="brainstormer", model=<family>)`. It emits `[questions]` for the user to answer, then writes a requirements doc to `docs/brainstorms/`.
+   After the brainstormer agent returns (or on any error — use try/finally), delete `.pipeline/dispatch-context.json`.
 3. After the brainstormer completes and the requirements doc exists, **call `forge_classify_risk`** with:
    - `feature`: a short summary derived from the brainstorm doc
    - `filePaths`: `[]`

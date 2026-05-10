@@ -305,7 +305,22 @@ async function resolveRunId(projectDir, payload) {
     }
   }
 
-  // Step 3: fall back to existing enumeration.
+  // Step 3: dispatch-context file — conductor writes this before in-session subagent dispatch.
+  // Beats findActiveRun when 2+ non-terminal runs exist (ambiguous tie-break).
+  try {
+    const fs = require('fs');
+    const ctxPath = path.join(projectDir, '.pipeline', 'dispatch-context.json');
+    const raw = fs.readFileSync(ctxPath, 'utf8');
+    const ctx = JSON.parse(raw);
+    if (ctx && typeof ctx.runId === 'string' && RUN_ID_RE.test(ctx.runId)) {
+      return ctx.runId;
+    }
+    // Invalid runId format — fall through silently.
+  } catch (_) {
+    // Absent or unreadable — fall through silently.
+  }
+
+  // Step 4: fall back to existing enumeration.
   const active = await findActiveRun(projectDir);
   return active ? active.runId : null;
 }
