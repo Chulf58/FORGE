@@ -135,3 +135,76 @@ These resolutions are authoritative; implementer must reference them when there'
 - Decision: New `test-author` agent (Haiku, isolated context) inserted as Step 3.0 in the Phase Execution Loop of `skills/implement/SKILL.md`; handoff is a JSON artefact at `.pipeline/context/test-author-output.json` carrying test paths + failure output + exit code; built TDD-first per GENERAL.md §TDD discipline.
 - Trade-off: `skills/debug/SKILL.md` and `skills/refactor/SKILL.md` are out of scope — they start from an existing failure state and the test-author pattern does not apply.
 - Uncertainty: The Phase Execution Loop in `skills/implement/SKILL.md` (lines 139-174) already handles per-phase coder dispatch; the split nests inside that loop as Step 3.0 with conditional skip when a phase has no test files (per Resolution above).
+
+---
+
+### Feature: impact-mapped test traceability via @covers tags
+
+Summary: Every test file declares covered source files via `@covers`; post-handoff verification proves the specific tests for touched files pass, not just the full suite.
+
+#### Phase 1 — Failing tests (TDD wave 1 — red bar)
+
+- [ ] 1. Write failing tests for the `@covers` parser (`scripts/covers-parser-test.mjs`) (wave: 1)
+  Intent: Establish a red bar for tag parsing before any implementation exists — prevents Red+Green collapse per research §3.2.
+  Verify: AC-1: `node --test scripts/covers-parser-test.mjs` exits non-zero; test cases assert (a) a file with `// @covers scripts/lean-risk-classify.mjs` returns `{ covered: ['scripts/lean-risk-classify.mjs'] }`, (b) a file with no `@covers` tag returns `{ covered: [] }`, (c) multiple `@covers` lines in one file are all collected. No `.skip` markers.
+
+- [ ] 2. Write failing tests for the impact-map builder (`scripts/covers-map-test.mjs`) (wave: 1)
+  Intent: Establish a red bar for the glob-to-map aggregation before any implementation exists.
+  Verify: AC-2: `node --test scripts/covers-map-test.mjs` exits non-zero; test cases assert (a) given two fixture test files each declaring `@covers`, the map returns `srcFile → [testFile, …]` with correct entries, (b) a test file declaring no `@covers` contributes no entries to the map. No `.skip` markers.
+
+- [ ] 3. Write failing tests for the post-handoff coverage verifier (`scripts/covers-verify-test.mjs`) (wave: 1)
+  Intent: Establish a red bar for the verifier logic before implementation — confirms the verifier reads handoff "Files modified", resolves covering tests, and reports missing coverage.
+  Verify: AC-3: `node --test scripts/covers-verify-test.mjs` exits non-zero; test cases assert (a) a touched src file with a covering test triggers `node --test <testFile>` and reports PASS/FAIL, (b) a touched src file with zero `@covers` references emits a `[covers-gap]` line on stderr, (c) a touched src file with a covering test that fails causes the verifier to exit non-zero. No `.skip` markers.
+
+#### Phase 2 — Implementation (TDD wave 2 — green bar)
+
+- [ ] 4. Implement `@covers` tag parser (`scripts/covers-parser.mjs`) (wave: 2)
+  Intent: Provide the pure function that extracts `@covers` declarations from a single test file's text so the map builder can aggregate without re-doing file I/O.
+  Verify: AC-4: `node --test scripts/covers-parser-test.mjs` exits 0; parser accepts a file-content string, returns `{ covered: string[] }` with paths normalised to forward-slash repo-relative form; handles zero, one, and many `@covers` lines per file.
+  Depends: 1
+
+- [ ] 5. Implement impact-map builder (`scripts/covers-map.mjs`) (wave: 2)
+  Intent: Aggregate per-file parser output into the project-wide `srcFile → [testFile, …]` map so the verifier and other consumers have a single lookup.
+  Verify: AC-5: `node --test scripts/covers-map-test.mjs` exits 0; builder globs `hooks/*-test.js`, `mcp/*-test.mjs`, `scripts/*-test.mjs`, reads each with the parser, returns a plain-object map keyed by source path; no I/O side effects beyond file reads.
+  Depends: 2, 4
+
+- [ ] 6. Implement post-handoff coverage verifier (`scripts/covers-verify.mjs`) (wave: 2)
+  Intent: Prove that tests covering the coder's touched files pass — moving the pipeline guarantee from "suite green" to "relevant tests green + no coverage gap".
+  Verify: AC-6: `node --test scripts/covers-verify-test.mjs` exits 0; verifier reads handoff "Files modified" section via `extractFilePaths` from `scripts/lib/handoff-utils.mjs`, resolves covering tests via the impact map, runs `node --test <file1> … <fileN>` (batched, single subprocess), emits `[covers-gap] <srcFile>` on stderr for any touched file with no `@covers` entry, exits non-zero when any test fails or when `--strict-gaps` flag is passed and gaps exist.
+  Depends: 3, 5
+
+- [ ] 7. Wire verifier into `skills/implement/SKILL.md` post-coder step (`skills/implement/SKILL.md`) (wave: 2)
+  Intent: Make impact-map verification a mandatory post-coder step in the implement pipeline so coverage gaps surface before reviewers see the handoff.
+  Verify: AC-7: `skills/implement/SKILL.md` contains a step that runs `node scripts/covers-verify.mjs --handoff=docs/context/handoff.md` after the coder writes the handoff and before reviewer dispatch; the step logs `[covers] <N> tests resolved, <M> gaps` to stderr; a gap does not block the pipeline but adds a `[covers-gap]` section to the handoff for reviewers.
+  Depends: 6
+
+- [ ] 8. Update coder agent instructions to declare `@covers` tags (`agents/coder.md`) (wave: 2)
+  Intent: Ensure the coder adds `@covers` declarations when creating new test files, closing the coverage map going forward without requiring a backfill audit.
+  Verify: AC-8: `agents/coder.md` contains a `### Always` bullet (under `## Permissions`) stating that every new test file written must include at least one `// @covers <src-path>` comment at the top; existing coder prose is not removed or restructured.
+  Depends: 4
+
+- [ ] 9. Add verifier entry to `.pipeline/agent-roles.json` (`.pipeline/agent-roles.json`) (wave: 2)
+  Intent: Permit `covers-verify.mjs` to be invoked by the skill worker without triggering write-target enforcement on files it only reads.
+  Verify: AC-9: `.pipeline/agent-roles.json` is valid JSON after edit; if a `scripts-runner` or equivalent entry is present it covers `scripts/covers-verify.mjs`; if no runner entry exists a comment in `skills/implement/SKILL.md` documents that the verifier runs as a Bash subprocess, not as a registered agent, so no agent-roles entry is needed — either outcome is acceptable.
+  Depends: 6
+
+- [ ] 10. Write one-shot backfill script (`scripts/covers-backfill.mjs`) (wave: 2)
+  Intent: Add `@covers` tags to all existing test files that currently lack them in a single operator-run pass, seeding the impact map without blocking the pipeline on a gradual rollout.
+  Verify: AC-10: Running `node scripts/covers-backfill.mjs --dry-run` prints the list of test files missing `@covers` and exits 0 without writing; running without `--dry-run` prepends `// @covers <inferred-src>` to each file using the heuristic "strip `-test` suffix and match against existing source paths"; backfill does not modify files that already have `@covers`.
+  Depends: 4
+
+#### Phase 3 — Regression (TDD wave N)
+
+- [ ] 11. Full regression suite green after impact-map feature (`scripts/covers-parser-test.mjs`, `scripts/covers-map-test.mjs`, `scripts/covers-verify-test.mjs`) (wave: 3)
+  Depends: 7, 8, 9, 10
+  Intent: Confirm all three new test files pass and the existing suite (`node scripts/run-tests.mjs`) remains green — no regressions from new scripts or agent/skill edits.
+  Verify: AC-11: `node --test scripts/covers-parser-test.mjs && node --test scripts/covers-map-test.mjs && node --test scripts/covers-verify-test.mjs` all exit 0; then `node scripts/run-tests.mjs` exits 0 with no skipped or deleted cases.
+
+### Research needed
+
+(None — all design decisions made from codebase evidence. Key findings: `extractFilePaths` in `scripts/lean-risk-classify.mjs` is the precedent for reading handoff "Files modified"; `scripts/run-tests.mjs` uses `node <path>` not `node --test`; backfill is recommended as a one-shot script rather than enforced going-forward only, because the impact map has zero entries until existing test files are tagged and the verifier would emit gaps for every pre-existing handoff run.)
+
+### Approach summary
+- Decision: Pure ESM parser + map builder + CLI verifier; wired into implement skill as a post-coder step; `@covers` tag syntax is `// @covers <repo-relative-src-path>` (JS comment, one source path per line, multiple lines allowed); TDD-structured in three waves per GENERAL.md §TDD discipline.
+- Trade-off: Backfill is operator-triggered (`node scripts/covers-backfill.mjs`), not automatic — impact map is sparse until the operator runs it, so coverage gaps will be reported for pre-existing touched files on first few runs.
+- Uncertainty: Heuristic for backfill path inference (strip `-test` suffix) may produce wrong paths for some edge-case test files; the `--dry-run` flag lets the operator review before committing.
