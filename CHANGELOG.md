@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-10] wiring-verify — deterministic post-handoff check
+
+- Added `scripts/wiring-verify.mjs` — proves every new exported symbol/agent/hook has ≥1 consumer; non-zero exit under `--strict`.
+- Added `scripts/wiring-verify-test.mjs` — 5 acceptance tests (smoke-pass, smoke-gap, diagnostic-only, agent-orphan, hook-orphan) verifying TDD-structured Wave 3 regression green.
+- Modified `skills/implement/SKILL.md` — wired verifier into post-coder handoff step; mirrors covers-verify pattern; [wiring-gap] diagnostic only by default.
+
 ## [Unreleased]
 
 ### Added
@@ -28,10 +34,3 @@
 
 ### Added
 - **Zombie worker prevention** (closes TODO `b1cdef12`) — workers no longer linger after the conductor marks a run terminal. Two complementary mechanisms: (1) `mcp/forge-worker.mjs` per-message loop now polls `readRunData()` (debounced to ≥500ms) and exits cleanly when run status is `completed`, `failed`, or `discarded`; absent/unreadable `run.json` is fail-open. (2) New helper `mcp/lib/worker-pids.js` exports `sweepStalePids(projectDir)` — probes each `.pipeline/worker-pids/<runId>.json` PID with `process.kill(pid, 0)`, classifies via error code (`ESRCH` = dead → sweep; `EPERM` = alive cross-user → keep; no error = alive). Dead-PID `running` runs are marked `failed` with `failureReason: 'worker process no longer alive (swept)'`, then the PID file is deleted (run.json update durable before delete). 200-entry retention cap. The sweep is wired into `forge_create_run` and `forge_advance_stage` before each collision guard so stale entries don't falsely block legitimate spawns. Test in `mcp/zombie-worker-prevention-test.mjs`.
-- **Stuck-loop hard-stop** (closes TODO `d498e466`) — new PreToolUse hook `hooks/agent-loop-guard.js` denies the 3rd+ dispatch of the same agent type per run, eliminating runaway-token-burn from agent retry loops. Registered in `hooks/hooks.json` as `PreToolUse Agent` matcher. Deny decision reads from a dedicated counter file (`.pipeline/run-agent-counts/<runId>.json`) written by the hook itself — race-free relative to `SubagentStart` updates of `run-active.json`. Async I/O (`fs.promises.writeFile`) so the dispatch is never blocked. Documenter is exempt; conductor sessions (no active runId) pass through silently. `hooks/subagent-start.js` warning downgraded from WARNING to INFO since the hard-stop now lives upstream. 9 tests in `hooks/agent-loop-guard-test.mjs`.
-- **Worker filesystem isolation** (closes TODO `e8aaa655`) — new `mcp/lib/worker-paths.js` resolver module with `workerLogPath`, `killPillPath`, `resetPillPath` functions providing one source of truth for worker control-file paths. Closes the silent kill-pill bug where `forge_kill_worker` wrote to the main project root while the worker watched a worktree-local path — both now resolve via the shared resolver. `forge-worker.mjs` resolves the main project root once at startup (cached) and uses it for log file, run.json reads, and kill-pill watcher path; `query()` cwd remains the worktree so the implement skill's reset-pill semantics are preserved. `runId` regex re-validation inside the resolver as defense-in-depth.
-- `mcp/lib/knowledge-store.js` — data-layer helpers (`searchConstraints`, `searchPatterns`, `appendSolutionDoc`) for the knowledge query interface; all reads are fail-open, all writes use atomic temp-file-rename
-- `docs/solutions/index.json` — solution catalog index seeded with 4 entries (model routing, enforcement mechanisms, agent structure upgrade, OpenAI token fields)
-
-### Removed
-- **Pipeline mode references** (`SPRINT`/`LEAN`/`STANDARD`/`FULL`/`pipelineMode`) — ~23 files cleaned up: dead behavioral branches in `reviewer-dispatch.mjs` (FULL/STANDARD code paths never reachable), mode-conditional steps in skill files (`--mode=<MODE>` flag, `skip in SPRINT/LEAN` annotations), mode-description sections in agent prompts (`planner.md`, `coder.md`, `debug.md`), `mode:` fields from 9 test fixtures, 5 SPRINT-bypass tests in `gate-enforcement-test.js` that tested removed code, and the "Pipeline modes" table from `CLAUDE.md`, `README.md`, and `scaffolds/code/CLAUDE.md`. Reviewer dispatch is now purely risk-surface-driven — the LEAN path was always the only active path.
