@@ -1,0 +1,190 @@
+856ms)
+✔ T3 — counter file for non-existent run is deleted (424.6795ms)
+✔ T4 — counter file for terminal run is deleted (451.2934ms)
+✔ T5 — counter file for running run is preserved (447.3378ms)
+✔ T6 — idempotent (running twice has same end state) (859.9132ms)
+✔ T7 — missing .pipeline/ is a no-op with no errors (444.2083ms)
+✔ T8 — singleton points to terminal run is treated as orphan and deleted (450.1612ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3971.1482
+
+── scripts/covers-map-test.mjs ─────────────────────────────────────────
+✔ (a) two fixture test files with @covers produce correct srcFile → [testFile] map (20.6133ms)
+✔ (b) test file with no @covers contributes no entries to the map (23.4692ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50.1724
+
+── scripts/covers-parser-test.mjs ──────────────────────────────────────
+✔ (a) single @covers line returns covered path (1.9452ms)
+✔ (b) file with no @covers tag returns empty covered array (0.1896ms)
+✔ (c) multiple @covers lines are all collected (0.1747ms)
+✔ (d) leading ./ is stripped from @covers path (0.2758ms)
+✔ (e) Windows backslashes in @covers path are normalized to forward-slashes (0.9718ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11.7414
+
+── scripts/covers-verify-test.mjs ──────────────────────────────────────
+✔ (a) verifier resolves covering test for a touched src file and reports PASS (1367.5002ms)
+✔ (a) sub-assertion: parser reads @covers tag and map key matches canonical forward-slash path (20.1157ms)
+✔ (b) touched src file with no @covers entry emits [covers-gap] on stderr (430.1103ms)
+✔ (c) touched src file with a failing covering test causes verifier to exit non-zero (1351.7491ms)
+✔ (d) multiple test files batched in one node --test invocation: pass/fail per file independently (1661.9267ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4837.949
+
+── scripts/dashboard-server-runid-test.mjs ─────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-b4176e35\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── scripts/forge-observer-smoke-test.mjs ───────────────────────────────
+[forge-observer-smoke] PASS
+  deps loaded (terminal-kit + dashboard-state)
+  non-TTY detected, fallback path took effect
+  exit code 0
+
+── scripts/verify-critic-citations-test.mjs ────────────────────────────
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-GwqFgJ\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "foo returns hardcoded value"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-GwqFgJ\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-MdtvTL\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "fabricated finding" — evidence not found in lines 1-2 of src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-MdtvTL\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-wZNWUs\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "uncited finding" — no citations provided
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-wZNWUs\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-CKwgg3\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "out of bounds citation" — line range 999-999 out of bounds (file has 2 lines): src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-CKwgg3\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-4uqdhh\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "nonexistent file citation" — file not found: src/ghost.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-4uqdhh\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-exqrAA\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "good finding"
+[verify-critic-citations] DROP: "bad finding" — evidence not found in lines 1-1 of src/main.js
+[verify-critic-citations] verified: 1, dropped: 1
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-exqrAA\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-olecYW\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "ws normalize test"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-olecYW\docs\context\critic-verified.json
+✔ exits 0 and writes verified.json when all citations pass (502.3732ms)
+✔ exits 1 and drops finding when evidence not in source (468.56ms)
+✔ exits 1 and drops finding when no citations array (542.4332ms)
+✔ exits 1 when line range is out of bounds (474.9567ms)
+✔ exits 1 when cited file does not exist (437.8268ms)
+✔ passes verified finding and drops failed one in mixed batch (431.0396ms)
+✔ whitespace normalization: evidence with collapsed whitespace matches (454.9816ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3320.0267
+
+── scripts/wiring-verify-test.mjs ──────────────────────────────────────
+✔ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (449.5575ms)
+✔ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (463.1384ms)
+✔ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (459.768ms)
+✔ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (439.8432ms)
+✔ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (432.2267ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2252.9091
+
+─── summary ─────────────────────────────────────────────────────────────
+  FAIL  hooks/apply-context-inject-test.js   (3729ms)
+  PASS  hooks/checkpoint-detection-test.js   (3278ms)
+  PASS  hooks/control-file-guard-test.js   (8420ms)
+  FAIL  hooks/ctx-session-start-terminal-cleanup-test.js   (917ms)
+  PASS  hooks/gate-approve-guard-test.js   (12247ms)
+  PASS  hooks/gate-sync-test.js   (7325ms)
+  PASS  hooks/hook-utils-test.js   (447ms)
+  PASS  hooks/subagent-stop-verdict-test.js   (8380ms)
+  FAIL  mcp/apply-guard-test.mjs   (669ms)
+  FAIL  mcp/canUseTool-return-test.mjs   (1018ms)
+  PASS  mcp/config-store-test.mjs   (500ms)
+  PASS  mcp/context-paths-test.mjs   (456ms)
+  FAIL  mcp/dashboard-state-shape-test.mjs   (412ms)
+  FAIL  mcp/forge-list-runs-filter-test.mjs   (456ms)
+  FAIL  mcp/forge-read-board-filter-test.mjs   (440ms)
+  FAIL  mcp/gate-pending-guard-test.mjs   (426ms)
+  PASS  mcp/gemini-adapter-test.mjs   (34522ms)
+  PASS  mcp/model-mgmt-test.mjs   (512ms)
+  PASS  mcp/openai-adapter-test.mjs   (14535ms)
+  FAIL  mcp/per-run-state-lifecycle-test.mjs   (653ms)
+  FAIL  mcp/resume-terminal-suppression-test.mjs   (454ms)
+  PASS  mcp/router-test.mjs   (493ms)
+  FAIL  mcp/run-active-helpers-test.mjs   (437ms)
+  FAIL  mcp/runid-schema-test.mjs   (457ms)
+  PASS  mcp/sanitize-test.mjs   (428ms)
+  PASS  mcp/terminal-status-poll-test.mjs   (520ms)
+  FAIL  mcp/update-run-merge-test.mjs   (444ms)
+  PASS  mcp/usage-store-test.mjs   (613ms)
+  PASS  mcp/zombie-worker-prevention-test.mjs   (902ms)
+  PASS  scripts/cleanup-stale-pipeline-state-test.mjs   (4655ms)
+  PASS  scripts/covers-map-test.mjs   (501ms)
+  PASS  scripts/covers-parser-test.mjs   (434ms)
+  PASS  scripts/covers-verify-test.mjs   (5511ms)
+  FAIL  scripts/dashboard-server-runid-test.mjs   (799ms)
+  PASS  scripts/forge-observer-smoke-test.mjs   (995ms)
+  PASS  scripts/verify-critic-citations-test.mjs   (3774ms)
+  PASS  scripts/wiring-verify-test.mjs   (2932ms)
+─────────────────────────────────────────────────────────────────────────
+  23/37 passed, 14 failed

@@ -86,7 +86,14 @@ Do NOT proceed without resolving `<worktreePath>`.
      where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
      - Exit 0 (`ok: true`): file was written or updated — continue.
      - Exit 1 (file absent) or exit 2 (`mtime < since`): file was NOT written — treat as truncation; re-invoke the coder or surface the issue before continuing.
-     - If ALL declared files pass mtime check, changes are confirmed — proceed to step 3b.
+     - If ALL declared files pass mtime check, changes are confirmed.
+   - Post-coder wiring check: after the mtime checks, run:
+     ```
+     node scripts/wiring-verify.mjs --handoff=docs/context/handoff.md --root=<worktreePath>
+     ```
+     # wiring-verify.mjs runs as a Bash subprocess, not a registered agent — no agent-roles.json entry needed.
+     Capture stderr. The script emits `[wiring] <N> exports verified, <M> gaps` as a diagnostic — log it but do NOT treat it as a control signal. If the script emits any `[wiring-gap] <symbol>` lines, collect them and append a `## Wiring gaps` section to `<worktreePath>/docs/context/handoff.md` listing each gap (for reviewer visibility). A gap does NOT block the pipeline.
+   - Proceed to step 3b.
 
 3b. **Test stage** (between coder and reviewer dispatch):
 

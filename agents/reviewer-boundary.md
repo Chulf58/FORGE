@@ -96,6 +96,9 @@ The verdict filename is always `reviewer-boundary.md` regardless of the director
 - [ ] No boundary violations (code reaching into layers or modules it shouldn't)
 - [ ] New integrations follow the established patterns in the codebase
 
+### Wiring
+For handoffs declaring new exports, agents, hooks, or signals: check whether `## Wiring gaps` is present in the handoff. If gaps exist, surface them as REVISE findings listing each `[wiring-gap]` item. (A gap does not block — but it must be flagged so the human at Gate #2 sees it.)
+
 ### Contract completeness
 
 > Cross-reviewer boundary: This section covers API/contract completeness (function signatures, type shapes, return types). Validation of inputs — type guards, bounds checks, error returns — is covered by `reviewer-safety`. Do not BLOCK for missing input validation here.
