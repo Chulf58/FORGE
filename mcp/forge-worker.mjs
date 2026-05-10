@@ -5,6 +5,7 @@ import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.js';
+import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
 
 // Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
 // Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
@@ -696,6 +697,18 @@ async function main() {
     process.stderr.write('[forge-worker] unhandled error: ' + errMsg + '\n');
     exitCode = 1;
   } finally {
+    // Closes 7fe538ee sub-bug 2: stamp any orphan agent entries (startedAt
+    // set but completedAt null) before the worker exits. The subagent-stop
+    // hook should be authoritative; this is a fallback for the cases where
+    // the SDK lost the stop signal or the hook crashed silently. Fail-open.
+    try {
+      const summary = stampOrphanAgents(workDir, runId);
+      if (summary.stamped > 0) {
+        writeLog('[forge-worker] orphan-stop: stamped ' + summary.stamped + '/' + summary.total + ' agent(s) before exit');
+      }
+    } catch (_) {
+      // Cleanup must never block exit — swallow any unexpected error.
+    }
     inputChannel.close();
     try { closeSync(logFd); } catch (_) {}
     try { unwatchFile(pillPath); } catch (_) {}
