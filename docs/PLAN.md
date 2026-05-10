@@ -22,12 +22,12 @@ Summary: Every test file declares covered source files via `@covers`; post-hando
 
 #### Phase 2 — Implementation (TDD wave 2 — green bar)
 
-- [ ] 4. Implement `@covers` tag parser (`scripts/covers-parser.mjs`) (wave: 2)
+- [x] 4. Implement `@covers` tag parser (`scripts/covers-parser.mjs`) (wave: 2)
   Intent: Provide the pure function that extracts `@covers` declarations from a single test file's text so the map builder can aggregate without re-doing file I/O. Normalization is the parser's responsibility (strip `./`, convert backslashes to forward-slashes).
   Verify: AC-4: `node --test scripts/covers-parser-test.mjs` exits 0; parser accepts a file-content string, returns `{ covered: string[] }` with paths normalised to forward-slash repo-relative form (no leading `./`, no Windows backslashes); handles zero, one, and many `@covers` lines per file.
   Depends: 1
 
-- [ ] 5. Implement impact-map builder (`scripts/covers-map.mjs`) (wave: 2)
+- [x] 5. Implement impact-map builder (`scripts/covers-map.mjs`) (wave: 2)
   Intent: Aggregate per-file parser output into the project-wide `srcFile → [testFile, …]` map so the verifier and other consumers have a single lookup.
   Verify: AC-5: `node --test scripts/covers-map-test.mjs` exits 0; builder globs `hooks/*-test.js`, `mcp/*-test.mjs`, `scripts/*-test.mjs`, reads each with the parser, returns a plain-object map keyed by canonical forward-slash source paths; no I/O side effects beyond file reads.
   Depends: 2, 4
