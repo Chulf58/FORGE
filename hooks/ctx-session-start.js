@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, STDIN_TIMEOUT_LONG, findActiveRun, TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_LONG, resolveRunId, TERMINAL_STATUSES, readRunStatus } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS   = STDIN_TIMEOUT_LONG;
 const CONTEXT_WINDOW     = 200_000;
@@ -76,15 +76,16 @@ async function getLastUsage(transcriptPath) {
  * Never mutates anything except `currentUnit` on the narrow terminal path.
  * Never throws. Returns a Promise<boolean> — true iff a notice was emitted.
  */
-async function emitStaleUnitNoticeIfAny(projectDir) {
+async function emitStaleUnitNoticeIfAny(projectDir, payload) {
   try {
-    // Enumerate run.json files to find the single non-terminal run.
-    const activeRun = await findActiveRun(projectDir);
-    if (!activeRun) {
-      // Zero or multiple non-terminal runs — fail open, nothing to surface.
+    // Resolve runId via the precedence chain (env var → cwd → findActiveRun).
+    // Closes f2f65ce9 — env-var resolution lets workers attribute correctly
+    // even when 2+ non-terminal runs exist (which would defeat findActiveRun).
+    const runId = await resolveRunId(projectDir, payload || {});
+    if (!runId) {
+      // Zero or multiple non-terminal runs without env/cwd disambiguation — fail open.
       return false;
     }
-    const { runId } = activeRun;
 
     // Read the per-run active file for the resolved run.
     const runActivePath = path.join(projectDir, '.pipeline', 'runs', runId, 'run-active.json');
@@ -201,7 +202,7 @@ async function main(rawInput) {
   // fire it first so it appears even when we exit early below.
   const projectDir = resolveProjectDir(payload);
   await cleanupStaleSingleton(projectDir);
-  await emitStaleUnitNoticeIfAny(projectDir);
+  await emitStaleUnitNoticeIfAny(projectDir, payload);
 
   // Clean stale worker-session marker from prior sessions. If this is a worker,
   // worker-task-inject.js (runs later in the SessionStart chain) will recreate it.

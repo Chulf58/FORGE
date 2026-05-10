@@ -260,6 +260,56 @@ async function findActiveRun(projectDir) {
   return active[0];
 }
 
+const RUN_ID_RE = /^r-[a-zA-Z0-9]+$/;
+
+/**
+ * Resolve the active runId for a hook invocation. Closes f2f65ce9 — the
+ * hook-side counterpart to singleton elimination (commit 8fc4f99c).
+ *
+ * Resolution order:
+ *   1. process.env.FORGE_WORKER_RUN_ID (validated against RUN_ID_RE).
+ *      Workers are spawned with this env var by mcp/server.js:1841 + :2698
+ *      so this is the cheapest + most authoritative source.
+ *   2. payload.cwd matching `.worktrees/<runId>/...` (also validated).
+ *      Covers SessionStart payloads in worktree-backed runs.
+ *   3. findActiveRun(projectDir) — pre-existing fail-open enumeration that
+ *      returns null on zero or 2+ non-terminal runs.
+ *
+ * Returns the resolved runId string, or null when all three paths fail.
+ * Never throws.
+ *
+ * Replaces direct findActiveRun() calls in subagent-stop.js, ctx-pre-tool.js,
+ * and ctx-session-start.js so those hooks can attribute work to the correct
+ * run even when 2+ non-terminal runs exist (the orphan-agent failure mode in
+ * 7fe538ee sub-bug 2).
+ *
+ * @param {string} projectDir
+ * @param {object} payload — hook stdin payload, may carry `cwd`
+ * @returns {Promise<string|null>}
+ */
+async function resolveRunId(projectDir, payload) {
+  // Step 1: env var precedence.
+  const envRunId = process.env.FORGE_WORKER_RUN_ID;
+  if (envRunId && typeof envRunId === 'string' && RUN_ID_RE.test(envRunId)) {
+    return envRunId;
+  }
+
+  // Step 2: worktree-path detection from payload.cwd.
+  if (payload && typeof payload.cwd === 'string' && payload.cwd) {
+    // Match .worktrees/<runId> in the cwd, with platform-flexible separators.
+    // Normalize separators so a single regex covers Windows and POSIX.
+    const normalized = payload.cwd.replace(/\\/g, '/');
+    const match = normalized.match(/[\/]\.worktrees[\/]([^\/]+)/);
+    if (match && match[1] && RUN_ID_RE.test(match[1])) {
+      return match[1];
+    }
+  }
+
+  // Step 3: fall back to existing enumeration.
+  const active = await findActiveRun(projectDir);
+  return active ? active.runId : null;
+}
+
 // -- Feature matching (shared between workflow-guard and gate-sync) ------------
 
 // Generic filler words stripped before comparison — these add no
@@ -340,6 +390,6 @@ module.exports = {
   resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken,
   getForgeAgentSet, isForgeAgent, isProjectInitialized,
   STDIN_TIMEOUT_LONG, STDIN_TIMEOUT_SHORT, TERMINAL_STATUSES, readRunStatus,
-  findActiveRun,
+  findActiveRun, resolveRunId,
   normalizeFeature, toMeaningfulWords, stemWord, featuresMatch,
 };

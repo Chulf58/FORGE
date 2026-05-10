@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, stripAnsi, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
+const { resolveProjectDir, stripAnsi, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, resolveRunId } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -134,15 +134,16 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  // Resolve runId via per-run file enumeration (payload carries no run_id field).
-  // findActiveRun returns null when zero or multiple non-terminal runs exist — fail open.
-  const activeRun = await findActiveRun(projectDir);
-  if (!activeRun) {
+  // Resolve runId via the precedence chain: FORGE_WORKER_RUN_ID env var, then
+  // payload.cwd worktree-path detection, then findActiveRun fallback. Closes
+  // f2f65ce9 — fixes the orphan-agent failure mode (7fe538ee sub-bug 2) when
+  // 2+ non-terminal runs exist and findActiveRun would have returned null.
+  const validRunId = await resolveRunId(projectDir, payload);
+  if (!validRunId) {
     // No active run found — nothing to patch, exit silently.
     exitOk();
     return;
   }
-  const { runId: validRunId } = activeRun;
 
   // Read the per-run active file using the resolved runId.
   const runActivePath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json');

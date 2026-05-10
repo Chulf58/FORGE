@@ -3,7 +3,7 @@
 const fs       = require('fs');
 const path     = require('path');
 const readline = require('readline');
-const { STDIN_TIMEOUT_LONG, findActiveRun } = require('./hook-utils');
+const { STDIN_TIMEOUT_LONG, resolveRunId } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_LONG;
 
@@ -17,12 +17,13 @@ function exitOk() {
  * its per-run run-active.json for worktreePath.
  * Returns null when no active run, no worktreePath, or the file is unreadable.
  */
-async function readActiveWorktreePath(projectDir) {
+async function readActiveWorktreePath(projectDir, payload) {
   try {
-    const active = await findActiveRun(projectDir);
-    if (!active) return null;
-    const runId = active.runId;
-    if (!runId || !/^r-[a-zA-Z0-9]+$/.test(runId)) return null;
+    // Use resolveRunId precedence chain (env var → cwd → findActiveRun) so we
+    // get the right runId even when 2+ non-terminal runs exist. Closes f2f65ce9.
+    const runId = await resolveRunId(projectDir, payload || {});
+    if (!runId) return null;
+    if (!/^r-[a-zA-Z0-9]+$/.test(runId)) return null;
     const perRunPath = path.join(projectDir, '.pipeline', 'runs', runId, 'run-active.json');
     const raw = await fs.promises.readFile(perRunPath, 'utf8');
     const data = JSON.parse(raw);
@@ -159,7 +160,7 @@ async function main(rawInput) {
     // writes inside .worktrees/<runId>/. Otherwise relativize against CWD.
     let normalizedPath;
     try {
-      const worktreePath = await readActiveWorktreePath(process.cwd());
+      const worktreePath = await readActiveWorktreePath(process.cwd(), payload);
       let relBase = process.cwd();
       if (
         worktreePath &&
