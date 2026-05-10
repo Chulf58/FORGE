@@ -32,12 +32,19 @@ Before invoking the researcher agent, resolve the model:
 
 Call `forge_update_run` with `runId`, `status: "running"`.
 
+Before invoking the researcher agent, write `.pipeline/dispatch-context.json` in the project root with:
+```json
+{ "runId": "<runId>", "createdAt": "<now ISO>" }
+```
+
 Invoke the researcher agent via `Agent(subagent_type="forge:researcher")` with a prompt that includes:
 - The exploration topic from the user's input below
 - Instruction to write findings to `docs/RESEARCH/<topic-slug>.md`
 - The `runId` so the agent can reference it
 
 The subagent runs inside this session and inherits all permissions.
+
+After the researcher agent returns (or on any error — use try/finally), delete `.pipeline/dispatch-context.json`.
 
 ## Step 4 — Complete the run
 

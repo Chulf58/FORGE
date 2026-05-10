@@ -144,6 +144,43 @@ async function emitStaleUnitNoticeIfAny(projectDir, payload) {
 }
 
 /**
+ * Stale dispatch-context cleanup (closes conductor-managed dispatch context).
+ *
+ * .pipeline/dispatch-context.json is written by conductor skills immediately
+ * before dispatching a subagent and deleted immediately after. If the conductor
+ * session crashes between write and delete, the file persists across sessions.
+ *
+ * Cleanup contract: if the file exists and its createdAt is more than 5 minutes
+ * in the past, delete it and emit a notice to stderr. Fresh files are left alone
+ * (the conductor is still active). Absent/unreadable files are a no-op.
+ *
+ * Safe to call unconditionally: best-effort, never throws.
+ */
+async function cleanupStaleDispatchContext(projectDir) {
+  const STALE_MS = 300_000; // 5 minutes
+  const ctxPath = path.join(projectDir, '.pipeline', 'dispatch-context.json');
+  let raw;
+  try {
+    raw = await fs.promises.readFile(ctxPath, 'utf8');
+  } catch (_) {
+    return; // Absent or unreadable — no-op.
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (_) {
+    // Malformed — delete to recover.
+    try { await fs.promises.unlink(ctxPath); } catch (_) {}
+    return;
+  }
+  if (!data || typeof data.createdAt !== 'string') return;
+  const age = Date.now() - new Date(data.createdAt).getTime();
+  if (isNaN(age) || age <= STALE_MS) return;
+  try { await fs.promises.unlink(ctxPath); } catch (_) {}
+  process.stderr.write('[forge-dispatch-ctx] stale dispatch-context deleted\n');
+}
+
+/**
  * Orphan-singleton cleanup (closes dd3e7bd7).
  *
  * The legacy <projectDir>/.pipeline/run-active.json singleton was deprecated
@@ -201,6 +238,7 @@ async function main(rawInput) {
   // Stale-lock notice is independent of context-window logic and session_id —
   // fire it first so it appears even when we exit early below.
   const projectDir = resolveProjectDir(payload);
+  await cleanupStaleDispatchContext(projectDir);
   await cleanupStaleSingleton(projectDir);
   await emitStaleUnitNoticeIfAny(projectDir, payload);
 
@@ -258,3 +296,6 @@ rl.on('close', () => {
   clearTimeout(timer);
   main(inputData || '{}').catch(() => process.exit(0));
 });
+
+// Exported for testability (AC-4 — dispatch-context-test.js).
+module.exports = { cleanupStaleDispatchContext };

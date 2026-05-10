@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
-const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hook-utils');
+const { resolveProjectDir, isForgeAgent, resolvePluginRoot, STDIN_TIMEOUT_SHORT, resolveRunId } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -25,15 +25,13 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
-  // Resolve runId via per-run file enumeration (payload carries no run_id field).
-  // findActiveRun returns null when zero or multiple non-terminal runs exist — fail open.
-  const activeRun = await findActiveRun(projectDir);
-  if (!activeRun) {
+  // Resolve runId via the full precedence chain (env var → worktree-path →
+  // dispatch-context file → findActiveRun). Fails open when no path resolves.
+  const validRunId = await resolveRunId(projectDir, payload);
+  if (!validRunId) {
     exitOk();
     return;
   }
-  const { runId: validRunId, runData: runJson } = activeRun;
-
   // Read the per-run active file using the resolved runId.
   const runActivePath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run-active.json');
   let data;
@@ -49,7 +47,6 @@ async function main(rawInput) {
   if (!Array.isArray(data.agents)) {
     data.agents = [];
   }
-  void runJson; // resolved via run.json scan; run-active.json is authoritative for agent tracking
 
   const agentId = payload.agent_id || null;
   const agentType = payload.agent_type || null;
