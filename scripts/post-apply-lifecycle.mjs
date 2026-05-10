@@ -308,6 +308,40 @@ function deleteResearchFile() {
 }
 
 // --- Job 6: Plan.md section removal ------------------------------------------
+//
+// Matching strategy (closes bba4a9d9):
+//   The original substring-only match failed in the common case where the
+//   feature name passed in is a slugified, prefixed expansion of the human
+//   heading (e.g. "add-wiring-verify-tdd-chain-wave-5-post-handoff-de" vs
+//   "wiring-verify (TDD chain Wave 5)") — neither string contained the other.
+//
+//   A heading matches the feature when ANY of these holds:
+//     (a) heading text contains feature name (case-insensitive substring)
+//     (b) feature name contains heading text (case-insensitive substring)
+//     (c) significant-token overlap >= 2 (tokens >= 3 chars after lowercasing
+//         and splitting on non-alphanumerics)
+//
+//   AC-4 fail-open: if zero or >=2 headings match, log a warning and skip.
+function tokenize(s) {
+  return new Set(
+    String(s)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3),
+  );
+}
+
+function headingMatchesFeature(headingText, featureName) {
+  const h = headingText.toLowerCase();
+  const f = featureName.toLowerCase();
+  if (h.includes(f) || f.includes(h)) return true;
+  const ht = tokenize(h);
+  const ft = tokenize(f);
+  let overlap = 0;
+  for (const t of ft) if (ht.has(t)) overlap++;
+  return overlap >= 2;
+}
+
 function removePlanSection() {
   try {
     if (!featureName) {
@@ -324,21 +358,27 @@ function removePlanSection() {
       return;
     }
 
-    // Find the ### Feature: heading that includes the feature name.
-    // Use indexOf/includes (not RegExp) to avoid regex injection from feature names.
+    // Collect ALL ### Feature: headings + their indices, then match per the
+    // strategy above. Disambiguates between multi-feature plans.
     const lines = content.split('\n');
-    let sectionStart = -1;
+    const matches = [];
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('### Feature:') && lines[i].toLowerCase().includes(featureName.toLowerCase())) {
-        sectionStart = i;
-        break;
+      if (!lines[i].startsWith('### Feature:')) continue;
+      const headingText = lines[i].slice('### Feature:'.length).trim();
+      if (headingMatchesFeature(headingText, featureName)) {
+        matches.push(i);
       }
     }
 
-    if (sectionStart === -1) {
+    if (matches.length === 0) {
       log(`plan-cleanup: no matching "### Feature:" section found for "${featureName}", skipping`);
       return;
     }
+    if (matches.length > 1) {
+      log(`plan-cleanup: ambiguous — ${matches.length} headings match "${featureName}", skipping (fail-open)`);
+      return;
+    }
+    const sectionStart = matches[0];
 
     // Find end: next '---' separator line after the section start, or EOF.
     let sectionEnd = lines.length; // default: through EOF
