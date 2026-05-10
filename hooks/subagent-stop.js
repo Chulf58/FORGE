@@ -306,7 +306,27 @@ async function main(rawInput) {
   const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];
 
   if (artifactRelPath && typeof entry.startedAt === 'number' && outcome === 'completed') {
-    const baseDir = data.worktreePath || projectDir;
+    // Resolve baseDir: prefer per-run-active.json's worktreePath when set;
+    // otherwise consult the run record (run.json) which carries the
+    // authoritative worktreePath. Falls back to projectDir last.
+    // Closes 7fe538ee sub-bug 1 — per-run-active.json doesn't carry
+    // worktreePath, so without the run.json fallback the hook checked
+    // main's stale PLAN.md and falsely flagged truncation. Observed in
+    // r-31711ab4 2026-05-10.
+    let baseDir = data.worktreePath;
+    if (!baseDir) {
+      try {
+        const runJsonPath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run.json');
+        const runRaw = fs.readFileSync(runJsonPath, 'utf8');
+        const runObj = JSON.parse(runRaw);
+        if (runObj && typeof runObj.worktreePath === 'string' && runObj.worktreePath) {
+          baseDir = runObj.worktreePath;
+        }
+      } catch (_) {
+        // run.json absent or malformed — fall through to projectDir.
+      }
+    }
+    if (!baseDir) baseDir = projectDir;
     const artifactPath = path.join(baseDir, artifactRelPath);
     try {
       const stat = fs.statSync(artifactPath);

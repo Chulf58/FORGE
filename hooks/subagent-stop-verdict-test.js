@@ -354,6 +354,52 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 17: planner with worktree-fresh PLAN.md but per-run-active.json
+  // missing worktreePath → outcome stays "completed" (closes 7fe538ee sub-bug 1).
+  // Repro of r-31711ab4 false positive: stale main PLAN.md + fresh worktree
+  // PLAN.md, no worktreePath in per-run-active.json → hook checked main's stale
+  // file → falsely flagged truncated.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now();
+    // Seed run.json (project registry) WITH worktreePath set.
+    mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+    const wtPath = join(tmp, '.worktrees', 'r-test');
+    mkdirSync(join(wtPath, 'docs'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+      runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+      worktreePath: wtPath,
+    }));
+    // Seed per-run-active.json WITHOUT worktreePath — this is the buggy state
+    // we observed in r-31711ab4 (and many earlier runs).
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+      runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test', agents: [
+        { agent_id: 'agent-planner-frsh', agent_type: 'forge:planner', startedAt },
+      ], currentUnit: { agent: 'forge:planner', startedAt },
+    }));
+    // Seed STALE main docs/PLAN.md (mtime < startedAt - 2000). The hook's
+    // current behavior (without the fix) checks this file.
+    mkdirSync(join(tmp, 'docs'), { recursive: true });
+    const mainPlanPath = join(tmp, 'docs', 'PLAN.md');
+    writeFileSync(mainPlanPath, '# stale main plan\n');
+    const longAgo = (startedAt - 60_000) / 1000; // 60s before startedAt
+    require('fs').utimesSync(mainPlanPath, longAgo, longAgo);
+    // Seed FRESH worktree docs/PLAN.md (mtime > startedAt — what the hook
+    // SHOULD check via run.json's worktreePath).
+    const wtPlanPath = join(wtPath, 'docs', 'PLAN.md');
+    writeFileSync(wtPlanPath, '# fresh worktree plan with content\n');
+    // utimesSync default is "now" — fresh.
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-planner-frsh',
+      agent_type: 'forge:planner',
+      last_assistant_message: 'planner finished',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-planner-frsh');
+    assert(entry && entry.outcome === 'completed',
+      'planner with worktree-fresh PLAN.md but per-run-active missing worktreePath: outcome stays "completed" (not truncated)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log('');
   console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
