@@ -36,8 +36,14 @@ function runHook(payload, projectDir) {
   });
 }
 
-function makeProject(tmp, agentId, agentType) {
+function makeProject(tmp, agentId, agentType, opts) {
   mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+  // Stamp startedAt 5s in the past so we can write a verdict file with a
+  // current mtime that comfortably satisfies the freshness check at
+  // hooks/subagent-stop.js (mtime > startedAt). Without the offset, mtime
+  // and startedAt land on the same millisecond and the strict-greater check
+  // can flake on fast filesystems.
+  const startedAt = Date.now() - 5000;
   // run.json — required by findActiveRun() in hook-utils.js (enumerates
   // .pipeline/runs/<runId>/run.json for any non-terminal status).
   writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
@@ -45,11 +51,24 @@ function makeProject(tmp, agentId, agentType) {
   }));
   // run-active.json — agent dispatch log; mutated by subagent-stop.
   writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
-    runId: 'r-test', startedAt: Date.now(), pipelineType: 'plan',
+    runId: 'r-test', startedAt, pipelineType: 'plan',
     feature: 'test', agents: [
-      { agent_id: agentId, agent_type: agentType, startedAt: Date.now() },
-    ], currentUnit: { agent: agentType, startedAt: Date.now() },
+      { agent_id: agentId, agent_type: agentType, startedAt },
+    ], currentUnit: { agent: agentType, startedAt },
   }));
+  // Pre-create the reviewer verdict file when the test simulates a real
+  // reviewer dispatch — required by the verdict-file mtime cross-check at
+  // hooks/subagent-stop.js (closes 756bd820 Bug 2). Tests that intentionally
+  // simulate a missing/stale verdict file pass `{ skipVerdictFile: true }`.
+  const normalizedType = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
+  const isReviewerAgent = normalizedType.startsWith('reviewer-');
+  if (isReviewerAgent && !(opts && opts.skipVerdictFile)) {
+    mkdirSync(join(tmp, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    writeFileSync(
+      join(tmp, '.pipeline', 'context', 'reviewer-output', normalizedType + '.md'),
+      '## ' + normalizedType + ' Review: test\n\n### Verdict\n\nTest fixture verdict body.\n'
+    );
+  }
 }
 
 const BLOCK_VERDICT = 'Some output\n[reviewer-verdict] {"agent":"reviewer-safety","verdict":"BLOCK","blockers":1,"warnings":0,"feature":"test","model":"claude-haiku-4-5-20251001"}';
@@ -256,6 +275,82 @@ async function test() {
     const entry = data.agents.find(a => a.agent_id === 'agent-res-2');
     assert(entry && entry.outcome === 'completed',
       'researcher with up-to-date researcher-status.json: outcome is "completed"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 14: reviewer with [reviewer-verdict] APPROVED + fresh verdict file → outcome unchanged (APPROVED)
+  // Closes 756bd820 Bug 2: worker should accept verdict signal only when the
+  // verdict output file was actually written this run (mtime > entry.startedAt).
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now() - 5000; // agent started 5s ago
+    mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+      runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+    }));
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+      runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test', agents: [
+        { agent_id: 'agent-rev-fresh', agent_type: 'forge:reviewer-safety', startedAt },
+      ], currentUnit: { agent: 'forge:reviewer-safety', startedAt },
+    }));
+    // Pre-create a FRESH verdict file (mtime = now, well after startedAt)
+    mkdirSync(join(tmp, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md'),
+      '## Safety Review: test\n\n### Verdict\n\nAPPROVED — test verdict body.\n');
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-fresh',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-safety","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"test","model":"claude-haiku-4-5-20251001"}',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-fresh');
+    assert(entry && entry.outcome === 'APPROVED',
+      'reviewer-safety with fresh verdict file: outcome is APPROVED (unchanged)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 15: reviewer with [reviewer-verdict] APPROVED + stale verdict file → outcome downgraded to no-verdict
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now(); // agent started JUST now
+    mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+      runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+    }));
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+      runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test', agents: [
+        { agent_id: 'agent-rev-stale', agent_type: 'forge:reviewer-safety', startedAt },
+      ], currentUnit: { agent: 'forge:reviewer-safety', startedAt },
+    }));
+    // Pre-create a STALE verdict file with mtime well in the past (1 hour ago)
+    mkdirSync(join(tmp, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    const stalePath = join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md');
+    writeFileSync(stalePath, '## Stale verdict from a prior run\n\nAPPROVED.\n');
+    const onehourAgo = (Date.now() - 3600000) / 1000;
+    require('fs').utimesSync(stalePath, onehourAgo, onehourAgo);
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-stale',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-safety","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"test","model":"claude-haiku-4-5-20251001"}',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-stale');
+    assert(entry && entry.outcome === 'no-verdict',
+      'reviewer-safety with STALE verdict file (mtime < startedAt): outcome downgraded to no-verdict');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 16: reviewer with [reviewer-verdict] APPROVED but verdict file MISSING → outcome downgraded to no-verdict
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-missing', 'forge:reviewer-safety', { skipVerdictFile: true });
+    // Verdict file intentionally NOT pre-created (skipVerdictFile flag above)
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-missing',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-safety","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"test","model":"claude-haiku-4-5-20251001"}',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-missing');
+    assert(entry && entry.outcome === 'no-verdict',
+      'reviewer-safety with MISSING verdict file: outcome downgraded to no-verdict');
     rmSync(tmp, { recursive: true, force: true });
   }
 

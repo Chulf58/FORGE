@@ -204,6 +204,35 @@ async function main(rawInput) {
   // Guard with data.worktreePath: skip this check for non-worktree runs.
   const normalizedType = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
 
+  // Reviewer verdict-file mtime cross-check (closes 756bd820 Bug 2).
+  // When a reviewer emits [reviewer-verdict], its corresponding output file at
+  // <worktreePath|projectDir>/.pipeline/context/reviewer-output/<reviewer>.md
+  // must exist AND have mtime > entry.startedAt. Otherwise the verdict signal
+  // is a phantom (Write tool refused stale-content overwrite, prior-run file
+  // persisted, etc.) and we downgrade to no-verdict so the worker treats it
+  // as truncation rather than advancing to gate2.
+  if (verdict !== null && normalizedType.startsWith('reviewer-')) {
+    const baseDir = data.worktreePath || projectDir;
+    const verdictFilePath = path.join(baseDir, '.pipeline', 'context', 'reviewer-output', normalizedType + '.md');
+    let stale = false;
+    let reason = '';
+    try {
+      const stat = fs.statSync(verdictFilePath);
+      const startedAtMs = Number(entry.startedAt) || 0;
+      if (stat.mtimeMs <= startedAtMs) {
+        stale = true;
+        reason = 'mtime=' + stat.mtimeMs + ' <= startedAt=' + startedAtMs;
+      }
+    } catch (statErr) {
+      stale = true;
+      reason = 'file missing: ' + stripAnsi(verdictFilePath);
+    }
+    if (stale) {
+      outcome = 'no-verdict';
+      console.error('[forge-subagent] WARNING: ' + stripAnsi(agentType) + ' emitted [reviewer-verdict] but verdict file is stale/missing (' + stripAnsi(reason) + ') — downgrading to no-verdict');
+    }
+  }
+
   // Checkpoint detection — must run BEFORE the truncation blocks below so
   // a checkpoint outcome is not overridden by the artifact-mtime check.
   // Condition: agent emitted [CONTEXT-CHECKPOINT] AND checkpoint file exists.
