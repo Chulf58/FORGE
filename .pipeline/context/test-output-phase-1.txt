@@ -1,0 +1,184 @@
+ lines): src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-1UCKW9\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-4terl8\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "nonexistent file citation" — file not found: src/ghost.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-4terl8\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-aa29tz\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "good finding"
+[verify-critic-citations] DROP: "bad finding" — evidence not found in lines 1-1 of src/main.js
+[verify-critic-citations] verified: 1, dropped: 1
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-aa29tz\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-BmINsH\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "ws normalize test"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-BmINsH\docs\context\critic-verified.json
+✔ exits 0 and writes verified.json when all citations pass (429.5683ms)
+✔ exits 1 and drops finding when evidence not in source (433.3941ms)
+✔ exits 1 and drops finding when no citations array (424.1803ms)
+✔ exits 1 when line range is out of bounds (473.1575ms)
+✔ exits 1 when cited file does not exist (468.5723ms)
+✔ passes verified finding and drops failed one in mixed batch (506.4814ms)
+✔ whitespace normalization: evidence with collapsed whitespace matches (487.924ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3230.9929
+
+── scripts/wiring-verify-test.mjs ──────────────────────────────────────
+✖ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (646.8028ms)
+✖ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (447.132ms)
+✖ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (499.7499ms)
+✖ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (412.7562ms)
+✖ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (402.0505ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2415.5599
+
+✖ failing tests:
+
+test at scripts\wiring-verify-test.mjs:109:1
+✖ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (646.8028ms)
+  AssertionError [ERR_ASSERTION]: (a) — scripts/wiring-verify.mjs must exist before tests can pass
+      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
+      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:135:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\wiring-verify-test.mjs:155:1
+✖ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (447.132ms)
+  AssertionError [ERR_ASSERTION]: (b) — scripts/wiring-verify.mjs must exist before tests can pass
+      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
+      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:180:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\wiring-verify-test.mjs:204:1
+✖ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (499.7499ms)
+  AssertionError [ERR_ASSERTION]: (c) — scripts/wiring-verify.mjs must exist before tests can pass
+      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
+      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:221:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\wiring-verify-test.mjs:242:1
+✖ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (412.7562ms)
+  AssertionError [ERR_ASSERTION]: (d) — scripts/wiring-verify.mjs must exist before tests can pass
+      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
+      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:279:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\wiring-verify-test.mjs:303:1
+✖ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (402.0505ms)
+  AssertionError [ERR_ASSERTION]: (e) — scripts/wiring-verify.mjs must exist before tests can pass
+      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
+      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:346:5)
+      at Test.runInAsyncScope (node:async_hooks:228:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
+      at Test.postRun (node:internal/test_runner/test:1247:19)
+      at Test.run (node:internal/test_runner/test:1175:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+─── summary ─────────────────────────────────────────────────────────────
+  FAIL  hooks/apply-context-inject-test.js   (4070ms)
+  PASS  hooks/checkpoint-detection-test.js   (3127ms)
+  PASS  hooks/control-file-guard-test.js   (8864ms)
+  FAIL  hooks/ctx-session-start-terminal-cleanup-test.js   (1236ms)
+  PASS  hooks/gate-approve-guard-test.js   (12224ms)
+  PASS  hooks/gate-sync-test.js   (8074ms)
+  PASS  hooks/hook-utils-test.js   (429ms)
+  PASS  hooks/subagent-stop-verdict-test.js   (8034ms)
+  FAIL  mcp/apply-guard-test.mjs   (676ms)
+  FAIL  mcp/canUseTool-return-test.mjs   (515ms)
+  PASS  mcp/config-store-test.mjs   (443ms)
+  PASS  mcp/context-paths-test.mjs   (448ms)
+  FAIL  mcp/dashboard-state-shape-test.mjs   (438ms)
+  FAIL  mcp/forge-list-runs-filter-test.mjs   (420ms)
+  FAIL  mcp/forge-read-board-filter-test.mjs   (446ms)
+  FAIL  mcp/gate-pending-guard-test.mjs   (424ms)
+  PASS  mcp/gemini-adapter-test.mjs   (34476ms)
+  PASS  mcp/model-mgmt-test.mjs   (673ms)
+  PASS  mcp/openai-adapter-test.mjs   (14511ms)
+  FAIL  mcp/per-run-state-lifecycle-test.mjs   (667ms)
+  FAIL  mcp/resume-terminal-suppression-test.mjs   (483ms)
+  PASS  mcp/router-test.mjs   (494ms)
+  FAIL  mcp/run-active-helpers-test.mjs   (480ms)
+  FAIL  mcp/runid-schema-test.mjs   (422ms)
+  PASS  mcp/sanitize-test.mjs   (419ms)
+  PASS  mcp/terminal-status-poll-test.mjs   (501ms)
+  FAIL  mcp/update-run-merge-test.mjs   (445ms)
+  PASS  mcp/usage-store-test.mjs   (606ms)
+  PASS  mcp/zombie-worker-prevention-test.mjs   (925ms)
+  PASS  scripts/cleanup-stale-pipeline-state-test.mjs   (4677ms)
+  PASS  scripts/covers-map-test.mjs   (461ms)
+  PASS  scripts/covers-parser-test.mjs   (458ms)
+  PASS  scripts/covers-verify-test.mjs   (5533ms)
+  FAIL  scripts/dashboard-server-runid-test.mjs   (659ms)
+  PASS  scripts/forge-observer-smoke-test.mjs   (843ms)
+  PASS  scripts/verify-critic-citations-test.mjs   (3648ms)
+  FAIL  scripts/wiring-verify-test.mjs   (2837ms)
+─────────────────────────────────────────────────────────────────────────
+  22/37 passed, 15 failed
