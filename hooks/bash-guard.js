@@ -264,16 +264,26 @@ async function getActivePipelineRun(projectDir) {
 }
 
 /**
- * Returns true when a commit gate is currently pending. Reads gate-pending.json
- * using worktree-first fallback (gate-enforcement.js was removed).
- * Fail-open: missing or unreadable gate file → returns false (no block).
+ * Returns commit-gate info when a commit gate is currently pending, else null.
+ * Reads gate-pending.json using worktree-first fallback. Fail-open: missing or
+ * unreadable gate file → returns null (no block).
+ *
+ * Returns: { worktreePath: string|null } when commit gate is pending.
+ *
+ * The hard-block at the call site narrows on worktreePath: only blocks when
+ * the bash command actually targets the gated worktree. This closes the
+ * chicken-and-egg pattern where conductor inline commits to main were
+ * blocked because of an unrelated worktree's pending commit gate (and the
+ * merge required main to be clean, which required the inline commit first).
  */
-async function isCommitGatePending(projectDir) {
+async function getCommitGateInfo(projectDir) {
   try {
     // Worktree-first: resolve worktreePath from the active run's run.json data.
     let gatePath = path.join(projectDir, '.pipeline', 'gate-pending.json');
+    let activeWorktreePath = null;
     const active = await findActiveRun(projectDir);
     if (active && active.runData && typeof active.runData.worktreePath === 'string' && active.runData.worktreePath) {
+      activeWorktreePath = active.runData.worktreePath;
       const wtGatePath = path.join(active.runData.worktreePath, '.pipeline', 'gate-pending.json');
       try {
         await fs.promises.readFile(wtGatePath, 'utf8'); // probe existence
@@ -287,17 +297,19 @@ async function isCommitGatePending(projectDir) {
     try {
       gateData = JSON.parse(await fs.promises.readFile(gatePath, 'utf8'));
     } catch (_) {
-      return false; // fail-open: absent or unreadable → no block
+      return null; // fail-open: absent or unreadable → no block
     }
 
-    return (
+    const isPending = (
       gateData !== null &&
       typeof gateData === 'object' &&
       gateData.gate === 'commit' &&
       gateData.status === 'pending'
     );
+    if (!isPending) return null;
+    return { worktreePath: activeWorktreePath };
   } catch (_) {
-    return false; // fail-open
+    return null; // fail-open
   }
 }
 
@@ -411,14 +423,26 @@ async function main(rawInput) {
       }
     }
 
-    // Commit-gate hard-block: deny git commit when a commit gate is pending.
-    // This must be checked BEFORE the soft-block so no active-run bypass is possible.
-    if (sub === 'commit' && await isCommitGatePending(resolveProjectDir(payload))) {
-      exitBlock(
-        '[bash-guard] Blocked: a commit gate is pending. Run `/forge:approve` to review ' +
-        'and approve the pending gate before committing.'
-      );
-      return;
+    // Commit-gate hard-block: deny git commit ONLY when the command targets
+    // the gated worktree path. Conductor commits to main fall through to the
+    // soft-block below, which already requires an explicit user "commit"
+    // keyword. This narrowing closes the chicken-and-egg observed when an
+    // unrelated inline conductor commit had to land on main BEFORE the merge
+    // could clear the worktree's commit gate.
+    if (sub === 'commit') {
+      const gateInfo = await getCommitGateInfo(resolveProjectDir(payload));
+      if (gateInfo && gateInfo.worktreePath) {
+        const wtNorm = gateInfo.worktreePath.replace(/\\/g, '/');
+        if (command.includes(wtNorm) || command.includes(gateInfo.worktreePath)) {
+          exitBlock(
+            '[bash-guard] Blocked: a commit gate is pending for worktree `' + gateInfo.worktreePath + '`. ' +
+            'Run `/forge:approve` to review and merge the pending gate before committing inside the worktree.'
+          );
+          return;
+        }
+      }
+      // No commit gate, gate without worktree, or command targeting main —
+      // fall through to soft-block (requires explicit user approval token).
     }
 
     // Soft-block: require pipeline run OR valid approval token
