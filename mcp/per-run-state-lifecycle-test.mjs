@@ -98,8 +98,42 @@ async function main() {
   try {
     await client.connect(transport);
 
+    // ── Setup: seed an approved plan run so the implement-create guard at
+    //    mcp/server.js:1665-1683 passes. The guard requires at least one
+    //    plan run with gateState.gate === 'gate1' && gateState.status === 'approved'.
+    //    Without this seeding, forge_create_run for pipelineType='implement'
+    //    rejects with "implement pipeline requires a completed plan (gate1 approved)".
+    const planCreate = parseToolResult(await callTool(client, 'forge_create_run', {
+      sessionId: 'sess-lifecycle-test',
+      pipelineType: 'plan',
+      feature: 'lifecycle-test-feature',
+      spawnWorker: false,
+    }));
+    const planRunId = planCreate.runId;
+    if (!planRunId) {
+      failure = 'forge_create_run (plan) did not return a runId';
+    } else {
+      // Pre-write the gate-approval token (.pipeline/action-approved.json) so
+      // forge_set_gate's hasGateApprovalToken guard at mcp/server.js:134-146 + 839
+      // accepts the test's approval call. Without this, the guard rejects with
+      // "Gate approval requires explicit user authorization" — which is correct
+      // behavior in production but blocks integration tests that need to seed an
+      // approved-plan state.
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      writeFileSync(
+        join(projectDir, '.pipeline', 'action-approved.json'),
+        JSON.stringify({ actions: ['gate-approve'], expiresAt }),
+      );
+      parseToolResult(await callTool(client, 'forge_set_gate', {
+        gate: 'gate1',
+        feature: 'lifecycle-test-feature',
+        status: 'approved',
+        runId: planRunId,
+      }));
+    }
+
     // ── Step 1: forge_create_run with stages populated ────────────────────
-    const createResult = parseToolResult(await callTool(client, 'forge_create_run', {
+    const createResult = failure ? null : parseToolResult(await callTool(client, 'forge_create_run', {
       sessionId: 'sess-lifecycle-test',
       pipelineType: 'implement',
       feature: 'lifecycle-test-feature',
@@ -109,8 +143,8 @@ async function main() {
       },
     }));
 
-    runId = createResult.runId;
-    if (!runId) {
+    runId = createResult ? createResult.runId : null;
+    if (!failure && !runId) {
       failure = 'forge_create_run did not return a runId';
     }
 
