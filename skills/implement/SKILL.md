@@ -224,6 +224,12 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
 
    The coder reads the JSON artefact at that path to discover which test files to make pass. It does NOT receive the test-author's session content — the JSON artefact only.
 
+   - Post-coder coverage check: after the coder writes `<worktreePath>/docs/context/handoff.md`, run:
+     ```
+     node scripts/covers-verify.mjs --handoff=docs/context/handoff.md --root=<worktreePath>
+     ```
+     # covers-verify.mjs runs as a Bash subprocess, not a registered agent — no agent-roles.json entry needed.
+     Capture stderr. The script emits `[covers] <N> tests resolved, <M> gaps` as a diagnostic — log it but do NOT treat it as a control signal. If the script emits any `[covers-gap] <srcFile>` lines, collect them and append a `## Covers gaps` section to `<worktreePath>/docs/context/handoff.md` listing each gap (for reviewer visibility). A gap does NOT block the pipeline. A non-zero exit code from covers-verify (test failures) is also logged but does NOT block the pipeline at this step — reviewers see the test results in the handoff.
    - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
      `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
      where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.

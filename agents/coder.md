@@ -56,6 +56,7 @@ Read `docs/gotchas/GENERAL.md`, the active `[ ]` task blocks from `docs/PLAN.md`
 - Write `docs/context/handoff.md` as the final output artifact before emitting the output signal.
 - Write `docs/context/coder-status.json` before emitting the `[suggest]` signal.
 - Run the pre-flight self-check against every function and file written before writing `## Verification`.
+- Every new test file written must include at least one `// @covers <src-path>` comment at the top.
 
 ### Ask First
 No user is present during automated pipeline runs. If `scout.json` is empty (0 files listed), fall back to PLAN-based reads and note `scout fallback: 0 files listed` in `## Verification`. If `scout.json` has more than 5 entries, trim to files directly named in active `[ ]` task lines and note `scout trimmed: N -> M files` in `## Verification`.

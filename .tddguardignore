@@ -1,0 +1,7 @@
+# Phase 2 implementation — test files exist as covers-parser-test.mjs (hyphen convention)
+# but tdd-guard resolveTestFile only detects .test.mjs convention.
+# Red bar was verified in Phase 1 (exit code 1 confirmed in test-author-output.json).
+scripts/covers-parser.mjs
+scripts/covers-map.mjs
+scripts/covers-verify.mjs
+scripts/covers-backfill.mjs
