@@ -50,6 +50,7 @@ docs/token-audit-*.md
 # Pipeline runtime state (per-project, not plugin source)
 .worktrees/
 .pipeline/run-active.json
+.pipeline/run-active.json.tmp.*
 .pipeline/gate-pending.json
 .pipeline/.worker-session
 .pipeline/worker-task*.json
@@ -66,6 +67,15 @@ docs/token-audit-*.md
 .pipeline/review-archive/
 .pipeline/runs/
 docs/audit-log.jsonl
+
+# Apply-pipeline ephemera that historically got staged into apply commits
+# and then blocked the next merge with "untracked working tree files would
+# be overwritten" errors. Closes 29ab9389. Pairs with c084a247 (forge-
+# worktree.js merge auto-restore).
+.pipeline/run-agent-counts/
+.pipeline/docs-diff-*.txt
+.pipeline/log.tmp*
+.pipeline/forge-observer.cmd
 
 # Per-session agent scratch (operational, not committed)
 docs/context/*-status.json
