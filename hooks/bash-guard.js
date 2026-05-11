@@ -243,13 +243,39 @@ function getGitSubcommand(segment) {
 }
 
 /**
- * Enumerates .pipeline/runs/<runId>/run.json for the non-terminal running run and
+ * Enumerates .pipeline/runs/<runId>/run.json for the active running run and
  * returns its { runId, worktreePath }. An active pipeline run means git
  * operations were initiated by the pipeline itself and don't need a separate
  * approval token. Fail-open: any read/parse error returns null.
+ *
+ * Precedence (matches hooks/hook-utils.js resolveRunId):
+ *   1. process.env.FORGE_WORKER_RUN_ID — workers spawn with this set
+ *      (mcp/server.js:1841). Closes the f2f65ce9 ambiguity surface where
+ *      findActiveRun returned null whenever 2+ non-terminal runs existed,
+ *      causing every parallel worker's git commit to fail the soft-block.
+ *   2. findActiveRun(projectDir) — fall back when env var is absent.
  */
+const RUN_ID_RE = /^r-[a-zA-Z0-9]+$/;
+
 async function getActivePipelineRun(projectDir) {
   try {
+    // Step 1: env var precedence.
+    const envRunId = process.env.FORGE_WORKER_RUN_ID;
+    if (envRunId && typeof envRunId === 'string' && RUN_ID_RE.test(envRunId)) {
+      try {
+        const runJsonPath = path.join(projectDir, '.pipeline', 'runs', envRunId, 'run.json');
+        const raw = await fs.promises.readFile(runJsonPath, 'utf8');
+        const runData = JSON.parse(raw);
+        const worktreePath = (runData && typeof runData.worktreePath === 'string')
+          ? runData.worktreePath || null
+          : null;
+        return { runId: envRunId, worktreePath };
+      } catch (_) {
+        // run.json absent or unreadable — fall through to enumeration.
+      }
+    }
+
+    // Step 2: fall back to existing enumeration (returns null on 2+ runs).
     const active = await findActiveRun(projectDir);
     if (!active) return null;
     const runId = active.runData && typeof active.runData.runId === 'string' ? active.runData.runId : active.runId;

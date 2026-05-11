@@ -127,8 +127,6 @@ Exit — do not proceed to further steps.
 
 1. **Planner:** reads brainstorm doc (if exists), GENERAL.md, codebase. Writes `docs/PLAN.md`. The planner does NOT ask questions. The worker's cwd is the run's worktree (`<worktreePath>`) — `docs/PLAN.md` resolves relative to the worktree, not the main project root.
 
-1b. **Commit PLAN.md to the worktree branch:** After the planner finishes, commit the plan so the worktree branch has a real commit at gate1 time (not just uncommitted edits). Run via Bash: `git -C <worktreePath> add docs/PLAN.md && git -C <worktreePath> commit -m "plan(forge): <feature> [<runId>]"`. If git fails or there's nothing new to commit, log `[plan] commit skipped: <reason>` and continue. This step exists to preserve a clean multi-commit branch (plan → phases → apply) and to make parallel-plan PLAN.md merges 3-way-resolvable.
-
 2. **Conditional researcher:** read `### Research needed` in PLAN.md. Skip if absent/empty.
 4. **Gotcha-checker + Researcher (concurrent when both needed):** If both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially.
 5. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
