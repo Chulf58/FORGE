@@ -34,6 +34,26 @@ async function writeRunActive(dir, data) {
   await fs.writeFile(path.join(dir, '.pipeline', 'run-active.json'), JSON.stringify(data), 'utf8');
 }
 
+// Per-run state — what findActiveRun (hook-utils.js:230) actually reads after
+// singleton elimination in commit 8fc4f99c. Tests that need an active run
+// must seed this; writeRunActive alone is obsolete (singleton no longer
+// consulted).
+async function writeRun(dir, runId, opts = {}) {
+  const runDir = path.join(dir, '.pipeline', 'runs', runId);
+  await fs.mkdir(runDir, { recursive: true });
+  const run = {
+    runId,
+    status: opts.status || 'running',
+    pipelineType: opts.pipelineType || 'plan',
+    feature: opts.feature || 'test-feature',
+    worktreePath: null,
+    branchName: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await fs.writeFile(path.join(runDir, 'run.json'), JSON.stringify(run), 'utf8');
+}
+
 async function writeCounts(dir, runId, counts) {
   const countsDir = path.join(dir, '.pipeline', 'run-agent-counts');
   await fs.mkdir(countsDir, { recursive: true });
@@ -111,18 +131,20 @@ test('exits 0 on second dispatch (count 1 → 2)', async (t) => {
   assert.equal(result.exitCode, 0, 'second dispatch should be allowed');
 });
 
-test('exits 2 and denies on third dispatch (count >= 2)', async (t) => {
+test('exits 2 and denies at the cap (count >= 15)', async (t) => {
   const dir = await makeProjectDir();
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  await writeRunActive(dir, { runId: 'r-abc123' });
-  await writeCounts(dir, 'r-abc123', { coder: 2 });
+  // Cap raised 2 → 15 in commit 9aa0dca3. Pre-write count=15 to trigger deny
+  // on the next dispatch attempt.
+  await writeRun(dir, 'r-abc123');
+  await writeCounts(dir, 'r-abc123', { coder: 15 });
 
   const result = runHook({
     tool_name: 'Agent',
     tool_input: { subagent_type: 'forge:coder' },
     cwd: dir,
   }, {}, dir);
-  assert.equal(result.exitCode, 2, 'third dispatch should be denied');
+  assert.equal(result.exitCode, 2, 'dispatch at cap should be denied');
   const parsed = JSON.parse(result.stdout.trim());
   assert.equal(parsed.permissionDecision, 'deny');
   assert.ok(result.stderr.includes('[forge-stuck] HARD STOP'));
@@ -131,8 +153,8 @@ test('exits 2 and denies on third dispatch (count >= 2)', async (t) => {
 test('deny message includes agent type and run id', async (t) => {
   const dir = await makeProjectDir();
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  await writeRunActive(dir, { runId: 'r-abc123' });
-  await writeCounts(dir, 'r-abc123', { planner: 3 });
+  await writeRun(dir, 'r-abc123');
+  await writeCounts(dir, 'r-abc123', { planner: 15 });
 
   const result = runHook({
     tool_name: 'Agent',
@@ -147,7 +169,7 @@ test('deny message includes agent type and run id', async (t) => {
 test('strips forge: prefix for counter key', async (t) => {
   const dir = await makeProjectDir();
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  await writeRunActive(dir, { runId: 'r-testrun' });
+  await writeRun(dir, 'r-testrun');
 
   runHook({
     tool_name: 'Agent',

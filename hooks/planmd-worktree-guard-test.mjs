@@ -23,7 +23,14 @@ function checkPlanMdGuard(rawTarget, cwd) {
   const normalizedTarget = path.resolve(cwd, rawTarget).replace(/\\/g, '/').toLowerCase();
   if (!normalizedTarget.endsWith('docs/plan.md')) return null;
 
-  const cwdNormalized = cwd.replace(/\\/g, '/');
+  // Resolve cwd to match how production normalizes the target (line above
+  // uses path.resolve). Without this, on Windows the target gets the drive
+  // letter prefix added by path.resolve while the cwd doesn't, and the
+  // startsWith check fails for legitimate inside-worktree paths. Production
+  // (hooks/workflow-guard.js:230) uses process.cwd() directly which is
+  // already absolute on Windows; the test's `cwd` is a manufactured POSIX-
+  // style string so we must resolve it the same way the target is resolved.
+  const cwdNormalized = path.resolve(cwd).replace(/\\/g, '/');
   const worktreeMatch = cwdNormalized.match(/\.worktrees\/(r-[a-zA-Z0-9]+)(?:\/|$)/);
   if (!worktreeMatch) return null; // not in a worktree — pass through
 
