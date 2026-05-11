@@ -2141,12 +2141,14 @@ server.registerTool(
       // gates by calling forge_update_run({ status: 'completed' }) directly.
       // forge_set_gate calls updateRun() core function directly, bypassing this
       // handler, so this guard does not interfere with legitimate approvals.
-      // Exception: if the gate is already approved, user consent is proven —
-      // allow the transition to completed (commit+merge follow-up).
+      // Exception: if the commit gate is already approved, user consent is proven —
+      // allow the transition to completed (commit+merge follow-up). Only the commit
+      // gate qualifies; earlier gates (gate1, gate2) approved but not yet merged
+      // must NOT bypass this guard.
       if (cleanPatch.status && cleanPatch.status !== 'failed' && cleanPatch.status !== 'discarded') {
         const existing = getRun(projectDir, runId);
         if (existing && existing.status === 'gate-pending') {
-          const gateAlreadyApproved = existing.gateState && existing.gateState.status === 'approved';
+          const gateAlreadyApproved = existing.gateState && existing.gateState.gate === 'commit' && existing.gateState.status === 'approved';
           if (!hasGateApprovalToken(projectDir) && !gateAlreadyApproved) {
             return errorResult(
               "FORGE: Cannot transition run from gate-pending to '" + cleanPatch.status +
