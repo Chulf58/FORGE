@@ -181,10 +181,29 @@ async function main(rawInput) {
   // Delete AFTER stdout write — if we crash between delete and write, task context is lost
   try { fs.unlinkSync(taskPath); } catch (_) {}
 
-  // Mark this session as a worker so other hooks (worker-done-inject) can skip it
+  // Mark this session as a worker so other hooks (worker-done-inject) can skip
+  // it AND so the worker model's own `.pipeline/.worker-session` check at its
+  // cwd (per CLAUDE.md "Conductor sessions" rule) succeeds. resolveProjectDir
+  // strips the `.worktrees/r-<id>` suffix and returns main repo root — for
+  // existing main-checking consumers we still write there. But the worker
+  // model checks relative to process.cwd() (the worktree), so dual-write
+  // when those paths differ. Closes the bug observed in r-4d4607a8 where
+  // the worker found no marker at the worktree path and misidentified as
+  // a conductor session.
+  const markerContent = JSON.stringify({ runId: data.runId, since: new Date().toISOString() }) + '\n';
   try {
-    const markerPath = path.join(projectDir, '.pipeline', '.worker-session');
-    fs.writeFileSync(markerPath, JSON.stringify({ runId: data.runId, since: new Date().toISOString() }) + '\n', 'utf8');
+    const mainMarker = path.join(projectDir, '.pipeline', '.worker-session');
+    fs.writeFileSync(mainMarker, markerContent, 'utf8');
+  } catch (_) {}
+  try {
+    const cwdMarker = path.join(process.cwd(), '.pipeline', '.worker-session');
+    if (cwdMarker !== path.join(projectDir, '.pipeline', '.worker-session')) {
+      // Ensure the worktree's .pipeline/ exists — it does after `git worktree
+      // add` + the SessionStart sequence, but the createWorktree path runs
+      // before this hook in some flows.
+      fs.mkdirSync(path.dirname(cwdMarker), { recursive: true });
+      fs.writeFileSync(cwdMarker, markerContent, 'utf8');
+    }
   } catch (_) {}
 
   // Write an initial heartbeat so the observer has a reference point even if
