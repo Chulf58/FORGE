@@ -295,8 +295,28 @@ async function main(rawInput) {
   // is a phantom (Write tool refused stale-content overwrite, prior-run file
   // persisted, etc.) and we downgrade to no-verdict so the worker treats it
   // as truncation rather than advancing to gate2.
+  //
+  // baseDir resolution mirrors the file-fallback block above and the
+  // artifact-mtime check below (7fe538ee sub-bug 1 pattern): per-run-active
+  // doesn't carry worktreePath, so we fall back to run.json. Without this
+  // the cross-check looks at main's .pipeline/context/... where the file
+  // doesn't exist, marks stale, and downgrades to no-verdict — observed
+  // live in r-459ec2aa reviewer-safety (Test 23 covers the regression).
   if (verdict !== null && normalizedType.startsWith('reviewer-')) {
-    const baseDir = data.worktreePath || projectDir;
+    let baseDir = data.worktreePath;
+    if (!baseDir) {
+      try {
+        const runJsonPath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run.json');
+        const runRaw = fs.readFileSync(runJsonPath, 'utf8');
+        const runObj = JSON.parse(runRaw);
+        if (runObj && typeof runObj.worktreePath === 'string' && runObj.worktreePath) {
+          baseDir = runObj.worktreePath;
+        }
+      } catch (_) {
+        // run.json absent or malformed — fall through to projectDir.
+      }
+    }
+    if (!baseDir) baseDir = projectDir;
     const verdictFilePath = path.join(baseDir, '.pipeline', 'context', 'reviewer-output', normalizedType + '.md');
     let stale = false;
     let reason = '';

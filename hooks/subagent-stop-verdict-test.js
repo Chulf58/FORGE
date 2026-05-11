@@ -603,6 +603,52 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 23 — existing reviewer mtime cross-check block (line 298+) had the
+  // SAME data.worktreePath-or-projectDir bug as the file-fallback block
+  // (test 22). When the reviewer emits [reviewer-verdict] AND
+  // per-run-active.json lacks worktreePath but run.json has it, the mtime
+  // check must read the verdict file at the worktree path, not main's.
+  // Observed live in r-459ec2aa reviewer-safety: signal was present
+  // (verdict extracted), but mtime check fell back to main → file not
+  // found → downgraded to no-verdict despite a fresh APPROVED body on disk.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now() - 5000;
+    mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+    const wtPath = join(tmp, '.worktrees', 'r-test');
+    mkdirSync(wtPath, { recursive: true });
+    // run.json carries worktreePath; run-active.json does not.
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+      runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+      worktreePath: wtPath,
+    }));
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+      runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test', agents: [
+        { agent_id: 'agent-rev-mtime-wt', agent_type: 'forge:reviewer-safety', startedAt },
+      ], currentUnit: { agent: 'forge:reviewer-safety', startedAt },
+    }));
+    // Verdict file at the WORKTREE path with mtime > startedAt.
+    mkdirSync(join(wtPath, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    writeFileSync(
+      join(wtPath, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md'),
+      '## Safety Review: test\n\n### Verdict\n\nAPPROVED — clean.\n'
+    );
+    // Reviewer emits the signal in last_assistant_message — verdict !== null
+    // path. The existing mtime cross-check block should resolve worktreePath
+    // from run.json (matching the new file-fallback block's behavior) so it
+    // finds the file under the worktree path. Without the fix, mtime check
+    // looks at main, file is absent, downgrades to no-verdict.
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-mtime-wt',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-safety","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"test","model":"claude-haiku-4-5-20251001"}',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-mtime-wt');
+    assert(entry && entry.outcome === 'APPROVED',
+      'reviewer mtime cross-check resolves worktreePath from run.json when per-run-active lacks it: APPROVED stays');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log('');
   console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
