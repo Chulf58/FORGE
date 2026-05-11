@@ -106,11 +106,18 @@ This applies to `/forge:plan`, `/forge:implement`, `/forge:debug`, and `/forge:r
 
 When starting work on any task from the backlog or TODO list:
 
-### Step 1 — Read the task
-Read the full task details from `.pipeline/board.json`.
+### Step 1 — Read the task (FULL TEXT, mandatory)
+Read the COMPLETE `text` field of the TODO from `.pipeline/board.json` — not just the title, not just the summary, not just the first paragraph. The body often contains decision-affecting markers that gate implementation work:
+
+- **`NEEDS DISCUSSION`**, **`DISCUSS`**, **`[PARKED]`**, **`pending discussion`** — the task is NOT cleared for implementation. Present the options or open questions to the user and wait for explicit direction. Do NOT call `forge_classify_risk` or `forge_create_run` until that discussion happens.
+- **`DESIGN PROPOSAL`** + **`ALTERNATIVE`** (multiple options listed) — surface the tradeoffs to the user and let them pick before proceeding.
+- **`PARTIALLY SHIPPED`**, **`PARTIALLY MITIGATED`**, **`SHIPPED 2026-...`** — the task is already partly done. Confirm what's left vs. what's claimed-but-unverified before scoping work.
+- **`OUT OF SCOPE:`**, **`Do NOT ...`** — respect explicit out-of-scope clauses; don't slip them into the implementation.
+
+Read the WHOLE text before recommending a pipeline type or agent team. Skimming the title and tags is what landed d316415f (a DISCUSS-required task) into an unauthorized plan run — see commit `bc6b116e` postmortem.
 
 ### Step 2 — Assess the task
-Understand what the task involves: which files, what complexity, what risk.
+Understand what the task involves: which files, what complexity, what risk. If Step 1 revealed a discussion marker, the assessment IS the discussion — list the options and wait.
 
 ### Step 3 — Decide the agent team
 Based on the assessment, determine which agents are needed. The pipeline type follows from this.

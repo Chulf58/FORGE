@@ -224,3 +224,67 @@ test('T8 — PLAN.md absent → no error, no edit', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// T9 (closes 96b5e0ce) — when invoked from a git worktree's cwd, the script
+// must resolve to the main project root and prune main's PLAN.md, NOT the
+// worktree's. For runs that progressed plan → implement → apply via
+// forge_advance_stage (not manual /forge:apply), the same worker handles all
+// stages with cwd = worktreePath. Without main-root resolution the script
+// edits the worktree's PLAN.md (discarded on merge) instead of main's, which
+// is why r-31711ab4's `### Feature: conductor-managed dispatch context`
+// section persisted in main's docs/PLAN.md after merge.
+test('T9 (96b5e0ce) — worktree cwd → script edits main\'s PLAN.md, not worktree\'s', () => {
+  const mainDir = mkdtempSync(join(tmpdir(), 'lifecycle-prune-wt-test-'));
+  try {
+    mkdirSync(join(mainDir, 'docs'), { recursive: true });
+    mkdirSync(join(mainDir, '.pipeline'), { recursive: true });
+    // Main's PLAN.md — should be pruned.
+    const mainPlan = [
+      '## Active Plan',
+      '',
+      '### Feature: shipped-thing',
+      '',
+      'Summary: this feature shipped via the run that just merged.',
+      '',
+      '- [x] Done',
+      '',
+    ].join('\n');
+    writeFileSync(join(mainDir, 'docs', 'PLAN.md'), mainPlan, 'utf8');
+
+    // Simulate a git worktree directory: .git is a FILE (not a dir) pointing
+    // at <mainRoot>/.git/worktrees/<wtName>, mirroring real `git worktree add`.
+    const wtPath = join(mainDir, '.worktrees', 'r-deadbeef');
+    mkdirSync(join(wtPath, 'docs'), { recursive: true });
+    mkdirSync(join(wtPath, '.pipeline'), { recursive: true });
+    mkdirSync(join(mainDir, '.git', 'worktrees', 'r-deadbeef'), { recursive: true });
+    writeFileSync(
+      join(wtPath, '.git'),
+      'gitdir: ' + join(mainDir, '.git', 'worktrees', 'r-deadbeef'),
+      'utf8',
+    );
+    // Worktree's PLAN.md — has DIFFERENT content; must remain unchanged.
+    const wtPlan = [
+      '## Active Plan',
+      '',
+      '### Feature: shipped-thing',
+      '',
+      'Worktree-local copy that should NOT be touched.',
+      '',
+    ].join('\n');
+    writeFileSync(join(wtPath, 'docs', 'PLAN.md'), wtPlan, 'utf8');
+
+    // Invoke the lifecycle script with cwd=worktree (as forge_advance_stage
+    // workers do when running apply via the same session).
+    runScript(wtPath, 'shipped-thing');
+
+    const mainAfter = readFileSync(join(mainDir, 'docs', 'PLAN.md'), 'utf8');
+    const wtAfter = readFileSync(join(wtPath, 'docs', 'PLAN.md'), 'utf8');
+
+    assert.ok(!mainAfter.includes('### Feature: shipped-thing'),
+      'main\'s PLAN.md should have the shipped feature pruned, got:\n' + mainAfter);
+    assert.equal(wtAfter, wtPlan,
+      'worktree\'s PLAN.md must be unchanged (the script should not have touched it)');
+  } finally {
+    rmSync(mainDir, { recursive: true, force: true });
+  }
+});

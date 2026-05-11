@@ -14,8 +14,37 @@ import path from 'node:path';
 
 const featureName = process.argv[2] || '';
 
-// Resolve project root (cwd when invoked from skill)
-const projectDir = process.cwd();
+// Resolve project root. When the script is invoked from inside a git worktree
+// (e.g. by a worker that progressed plan → implement → apply via
+// forge_advance_stage, where the same worker keeps its worktree cwd through
+// all stages), we need to detect that and resolve to the MAIN repo root.
+// Otherwise the script edits the worktree's PLAN.md (discarded on merge)
+// instead of main's — that's how r-31711ab4's stale section persisted in
+// main's docs/PLAN.md after merge. Closes 96b5e0ce.
+//
+// Mirrors mcp/forge-worker.mjs:33-51 — uses git's own .git gitdir-file
+// convention to authoritatively detect worktrees, no path-string heuristics.
+function resolveMainProjectRoot(cwd) {
+  const gitFile = path.join(cwd, '.git');
+  try {
+    const content = fs.readFileSync(gitFile, 'utf8').trim();
+    if (content.startsWith('gitdir:')) {
+      const gitdir = content.replace('gitdir:', '').trim();
+      const match = gitdir.match(/(.+)[/\\]\.git[/\\]worktrees[/\\]/);
+      if (match) return path.resolve(match[1]);
+    }
+  } catch (err) {
+    // EISDIR = normal .git directory (cwd is main, not a worktree)
+    // ENOENT = no .git at all (test fixture or detached env)
+    // Both are expected non-worktree cases — fall through.
+    if (err.code !== 'EISDIR' && err.code !== 'ENOENT') {
+      process.stderr.write('[lifecycle] .git read failed: ' + err.message + '\n');
+    }
+  }
+  return cwd;
+}
+
+const projectDir = resolveMainProjectRoot(process.cwd());
 
 function log(msg) {
   process.stderr.write(`[lifecycle] ${msg}\n`);
