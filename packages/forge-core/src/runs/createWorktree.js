@@ -17,16 +17,28 @@ import { updateRun } from './updateRun.js';
 
 /**
  * Recursively copies a directory. Skips node_modules and .git.
+ *
+ * @param {string} src
+ * @param {string} dst
+ * @param {{ skipExisting?: boolean }} [opts]
+ *   skipExisting (default false): when true, files whose destination already
+ *   exists are NOT overwritten. Used by the docs/ and .pipeline/ overlays
+ *   in createWorktree so that tracked files already checked out by
+ *   `git worktree add` keep git's exact bytes — avoids the phantom line-
+ *   ending modifications observed on Windows (10575378). Gitignored files
+ *   absent in the fresh worktree still get copied (their destination
+ *   doesn't exist, so the skip check doesn't fire).
  */
-function copyDirSync(src, dst) {
+export function copyDirSync(src, dst, opts = {}) {
+  const skipExisting = !!(opts && opts.skipExisting);
   mkdirSync(dst, { recursive: true });
   for (const entry of readdirSync(src, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name === '.git') continue;
     const srcPath = join(src, entry.name);
     const dstPath = join(dst, entry.name);
     if (entry.isDirectory()) {
-      copyDirSync(srcPath, dstPath);
-    } else {
+      copyDirSync(srcPath, dstPath, opts);
+    } else if (!skipExisting || !existsSync(dstPath)) {
       copyFileSync(srcPath, dstPath);
     }
   }
@@ -188,16 +200,19 @@ export function createWorktree(projectRoot, runId) {
 
   // Merge-copy directories: git checkout may have created these from tracked files,
   // but gitignored files (PLAN.md, board.json, etc.) still need copying from main.
+  // skipExisting:true preserves git's checked-out bytes for tracked files — without
+  // it, copyDirSync overwrites with main's working-tree bytes which may differ on
+  // Windows due to line-ending conversion, causing phantom `M` status (10575378).
   const pipelineSrc = join(absRoot, '.pipeline');
   const pipelineDst = join(wtPath, '.pipeline');
   if (existsSync(pipelineSrc)) {
-    copyDirSync(pipelineSrc, pipelineDst);
+    copyDirSync(pipelineSrc, pipelineDst, { skipExisting: true });
   }
 
   const docsSrc = join(absRoot, 'docs');
   const docsDst = join(wtPath, 'docs');
   if (existsSync(docsSrc)) {
-    copyDirSync(docsSrc, docsDst);
+    copyDirSync(docsSrc, docsDst, { skipExisting: true });
   }
 
   // Persist onto the run
