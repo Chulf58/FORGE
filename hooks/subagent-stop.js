@@ -231,14 +231,34 @@ async function main(rawInput) {
   // REVISE, in either `**bold**` or plain-text form), recover the verdict.
   // Closes 11b49a20 (initial bold-only) + the c5b6dfc2 follow-up (plain-text).
   // Observed in r-d06eb31d, r-31711ab4 (bold form), r-4d4607a8 reviewer-
-  // boundary line 35 (plain "REVISE — ..." form).
+  // boundary line 35 (plain "REVISE — ..." form), r-459ec2aa reviewer-
+  // boundary line 35 (plain APPROVED).
   //
   // Scoping: only the section between `### Verdict` and the next `^## ` or
   // EOF is scanned. This prevents per-criterion-verdict lines (e.g.
   // `- AC-1: REVISE`) earlier in the file from masking the final summary.
+  //
+  // baseDir resolution mirrors the artifact-mtime check below (7fe538ee
+  // sub-bug 1): per-run-active.json doesn't carry worktreePath, so we fall
+  // back to run.json. Without this, workers spawned in a worktree miss the
+  // verdict file because the fallback reads main's `.pipeline/...` path
+  // (observed live in r-459ec2aa — Test 22 covers this regression).
   const normalizedTypeEarly = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
   if (isVerdictEmittingAgent(agentType) && verdict === null && normalizedTypeEarly.startsWith('reviewer-')) {
-    const baseDir = data.worktreePath || projectDir;
+    let baseDir = data.worktreePath;
+    if (!baseDir) {
+      try {
+        const runJsonPath = path.join(projectDir, '.pipeline', 'runs', validRunId, 'run.json');
+        const runRaw = fs.readFileSync(runJsonPath, 'utf8');
+        const runObj = JSON.parse(runRaw);
+        if (runObj && typeof runObj.worktreePath === 'string' && runObj.worktreePath) {
+          baseDir = runObj.worktreePath;
+        }
+      } catch (_) {
+        // run.json absent or malformed — fall through to projectDir.
+      }
+    }
+    if (!baseDir) baseDir = projectDir;
     const verdictFilePath = path.join(baseDir, '.pipeline', 'context', 'reviewer-output', normalizedTypeEarly + '.md');
     try {
       const stat = fs.statSync(verdictFilePath);

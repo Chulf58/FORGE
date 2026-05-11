@@ -561,6 +561,48 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 22 (closes 11b49a20 follow-up): reviewer fallback finds the verdict
+  // file in the WORKTREE when per-run-active.json lacks worktreePath but
+  // run.json carries it. Mirrors sub-bug 1's pattern but for the reviewer-
+  // output path. Observed live in r-459ec2aa: both reviewers stamped
+  // no-verdict despite their worktree-side verdict files saying APPROVED,
+  // because data.worktreePath was undefined and the fallback used main's
+  // projectDir where the verdict file doesn't exist.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now() - 5000;
+    mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+    const wtPath = join(tmp, '.worktrees', 'r-test');
+    mkdirSync(wtPath, { recursive: true });
+    // run.json WITH worktreePath.
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+      runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+      worktreePath: wtPath,
+    }));
+    // run-active.json WITHOUT worktreePath — the buggy live state.
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+      runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test', agents: [
+        { agent_id: 'agent-rev-wtpath', agent_type: 'forge:reviewer-boundary', startedAt },
+      ], currentUnit: { agent: 'forge:reviewer-boundary', startedAt },
+    }));
+    // Verdict file at the WORKTREE path (where the reviewer actually wrote it).
+    // Main project root has NO verdict file — only the worktree does.
+    mkdirSync(join(wtPath, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    writeFileSync(
+      join(wtPath, '.pipeline', 'context', 'reviewer-output', 'reviewer-boundary.md'),
+      '## Boundary Review: test\n\n### Verdict\n\nAPPROVED — all checks pass.\n'
+    );
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-wtpath',
+      agent_type: 'forge:reviewer-boundary',
+      last_assistant_message: 'Review complete.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-wtpath');
+    assert(entry && entry.outcome === 'APPROVED',
+      'reviewer fallback resolves worktreePath from run.json when per-run-active lacks it: APPROVED recovered');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log('');
   console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
