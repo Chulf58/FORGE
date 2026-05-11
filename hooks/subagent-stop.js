@@ -25,6 +25,37 @@ function isReviewerAgent(agentType) {
 // as reviewer-typed agents.
 const VERDICT_AGENTS = new Set(['completeness-checker']);
 
+/**
+ * Extracts the final reviewer verdict from a reviewer-output markdown file.
+ *
+ * The verdict file convention (see agents/reviewer-*.md output protocol)
+ * ends with a `### Verdict` section. The first APPROVED|BLOCK|REVISE keyword
+ * after that heading — bolded (`**REVISE**`) or plain (`REVISE — ...`) — is
+ * the reviewer's final stance.
+ *
+ * Scope is intentionally limited to the section between `### Verdict` and
+ * the next `^## ` heading (or EOF). Per-criterion verdicts earlier in the
+ * file (e.g. `- AC-1: REVISE`) are NOT picked up by this parser.
+ *
+ * @param {string} content - reviewer-output file content
+ * @returns {string|null} 'APPROVED', 'BLOCK', 'REVISE', or null if no verdict found
+ */
+function extractVerdictFromFile(content) {
+  if (!content || typeof content !== 'string') return null;
+  // Find the ### Verdict heading. Allow any whitespace after the hashes and
+  // tolerate trailing content on the heading line (some agents write
+  // `### Verdict\n` cleanly, others may add trailing tokens).
+  const headingMatch = content.match(/^###\s+Verdict\s*$/im);
+  if (!headingMatch) return null;
+  const afterHeading = content.slice(headingMatch.index + headingMatch[0].length);
+  // Bound the section: stop at the next top-level `## ` heading or EOF.
+  const nextSection = afterHeading.search(/^##\s/m);
+  const section = nextSection >= 0 ? afterHeading.slice(0, nextSection) : afterHeading;
+  // First verdict keyword in the section wins.
+  const verdictMatch = section.match(/\b(APPROVED|BLOCK|REVISE)\b/);
+  return verdictMatch ? verdictMatch[1] : null;
+}
+
 function isVerdictEmittingAgent(agentType) {
   if (!agentType) return false;
   const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
@@ -196,10 +227,15 @@ async function main(rawInput) {
 
   // File-fallback for reviewers: if the signal didn't survive Claude Code's
   // message serialization but the reviewer wrote a verdict file with a fresh
-  // **APPROVED|BLOCK|REVISE** marker, recover the verdict from the file.
-  // Closes 11b49a20 — observed in r-d06eb31d, r-31711ab4: full verdict bodies
-  // on disk but outcome stamped no-verdict because extractVerdict couldn't
-  // find/parse the signal in last_assistant_message.
+  // final-section verdict (`### Verdict` heading followed by APPROVED|BLOCK|
+  // REVISE, in either `**bold**` or plain-text form), recover the verdict.
+  // Closes 11b49a20 (initial bold-only) + the c5b6dfc2 follow-up (plain-text).
+  // Observed in r-d06eb31d, r-31711ab4 (bold form), r-4d4607a8 reviewer-
+  // boundary line 35 (plain "REVISE — ..." form).
+  //
+  // Scoping: only the section between `### Verdict` and the next `^## ` or
+  // EOF is scanned. This prevents per-criterion-verdict lines (e.g.
+  // `- AC-1: REVISE`) earlier in the file from masking the final summary.
   const normalizedTypeEarly = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
   if (isVerdictEmittingAgent(agentType) && verdict === null && normalizedTypeEarly.startsWith('reviewer-')) {
     const baseDir = data.worktreePath || projectDir;
@@ -209,10 +245,10 @@ async function main(rawInput) {
       const startedAtMs = Number(entry.startedAt) || 0;
       if (stat.mtimeMs > startedAtMs) {
         const content = fs.readFileSync(verdictFilePath, 'utf8');
-        const match = content.match(/\*\*(APPROVED|BLOCK|REVISE)\*\*/);
-        if (match) {
-          outcome = match[1];
-          console.error('[forge-subagent] ' + stripAnsi(agentType) + ' signal absent in last message; recovered verdict ' + match[1] + ' from reviewer-output file');
+        const fileVerdict = extractVerdictFromFile(content);
+        if (fileVerdict) {
+          outcome = fileVerdict;
+          console.error('[forge-subagent] ' + stripAnsi(agentType) + ' signal absent in last message; recovered verdict ' + fileVerdict + ' from reviewer-output file');
         }
       }
     } catch (_) {

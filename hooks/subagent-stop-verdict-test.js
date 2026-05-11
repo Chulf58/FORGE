@@ -466,6 +466,78 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 21b: reviewer with no signal + verdict file using PLAIN-TEXT verdict
+  // (no bold markers) under `### Verdict` heading → recovered as REVISE.
+  // Observed live in r-4d4607a8 reviewer-boundary.md line 35:
+  //   "REVISE — The plan removes an architectural requirement..."
+  // c18ecd6a's first regex required `**REVISE**` bold; this case proves we also
+  // need the plain-text form.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-plainTxt', 'forge:reviewer-boundary');
+    writeFileSync(
+      join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-boundary.md'),
+      [
+        '## Boundary Review: test',
+        '',
+        '### Violations',
+        '- [ ] **Some concern** — explanation.',
+        '',
+        '### Per-criterion verdicts',
+        '- `AC-1: REVISE` — needs gate check.',
+        '- `AC-2: REVISE` — depends on AC-1.',
+        '',
+        '### Verdict',
+        '',
+        'REVISE — The plan removes a guard without justification.',
+        '',
+      ].join('\n')
+    );
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-plainTxt',
+      agent_type: 'forge:reviewer-boundary',
+      last_assistant_message: 'Review written.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-plainTxt');
+    assert(entry && entry.outcome === 'REVISE',
+      'reviewer-boundary with plain-text REVISE under ### Verdict (no bold): recovered as REVISE');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 21c: verdict scanner should ignore per-criterion verdicts (e.g.
+  // `AC-1: REVISE`) when the final ### Verdict section says APPROVED.
+  // The full bug surface: in r-4d4607a8 reviewer-boundary the per-criterion
+  // verdicts say "AC-1: REVISE" but the final verdict could be a different
+  // value — we must only pick up the one under the ### Verdict heading.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-pcOnly', 'forge:reviewer-safety');
+    writeFileSync(
+      join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md'),
+      [
+        '## Safety Review: test',
+        '',
+        '### Per-criterion verdicts',
+        '- AC-1: REVISE',
+        '- AC-2: REVISE',
+        '',
+        '### Verdict',
+        '',
+        'APPROVED — all checks passed despite per-criterion REVISE notes.',
+        '',
+      ].join('\n')
+    );
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-pcOnly',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: 'Written.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-pcOnly');
+    assert(entry && entry.outcome === 'APPROVED',
+      'verdict scanner picks final ### Verdict APPROVED, not per-criterion REVISE');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   // Test 21: reviewer with no signal + STALE verdict file (mtime < startedAt)
   // → outcome stays no-verdict (don't recover from a previous-run file)
   {
