@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.js';
 import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
+import { consumeGateApproval } from './lib/gate-helpers.js';
 
 // Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
 // Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
@@ -679,6 +680,7 @@ async function main() {
             message: { role: 'user', content: resumeMsg },
             parent_tool_use_id: null,
           });
+          consumeGateApproval(gatePath, gateName);
           resetWorkerTimer();
           writeLog('[forge-worker] injected ' + gateName + ' approval — resuming pipeline');
         } else {

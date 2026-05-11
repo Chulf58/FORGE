@@ -7,3 +7,4 @@ scripts/covers-verify.mjs
 scripts/covers-backfill.mjs
 scripts/wiring-verify.mjs
 hooks/apply-context-inject.js
+mcp/forge-worker.mjs
