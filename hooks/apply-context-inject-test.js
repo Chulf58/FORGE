@@ -60,6 +60,28 @@ function makeImplementRun(tmp, runId, worktreePath, branchName) {
   return { runId, pipelineType: 'implement', feature: 'test feature', status: 'completed', createdAt: now, updatedAt: now };
 }
 
+/**
+ * Creates a run fixture with an explicit pipelineType and optional stages block.
+ * Used to test the stage-progression resolution path.
+ */
+function makeStagedRun(tmp, runId, worktreePath, branchName, pipelineType, stages) {
+  const now = '2026-04-12T12:00:00Z';
+  mkdirSync(join(tmp, '.pipeline', 'runs', runId), { recursive: true });
+  const runObj = {
+    runId, sessionId: 'test', projectRoot: tmp,
+    worktreePath, branchName,
+    pipelineType, feature: 'staged feature',
+    status: 'gate-pending', createdAt: now, updatedAt: now,
+    gateState: null, agents: [],
+    artifacts: { plan: null, handoff: null, scout: null },
+  };
+  if (stages !== undefined) {
+    runObj.stages = stages;
+  }
+  writeFileSync(join(tmp, '.pipeline', 'runs', runId, 'run.json'), JSON.stringify(runObj));
+  return { runId, pipelineType, feature: 'staged feature', status: 'gate-pending', createdAt: now, updatedAt: now };
+}
+
 async function test() {
   // Test 1: documenter gets worktree context injected
   console.log('\n--- Test 1: documenter + worktree run → context injected ---');
@@ -221,6 +243,71 @@ async function test() {
     console.log('stderr:', stderr);
     assert(stdout === '', 'No context when run has no worktree');
     console.log(stdout === '' ? '✓ PASS' : '✗ FAIL');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 7: plan run WITH stages.implement.completed → context IS injected
+  console.log('\n--- Test 7: pipelineType=plan + stages.implement.completed → context injected ---');
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'aci-test-'));
+    const wtPath = join(tmp, '.worktrees', 'r-plan1');
+    mkdirSync(join(wtPath, 'docs', 'context'), { recursive: true });
+    writeFileSync(join(wtPath, 'docs', 'context', 'handoff.md'), '# Handoff\n');
+
+    const entry = makeStagedRun(tmp, 'r-plan1', wtPath, 'forge/r-plan1', 'plan', {
+      implement: { status: 'completed', agents: [] },
+    });
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [entry] }));
+
+    const { code, stdout, stderr } = await runHook({
+      agent_type: 'documenter',
+      agent_id: 'test-doc-plan1',
+      cwd: tmp,
+    });
+
+    let context = null;
+    try {
+      const parsed = JSON.parse(stdout);
+      context = parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext;
+    } catch (_) {}
+
+    console.log('Exit:', code);
+    console.log('stderr:', stderr);
+    console.log('Context injected:', context !== null);
+    assert(context !== null, 'Plan run with stages.implement.completed should inject context');
+    console.log(context !== null ? '✓ PASS' : '✗ FAIL');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 8: implement run WITHOUT stages field → context IS injected (backward compat)
+  console.log('\n--- Test 8: pipelineType=implement + no stages → context injected (backward compat) ---');
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'aci-test-'));
+    const wtPath = join(tmp, '.worktrees', 'r-impl-compat');
+    mkdirSync(join(wtPath, 'docs', 'context'), { recursive: true });
+    writeFileSync(join(wtPath, 'docs', 'context', 'handoff.md'), '# Handoff\n');
+
+    // makeStagedRun with stages=undefined omits the field — simulates pre-stages run
+    const entry = makeStagedRun(tmp, 'r-impl-compat', wtPath, 'forge/r-impl-compat', 'implement', undefined);
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [entry] }));
+
+    const { code, stdout, stderr } = await runHook({
+      agent_type: 'documenter',
+      agent_id: 'test-doc-impl-compat',
+      cwd: tmp,
+    });
+
+    let context = null;
+    try {
+      const parsed = JSON.parse(stdout);
+      context = parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext;
+    } catch (_) {}
+
+    console.log('Exit:', code);
+    console.log('stderr:', stderr);
+    console.log('Context injected:', context !== null);
+    assert(context !== null, 'Implement run without stages should still inject context (backward compat)');
+    console.log(context !== null ? '✓ PASS' : '✗ FAIL');
     rmSync(tmp, { recursive: true, force: true });
   }
 

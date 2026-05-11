@@ -49,23 +49,40 @@ async function main(rawInput) {
     return;
   }
 
-  // Find the most recent implement run with a worktree
+  // Find the most recent eligible run with a worktree
   try {
-    const candidates = listRuns(projectDir, { pipelineType: 'implement' })
+    const candidates = listRuns(projectDir)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
     let targetRun = null;
     for (const entry of candidates) {
       const run = getRun(projectDir, entry.runId);
-      if (run && run.worktreePath) {
-        // Verify the worktree directory still exists on disk
-        if (fs.existsSync(run.worktreePath)) {
-          targetRun = run;
-          break;
-        } else {
-          console.error('[apply-context] Worktree path missing on disk: ' + run.worktreePath);
-        }
+      if (!run || !run.worktreePath) continue;
+
+      // Verify the worktree directory still exists on disk
+      if (!fs.existsSync(run.worktreePath)) {
+        console.error('[apply-context] Worktree path missing on disk: ' + run.worktreePath);
+        continue;
       }
+
+      // Accept run only when stage progression or pipelineType indicates an
+      // implement/debug/refactor run. The pipelineType clauses are backward
+      // compat for runs that pre-date the stages field.
+      const stages = run.stages || {};
+      const stageCompleted = (
+        stages.implement?.status === 'completed' ||
+        stages.debug?.status === 'completed' ||
+        stages.refactor?.status === 'completed'
+      );
+      const typeMatch = (
+        run.pipelineType === 'implement' ||
+        run.pipelineType === 'debug' ||
+        run.pipelineType === 'refactor'
+      );
+      if (!stageCompleted && !typeMatch) continue;
+
+      targetRun = run;
+      break;
     }
 
     if (!targetRun) {
