@@ -400,6 +400,95 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 18: reviewer-safety with NO [reviewer-verdict] signal in last_assistant_message
+  // but reviewer-output file contains **APPROVED** → outcome recovered from file
+  // (closes 11b49a20). Observed in r-d06eb31d / r-31711ab4: reviewers wrote complete
+  // verdict bodies to disk but the signal was lost in Claude Code's message
+  // serialization, leaving outcome=no-verdict despite real reviewer work.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-noSig', 'forge:reviewer-safety');
+    // Overwrite the default fixture verdict body with one that has APPROVED marker.
+    writeFileSync(
+      join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md'),
+      '## Safety Review: test\n\n### Issues\nNone.\n\n### Verdict\n\n**APPROVED** — clean.\n'
+    );
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-noSig',
+      agent_type: 'forge:reviewer-safety',
+      // No [reviewer-verdict] signal in the last message — simulates the Claude
+      // Code message-serialization bug where the agent emitted the signal but
+      // it didn't survive into payload.last_assistant_message.
+      last_assistant_message: 'Wrote review to reviewer-output/reviewer-safety.md',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-noSig');
+    assert(entry && entry.outcome === 'APPROVED',
+      'reviewer-safety with no signal but verdict file **APPROVED**: outcome recovered from file');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 19: reviewer-boundary with no signal + verdict file **BLOCK** → outcome recovered as BLOCK
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-fileBlock', 'forge:reviewer-boundary');
+    writeFileSync(
+      join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-boundary.md'),
+      '## Boundary Review: test\n\n### Violations\n- contract break\n\n### Verdict\n\n**BLOCK** — contract violation.\n'
+    );
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-fileBlock',
+      agent_type: 'forge:reviewer-boundary',
+      last_assistant_message: 'Review written.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-fileBlock');
+    assert(entry && entry.outcome === 'BLOCK',
+      'reviewer-boundary with no signal but verdict file **BLOCK**: outcome recovered as BLOCK');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 20: reviewer with no signal AND verdict file lacks a **VERDICT** marker
+  // → outcome stays no-verdict (still classified as truncation, no false positive).
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-fileNoMarker', 'forge:reviewer-logic');
+    writeFileSync(
+      join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-logic.md'),
+      '## Logic Review: test\n\n### Issues\nSome partial analysis with no verdict line at all.\n'
+    );
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-fileNoMarker',
+      agent_type: 'forge:reviewer-logic',
+      last_assistant_message: 'Partial review.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-fileNoMarker');
+    assert(entry && entry.outcome === 'no-verdict',
+      'reviewer-logic with no signal AND verdict file lacks **VERDICT** marker: outcome stays no-verdict');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 21: reviewer with no signal + STALE verdict file (mtime < startedAt)
+  // → outcome stays no-verdict (don't recover from a previous-run file)
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-rev-staleFile', 'forge:reviewer-safety', { skipVerdictFile: true });
+    // Pre-create a STALE verdict file with mtime well BEFORE startedAt (which
+    // makeProject set to 5s before now). Set mtime to ~10s ago via fs.utimesSync.
+    mkdirSync(join(tmp, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    const stalePath = join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md');
+    writeFileSync(stalePath, '## Safety Review: prior run\n\n### Verdict\n\n**APPROVED**\n');
+    const tenSecAgo = (Date.now() - 10_000) / 1000;
+    require('fs').utimesSync(stalePath, tenSecAgo, tenSecAgo);
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-staleFile',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: 'Review complete.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-staleFile');
+    assert(entry && entry.outcome === 'no-verdict',
+      'reviewer-safety with no signal + STALE verdict file: outcome stays no-verdict (no recovery from stale)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log('');
   console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);

@@ -194,8 +194,35 @@ async function main(rawInput) {
   const verdict = isVerdictEmittingAgent(agentType) ? extractVerdict(lastMessage, agentType) : null;
   let outcome = verdict !== null ? verdict : 'completed';
 
-  // Verdict-emitting agent without verdict = likely truncation or prompt failure.
-  if (isVerdictEmittingAgent(agentType) && verdict === null) {
+  // File-fallback for reviewers: if the signal didn't survive Claude Code's
+  // message serialization but the reviewer wrote a verdict file with a fresh
+  // **APPROVED|BLOCK|REVISE** marker, recover the verdict from the file.
+  // Closes 11b49a20 — observed in r-d06eb31d, r-31711ab4: full verdict bodies
+  // on disk but outcome stamped no-verdict because extractVerdict couldn't
+  // find/parse the signal in last_assistant_message.
+  const normalizedTypeEarly = (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType);
+  if (isVerdictEmittingAgent(agentType) && verdict === null && normalizedTypeEarly.startsWith('reviewer-')) {
+    const baseDir = data.worktreePath || projectDir;
+    const verdictFilePath = path.join(baseDir, '.pipeline', 'context', 'reviewer-output', normalizedTypeEarly + '.md');
+    try {
+      const stat = fs.statSync(verdictFilePath);
+      const startedAtMs = Number(entry.startedAt) || 0;
+      if (stat.mtimeMs > startedAtMs) {
+        const content = fs.readFileSync(verdictFilePath, 'utf8');
+        const match = content.match(/\*\*(APPROVED|BLOCK|REVISE)\*\*/);
+        if (match) {
+          outcome = match[1];
+          console.error('[forge-subagent] ' + stripAnsi(agentType) + ' signal absent in last message; recovered verdict ' + match[1] + ' from reviewer-output file');
+        }
+      }
+    } catch (_) {
+      // File missing / unreadable / stale — fall through to no-verdict below.
+    }
+  }
+
+  // Verdict-emitting agent without verdict (and no file recovery) = likely
+  // truncation or prompt failure.
+  if (isVerdictEmittingAgent(agentType) && verdict === null && outcome === 'completed') {
     outcome = 'no-verdict';
     console.error('[forge-subagent] WARNING: ' + stripAnsi(agentType) + ' stopped without emitting [reviewer-verdict] — possible truncation');
   }
