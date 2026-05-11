@@ -65,7 +65,18 @@ Exit — do not proceed to further steps.
 
 ### 2a. Resolve worktree (do this FIRST)
 
-Check if a worktree-backed run exists for this feature. Use `forge_list_runs` filtered by `pipelineType` values `"implement"`, `"refactor"`, and `"debug"` to find all completed runs for this feature. Among all matches, select the most recent one (by `createdAt`). Call `forge_get_run` on it to check for a non-null `worktreePath`.
+Check if a worktree-backed run exists for this feature. Call `forge_list_runs` with no `pipelineType` filter. For each candidate, call `forge_get_run` and check:
+
+1. `worktreePath` is non-null, AND
+2. The directory at `worktreePath` exists on disk, AND
+3. At least one of:
+   - `stages.implement.status === "completed"`, OR
+   - `stages.debug.status === "completed"`, OR
+   - `stages.refactor.status === "completed"`
+
+The stage-progression check (condition 3) is the authoritative selector. If `stages` is absent on the run (pre-dates the stages field), fall back to accepting runs whose `pipelineType` is `"implement"`, `"debug"`, or `"refactor"` — this preserves backward compatibility with older runs.
+
+Among all matching candidates, select the most recent one by `createdAt`. If no match is found, or the matching run's worktree directory does not exist on disk: agents work in the main project directory as before (see fallback below).
 
 If the run has a `worktreePath` AND the directory exists on disk: save it as `<worktreePath>`. All agent work in STEP 3 happens inside this path. Persist it in two places:
 
