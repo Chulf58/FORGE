@@ -1,0 +1,131 @@
+'use strict';
+// @covers hooks/doc-size-guard.js
+// Regression tests for the path-traversal containment check in doc-size-guard.js.
+// Run: node hooks/doc-size-guard-test.js
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition, label) {
+  if (condition) {
+    console.log('  PASS  ' + label);
+    passed++;
+  } else {
+    console.error('  FAIL  ' + label);
+    failed++;
+  }
+}
+
+/**
+ * Runs the hook with a JSON payload written to stdin.
+ * Returns { exitCode, stderr }.
+ */
+function runHook(payload) {
+  const input = JSON.stringify(payload);
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'doc-size-guard.js')], {
+    input,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  return { exitCode: result.status, stderr: result.stderr || '' };
+}
+
+console.log('\n── doc-size-guard-test.js ───────────────────────────────────────────────');
+
+// ── Case 1: forward-slash traversal path rejected silently ───────────────────
+// "../../sensitive/docs/PLAN.md" ends with "docs/PLAN.md" — passes suffix filter
+// but path.resolve places it outside the project root.
+{
+  const payload = {
+    tool_name: 'Write',
+    tool_input: { file_path: '../../sensitive/docs/PLAN.md' },
+    cwd: process.cwd(),
+  };
+  const { exitCode, stderr } = runHook(payload);
+  assert(exitCode === 0, 'traversal (forward-slash): exits 0 (non-blocking)');
+  assert(!stderr.includes('[doc-size-guard]'), 'traversal (forward-slash): no [doc-size-guard] warning emitted');
+}
+
+// ── Case 2: backslash-variant traversal also rejected ────────────────────────
+{
+  const payload = {
+    tool_name: 'Write',
+    tool_input: { file_path: '..\\..\\sensitive\\docs/PLAN.md' },
+    cwd: process.cwd(),
+  };
+  const { exitCode, stderr } = runHook(payload);
+  assert(exitCode === 0, 'traversal (backslash): exits 0 (non-blocking)');
+  assert(!stderr.includes('[doc-size-guard]'), 'traversal (backslash): no [doc-size-guard] warning emitted');
+}
+
+// ── Case 3: legitimate in-tree path under threshold — no warning ─────────────
+// Create a temp directory that looks like a project tree, write a small PLAN.md
+// and tell the hook the cwd is that tmpdir so resolveProjectDir returns tmpdir.
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
+  const docsDir = path.join(tmpDir, 'docs');
+  fs.mkdirSync(docsDir, { recursive: true });
+  const planPath = path.join(docsDir, 'PLAN.md');
+  // Write a small file well under the 200-line threshold
+  fs.writeFileSync(planPath, '# PLAN\n'.repeat(10), 'utf8');
+
+  const payload = {
+    tool_name: 'Write',
+    tool_input: { file_path: planPath },
+    cwd: tmpDir,
+  };
+
+  // We must spawn with cwd set to tmpDir so process.cwd() inside the child
+  // matches payload.cwd — resolveProjectDir validates payload.cwd === process.cwd().
+  const input = JSON.stringify(payload);
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'doc-size-guard.js')], {
+    input,
+    encoding: 'utf8',
+    timeout: 5000,
+    cwd: tmpDir,
+  });
+  assert(result.status === 0, 'in-tree under threshold: exits 0');
+  assert(!(result.stderr || '').includes('[doc-size-guard]'), 'in-tree under threshold: no warning emitted');
+
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
+// ── Case 4: legitimate in-tree path over threshold — warning emitted ─────────
+// Same pattern: tmpdir as the fake project root, PLAN.md with > 200 lines.
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
+  const docsDir = path.join(tmpDir, 'docs');
+  fs.mkdirSync(docsDir, { recursive: true });
+  const planPath = path.join(docsDir, 'PLAN.md');
+  // Write more than 200 lines to trigger the warning
+  fs.writeFileSync(planPath, '# line\n'.repeat(210), 'utf8');
+
+  const payload = {
+    tool_name: 'Write',
+    tool_input: { file_path: planPath },
+    cwd: tmpDir,
+  };
+
+  const input = JSON.stringify(payload);
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'doc-size-guard.js')], {
+    input,
+    encoding: 'utf8',
+    timeout: 5000,
+    cwd: tmpDir,
+  });
+  assert(result.status === 0, 'in-tree over threshold: exits 0 (advisory, non-blocking)');
+  assert((result.stderr || '').includes('[doc-size-guard]'), 'in-tree over threshold: [doc-size-guard] warning emitted');
+
+  // Cleanup
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
+console.log('');
+console.log('  ' + (passed + failed) + ' tests: ' + passed + ' passed, ' + failed + ' failed');
+process.exit(failed > 0 ? 1 : 0);

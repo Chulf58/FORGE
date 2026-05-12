@@ -6,8 +6,9 @@
 // Thresholds are the source of truth — GENERAL.md just references this hook.
 
 const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
-const { STDIN_TIMEOUT_SHORT } = require('./hook-utils');
+const { resolveProjectDir, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
@@ -41,11 +42,27 @@ async function main(rawInput) {
   }
   if (!matchedKey) { exitOk(); return; }
 
+  // Containment check: reject any path that resolves outside the project root.
+  // path.resolve() strips traversal sequences (e.g. "../../") before comparison.
+  // Also accept paths under process.cwd() (worktree root) for worktree worker sessions.
+  const projectDir = resolveProjectDir(payload);
+  const worktreeDir = process.cwd();
+  const resolvedFilePath = path.resolve(filePath);
+  if (
+    !resolvedFilePath.startsWith(projectDir + path.sep) &&
+    resolvedFilePath !== projectDir &&
+    !resolvedFilePath.startsWith(worktreeDir + path.sep) &&
+    resolvedFilePath !== worktreeDir
+  ) {
+    exitOk();
+    return;
+  }
+
   const threshold = THRESHOLDS[matchedKey];
 
   let lineCount = 0;
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = fs.readFileSync(resolvedFilePath, 'utf8');
     lineCount = content.split('\n').length;
   } catch (_) {
     exitOk();
