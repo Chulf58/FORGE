@@ -1,0 +1,1241 @@
+[run-tests] running 55 test file(s) from C:\Users\cuj\forge-plugin
+
+── hooks/agent-loop-guard-test.mjs ─────────────────────────────────────
+✔ exits 0 for non-Agent tool calls (440.0002ms)
+✔ exits 0 when tool_name is missing (438.1002ms)
+✔ exits 0 for documenter (exempt) (476.1591ms)
+✔ exits 0 when no run-active.json (conductor session) (442.976ms)
+✔ exits 0 on first dispatch (count 0 → 1) (439.5961ms)
+✔ exits 0 on second dispatch (count 1 → 2) (444.0829ms)
+✔ exits 2 and denies at the cap (count >= 15) (476.2173ms)
+✔ deny message includes agent type and run id (470.6891ms)
+✔ strips forge: prefix for counter key (861.8663ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4495.6899
+
+── hooks/apply-context-inject-test.js ──────────────────────────────────
+
+--- Test 1: documenter + worktree run → context injected ---
+Exit: 0
+stderr: [apply-context] Injected worktree context for documenter → C:\Users\cuj\AppData\Local\Temp\aci-test-e3th5N\.worktrees\r-wt1
+Context injected: true
+Contains worktree path: true
+Contains branch: true
+Contains handoff reference: true
+✓ PASS
+
+--- Test 2: documenter + worktree run → context injected ---
+Context injected: true
+✓ PASS
+
+--- Test 3: coder agent → no context injected ---
+stdout: (empty)
+✓ PASS
+
+--- Test 4: no implement run → no context ---
+stderr: [apply-context] No worktree-backed implement run found — using main project
+✓ PASS
+
+--- Test 5: worktree path set but dir missing → no context ---
+stderr: [apply-context] Worktree path missing on disk: C:\Users\cuj\AppData\Local\Temp\aci-test-4bW6Iz\.worktrees\r-gone
+[apply-context] No worktree-backed implement run found — using main project
+✓ PASS
+
+--- Test 6: implement run without worktree → no context ---
+stderr: [apply-context] No worktree-backed implement run found — using main project
+✓ PASS
+
+All tests complete.
+
+── hooks/approval-token-test.mjs ───────────────────────────────────────
+✔ ACTION_KEYWORDS gate-approve is the literal string "approve" (1.4816ms)
+✔ ACTION_KEYWORDS commit and push remain string-valued (0.1842ms)
+✔ NEGATION_REGEXES is hoisted at module scope (compiled once) (0.2499ms)
+✔ detectActions: literal "approve" fires gate-approve (1.3302ms)
+✔ detectActions: commit fires for string keyword (0.4049ms)
+✔ detectActions: push fires for string keyword (0.9592ms)
+✔ detectActions: "don't approve" suppresses gate-approve (0.196ms)
+✔ detectActions: "don't commit" suppresses commit (0.1853ms)
+✔ detectActions: "do not push" suppresses push (0.1946ms)
+✔ detectActions: "do  not push" (double space) suppresses push (0.2973ms)
+✔ detectActions: "no, don't commit" suppresses commit (0.2183ms)
+✔ detectActions: standalone "no" still suppresses (0.177ms)
+✔ detectActions: standalone "never" still suppresses (0.1542ms)
+✔ detectActions: "no" inside "note" does NOT suppress following commit (0.1396ms)
+✔ detectActions: "no" inside "none" does NOT suppress following commit (0.5804ms)
+✔ detectActions: "no" inside "diagnose" does NOT suppress following push (0.2749ms)
+✔ detectActions: "no" inside "north" does NOT suppress following commit (0.1368ms)
+✔ stripInjectedContext: removes a single system-reminder block (0.4514ms)
+✔ stripInjectedContext: removes multiple non-overlapping blocks (0.1279ms)
+✔ stripInjectedContext: handles CRLF inside a block (0.1073ms)
+✔ stripInjectedContext: handles LF inside a block (0.1142ms)
+✔ stripInjectedContext: leaves unclosed system-reminder tag untouched (0.1164ms)
+✔ stripInjectedContext: case-insensitive tag matching (0.0929ms)
+✔ stripInjectedContext: returns non-string inputs unchanged (0.0892ms)
+✔ detectActions: "approve" inside <system-reminder> does NOT detect (after strip) (0.2754ms)
+✔ detectActions: two system-reminder blocks each with keywords are both stripped (0.1318ms)
+✔ detectActions: keyword OUTSIDE system-reminder still detects (with system-reminder also present) (0.3086ms)
+✔ detectActions: literal "approve" with FORGE conductor rule injection still fires (0.1747ms)
+✔ extractUserMessage: payload.message.content as string (0.1119ms)
+✔ extractUserMessage: payload.message.content as array of text blocks (0.1373ms)
+✔ extractUserMessage: payload.user_prompt fallback (0.1001ms)
+✔ extractUserMessage: returns empty string for invalid payloads (0.0952ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20.9171
+
+── hooks/bash-guard-commit-gate-test.js ────────────────────────────────
+
+── bash-guard-commit-gate-test.js ───────────────────────────────────
+  PASS  T1 main-root commit allowed when worktree commit-gate pending + token present (got code=0 stderr=)
+  PASS  T2 worktree-targeted commit BLOCKED when commit-gate pending (got code=2 stderr=[bash-guard] Blocked: a commit gate is pending for worktree `C:\Users\cuj\AppData\Local\Temp\bash-guard-cg-test-HnI116\.worktrees\r-bbbbbbbb`. Run `/forge:approve` to review and merge the pending gate before committing inside the worktree.)
+  PASS  T2 block message mentions pending commit gate
+  PASS  T3 soft-block fires when no token present (got code=2)
+  PASS  T3 soft-block message mentions user approval
+  PASS  T4 non-worktree gate does not block unrelated main commit with token (got code=0 stderr=)
+
+  6 tests: 6 passed, 0 failed
+
+
+── hooks/bash-guard-multirun-test.js ───────────────────────────────────
+
+── bash-guard-multirun-test.js ──────────────────────────────────────
+  PASS  T1 worker commit ALLOWED when env-var resolves runId despite 2 non-terminal runs (got code=0 stderr=[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-pPAcHz\.worktrees\r-aaaaaaaa", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-pPAcHz" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-pPAcHz\.worktrees\r-aaaaaaaa", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-pPAcHz" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-pPAcHz\.worktrees\r-aaaaaaaa", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-pPAcHz" — falling back to process.cwd())
+  PASS  T2 commit targeting OTHER worktree must NOT bypass via env var (got code=2)
+  PASS  T3 single-run worktree commit allowed without env var (got code=0 stderr=[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-ELne02\.worktrees\r-cccccccc", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-ELne02" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-ELne02\.worktrees\r-cccccccc", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-ELne02" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-ELne02\.worktrees\r-cccccccc", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-ELne02" — falling back to process.cwd())
+  PASS  T4 invalid env-var runId format must NOT bypass (got code=2)
+
+  4 tests: 4 passed, 0 failed
+
+
+── hooks/checkpoint-detection-test.js ──────────────────────────────────
+
+── checkpoint-detection-test.js ─────────────────────────────────────────
+  PASS  coder emits [CONTEXT-CHECKPOINT] + checkpoint.md exists: outcome is "checkpoint"
+  PASS  coder checkpoint: stderr confirms "stamping outcome: checkpoint"
+  PASS  coder emits [CONTEXT-CHECKPOINT] but checkpoint.md missing: outcome is "completed" (orphan)
+  PASS  orphan signal: stderr warns about missing checkpoint.md
+  PASS  coder with no signal: outcome is "completed"
+  PASS  AC-3 (d): bridge remaining:20 causes ctx-post-tool.js to emit [CONTEXT-CHECKPOINT]
+  PASS  AC-3 (e): subagent-start.js writes sidecar with expected sessionId
+
+  7 tests: 7 passed, 0 failed
+
+── hooks/control-file-guard-test.js ────────────────────────────────────
+
+── control-file-guard-test.js ───────────────────────────────────────
+
+  19 tests: 19 passed, 0 failed
+
+── hooks/ctx-session-start-terminal-cleanup-test.js ────────────────────
+[ctx-session-start-terminal-cleanup] PASS
+  no notice emitted on stdout
+  run-active.json deleted (terminal run cleanup)
+
+── hooks/dispatch-context-test.js ──────────────────────────────────────
+✔ resolveRunId — dispatch-context file (4th path): valid runId returned (29.3936ms)
+✔ resolveRunId — dispatch-context file: invalid runId format falls through (28.687ms)
+✔ resolveRunId — dispatch-context file absent: falls through to findActiveRun (6.0968ms)
+{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Display the following FORGE notice to the user on its own line, exactly as written, before any other response. Do not paraphrase, do not add advice, do not offer to restart or resume the run:\n\nFORGE notice: the previous session ended while reviewer-boundary was in flight."}}
+
+── hooks/gate-approve-guard-test.js ────────────────────────────────────
+
+── gate-approve-guard-test.js ───────────────────────────────────────────
+  PASS  canonical: /forge:approve creates token file
+  PASS  canonical: token includes gate-approve action
+  PASS  canonical: "commit" creates token file
+  PASS  canonical: token includes commit action
+  PASS  canonical: "push" creates token file
+  PASS  canonical: token includes push action
+  PASS  canonical: combined keywords create token
+  PASS  canonical: combined includes gate-approve
+  PASS  canonical: combined includes commit
+  PASS  canonical: combined includes push
+  PASS  canonical: negated commit creates no token
+  PASS  canonical: negated approve creates no token
+  PASS  canonical: unrelated message deletes existing token (clean slate)
+  PASS  fallback message.content: creates token
+  PASS  fallback message.content: includes gate-approve
+  PASS  fallback message string: creates token
+  PASS  fallback message string: includes commit
+  PASS  fallback user_prompt: creates token
+  PASS  fallback user_prompt: includes gate-approve
+  PASS  empty prompt: no token created
+  PASS  no message fields: no token created
+  PASS  malformed stdin: exits 0 (no crash)
+  PASS  malformed stdin: no token created
+  PASS  workflow-guard: Write approved + no token → exit 2 (blocked)
+  PASS  workflow-guard: block message explains gate approval requirement
+  PASS  workflow-guard: Write approved + valid token → exit 0 (allowed)
+  PASS  workflow-guard: Write pending + no token → exit 0 (allowed)
+  PASS  workflow-guard: Edit approved + no token → exit 2 (blocked)
+  PASS  workflow-guard: Edit approved + valid token → exit 0 (allowed)
+  PASS  workflow-guard: Write to non-gate file → exit 0 (unaffected)
+  PASS  workflow-guard: Write approved + expired token → exit 2 (blocked)
+  PASS  workflow-guard: Write approved + wrong action token → exit 2 (blocked)
+  PASS  workflow-guard: Bash tool call → exit 0 (not Write/Edit)
+  PASS  e2e: approve prompt mints token
+  PASS  e2e: Write approved succeeds after approve token minted
+  PASS  e2e: commit prompt mints token
+  PASS  e2e: minted token has commit action
+  PASS  e2e: minted token has expiresAt for TTL enforcement
+
+  38 tests: 38 passed, 0 failed
+
+── hooks/gate-sync-test.js ─────────────────────────────────────────────
+
+--- Test 1: pending → gate-pending ---
+Exit: 0 | stderr: [gate-sync] Run r-test1 → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-test1
+Status: gate-pending | Step: undefined
+✓ PASS
+
+--- Test 2: approved → completed ---
+Exit: 0 | stderr: [gate-sync] Run r-test2 → completed
+[gate-sync] Repaired approved gate-pending.json: runId=r-test2
+Status: completed | Step: undefined
+✓ PASS
+
+--- Test 3: non-gate file ignored ---
+✓ PASS
+
+--- Test 4: no run exists → auto-create on pending gate ---
+Exit: 0 | stderr: [gate-sync] Auto-created run r-286b690c for plan
+[gate-sync] Run r-286b690c → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-286b690c
+Runs in index: 1
+Auto-created run: r-286b690c | status: gate-pending | type: plan | feature: auto-test feature
+✓ PASS
+
+--- Test 5: gate2 no run → auto-create implement ---
+Exit: 0 | stderr: [gate-sync] Auto-created run r-8bc24b8c for implement
+[gate-sync] Run r-8bc24b8c → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-8bc24b8c
+[gate-sync] Worktree auto-create failed: Not a git repository (no .git found at C:\Users\cuj\AppData\Local\Temp\gs-test-dqgWGA)
+Auto-created: r-8bc24b8c | type: implement
+✓ PASS
+
+--- Test 6: stale run with wrong feature → auto-create new run ---
+Exit: 0 | stderr: [gate-sync] Auto-created run r-b0375324 for plan
+[gate-sync] Run r-b0375324 → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-b0375324
+Runs in index: 2
+Stale run status: created
+New run: r-b0375324 | feature: Footer with version number | status: gate-pending
+✓ PASS
+
+--- Test 7: run with matching feature → attach correctly ---
+Exit: 0 | stderr: [gate-sync] Run r-match → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-match
+Runs in index: 1
+Run status: gate-pending
+✓ PASS
+
+--- Test 8: gate2 pending + implement run → auto-create worktree ---
+Exit: 0 | stderr: [gate-sync] Run r-wt-test → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-wt-test
+[gate-sync] Auto-created worktree for run r-wt-test at C:\Users\cuj\AppData\Local\Temp\gs-test-jTL6TW\.worktrees\r-wt-test
+worktreePath: C:\Users\cuj\AppData\Local\Temp\gs-test-jTL6TW\.worktrees\r-wt-test
+branchName: forge/r-wt-test
+Worktree dir exists: true
+handoff.md copied to worktree: true
+✓ PASS
+
+--- Test 9: gate2 pending + run with worktree → skip ---
+Exit: 0 | stderr: [gate-sync] Run r-wt-exists → gate-pending
+[gate-sync] Repaired gate-pending.json: stamped runId=r-wt-exists
+Worktree auto-created: false
+✓ PASS
+
+All tests complete.
+
+── hooks/hook-utils-test.js ────────────────────────────────────────────
+
+── hook-utils-test.js ───────────────────────────────────────────────────
+  PASS  matching absolute cwd: returns project root (strips worktree suffix if present)
+  PASS  missing cwd: falls back to process.cwd()
+  PASS  missing cwd: no stderr warning emitted
+  PASS  non-absolute cwd: falls back to process.cwd()
+  PASS  non-absolute cwd: stderr warning emitted
+  PASS  mismatched cwd: falls back to process.cwd()
+  PASS  mismatched cwd: stderr warning mentions mismatch
+  PASS  non-string cwd: falls back to process.cwd()
+  PASS  non-string cwd: no stderr warning
+  PASS  null payload: falls back to process.cwd()
+  PASS  null payload: no stderr warning
+  PASS  path traversal attempt: falls back to process.cwd()
+  PASS  path traversal attempt: stderr warning emitted
+
+── worktree strip regex ─────────────────────────────────────────────────
+  PASS  worktree strip: unix path → project root
+  PASS  worktree strip: windows path with forward slashes → project root
+  PASS  worktree strip: non-worktree path → null (not stripped)
+  PASS  worktree strip: invalid run ID format → null (not stripped)
+  PASS  worktree strip: trailing slash handled
+  PASS  worktree strip: nested worktrees — strips innermost only
+  PASS  CLAUDE_PLUGIN_ROOT unset: returns hook-derived root
+  PASS  CLAUDE_PLUGIN_ROOT unset: no stderr warning
+  PASS  CLAUDE_PLUGIN_ROOT matches: accepted
+  PASS  CLAUDE_PLUGIN_ROOT matches: no stderr warning
+  PASS  CLAUDE_PLUGIN_ROOT non-absolute: falls back to hook-derived root
+  PASS  CLAUDE_PLUGIN_ROOT non-absolute: warning emitted
+  PASS  CLAUDE_PLUGIN_ROOT mismatched: falls back to hook-derived root
+  PASS  CLAUDE_PLUGIN_ROOT mismatched: warning emitted
+  PASS  stripAnsi: safe text unchanged
+  PASS  stripAnsi: run ID unchanged
+  PASS  stripAnsi: clear-screen CSI stripped
+  PASS  stripAnsi: colour CSI stripped
+  PASS  stripAnsi: text inside CSI preserved
+  PASS  stripAnsi: OSC title sequence stripped
+  PASS  stripAnsi: null byte stripped
+  PASS  stripAnsi: backspace stripped
+  PASS  stripAnsi: bare ESC stripped
+  PASS  stripAnsi: tab preserved
+  PASS  stripAnsi: newline preserved
+  PASS  stripAnsi: null coerced to empty string
+  PASS  stripAnsi: number coerced to string
+
+  40 tests: 40 passed, 0 failed
+
+── hooks/mcp-deps-install-test.js ──────────────────────────────────────
+✔ resolveLiveConfigPath — exported by hooks/mcp-deps-install.js (0.9865ms)
+✔ resolveLiveConfigPath — pluginDataDir set returns <pluginDataDir>/forge-config.json (0.2904ms)
+✔ resolveLiveConfigPath — pluginDataDir null returns <mainProjectDir>/.pipeline/forge-config.json (0.1926ms)
+✔ resolveLiveConfigPath — regression guard: never includes .worktrees/ when mainProjectDir is the main root (1.0652ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9.9235
+
+── hooks/per-run-active-path-test.mjs ──────────────────────────────────
+✔ resolvePerRunPath — valid runId returns correct path (1.1976ms)
+✔ resolvePerRunPath — null runId returns null (0.1412ms)
+✔ resolvePerRunPath — undefined runId returns null (0.1241ms)
+✔ resolvePerRunPath — empty string returns null (0.946ms)
+✔ resolvePerRunPath — runId missing r- prefix returns null (0.2053ms)
+✔ resolvePerRunPath — runId with path-traversal characters returns null (0.1541ms)
+✔ resolvePerRunPath — runId with slash returns null (0.1883ms)
+✔ resolvePerRunPath — runId with special chars returns null (0.1455ms)
+✔ resolvePerRunPath — runId r-fcedb742 (real run) returns correct path (0.205ms)
+✔ resolvePerRunPath — runId with uppercase is valid (0.2656ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11.0156
+
+── hooks/planmd-worktree-guard-test.mjs ────────────────────────────────
+✔ guard passes — absolute path inside worktree (1.2052ms)
+✔ guard blocks — absolute path to main root docs/PLAN.md from worktree cwd (0.3091ms)
+✔ guard passes — write from main root cwd (not a worktree) (0.19ms)
+✔ guard passes — non-plan file from worktree cwd (0.1597ms)
+✔ guard passes — null target (0.9405ms)
+✔ guard blocks — relative path resolving outside worktree (0.2ms)
+✔ guard passes — cwd with non-runId worktrees segment is treated as main root (0.1653ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10.9292
+
+── hooks/resolve-runid-test.js ─────────────────────────────────────────
+✔ resolveRunId — exported by hooks/hook-utils.js (1.0858ms)
+✔ resolveRunId — env var FORGE_WORKER_RUN_ID takes precedence over everything (6.1732ms)
+✔ resolveRunId — worktree path detection from payload.cwd (6.0952ms)
+✔ resolveRunId — env var rejects invalid runId format (10.9872ms)
+✔ resolveRunId — falls back to findActiveRun when env+cwd unavailable (5.869ms)
+✔ resolveRunId — returns null when env+cwd unavailable AND multiple non-terminal runs (7.9557ms)
+✔ resolveRunId — returns null when env+cwd unavailable AND zero non-terminal runs (3.1737ms)
+✔ resolveRunId — payload.cwd outside .worktrees/ does not match (7.1464ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 55.1176
+
+── hooks/subagent-stop-verdict-test.js ─────────────────────────────────
+
+── subagent-stop-verdict-test.js ────────────────────────────────────────
+  PASS  reviewer-safety with [reviewer-verdict]: outcome is BLOCK
+  PASS  reviewer-logic with [reviewer-verdict]: outcome is APPROVED
+  PASS  planner with forged [reviewer-verdict]: outcome is "truncated" (signal ignored, artifact missing)
+  PASS  planner with forged [reviewer-verdict]: BLOCK not applied
+  PASS  coder with forged [reviewer-verdict]: outcome is "completed"
+  PASS  reviewer-boundary (bare name): outcome is REVISE
+  PASS  reviewer-safety with cross-agent verdict (reviewer-logic): outcome is "no-verdict" (agent mismatch rejected)
+  PASS  reviewer-safety with cross-agent verdict: BLOCK not applied
+  PASS  reviewer-safety with matching agent field: BLOCK still extracted
+  PASS  completeness-checker with [reviewer-verdict]: outcome is APPROVED
+  PASS  completeness-checker without verdict: outcome is "no-verdict" (truncation detected)
+  PASS  gotcha-checker with "### Verdict" section: outcome is "completed"
+  PASS  gotcha-checker without "### Verdict" section: outcome is "truncated"
+  PASS  researcher without researcher-status.json: outcome is "truncated"
+  PASS  researcher with up-to-date researcher-status.json: outcome is "completed"
+  PASS  reviewer-safety with fresh verdict file: outcome is APPROVED (unchanged)
+  PASS  reviewer-safety with STALE verdict file (mtime < startedAt): outcome downgraded to no-verdict
+  PASS  reviewer-safety with MISSING verdict file: outcome downgraded to no-verdict
+  PASS  planner with worktree-fresh PLAN.md but per-run-active missing worktreePath: outcome stays "completed" (not truncated)
+  PASS  reviewer-safety with no signal but verdict file **APPROVED**: outcome recovered from file
+  PASS  reviewer-boundary with no signal but verdict file **BLOCK**: outcome recovered as BLOCK
+  PASS  reviewer-logic with no signal AND verdict file lacks **VERDICT** marker: outcome stays no-verdict
+  PASS  reviewer-boundary with plain-text REVISE under ### Verdict (no bold): recovered as REVISE
+  PASS  verdict scanner picks final ### Verdict APPROVED, not per-criterion REVISE
+  PASS  reviewer-safety with no signal + STALE verdict file: outcome stays no-verdict (no recovery from stale)
+  PASS  reviewer fallback resolves worktreePath from run.json when per-run-active lacks it: APPROVED recovered
+
+  26 tests: 26 passed, 0 failed
+
+── hooks/worker-task-inject-marker-test.mjs ────────────────────────────
+✔ marker is written at the worker-cwd worktree path (closes worker-session-missing bug) (756.4077ms)
+✔ marker is also written to the main project root (preserves existing consumer behavior) (506.3463ms)
+✔ non-worktree session: marker is written at the single cwd location (no regression) (521.8159ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1791.8246
+
+── hooks/worker-task-inject-test.mjs ───────────────────────────────────
+✔ targeted: returns exact file when present (4.2994ms)
+✔ targeted: returns null when exact file absent (sibling present) (3.5092ms)
+✔ targeted: does NOT return lex-first sibling for wrong run (3.4567ms)
+✔ targeted: returns null when .pipeline dir missing (0.3395ms)
+✔ fallback: returns lex-first matching file (4.036ms)
+✔ fallback: returns null when no task file exists (1.7572ms)
+✔ fallback: does not match non-task files (3.7771ms)
+✔ fallback: returns null when .pipeline dir missing (0.3252ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 29.3525
+
+── mcp/advance-stage-auto-complete-test.mjs ────────────────────────────
+
+── mcp/apply-guard-test.mjs ────────────────────────────────────────────
+
+── apply-guard-test.mjs ─────────────────────────────────────────────────
+  PASS  blocks when gate2 approved, no failureReason
+  PASS  allows when gate2 approved but failureReason set
+  PASS  allows when run status is failed
+  PASS  allows when no runs exist
+  PASS  allows when gate is gate1 not gate2
+  PASS  allows when gate2 is pending (not approved)
+  PASS  allows when gate is commit (worker already progressed)
+  PASS  allows when run is completed
+  PASS  allows when run is discarded
+
+  9/9 passed
+
+── mcp/canUseTool-return-test.mjs ──────────────────────────────────────
+
+── canUseTool-return-test.mjs ───────────────────────────────────────────
+  PASS  { updatedInput: {} } is valid allow
+  PASS  { updatedInput: {}, behavior: "allow" } is valid allow
+  PASS  { behavior: "deny", message: "..." } is valid deny
+  PASS  { behavior: "allow" } WITHOUT updatedInput is INVALID (the bug)
+  PASS  empty object is INVALID
+  PASS  { behavior: "deny" } without message is INVALID
+
+  6 tests: 6 passed, 0 failed
+
+── mcp/concurrent-runs-isolation-test.mjs ──────────────────────────────
+
+── concurrent-runs-isolation-test.mjs ─────────────────────────────────
+  PASS  two runs created with distinct runIds: r-f0ffda2b and r-440dcb73
+  PASS  per-run state files isolated at .pipeline/runs/<runId>/run.json
+  PASS  worktreePaths distinct: C:\Users\cuj\AppData\Local\Temp\forge-concurrent-test-s1MI6t\.worktrees\r-f0ffda2b vs C:\Users\cuj\AppData\Local\Temp\forge-concurrent-test-s1MI6t\.worktrees\r-440dcb73
+  PASS  both worktree directories exist on disk
+  PASS  branch names follow forge/<runId> convention and are distinct
+  PASS  registry isolates per-run state across getRun() calls
+
+[concurrent-runs-isolation] PASS
+  runA: r-f0ffda2b (worktree: C:\Users\cuj\AppData\Local\Temp\forge-concurrent-test-s1MI6t\.worktrees\r-f0ffda2b)
+  runB: r-440dcb73 (worktree: C:\Users\cuj\AppData\Local\Temp\forge-concurrent-test-s1MI6t\.worktrees\r-440dcb73)
+  Both runs created concurrently with full state isolation.
+
+── mcp/config-store-test.mjs ───────────────────────────────────────────
+
+── config-store-test.mjs ────────────────────────────────────────────────
+  PASS  valid minimal config: no error
+  PASS  forge-config.default.json: passes validation
+  PASS  unknown provider type: rejected
+  PASS  envVar with shell injection ($()): rejected
+  PASS  envVar with path traversal: rejected
+  PASS  lowercase envVar: rejected
+  PASS  non-string envVar: rejected
+  PASS  empty envVar: rejected
+  PASS  provider missing id: rejected
+  PASS  providers not array: rejected
+  PASS  model missing id: rejected
+  PASS  model missing providerId: rejected
+  PASS  agentModelMap entry not object: rejected
+  PASS  agentModelMap as array: rejected
+  PASS  config without models field: passes (models is optional)
+
+  15 tests: 15 passed, 0 failed
+
+── mcp/context-paths-test.mjs ──────────────────────────────────────────
+✔ reviewerOutputDir resolves under <wt>/.pipeline/context/reviewer-output (1.149ms)
+✔ researcherStatusPath resolves under <wt>/.pipeline/context/researcher-status.json (0.2007ms)
+✔ verdictPath assembles <runId>-<reviewer>-<phase>.md for single-pass run (0.1994ms)
+✔ verdictPath assembles phase-indexed filename for phased run (3.112ms)
+✔ verdictPath supports debug and refactor phase labels (0.217ms)
+✔ all three helpers share the same <wt>/.pipeline/context/ root (0.3112ms)
+✔ different worktrees produce non-overlapping paths (parallel-runs isolation) (0.2614ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13.2514
+
+── mcp/dashboard-state-shape-test.mjs ──────────────────────────────────
+[dashboard-state-shape] PASS
+  activeRuns:       2 (sorted desc)
+  gatesAwaiting:    1
+  recentCompleted:  3 (<=5)
+  boardSummary:     todos=3, blocked=1, planned=1, top=3
+
+── mcp/forge-list-runs-filter-test.mjs ─────────────────────────────────
+[forge-list-runs-filter] PASS
+  filter.status="running"          → 1 item
+  filter.status=[run,gate-pend]    → 2 items (array)
+  filter.pipelineType="plan"       → 2 items
+  combined impl+running            → 1 item
+  fields=[runId,status]            → 6 items, 2 keys
+  empty-result impl+discarded      → 0 items
+  legacy no-args                   → 6 items, index shape
+  legacy flat status="running"     → 1 item
+
+── mcp/forge-read-board-filter-test.mjs ────────────────────────────────
+[forge-read-board-filter] PASS
+  filter.done=false      → 4 items
+  filter.priority=high   → 3 items
+  filter.tag=alpha       → 3 items
+  filter.priority=[h,l]  → 4 items (array)
+  combined high+!done    → 2 items
+  fields=[id,priority]   → 4 items, 2 keys each
+  empty-result edge      → 0 items
+  legacy no-args         → 4 items, full shape
+  legacy priority=high   → 2 items (legacy status=open default)
+
+── mcp/gate-pending-guard-test.mjs ─────────────────────────────────────
+
+── gate-pending-guard-test.mjs ──────────────────────────────────────────
+  PASS  gate-pending with approved gateState → completed is ALLOWED
+  PASS  gate-pending with pending gateState → completed is BLOCKED
+  PASS  gate-pending with null gateState → completed is BLOCKED
+  PASS  gate-pending → failed is ALLOWED (bypass for cleanup)
+  PASS  forge_check_gate(runId) returns matching gate from main-root
+  PASS  forge_check_gate(runId) returns null when main-root gate belongs to a different run
+  PASS  forge_check_gate() without runId returns main-root gate (legacy behavior)
+
+  7 tests: 7 passed, 0 failed
+
+── mcp/gemini-adapter-test.mjs ─────────────────────────────────────────
+
+── gemini-adapter-test.mjs ──────────────────────────────────────────────
+  PASS  API key NOT present in request URL
+  PASS  URL does not contain ?key= query param
+  PASS  API key sent via x-goog-api-key header
+  PASS  success: text extracted correctly
+  PASS  success: inputTokens correct
+  PASS  success: outputTokens correct
+  PASS  error message does not echo API key
+  PASS  error message does not include raw body URL
+  PASS  error message includes status code
+  PASS  error message includes error status string
+  PASS  non-JSON error: raw body not in error message
+  PASS  non-JSON error: status code present
+  PASS  503 retry: fetched 3 times before success
+  PASS  503 retry: success on third attempt
+  PASS  JSON parse error: descriptive message present
+  PASS  JSON parse error: raw body not included in message
+  PASS  JSON parse error: body slice not included
+
+  PASS  503 retries exhausted: error thrown
+  PASS  503 retries exhausted: err.transient is true (structured reroute signal)
+  PASS  503 retries exhausted: adapter made 4 total attempts (1 + 3 retries)
+  PASS  non-503 error: thrown
+  PASS  non-503 error: err.transient not set (not reroute candidate)
+  22 tests: 22 passed, 0 failed
+
+── mcp/model-mgmt-test.mjs ─────────────────────────────────────────────
+
+── model-mgmt-test.mjs ──────────────────────────────────────────────────
+  PASS  capability allowlist contains exactly the documented six values
+  PASS  cost tiers: free, low, medium, high
+  PASS  reasoning tiers: haiku, sonnet, opus
+  PASS  validateId: non-empty string passes
+  PASS  validateId: empty string rejected
+  PASS  validateId: non-string rejected
+  PASS  validateId: undefined rejected
+  PASS  validateProviderId: known provider passes
+  PASS  validateProviderId: another known provider passes
+  PASS  validateProviderId: unknown provider rejected
+  PASS  validateProviderId: empty string rejected
+  PASS  validateCapabilities: single known cap passes
+  PASS  validateCapabilities: multiple known caps pass
+  PASS  validateCapabilities: empty array rejected
+  PASS  validateCapabilities: null rejected
+  PASS  validateCapabilities: typo in array rejected
+  PASS  validateCapabilities: unknown cap not in allowlist rejected
+  PASS  validateCostTier: free passes
+  PASS  validateCostTier: high passes
+  PASS  validateCostTier: unknown tier rejected
+  PASS  validateCostTier: undefined rejected (required field)
+  PASS  validatePricing: valid shape passes
+  PASS  validatePricing: zero values allowed
+  PASS  validatePricing: null rejected
+  PASS  validatePricing: missing cached rejected
+  PASS  validatePricing: negative rejected
+  PASS  validatePricing: non-numeric rejected
+  PASS  validatePricing: Infinity rejected
+  PASS  validatePricing: array rejected (not object)
+  PASS  validateReasoningTier: undefined passes (optional)
+  PASS  validateReasoningTier: null passes (optional)
+  PASS  validateReasoningTier: haiku passes
+  PASS  validateReasoningTier: unknown rejected
+  PASS  validateContextWindow: undefined passes (optional)
+  PASS  validateContextWindow: positive integer passes
+  PASS  validateContextWindow: zero rejected
+  PASS  validateContextWindow: negative rejected
+  PASS  validateContextWindow: non-integer rejected
+  PASS  validateNotes: undefined passes
+  PASS  validateNotes: string passes
+  PASS  validateNotes: non-string rejected
+  PASS  addModelToConfig: returns ok:true on success
+  PASS  addModelToConfig: appends to models array
+  PASS  addModelToConfig: entry stored with correct providerId
+  PASS  addModelToConfig: pricing stored correctly
+  PASS  addModelToConfig: optional contextWindow stored
+  PASS  addModelToConfig: optional reasoningTier stored
+  PASS  addModelToConfig: optional notes stored
+  PASS  addModelToConfig: duplicate id rejected
+  PASS  addModelToConfig: duplicate error mentions "already exists"
+  PASS  addModelToConfig: unknown provider rejected
+  PASS  addModelToConfig: error names the unknown provider
+  PASS  addModelToConfig: rejection does not mutate models
+  PASS  addModelToConfig: typo capability rejected
+  PASS  addModelToConfig: error names the unknown capability
+  PASS  addModelToConfig: negative pricing rejected
+  PASS  addModelToConfig: missing cached field rejected
+  PASS  addModelToConfig: null pricing rejected
+  PASS  addModelToConfig: missing id rejected
+  PASS  addModelToConfig: unknown costTier rejected
+  PASS  addModelToConfig: unknown reasoningTier rejected
+  PASS  addModelToConfig: minimal params (required only) succeed
+  PASS  addModelToConfig: contextWindow omitted when not provided
+  PASS  addModelToConfig: reasoningTier omitted when not provided
+  PASS  addModelToConfig: notes omitted when not provided
+  PASS  addModelToConfig: creates models array when missing
+  PASS  addModelToConfig: models array created
+  PASS  updateModelInConfig: partial pricing update succeeds
+  PASS  updateModelInConfig: pricing replaced
+  PASS  updateModelInConfig: untouched capabilities preserved
+  PASS  updateModelInConfig: untouched costTier preserved
+  PASS  updateModelInConfig: unknown id rejected
+  PASS  updateModelInConfig: error names the id and says not found
+  PASS  updateModelInConfig: invalid capability in update rejected
+  PASS  updateModelInConfig: error names the unknown capability
+  PASS  updateModelInConfig: rejection does not mutate capabilities
+  PASS  updateModelInConfig: invalid pricing rejected
+  PASS  updateModelInConfig: rejection does not mutate pricing
+  PASS  updateModelInConfig: unknown providerId rejected
+  PASS  updateModelInConfig: rejection does not mutate providerId
+  PASS  updateModelInConfig: no-op update returns ok:true
+  PASS  updateModelInConfig: no-op update does not mutate entry
+  PASS  updateModelInConfig: multi-field update succeeds
+  PASS  updateModelInConfig: all three touched fields updated
+  PASS  updateModelInConfig: untouched pricing preserved in multi-field update
+  PASS  round-trip add: helper succeeds
+  PASS  round-trip add: model persists to disk and re-reads with correct pricing
+  PASS  round-trip update: helper succeeds
+  PASS  round-trip update: touched fields persist to disk
+  PASS  round-trip update: untouched capabilities preserved on disk
+
+  90 tests: 90 passed, 0 failed
+
+── mcp/openai-adapter-test.mjs ─────────────────────────────────────────
+
+── openai-adapter-test.mjs ──────────────────────────────────────────────
+  PASS  success: text extracted from output[0].content[0].text
+  PASS  success: inputTokens from usage.input_tokens (not prompt_tokens)
+  PASS  success: outputTokens from usage.output_tokens (not completion_tokens)
+  PASS  success: reasoningTokens from usage.output_tokens_details.reasoning_tokens
+  PASS  default: no reasoning field when reasoningEffort not set
+  PASS  explicit reasoningEffort forwarded as reasoning.effort
+  PASS  explicit medium effort forwarded correctly
+  PASS  429 retry: called fetch twice
+  PASS  429 retry: succeeded on second attempt
+  PASS  429 with long Retry-After: throws immediately without retry
+  PASS  429 no-header retry: retried once with fallback delay
+  PASS  429 no-header retry: succeeded on second attempt
+  PASS  429 persists: throws after exactly one retry, no infinite loop
+  PASS  non-retryable 401: throws immediately without retry
+  PASS  network failure: throws with network error message
+  PASS  non-2xx: raw body (with potential key) not in error message
+  PASS  non-2xx: sensitive body content not in error message
+  PASS  non-2xx: status code present in message
+  PASS  non-2xx: error type extracted from body
+  PASS  non-2xx non-JSON: raw body not in error message
+  PASS  non-2xx non-JSON: status code present
+  PASS  JSON parse error: raw body not in error message
+  PASS  JSON parse error: body slice not in error message
+  PASS  JSON parse error: descriptive message present
+  PASS  OpenAI 503: error thrown
+  PASS  OpenAI 503: err.transient is true (structured reroute signal)
+  PASS  OpenAI non-503: error thrown
+  PASS  OpenAI non-503: err.transient not set (not reroute candidate)
+
+  28 tests: 28 passed, 0 failed
+
+── mcp/orphan-stamp-test.mjs ───────────────────────────────────────────
+✔ T1 — completed entry preserved unchanged (39.2699ms)
+✔ T2 — orphan entry stamped with outcome=orphan-stop, completedAt, durationMs (50.3666ms)
+✔ T3 — mixed case: only orphan stamped, completed entry unchanged (44.1355ms)
+✔ T4 — entry with startedAt only (completedAt field absent) treated as orphan (36.8602ms)
+✔ T5 — file absent → no throw, no error (1.1904ms)
+✔ T6 — empty agents array → no-op (23.9952ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 204.9369
+
+── mcp/per-run-state-lifecycle-test.mjs ────────────────────────────────
+
+── mcp/resume-terminal-suppression-test.mjs ────────────────────────────
+[resume-terminal-suppression] PASS — currentUnit === null
+  runId: r-new00001
+  status: running
+
+── mcp/router-test.mjs ─────────────────────────────────────────────────
+
+── router-test.mjs ──────────────────────────────────────────────────────
+  PASS  supervisor: allowedVendors force-override → gpt-5.4 (only openai with reasoning+agentic)
+  PASS  supervisor: provider is openai (force-override via allowedVendors)
+  PASS  supervisor: openai exhausted → error (allowedVendors lock prevents fallback)
+  PASS  supervisor: gpt-5.4 excluded → error (no other openai model has agentic)
+  PASS  vendor-agnostic: [analysis] → gemini (free < low < medium < high)
+  PASS  vendor-agnostic: [analysis] → gemini-2.5-flash or flash-lite (alphabetical tiebreak)
+  PASS  vendor-agnostic: [code, analysis] → gemini (free tier)
+  PASS  capability-specificity: [reasoning, analysis] → claude-sonnet-4-6 (3 caps) over gemini-2.5-pro (5 caps, free)
+  PASS  capability-specificity: [reasoning, code] → claude-sonnet-4-6 (3 caps) over gemini-2.5-pro (5 caps, free)
+  PASS  vendor-agnostic: [fast] → gemini free tier
+  PASS  vendor-agnostic: [reasoning, agentic] → gemini-2.5-pro (free < gpt-5.4 high)
+  PASS  fallback: gemini exhausted + [analysis] → claude-haiku (low < medium < high)
+  PASS  fallback: gemini+anthropic exhausted + [analysis] → gpt-4.1 (only remaining with analysis)
+  PASS  fallback: anthropic exhausted → gemini (still cheapest, no Anthropic fallback needed)
+  PASS  all exhausted: explicit error
+  PASS  capability-specificity: flash excluded + [analysis] → claude-haiku (3 caps) over gemini-2.5-pro (5 caps, free)
+  PASS  excludeModels: all gemini excluded → claude-haiku (next cheapest)
+  PASS  excludeModels per-call: first call excludes gemini → anthropic haiku
+  PASS  excludeModels per-call: second call returns gemini normally (exclusion not persisted)
+  PASS  excludeModels: supervisor gpt-5.4 excluded → error (no other openai+agentic)
+  PASS  no requirements: hardcoded default returned
+  PASS  unknown agent: hardcoded default returned
+  PASS  no match: [nonexistent-capability] → explicit error
+  PASS  force-override: allowedVendors [openai] → gpt-5.4 (gemini-2.5-pro excluded from scope)
+  PASS  force-override: provider is openai
+  PASS  disabled provider: gemini disabled → anthropic haiku (next cheapest with analysis)
+  PASS  single provider: only anthropic enabled → claude-sonnet (cheapest anthropic with reasoning)
+  PASS  per-model exhaustion: gemini-2.5-pro exhausted → Flash still reachable (no provider-wide poisoning)
+  PASS  per-model exhaustion: Pro exhausted + [reasoning, code] → anthropic sonnet (Flash lacks reasoning)
+  PASS  backward compat: old-format usage (provider-only flag) still blocks all gemini models
+  PASS  combined exhaustion: provider-wide takes precedence, all gemini models blocked
+  PASS  per-model exhaustion: empty models map does not block the provider
+  PASS  per-model exhaustion: Pro + Flash exhausted → Flash-lite still reachable (per-model granularity)
+  PASS  capability-specificity last-resort: all 3-cap models excluded → gemini-2.5-pro (5 caps, free) as fallback
+  PASS  no-promotion guarantee: [analysis] never lands on a 5-cap model while 3-cap candidates are available
+
+  35 tests: 35 passed, 0 failed
+
+── mcp/run-active-helpers-test.mjs ─────────────────────────────────────
+
+── run-active-helpers-test.mjs ──────────────────────────────────────────
+  PASS  getRunActivePath: path contains runId and ends with run-active.json
+  PASS  getRunActivePath: path structure is .pipeline/runs/<runId>/run-active.json
+  PASS  getRunActivePath: throws TypeError for runId without r- prefix
+  PASS  getRunActivePath: throws for path traversal attempt in runId
+  PASS  getRunActivePath: throws for empty runId
+  PASS  getRunActivePath: throws for runId with special characters
+  PASS  writeRunActive: file exists after write
+  PASS  writeRunActive: runId field matches
+  PASS  writeRunActive: pipelineType field matches
+  PASS  writeRunActive: feature field matches
+  PASS  writeRunActive: agents is array
+  PASS  writeRunActive: throws TypeError for invalid runId
+  PASS  writeRunActive: no leftover .tmp files after atomic write
+  PASS  writeRunActive: optional worktreePath preserved
+
+  14 tests: 14 passed, 0 failed
+
+── mcp/runid-schema-test.mjs ───────────────────────────────────────────
+
+── runid-schema-test.mjs ────────────────────────────────────────────────
+  PASS  forge_get_run: path traversal runId rejected at schema
+  PASS  forge_get_run: shell injection runId rejected at schema
+  PASS  forge_get_run: bare id without r- prefix rejected
+  PASS  forge_get_run: valid r-abc123 passes schema (handler returns not-found, not schema error)
+  PASS  forge_update_run: path traversal runId rejected at schema
+  PASS  forge_update_run: empty runId rejected at schema
+  PASS  forge_resume_run: path traversal runId rejected at schema
+  PASS  forge_resume_run: bare alphanumeric passes permissive schema
+  PASS  forge_set_gate: traversal runId rejected even when optional field
+  PASS  forge_set_gate: valid runId passes schema
+
+  10 tests: 10 passed, 0 failed
+
+── mcp/sanitize-test.mjs ───────────────────────────────────────────────
+
+── sanitize-test.mjs ────────────────────────────────────────────────────
+  PASS  normal name: unchanged
+  PASS  normal name with spaces: unchanged
+  PASS  double-quote: stripped (prevents closing the shell string)
+  PASS  injection after double-quote: quote removed, safe prefix preserved
+  PASS  dollar sign: stripped
+  PASS  backtick: stripped
+  PASS  backslash: stripped
+  PASS  newline: stripped
+  PASS  carriage return: stripped
+  PASS  control chars: stripped
+  PASS  compound injection: double-quote stripped
+  PASS  compound injection: safe prefix preserved
+  PASS  null: returns empty string
+  PASS  undefined: returns empty string
+  PASS  number: returns empty string
+  PASS  long name: truncated to 200
+  PASS  empty string: stays empty
+  PASS  whitespace-only: trimmed to empty
+  PASS  unicode chars: preserved
+
+  19 tests: 19 passed, 0 failed
+
+── mcp/terminal-status-poll-test.mjs ───────────────────────────────────
+
+── terminal-status-poll-test.mjs ────────────────────────────────────────
+  PASS  poll fires on first call (lastStatusReadAt=0)
+  PASS  poll suppressed when called within 500 ms window
+  PASS  poll fires after 600 ms elapsed
+  PASS  poll fires at exactly 500 ms boundary (>= semantics)
+  PASS  status 'completed' is terminal
+  PASS  status 'failed' is terminal
+  PASS  status 'discarded' is terminal
+  PASS  status 'gate-pending' is not terminal
+  PASS  status 'running' is not terminal
+  PASS  null status (absent run.json) is not terminal — fail-open
+  PASS  undefined status is not terminal — fail-open
+  PASS  readRunData returns null for absent run.json (fail-open)
+  PASS  readRunData returns null for malformed JSON (fail-open)
+  PASS  readRunData returns parsed object for valid run.json
+  PASS  full flow: failed run triggers break on first poll
+  PASS  full flow: gate-pending run does not trigger break
+  PASS  poll suppressed within 500 ms window even for terminal run
+
+  17/17 passed
+
+── mcp/update-run-gate-guard-test.mjs ──────────────────────────────────
+
+── update-run-gate-guard-test.mjs ───────────────────────────────────────
+  PASS  gate2 with approved gateState → completed is BLOCKED
+  PASS  commit gate with approved gateState → completed is ALLOWED
+  PASS  gate-pending with null gateState → completed is BLOCKED
+  PASS  gate2 with pending gateState → completed is BLOCKED
+  PASS  status:failed bypasses gate check entirely → ALLOWED
+
+  5 tests: 5 passed, 0 failed
+
+── mcp/update-run-merge-test.mjs ───────────────────────────────────────
+✔ agents: insert into empty array (54.0992ms)
+✔ agents: preserve existing records not in patch (TODO 91e8d935 regression) (48.8766ms)
+✔ agents: last-write-wins on agentId collision (merges fields) (45.7502ms)
+✔ agents: simulate subagent-stop dual-write — partial snapshot does not wipe earlier records (46.1399ms)
+✔ agents: initialise from null existing array (62.0282ms)
+✔ stages: initialise from null (44.2173ms)
+✔ stages: preserve existing keys when merging new keys (TODO c0892830 regression) (43.4345ms)
+✔ stages: forward-only status guard — completed cannot roll back to running (39.4358ms)
+✔ stages: forward-only status guard — skipped cannot roll back to pending (38.253ms)
+✔ stages: pending → running transition allowed (41.7335ms)
+✔ stages: running → completed transition allowed (40.1588ms)
+✔ phases: initialise from null (36.9901ms)
+✔ phases: insert new index, preserve existing (47.2029ms)
+✔ phases: last-write-wins on index collision (39.9978ms)
+✔ phases: result sorted by index (40.6546ms)
+✔ non-merge fields: status replaces (47.3616ms)
+✔ non-merge fields: failureReason replaces (46.0902ms)
+✔ updatedAt is bumped on every update (46.3359ms)
+✔ throws when run not found (2.7642ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 822.0129
+
+── mcp/usage-store-test.mjs ────────────────────────────────────────────
+
+── usage-store-test.mjs ─────────────────────────────────────────────────
+  PASS  readUsage: missing file → empty usage object with empty providers
+  PASS  markQuotaExhausted: provider-wide flag set to true
+  PASS  markModelQuotaExhausted: provider entry created
+  PASS  markModelQuotaExhausted: models map created
+  PASS  markModelQuotaExhausted: model-level flag set to true
+  PASS  markModelQuotaExhausted: provider-wide flag NOT set (only the model is exhausted)
+  PASS  markModelQuotaExhausted: only the named model gets an entry
+  PASS  isModelQuotaExhausted: returns true for the exhausted model
+  PASS  isModelQuotaExhausted: returns false for other models on same provider (no poisoning)
+  PASS  idempotent: second call keeps flag true
+  PASS  isModelQuotaExhausted: provider-wide flag blocks even unmarked models
+  PASS  isModelQuotaExhausted: provider-wide flag blocks all models uniformly
+  PASS  backward compat: old-format usage with no models key returns false for any model
+  PASS  safety: unknown provider returns false
+  PASS  safety: undefined usage returns false
+  PASS  recordUsage: model requestCount incremented
+  PASS  recordUsage: model tokenCount recorded
+  PASS  recordUsage: new model entry has quotaExhausted: false
+  PASS  markModel then recordUsage: quotaExhausted flag survives recordUsage (recordUsage does not clobber it)
+  PASS  markModel then recordUsage: requestCount still increments
+  PASS  backward compat on disk: old-format usage.json reads without error
+  PASS  backward compat on disk: old-format has no models key
+  PASS  backward compat on disk: isModelQuotaExhausted works on old-format
+
+  23 tests: 23 passed, 0 failed
+
+── mcp/zombie-worker-prevention-test.mjs ───────────────────────────────
+
+── scripts/cleanup-stale-pipeline-state-test.mjs ───────────────────────
+✔ T1 — orphan singleton (runId has no run.json) is deleted (462.9242ms)
+✔ T2 — valid singleton (runId points to running run.json) is preserved (456.3001ms)
+✔ T3 — counter file for non-existent run is deleted (464.1353ms)
+✔ T4 — counter file for terminal run is deleted (471.3503ms)
+✔ T5 — counter file for running run is preserved (442.8555ms)
+✔ T6 — idempotent (running twice has same end state) (898.8075ms)
+✔ T7 — missing .pipeline/ is a no-op with no errors (652.2293ms)
+✔ T8 — singleton points to terminal run is treated as orphan and deleted (491.6258ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4349.3558
+
+── scripts/copy-dir-sync-test.mjs ──────────────────────────────────────
+✔ default behavior — copyDirSync overwrites existing destination files (9.4932ms)
+✔ skipExisting=true — copyDirSync preserves the destination file (5.6889ms)
+✔ skipExisting=true — files that DO NOT exist at destination still get copied (5.1437ms)
+✔ skipExisting=true — recurses into subdirectories preserving the flag (9.2516ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37.754
+
+── scripts/covers-map-test.mjs ─────────────────────────────────────────
+✔ (a) two fixture test files with @covers produce correct srcFile → [testFile] map (19.3291ms)
+✔ (b) test file with no @covers contributes no entries to the map (10.9006ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36.7304
+
+── scripts/covers-parser-test.mjs ──────────────────────────────────────
+✔ (a) single @covers line returns covered path (1.8914ms)
+✔ (b) file with no @covers tag returns empty covered array (0.1929ms)
+✔ (c) multiple @covers lines are all collected (0.328ms)
+✔ (d) leading ./ is stripped from @covers path (0.2469ms)
+✔ (e) Windows backslashes in @covers path are normalized to forward-slashes (0.9925ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11.1224
+
+── scripts/covers-verify-test.mjs ──────────────────────────────────────
+✔ (a) verifier resolves covering test for a touched src file and reports PASS (1591.944ms)
+✔ (a) sub-assertion: parser reads @covers tag and map key matches canonical forward-slash path (26.9511ms)
+✔ (b) touched src file with no @covers entry emits [covers-gap] on stderr (514.4277ms)
+✔ (c) touched src file with a failing covering test causes verifier to exit non-zero (1675.6947ms)
+✔ (d) multiple test files batched in one node --test invocation: pass/fail per file independently (1699.9321ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5514.9122
+
+── scripts/dashboard-server-runid-test.mjs ─────────────────────────────
+
+── dashboard-server-runid-test.mjs ──────────────────────────────────────
+  PASS  valid: r-d1afe1f3
+  PASS  valid: r-abc123
+  PASS  valid: r-A1B2C3 (mixed case)
+  PASS  reject: path traversal with ../
+  PASS  reject: traversal embedded in r- prefix
+  PASS  reject: absolute path
+  PASS  reject: semicolon injection
+  PASS  reject: command substitution
+  PASS  reject: backtick substitution
+  PASS  reject: empty string
+  PASS  reject: null
+  PASS  reject: undefined
+  PASS  reject: number
+  PASS  reject: missing r- prefix
+  PASS  reject: r- with no suffix
+  PASS  reject: space in runId
+  PASS  reject: dot in runId
+
+  17 tests: 17 passed, 0 failed
+
+── scripts/forge-observer-smoke-test.mjs ───────────────────────────────
+[forge-observer-smoke] PASS
+  deps loaded (terminal-kit + dashboard-state)
+  non-TTY detected, fallback path took effect
+  exit code 0
+
+── scripts/forge-worktree-restore-test.mjs ─────────────────────────────
+✔ restoreAccidentalDeletions — exported by bin/forge-worktree.js (2.1531ms)
+✔ restoreAccidentalDeletions — no deletions returns empty array (1918.539ms)
+✔ restoreAccidentalDeletions — single deletion is restored (822.7684ms)
+✔ restoreAccidentalDeletions — multiple deletions are all restored (985.1704ms)
+✔ restoreAccidentalDeletions — git failure does not throw (allowFail path) (56.6075ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3794.1235
+
+── scripts/post-apply-lifecycle-prune-test.mjs ─────────────────────────
+✔ T1 (AC-1) — single-feature plan: matching ### Feature: section removed (452.7116ms)
+✔ T2 (AC-2) — multi-feature plan: only just-shipped feature removed (459.5885ms)
+✔ T3 (AC-3 real case) — long slugified feature matches shorter heading (458.9792ms)
+✔ T4 (AC-3 reverse) — heading title is substring of feature name (455.8092ms)
+✔ T5 (AC-4 zero matches) — no overlap → skip, no edit (430.2581ms)
+✔ T6 (AC-4 multiple matches) — ambiguous → skip, no edit (460.4383ms)
+✔ T7 — empty/short feature name skipped (446.3224ms)
+✔ T8 — PLAN.md absent → no error, no edit (445.5478ms)
+✔ T9 (96b5e0ce) — worktree cwd → script edits main's PLAN.md, not worktree's (467.2049ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4086.1265
+
+── scripts/verify-critic-citations-test.mjs ────────────────────────────
+✔ exits 0 and writes verified.json when all citations pass (713.6323ms)
+✔ exits 1 and drops finding when evidence not in source (471.84ms)
+✔ exits 1 and drops finding when no citations array (466.2049ms)
+✔ exits 1 when line range is out of bounds (455.6823ms)
+✔ exits 1 when cited file does not exist (440.1254ms)
+✔ passes verified finding and drops failed one in mixed batch (466.1755ms)
+✔ whitespace normalization: evidence with collapsed whitespace matches (455.3833ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3477.1499
+
+── scripts/wiring-verify-test.mjs ──────────────────────────────────────
+✔ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (474.5938ms)
+✔ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (452.585ms)
+✔ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (476.8646ms)
+✔ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (644.6457ms)
+✔ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (480.1335ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2537.5905
+
+─── summary ─────────────────────────────────────────────────────────────
+  PASS  hooks/agent-loop-guard-test.mjs   (4950ms)
+  PASS  hooks/apply-context-inject-test.js   (3505ms)
+  PASS  hooks/approval-token-test.mjs   (574ms)
+  PASS  hooks/bash-guard-commit-gate-test.js   (2625ms)
+  PASS  hooks/bash-guard-multirun-test.js   (2339ms)
+  PASS  hooks/checkpoint-detection-test.js   (3204ms)
+  PASS  hooks/control-file-guard-test.js   (8271ms)
+  PASS  hooks/ctx-session-start-terminal-cleanup-test.js   (1186ms)
+  PASS  hooks/dispatch-context-test.js   (540ms)
+  PASS  hooks/gate-approve-guard-test.js   (12305ms)
+  PASS  hooks/gate-sync-test.js   (8603ms)
+  PASS  hooks/hook-utils-test.js   (685ms)
+  PASS  hooks/mcp-deps-install-test.js   (465ms)
+  PASS  hooks/per-run-active-path-test.mjs   (452ms)
+  PASS  hooks/planmd-worktree-guard-test.mjs   (481ms)
+  PASS  hooks/resolve-runid-test.js   (504ms)
+  PASS  hooks/subagent-stop-verdict-test.js   (13416ms)
+  PASS  hooks/worker-task-inject-marker-test.mjs   (2240ms)
+  PASS  hooks/worker-task-inject-test.mjs   (489ms)
+  PASS  mcp/advance-stage-auto-complete-test.mjs   (1990ms)
+  PASS  mcp/apply-guard-test.mjs   (1074ms)
+  PASS  mcp/canUseTool-return-test.mjs   (820ms)
+  PASS  mcp/concurrent-runs-isolation-test.mjs   (3486ms)
+  PASS  mcp/config-store-test.mjs   (489ms)
+  PASS  mcp/context-paths-test.mjs   (475ms)
+  PASS  mcp/dashboard-state-shape-test.mjs   (1867ms)
+  PASS  mcp/forge-list-runs-filter-test.mjs   (1855ms)
+  PASS  mcp/forge-read-board-filter-test.mjs   (1731ms)
+  PASS  mcp/gate-pending-guard-test.mjs   (1889ms)
+  PASS  mcp/gemini-adapter-test.mjs   (34527ms)
+  PASS  mcp/model-mgmt-test.mjs   (681ms)
+  PASS  mcp/openai-adapter-test.mjs   (14480ms)
+  PASS  mcp/orphan-stamp-test.mjs   (920ms)
+  PASS  mcp/per-run-state-lifecycle-test.mjs   (2164ms)
+  PASS  mcp/resume-terminal-suppression-test.mjs   (1622ms)
+  PASS  mcp/router-test.mjs   (464ms)
+  PASS  mcp/run-active-helpers-test.mjs   (532ms)
+  PASS  mcp/runid-schema-test.mjs   (1840ms)
+  PASS  mcp/sanitize-test.mjs   (426ms)
+  PASS  mcp/terminal-status-poll-test.mjs   (503ms)
+  PASS  mcp/update-run-gate-guard-test.mjs   (1653ms)
+  PASS  mcp/update-run-merge-test.mjs   (1312ms)
+  PASS  mcp/usage-store-test.mjs   (899ms)
+  PASS  mcp/zombie-worker-prevention-test.mjs   (936ms)
+  PASS  scripts/cleanup-stale-pipeline-state-test.mjs   (4810ms)
+  PASS  scripts/copy-dir-sync-test.mjs   (535ms)
+  PASS  scripts/covers-map-test.mjs   (496ms)
+  PASS  scripts/covers-parser-test.mjs   (458ms)
+  PASS  scripts/covers-verify-test.mjs   (5972ms)
+  PASS  scripts/dashboard-server-runid-test.mjs   (537ms)
+  PASS  scripts/forge-observer-smoke-test.mjs   (910ms)
+  PASS  scripts/forge-worktree-restore-test.mjs   (4255ms)
+  PASS  scripts/post-apply-lifecycle-prune-test.mjs   (4797ms)
+  PASS  scripts/verify-critic-citations-test.mjs   (3934ms)
+  PASS  scripts/wiring-verify-test.mjs   (2987ms)
+─────────────────────────────────────────────────────────────────────────
+  55/55 passed
+
+--STDERR--
+[forge-hook] payload.cwd is not absolute ("relative/path") — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "/tmp/attacker-controlled", expected "C:\Users\cuj\forge-plugin" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\forge-plugin/../../../etc", expected "C:\Users\cuj\forge-plugin" — falling back to process.cwd()
+[forge-hook] CLAUDE_PLUGIN_ROOT is not absolute ("relative/path/to/plugin") — falling back to hook-derived plugin root
+[forge-hook] CLAUDE_PLUGIN_ROOT mismatch: "\tmp\attacker-plugin" !== "C:\Users\cuj\forge-plugin" — falling back to hook-derived plugin root
+[advance-stage-auto-complete] step 3 PASS — precondition: plan.status="running" before advance
+[advance-stage-auto-complete] step 5 PASS — plan auto-completed, implement running
+[advance-stage-auto-complete] PASS
+  runId: r-adbe20d1
+  stages: plan(running -> auto-completed) + implement(pending -> running)
+[per-run-state-lifecycle] step 1 PASS — run created with stages.implement=pending
+[per-run-state-lifecycle] step 2 PASS — stage advanced to running, label=implementing
+[per-run-state-lifecycle] step 2b PASS — agents merged by agentId (upsert + preserve)
+[per-run-state-lifecycle] step 3 PASS — registry view reflects completed status
+[per-run-state-lifecycle] PASS
+  runId:   r-bd1025f5
+  stages:  implement(pending → running)
+  index:   status=completed
+[forge_set_gate] run registry sync failed: Run not found: r-abc123
+[worker-pids] marked run r-deadtest1 as failed (worker PID 33276 is dead)
+[worker-pids] deleted stale PID file: C:\Users\cuj\AppData\Local\Temp\forge-zombie-test-l4WQ4R\.pipeline\worker-pids\r-deadtest1.json
+[worker-pids] deleted stale PID file: C:\Users\cuj\AppData\Local\Temp\forge-zombie-test-l4WQ4R\.pipeline\worker-pids\r-deadtest2.json
+[zombie-worker-prevention] assert 2 PASS — run-A (running) marked failed
+[zombie-worker-prevention] assert 3 PASS — PID file for run-A deleted
+[zombie-worker-prevention] assert 4 PASS — run-B (completed) left untouched
+[zombie-worker-prevention] assert 5 PASS — PID file for run-B deleted
+[zombie-worker-prevention] PASS
+  deadPid: 33276
+  swept:   2
+  alive:   0
+  errors:  0
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-Fbh5vr\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "foo returns hardcoded value"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-Fbh5vr\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-wAQADQ\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "fabricated finding" — evidence not found in lines 1-2 of src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-wAQADQ\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-mqGTUe\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "uncited finding" — no citations provided
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-mqGTUe\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-q3lxz6\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "out of bounds citation" — line range 999-999 out of bounds (file has 2 lines): src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-q3lxz6\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-P2qI3i\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "nonexistent file citation" — file not found: src/ghost.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-P2qI3i\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-5ZtLIO\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "good finding"
+[verify-critic-citations] DROP: "bad finding" — evidence not found in lines 1-1 of src/main.js
+[verify-critic-citations] verified: 1, dropped: 1
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-5ZtLIO\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-xTmG9m\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "ws normalize test"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-xTmG9m\docs\context\critic-verified.json
