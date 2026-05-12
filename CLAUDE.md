@@ -12,6 +12,7 @@ If `.pipeline/.worker-session` does NOT exist in the project root, this is a **c
 - Do NOT use the Agent tool for ad-hoc work. No Explore, no general-purpose, no claude-code-guide — no ad-hoc subagents.
 - **Pipeline skills are exempt:** `/forge:plan`, `/forge:implement`, `/forge:debug`, `/forge:refactor`, `/forge:research`, `/forge:explore` invoke agents as in-session subagents. This is expected and allowed — the skill handles run creation, model routing, and agent dispatch.
 - For quick lookups (1-2 tool calls): use Read/Grep/Glob directly — no worker needed.
+- **Status checks are read-only:** "check the run" / "status" / "what's happening" → Read `run.json`, glance at `git log` + `git status --porcelain` if needed. Stop there. NEVER re-run the regression suite or any tests — reviewer-approved verdicts on `run.json` are the authority. If the user wants re-verification they'll say so explicitly. Worktree-specific tests will often fail on missing `node_modules` — do not substitute by running in main unless asked.
 - **Inline gate approval (gate1/gate2):** when the user says "approve", execute inline — no `/forge:approve` skill needed. ("approve" is the only gate-approval trigger keyword by design — the friction is intentional.)
   1. `forge_list_runs({ status: "gate-pending" })` — if multiple, pick most recently updated. Then `forge_check_gate({ runId })` — extract `gate`, `feature`.
   2. `forge_set_gate({ gate, feature, status: "approved", runId })`
