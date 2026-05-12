@@ -1,89 +1,54 @@
 ## Active Plan
 
-### Feature: conductor-managed dispatch context
+### Feature: clear gate-pending.json after worker consumes approval (TODO 9a9d29b2 AC-2)
 
-Summary: Add a 4th resolution path to `resolveRunId` so conductor in-session subagent dispatches are attributed to the correct run.
+Summary: Delete `gate-pending.json` from the worktree after the worker injects the approval resume message, eliminating stale-file risk in `mcp/forge-worker.mjs`.
 
-#### Phase 1 — Failing tests (TDD wave 1 — red bar)
+#### Phase 1 — Failing test (TDD wave 1 — red bar)
 
-- [ ] 1. Write failing tests for dispatch-context resolution (`hooks/dispatch-context-test.js`) (wave: 1)
-  Intent: Establish a red bar before any implementation exists, preventing Red+Green collapse per GENERAL.md §TDD discipline.
-  Verify: AC-1: `node hooks/dispatch-context-test.js` exits non-zero; test cases cover (a) valid dispatch-context file present → `resolveRunId` returns its runId, (b) file present with invalid runId format → falls through to findActiveRun, (c) file absent → falls through, (d) file present but `createdAt` >5 min old at SessionStart → file is deleted, (e) `subagent-start.js` swap from `findActiveRun` to `resolveRunId` is exercised and resolves correctly. No `.skip` markers.
+- [ ] 11. Add failing test for post-approval gate-file deletion (`mcp/gate-pending-guard-test.mjs`) (wave: 1)
+  Intent: Establish a red bar that will only pass when the worker clears the gate file after injecting the approval resume message, preventing silent regression.
+  Verify: AC-11: A new test scenario in `mcp/gate-pending-guard-test.mjs` (or a new peer file if isolation is needed) calls the post-approval consume path and asserts the gate file no longer exists on disk after the worker's inject completes; the test exits non-zero before the implementation change is made.
 
 #### Phase 2 — Implementation (TDD wave 2 — green bar)
 
-- [ ] 2. Extend `resolveRunId` with dispatch-context file path (`hooks/hook-utils.js`) (wave: 2)
-  Depends: 1
-  Intent: Give conductor sessions a 4th resolution path that beats the ambiguous `findActiveRun` fallback when 2+ non-terminal runs coexist.
-  Verify: AC-2: `resolveRunId` reads `.pipeline/dispatch-context.json`, validates the `runId` field against `^r-[a-zA-Z0-9]+$`, returns it when valid; this path executes AFTER env-var and worktree-path checks and BEFORE `findActiveRun`; file absent or unreadable → falls through silently (fail-open); existing 3-path behavior is unchanged.
-
-- [ ] 3. Swap `subagent-start.js` line 30 from `findActiveRun` to `resolveRunId` (`hooks/subagent-start.js`) (wave: 2)
-  Depends: 2
-  Intent: Attribution at SubagentStart must use the same precedence chain as SubagentStop so the agent record is consistent end-to-end.
-  Verify: AC-3: `subagent-start.js` imports `resolveRunId` from `./hook-utils` and calls `resolveRunId(projectDir, payload)` in place of `findActiveRun(projectDir)` at line 30; `findActiveRun` is no longer called directly at that site; existing attribution behavior when a single run is active is unchanged.
-
-- [ ] 4. Add SessionStart cleanup for stale dispatch-context file (`hooks/ctx-session-start.js`) (wave: 2)
-  Depends: 2
-  Intent: Prevent a crashed conductor session from leaving a stale dispatch-context file that would mis-attribute future subagents.
-  Verify: AC-4: `ctx-session-start.js` checks for `.pipeline/dispatch-context.json` at SessionStart; if the file exists and its `createdAt` timestamp is more than 5 minutes in the past, the file is deleted and a `[forge-dispatch-ctx] stale dispatch-context deleted` line is written to stderr; if the file is absent or fresh, no action is taken; the check never throws (fail-open).
-
-- [ ] 5. Wire dispatch-context write/delete into `skills/explore/SKILL.md` (`skills/explore/SKILL.md`) (wave: 2)
-  Depends: 2
-  Intent: The explore skill is the primary conductor in-session dispatch site; it must write the context file so hooks can resolve the runId before the researcher subagent fires.
-  Verify: AC-5: `skills/explore/SKILL.md` contains a step instructing the conductor to write `.pipeline/dispatch-context.json` (with `runId` and `createdAt`) immediately before the `Agent(subagent_type="forge:researcher")` call and to delete the file immediately after the Agent returns (or on error); the step references the file path exactly as `.pipeline/dispatch-context.json`.
-
-- [ ] 6. Wire dispatch-context write/delete into `skills/plan/SKILL.md` for brainstormer dispatch (`skills/plan/SKILL.md`) (wave: 2)
-  Depends: 2
-  Intent: The plan skill dispatches the brainstormer in-session when input is vague; that subagent invocation must also carry dispatch context for correct attribution.
-  Verify: AC-6: `skills/plan/SKILL.md` contains instructions to write `.pipeline/dispatch-context.json` (with `runId` and `createdAt`) before invoking the brainstormer via `Agent(subagent_type="brainstormer")` and to delete it after the brainstormer returns; the step is placed adjacent to the existing brainstormer invocation instruction.
+- [ ] 12. Delete gate-pending.json after approval inject in `mcp/forge-worker.mjs` (`mcp/forge-worker.mjs`) (wave: 2)
+  Depends: 11
+  Intent: Eliminate stale-file risk by removing the gate file immediately after the resume message is pushed, completing the consume lifecycle that AC-1 (gate-name match guard) left open.
+  Verify: AC-12: Inside the `decision === 'approved'` block (lines 672–683 of `mcp/forge-worker.mjs`), after `inputChannel.push(...)` and before or after `resetWorkerTimer()`, a `unlinkSync(gatePath)` call (wrapped in try/catch, fail-open) removes the file; a `[forge-worker] cleared gate file after approval: <gateName>` line is written to the log; the test from task 11 now exits 0.
 
 #### Phase 3 — Regression (TDD wave N)
 
-- [ ] 7. Full regression suite green after dispatch-context feature (`hooks/dispatch-context-test.js`, `scripts/run-tests.mjs`) (wave: 3)
-  Depends: 2, 3, 4, 5, 6
-  Intent: Confirm the new test file passes and no existing tests regressed from hook or skill edits.
-  Verify: AC-7: `node hooks/dispatch-context-test.js` exits 0; `node scripts/run-tests.mjs` exits 0 with no skipped or deleted cases.
+- [ ] 13. Full regression suite green after gate-file clear (`scripts/run-tests.mjs`) (wave: 3)
+  Depends: 12
+  Intent: Confirm no existing test broke from the deletion — particularly tests that verify gate1→gate2→commit flow and the `waitForGateDecision` polling loop.
+  Verify: AC-13: `node scripts/run-tests.mjs` exits 0 with the same pass count as baseline (30/32 or better); no test that previously passed now fails; `mcp/gate-pending-guard-test.mjs` exits 0.
 
 ### Research needed
 
-None — all design decisions are derivable from codebase evidence (hook-utils.js resolveRunId, resolve-runid-test.js structure, ctx-session-start.js stale-cleanup pattern, skills/research/SKILL.md confirming worker-spawn path). The only confirmed open surface is multi-flight concurrent in-session dispatch; it is explicitly out-of-scope.
+None. Grep across all source files confirms the readers of `gate-pending.json`:
 
-### Approach summary
-- Decision: 4th resolution path inside `resolveRunId` (after env var + worktree-path, before findActiveRun) reads a single-flight `.pipeline/dispatch-context.json`; conductor skills write the file before Agent call and delete after; SessionStart cleans up stale files (>5 min); subagent-start swaps to resolveRunId to close the start/stop attribution gap; TDD-structured in three waves.
-- Trade-off: Single-flight discipline means concurrent in-session Agent dispatches are not supported — acknowledged as out-of-scope; conductor sessions today serialise in-session dispatches.
-- Uncertainty: If a future skill introduces concurrent in-session dispatch, the single-file approach will need a multi-key scheme (e.g. keyed by dispatch nonce).
+- `skills/approve/SKILL.md` (Step 1–2) — reads BEFORE worker consumes; safe to delete after inject.
+- `skills/apply/SKILL.md` (Step 1b) — reads gate2/approved state, which is a fresh write by the implement worker at gate2 time; gate1 approved file being deleted does not affect this read. Gate2 approved file is superseded by the commit gate write, which is safe.
+- `hooks/workflow-guard.js` (line 120) — reads to check gate2 approved during apply runs; same reasoning as apply skill.
+- `mcp/server.js` (lines 940–952) — already clears on commit gate; comment explicitly notes gate1/gate2 are NOT cleared by server because approve+apply skills read them. The worker clearing after inject is the missing step the comment anticipated.
+- `bin/forge-worktree.js` (line 150/155) — reads for dashboard display; file absent after consumption is handled gracefully (existsSync check at line 150).
+- `hooks/bash-guard.js` (line 313) — reads for commit guard; missing file treated as fail-open per line 294 comment.
+- `hooks/ctx-stop.js` (line 62) — reads for SessionStop display; wrapped in try/catch (fail-open).
+- `scripts/dashboard-server.mjs` (line 104) — reads for TUI dashboard; missing file = no gate card shown, correct post-consume behavior.
 
----
-
-### Feature: apply worktree resolution by stage progression
-
-Summary: Fix Step 2a of `/forge:apply` and the `apply-context-inject` hook to resolve worktrees by `stages.implement` completion rather than `pipelineType`.
-
-- [x] 8. Update Step 2a of `/forge:apply` to filter by stage progression (`skills/apply/SKILL.md`)
-  Intent: Runs that started as `pipelineType=plan` and advanced through the implement stage are currently excluded from worktree resolution because `pipelineType` is frozen at creation time; filtering by `stages.implement.status` correctly identifies eligible runs regardless of origin type.
-  Verify: AC-8: Step 2a no longer references `pipelineType` values `"implement"`, `"refactor"`, or `"debug"` as the selection criterion; instead it instructs the worker to call `forge_list_runs` (no pipelineType filter), then for each candidate call `forge_get_run` and select only runs where `stages.implement.status === "completed"` (or where `stages.debug.status === "completed"` / `stages.refactor.status === "completed"`) and `worktreePath` is non-null; the most-recent-by-`createdAt` among those is chosen.
-
-- [x] 9. Add a failing test for stage-progression resolution in `apply-context-inject-test.js` (`hooks/apply-context-inject-test.js`)
-  Intent: Establish a red bar verifying that a `pipelineType=plan` run with `stages.implement.status=completed` is accepted, and that a `pipelineType=implement` run with no `stages` field still works (backward compat), before touching the hook.
-  Verify: AC-9: `node hooks/apply-context-inject-test.js` exits non-zero; at least one test case uses a run fixture with `pipelineType: 'plan'` and `stages: { implement: { status: 'completed' } }` and asserts context IS injected; a second test case uses a run fixture with `pipelineType: 'implement'` and `stages` absent and asserts context IS injected (backward compat); both assertions fail before the implementation change.
-
-- [x] 10. Fix `apply-context-inject.js` to filter by stage progression (`hooks/apply-context-inject.js`)
-  Depends: 9
-  Intent: The hook currently passes `{ pipelineType: 'implement' }` to `listRuns`, missing plan-origin runs that ran through implement; filtering all runs then checking `stages` on the full run object corrects the exclusion.
-  Verify: AC-10: `hooks/apply-context-inject.js` no longer calls `listRuns(projectDir, { pipelineType: 'implement' })`; it calls `listRuns(projectDir)` (no pipelineType filter) and then for each candidate calls `getRun` and accepts the run when `run.worktreePath` is non-null AND (`run.stages?.implement?.status === 'completed'` OR `run.stages?.debug?.status === 'completed'` OR `run.stages?.refactor?.status === 'completed'` OR `run.pipelineType === 'implement'` OR `run.pipelineType === 'debug'` OR `run.pipelineType === 'refactor'`); the fallback to `pipelineType` ensures backward compat with older runs that lack a `stages` field; `node hooks/apply-context-inject-test.js` exits 0.
-
-### Research needed
-
-None — the exact filter site in `hooks/apply-context-inject.js` (line 54) and `skills/apply/SKILL.md` (line 68) are confirmed. The `stages` field shape is confirmed from existing run fixtures in `hooks/worker-task-inject-marker-test.mjs`. Backward compat requirement (runs without `stages`) is addressed by the pipelineType fallback.
+All readers are either pre-consume (approve skill) or tolerant of absence. Deletion is the correct lifecycle closure.
 
 ### Risk surface
 
-- No shell commands, no `fs` writes outside `.pipeline/`, no auth/crypto, no network.
-- Schema change: run fixture shape in tests gains a `stages` field — additive only, no contract break.
-- Signal format: no change to gate files, no change to `run-active.json`.
-- Files touched: `skills/apply/SKILL.md` (markdown doc), `hooks/apply-context-inject.js` (hook logic), `hooks/apply-context-inject-test.js` (test).
+- `fs` write (delete) inside `.pipeline/` in a worktree path — reviewer-safety surface.
+- Gate-approval flow modification — reviewer-boundary surface.
+- No shell commands, no network, no auth/crypto, no schema changes.
 
 ### Approach summary
-- Decision: Dual-criteria filter — check `stages.<phase>.status === 'completed'` first; fall back to legacy `pipelineType` match for runs that pre-date the `stages` field. This is the smallest change that fixes the bug without breaking existing runs.
-- Trade-off: The fallback means the old pipelineType bug could still trigger for very old runs that genuinely lack `stages`; accepted as a known limitation of backward compat.
-- Uncertainty: None — the stages field is present in all recent runs per fixture evidence.
+- Decision: Option A — delete `gate-pending.json` in the worker immediately after `inputChannel.push(...)` (lines 677–681 of `mcp/forge-worker.mjs`), wrapped in try/catch fail-open. TDD-structured in three waves. Rationale: the approve skill reads the file before the worker resumes; all other readers tolerate absence; ARCHITECTURE.md describes the file as "temporary"; deletion matches the commit-gate precedent already in `forge_set_gate`.
+- Trade-off: Deleting removes forensic visibility of gate1/gate2 approved state from disk; accepted because the approved state is durably stored in `run.gateState` via `forge_set_gate` → `updateRun` before the worker sees `approved`.
+- Uncertainty: None — grep confirms all readers are pre-consume or fail-open on absence.
+
+### Resolution 2026-05-11
+Removed inherited Features 1 (conductor-managed dispatch context, r-31711ab4 plan-leak) and 2 (apply worktree resolution by stage progression, merged r-459ec2aa) from this run's PLAN.md after gate1 reviewers approved. Implementer must execute Feature 3 (tasks 11-13) only — the AC-2 scope from TODO 9a9d29b2. Root-cause planner append-only rule fix tracked separately.
