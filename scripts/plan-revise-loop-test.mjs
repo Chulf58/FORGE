@@ -218,3 +218,63 @@ test('AC-3e: APPROVED immediately — gate1 opens clean, no revision invocations
     `Expected exactly 1 planner invocation for immediate APPROVED, ` +
     `got ${result.plannerInvocations.length}`);
 });
+
+// ─── AC-6: smoke test — r-5caed835 scenario ──────────────────────────────────
+// Scenario: 3 spec-precision REVISE concerns from reviewers, all inline-fixable.
+// Planner M=1 revision pass resolves all 3 concerns; reviewer APPROVES on pass 2.
+// Gate1 must open clean (no revisingUnresolved).
+
+test('AC-6a: r-5caed835 scenario — 3 REVISE concerns resolved at M=1, gate1 present', async () => {
+  // The planner's single revision pass (M=1) addresses all 3 inline concerns.
+  // Reviewer emits APPROVED on the second pass.
+  const verdictSequence = ['REVISE', 'APPROVED'];
+
+  const result = runPlanReviseLoop(verdictSequence);
+
+  assert.ok(result.gate1,
+    'gate1 must be present after M=1 resolves all 3 concerns');
+});
+
+test('AC-6b: r-5caed835 scenario — gate1 status is "pending"', async () => {
+  const verdictSequence = ['REVISE', 'APPROVED'];
+
+  const result = runPlanReviseLoop(verdictSequence);
+
+  assert.ok(result.gate1, 'gate1 must be present');
+  assert.equal(result.gate1.status, 'pending',
+    `gate1.status must be "pending", got: "${result.gate1.status}"`);
+});
+
+test('AC-6c: r-5caed835 scenario — gate1 has no revisingUnresolved marker', async () => {
+  const verdictSequence = ['REVISE', 'APPROVED'];
+
+  const result = runPlanReviseLoop(verdictSequence);
+
+  assert.ok(result.gate1, 'gate1 must be present');
+  assert.ok(
+    !result.gate1.revisingUnresolved,
+    `gate1.revisingUnresolved must be absent or falsy when APPROVED at M=1, ` +
+    `got: ${result.gate1.revisingUnresolved}`
+  );
+});
+
+test('AC-6d: r-5caed835 scenario — exactly 2 planner invocations (initial + M=1 retry)', async () => {
+  const verdictSequence = ['REVISE', 'APPROVED'];
+
+  const result = runPlanReviseLoop(verdictSequence);
+
+  assert.equal(result.plannerInvocations.length, 2,
+    `Expected exactly 2 planner invocations (initial + one retry), ` +
+    `got ${result.plannerInvocations.length}`);
+  assert.equal(result.plannerInvocations[1].revisionMode, 1,
+    `Second invocation must use revision-mode 1, got: ${result.plannerInvocations[1].revisionMode}`);
+});
+
+test('AC-6e: r-5caed835 scenario — run not marked failed', async () => {
+  const verdictSequence = ['REVISE', 'APPROVED'];
+
+  const result = runPlanReviseLoop(verdictSequence);
+
+  assert.equal(result.failed, false,
+    `Run must not be marked failed after M=1 APPROVED, got result.failed: ${result.failed}`);
+});
