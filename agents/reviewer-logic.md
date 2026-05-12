@@ -146,6 +146,15 @@ REVISE — minor issues, safe to address during implementation. <list>
 
 **BLOCK threshold (strict):** Use BLOCK only for logic errors that cause silent data corruption, unhandled rejection with no error feedback, or a race condition that leaves the app in an unrecoverable state. Use REVISE for missing guards, suboptimal flows, edge-case gaps, and errors that surface visibly to the user.
 
+## Findings contract
+
+1. Check whether your prompt contains a `[findings: <path>]` prefix line. If yes, read the JSON array at `<path>`.
+2. Filter findings to those in the logic domain — findings whose `suggestedCheck` references state mutation, async, conditional logic, or event handling.
+3. For each in-domain finding, emit ONE line in your verdict output (inside the `### Issues` section):
+   `FIND-<id>: CONFIRMED | DISMISSED | NEEDS-INVESTIGATION`
+   where `<id>` is the full `FIND-<N>` string from the finding's `id` field. `DISMISSED` may include a one-clause justification on the same line.
+4. These per-finding lines are ADDITIVE — do NOT replace the overall `[reviewer-verdict]` signal. Both `FIND-<id>:` lines AND the `[reviewer-verdict]` signal must appear in the output.
+
 ## Output protocol
 
 1. Resolve the output directory per `## Output path resolution` above. Write your complete review — all content from `## Logic Review:` through `### Verdict` — to `<outputDir>/reviewer-logic.md` using the Write tool.

@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026-05-12] Slice 1 — Structured findings contract (r-ded76e32)
+
+- `scripts/lean-risk-classify.mjs` now emits `triggeredRules` as structured objects `{rule, file, line, snippet, suggestedCheck}` (sequential `FIND-<N>` ids attached downstream in `reviewer-dispatch.mjs`). Legacy `"rule:snippet"` string array preserved as `triggeredRulesLegacy` for back-compat. Both `classifyHandoff` and `classifyDiff` emit identical key sets (Resolution §2). `line` is `number | null` computed via `addedCode.slice(0, m.index).split('\n').length` (Resolution §1). Every `RISK_PATH_PATTERNS` and `RISK_CONTENT_PATTERNS` entry has a static editor-authored `suggestedCheck` string (Resolution §4 — never derived from match content).
+- `scripts/reviewer-dispatch.mjs` accepts `--worktree=<path>`, writes `<worktreePath>/docs/context/findings.json` when findings are non-empty. Fail-open worktree-path validation (Resolution §5): directory existence check via `fs.statSync(...).isDirectory()`, path-traversal guard via `path.resolve(target).startsWith(path.resolve(worktreePath) + path.sep)`, stderr log on rejection, never throws. The rule-iteration consumer at the dispatch loop now handles structured objects: `const ruleName = typeof rule === 'string' ? rule.split(':')[0] : rule.rule;`.
+- `skills/implement/SKILL.md` injects `[findings: <worktreePath>/docs/context/findings.json]` into reviewer prompts adjacent to the existing `[reviewer-output-dir: ...]` prefix; the dispatch invocation appends `--worktree=<worktreePath>`.
+- Four reviewer agents (`agents/reviewer-safety.md`, `reviewer-boundary.md`, `reviewer-logic.md`, `reviewer-performance.md`) gained a `## Findings contract` section: read `docs/context/findings.json` when the `[findings:]` prefix is present, filter findings to the agent's declared rule domain, emit one `FIND-<id>: CONFIRMED | DISMISSED | NEEDS-INVESTIGATION` line per in-domain finding. The new lines are ADDITIVE — the existing `[reviewer-verdict] APPROVED | REVISE | BLOCK` overall signal shape is unchanged (Resolution §1, PLAN.md).
+- TDD wave-split: `scripts/findings-contract-test.mjs` (12 cases AC-1a..AC-8b) — added by `test-author` agent as the red bar (`node --test` exit 1 before any source change); coder implementation passes all 12 cases. End-to-end dispatch on this slice's own diff triggered 3 findings → both reviewers dismissed all 3 with rule-specific justifications.
+- Folds TODOs `4623e1d2` (Specific findings from classifier) + `8eded49c` (Structured pre-reviewer context).
+- Gate2 reviewers (post-coder): `reviewer-safety APPROVED`, `reviewer-boundary APPROVED`. Anchor: `docs/RESEARCH/deterministic-pre-review-cluster.md` §Slice 1 (audit r-63c937e9, 2026-05-12).
+
 ## [2026-05-10] wiring-verify — deterministic post-handoff check
 
 - Added `scripts/wiring-verify.mjs` — proves every new exported symbol/agent/hook has ≥1 consumer; non-zero exit under `--strict`.

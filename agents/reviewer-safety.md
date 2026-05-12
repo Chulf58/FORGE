@@ -132,6 +132,15 @@ REVISE — low-severity issues, safe to fix during implementation. <list>
 
 **BLOCK threshold (strict):** Use BLOCK only for: (1) direct path traversal or injection vulnerability — unvalidated user input reaching `fs` or `exec`; (2) credentials or tokens written to disk or logged; (3) missing sandbox or isolation where required by the project's security model. Use REVISE for hardening gaps, missing input validation, and best-practice deviations that don't create immediate exploit surface.
 
+## Findings contract
+
+1. Check whether your prompt contains a `[findings: <path>]` prefix line. If yes, read the JSON array at `<path>`.
+2. Filter findings to those in the safety domain — rules: `shell-spawn`, `fs-write-outside-pipeline`, `auth-crypto-secrets`, `network-boundary`, `env-or-path-resolution`, `bin-script`, `hook-script`, `mcp-tool`, `merge-apply-worktree-boundary`.
+3. For each in-domain finding, emit ONE line in your verdict output (inside the `### Issues` section):
+   `FIND-<id>: CONFIRMED | DISMISSED | NEEDS-INVESTIGATION`
+   where `<id>` is the full `FIND-<N>` string from the finding's `id` field. `DISMISSED` may include a one-clause justification on the same line.
+4. These per-finding lines are ADDITIVE — do NOT replace the overall `[reviewer-verdict]` signal. Both `FIND-<id>:` lines AND the `[reviewer-verdict]` signal must appear in the output.
+
 ## Output protocol
 
 1. Resolve the output directory per `## Output path resolution` above. Write your complete review — all content from `## Safety Review:` through `### Verdict` — to `<outputDir>/reviewer-safety.md` using the Write tool.

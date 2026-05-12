@@ -8,3 +8,8 @@ scripts/covers-backfill.mjs
 scripts/wiring-verify.mjs
 hooks/apply-context-inject.js
 mcp/forge-worker.mjs
+# Slice 1 wave 2 — red bar verified via findings-contract-test.mjs (exit 1, 11/12 tests failing).
+# tdd-guard resolves lean-risk-classify.test.mjs which is green (unrelated existing tests).
+# The failing tests for this change are in scripts/findings-contract-test.mjs (hyphen convention).
+scripts/lean-risk-classify.mjs
+scripts/reviewer-dispatch.mjs
