@@ -207,3 +207,7 @@ If no findings: "Critic complete — no significant improvements found."
 **Do NOT emit `[todo]` signals.** The ideate skill runs a citation verifier after you complete and emits `[todo]` signals only from verified findings. Emitting signals here would bypass verification.
 
 **This step is optional.** If you run out of budget before reaching it, the findings file is the authoritative output.
+
+## Context checkpoint
+
+If you approach your context limit mid-critique, write a partial summary to `docs/context/checkpoint.md` (list lenses run so far, findings drafted with citations, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.

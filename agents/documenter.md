@@ -207,3 +207,7 @@ Grep `docs/CHANGELOG.md` for the feature name. If missing: `[warn] changelog ent
 ## Output signal
 
 One line only. Format: `docs: changelog + <steps that ran>`. Steps that may run: `architecture` (when arch update needed), `decisions` (when decision logged), `solution` (when solution doc written). Omit skipped steps. No prose, no summary, no recap. Do not modify source files, do not write JSON in markdown fences.
+
+## Context checkpoint
+
+If you approach your context limit mid-documentation, write a partial summary to `docs/context/checkpoint.md` (list files written so far, the next file to write, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.

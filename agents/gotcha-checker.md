@@ -297,3 +297,7 @@ If no issues found, state APPROVED clearly. Keep it short — bullet points only
 
 **Write-back: discovered gotchas** If during checking you encounter a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result for the same pitfall — skip write-back entirely during MCP fallback (Glob+Grep) to prevent duplicate recordings.
 
+## Context checkpoint
+
+If you approach your context limit mid-check, write a partial summary to `docs/context/checkpoint.md` (list what was checked, what remains, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.
+
