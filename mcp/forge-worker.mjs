@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.js';
 import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
 import { consumeGateApproval } from './lib/gate-helpers.js';
+import { evaluateBudget, proactiveInterruptStep } from './lib/proactive-interrupt.mjs';
 
 // Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
 // Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
 const BUDGET_THRESHOLD_CONSUMED = 0.70; // 70% consumed triggers bridge write
+const BUDGET_INTERRUPT_THRESHOLD = 0.85; // ≥ BUDGET_THRESHOLD_CONSUMED — triggers proactive interrupt
 const BUDGET_CONTEXT_WINDOW = 200_000;  // denominator for all dispatched models (V1: fixed)
 const BUDGET_AUTOCOMPACT_FACTOR = 0.835; // mirrors ctx-session-start.js
 const BUDGET_DEBOUNCE_MS = 30_000;      // write bridge at most once per 30 s per agent
@@ -385,6 +387,11 @@ async function main() {
     /** @type {Map<string, number>} */
     const budgetLastWriteAt = new Map();
 
+    // Latest assistant text block — captured for proactive-interrupt checkpoint.md body.
+    // Updated whenever an `assistant` message arrives with a `text` content block. Overwritten
+    // on each new block so it always reflects the most-recent visible output before interrupt.
+    let lastAssistantText = '';
+
     /**
      * Reads the sidecar file written by subagent-start.js inside the subagent process.
      * Returns the subagent's session_id, or null if the sidecar is absent/unreadable.
@@ -432,29 +439,51 @@ async function main() {
 
     /**
      * Handles proactive context-budget monitoring for a usage update from the SDK stream.
-     * Reads run-active.json to find non-completed agents, resolves each agent_id → session_id
-     * via the sidecar, and writes a fresh bridge when the budget crosses the threshold.
-     * Debounced per agent: at most one bridge write per BUDGET_DEBOUNCE_MS window.
+     * Returns a directive object: { interrupt: false } when no action is needed, or
+     * { interrupt: true, agentId, normType } when the 85% threshold is crossed and an
+     * active agent is found. The 70% bridge-write path is preserved for consumedFraction
+     * values in [0.70, 0.85).
+     *
+     * Callers must handle the interrupt directive in the for-await loop body — this function
+     * intentionally does NOT call stream.interrupt() directly because it lacks access to
+     * stream, inputChannel, and checkpointResumeCounts.
+     *
      * @param {{ input_tokens?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number }} usage
+     * @returns {Promise<{ interrupt: false } | { interrupt: true, agentId: string, normType: string }>}
      */
     async function handleBudgetUsage(usage) {
-      const input  = Number(usage.input_tokens                ?? 0);
-      const create = Number(usage.cache_creation_input_tokens ?? 0);
-      const cacheR = Number(usage.cache_read_input_tokens     ?? 0);
-      const total  = input + create + cacheR;
-      if (total === 0) return;
+      const { consumedFraction, interrupt: overThreshold } = evaluateBudget(usage, {
+        window: BUDGET_CONTEXT_WINDOW,
+        autocompactFactor: BUDGET_AUTOCOMPACT_FACTOR,
+        interruptThreshold: BUDGET_INTERRUPT_THRESHOLD,
+      });
 
-      const usable = BUDGET_CONTEXT_WINDOW * BUDGET_AUTOCOMPACT_FACTOR;
-      const consumedFraction = total / usable;
-      if (consumedFraction < BUDGET_THRESHOLD_CONSUMED) return;
+      if (consumedFraction === 0) return { interrupt: false };
+      if (consumedFraction < BUDGET_THRESHOLD_CONSUMED) return { interrupt: false };
 
       const remainingPct = Math.max(0, (1 - consumedFraction) * 100);
 
       // Read run-active.json to enumerate active agents.
       const activeData = readRunActiveData();
-      if (!activeData || !Array.isArray(activeData.agents)) return;
+      if (!activeData || !Array.isArray(activeData.agents)) return { interrupt: false };
 
       const now = Date.now();
+
+      if (overThreshold) {
+        // Find the FIRST non-completed agent to interrupt.
+        for (const agent of activeData.agents) {
+          if (agent.outcome) continue;
+          const agentId = agent.agent_id;
+          if (!agentId) continue;
+          const rawType = agent.agent_type || '';
+          const normType = rawType.startsWith('forge:') ? rawType.slice('forge:'.length) : rawType;
+          return { interrupt: true, agentId, normType };
+        }
+        // No active agent found — nothing to interrupt.
+        return { interrupt: false };
+      }
+
+      // consumedFraction in [BUDGET_THRESHOLD_CONSUMED, BUDGET_INTERRUPT_THRESHOLD) — bridge write path.
       for (const agent of activeData.agents) {
         // Skip agents that have already completed.
         if (agent.outcome) continue;
@@ -475,6 +504,8 @@ async function main() {
         budgetLastWriteAt.set(agentId, now);
         await writeBridge(sessionId, remainingPct);
       }
+
+      return { interrupt: false };
     }
 
     for await (const msg of stream) {
@@ -572,6 +603,10 @@ async function main() {
           if (block && block.type === 'tool_use' && block.name === 'Agent' && block.input && block.input.subagent_type) {
             progressLastAgentType = block.input.subagent_type;
           }
+          // Capture latest assistant text for proactive-interrupt checkpoint body.
+          if (block && block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
+            lastAssistantText = block.text;
+          }
         }
       }
       if (msg && msg.type === 'assistant' && msg.message && msg.message.usage) {
@@ -580,11 +615,44 @@ async function main() {
         if (typeof u.cache_creation_input_tokens === 'number') progressLastCacheCreate = u.cache_creation_input_tokens;
         if (typeof u.cache_read_input_tokens === 'number') progressLastCacheRead = u.cache_read_input_tokens;
         if (typeof u.output_tokens === 'number') progressLastOutputTokens = u.output_tokens;
-        // Proactive context-budget monitoring: write bridge file if threshold crossed.
-        // Fire-and-forget — a failed bridge write is non-fatal and logged.
-        handleBudgetUsage(u).catch((err) => {
+
+        // Proactive context-budget monitoring.
+        // handleBudgetUsage now returns a directive — bridge-write side-effect happens
+        // inside it for the [0.70, 0.85) band; for >=0.85 it returns interrupt:true and
+        // this body invokes proactiveInterruptStep with the references it needs
+        // (stream, inputChannel, checkpointResumeCounts) which handleBudgetUsage lacks.
+        // The reactive checkpoint handler (lines ~518–594) is unchanged — see CLAUDE-WORKER.md
+        // and docs/PLAN.md "Worker-side proactive context-budget interrupt" task 5(f).
+        let budgetDirective = { interrupt: false };
+        try {
+          budgetDirective = await handleBudgetUsage(u);
+        } catch (err) {
           writeLog('[forge-worker] handleBudgetUsage error: ' + err.message);
-        });
+          budgetDirective = { interrupt: false };
+        }
+        if (budgetDirective && budgetDirective.interrupt) {
+          try {
+            const result = await proactiveInterruptStep({
+              directive: budgetDirective,
+              runId,
+              workDir,
+              stream,
+              channel: inputChannel,
+              counters: checkpointResumeCounts,
+              cap: CHECKPOINT_RESUME_CAP,
+              lastAssistantText,
+              projectRoot: resolvedMainProjectRoot,
+            });
+            if (result && result.capped) {
+              writeLog('[forge-worker] PROACTIVE-INTERRUPT CAP HIT for ' + budgetDirective.normType + ' — stopping worker');
+              process.stderr.write('[forge-worker] PROACTIVE-INTERRUPT CAP HIT: ' + budgetDirective.normType + ' exhausted ' + CHECKPOINT_RESUME_CAP + ' checkpoint resumes — manual intervention required.\n');
+              break;
+            }
+            writeLog('[forge-worker] proactive interrupt fired for ' + budgetDirective.normType + ' (resume ' + (checkpointResumeCounts.get(budgetDirective.normType) || 0) + '/' + CHECKPOINT_RESUME_CAP + ')');
+          } catch (err) {
+            writeLog('[forge-worker] proactiveInterruptStep error: ' + err.message);
+          }
+        }
       }
       const sinceLastEmit = Date.now() - progressLastEmitAt;
       if ((progressMessagesSeen % PROGRESS_MESSAGE_INTERVAL === 0) || sinceLastEmit >= PROGRESS_TIME_INTERVAL_MS) {
