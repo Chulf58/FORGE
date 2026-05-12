@@ -96,7 +96,7 @@ Opt-in via `.pipeline/project.json`: `gitIntegration: { enabled, branchPrefix, a
 These rules are enforced by hooks with descriptive block/warning messages. Agents do not need to read about them — violations are caught and explained at runtime:
 
 - **Gate enforcement** — skill-level: skills check `gate-pending.json` via `forge_check_gate` before dispatching coder/implementer. (`hooks/gate-enforcement.js` hook was deleted — gate-pending.json reads failed from hook process context. Enforcement is skill-level only.)
-- **Git guard** — `hooks/bash-guard.js`: hard-blocks destructive git ops, soft-blocks commit/push without approval token or active run.
+- **Git guard** — `hooks/bash-guard.js`: hard-blocks commit inside a gated worktree (commit-gate guard), soft-blocks commit/push without approval token or active run. Destructive git ops (--force, --amend, etc.) are NOT hard-blocked by the hook — they are documented restrictions in CLAUDE.md and GENERAL.md prose only.
 - **Stuck-loop detection** — `hooks/agent-loop-guard.js` (PreToolUse, hard-blocks): denies 3rd+ dispatch of the same agent type per run; documenter is exempt; conductor sessions (no active runId) are not subject to the guard. `hooks/subagent-start.js` (SubagentStart): warns on 2nd dispatch as a diagnostic backstop.
 - **Doc size thresholds** — `hooks/doc-size-guard.js`: warns when PLAN.md >200, CHANGELOG >200, ARCHITECTURE >800, GENERAL.md >200 lines.
 - **Truncation detection** — `hooks/subagent-stop.js`: marks agents as `truncated` or `no-verdict` when expected output artifacts are missing.
