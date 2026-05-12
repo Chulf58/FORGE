@@ -1,8 +1,0 @@
-{
-  "phase": "Phase 1 — Failing test (TDD wave 1 — red bar)",
-  "testFiles": [
-    "C:\\Users\\cuj\\forge-plugin\\.worktrees\\r-451ff6ed\\mcp\\gate-consume-test.mjs"
-  ],
-  "failureOutput": "✖ mcp\\gate-consume-test.mjs (436.6448ms)\nℹ tests 1\nℹ suites 0\nℹ pass 0\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 446.6546\n\n✖ failing tests:\n\ntest at mcp\\gate-consume-test.mjs:1:1\n✖ mcp\\gate-consume-test.mjs (436.6448ms)\n  'test failed'",
-  "exitCode": 1
-}

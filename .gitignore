@@ -76,6 +76,7 @@ docs/audit-log.jsonl
 .pipeline/docs-diff-*.txt
 .pipeline/log.tmp*
 .pipeline/forge-observer.cmd
+.pipeline/context/test-author-output.json
 
 # Per-session agent scratch (operational, not committed)
 docs/context/*-status.json
@@ -86,6 +87,7 @@ docs/context/critic-session.json
 docs/context/critic-verified.json
 docs/context/critic-findings.json
 docs/context/pre-scan-findings.json
+docs/context/git-diff.txt
 
 # Per-user Claude Code settings and session data
 .claude/
