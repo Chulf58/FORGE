@@ -13,3 +13,6 @@ mcp/forge-worker.mjs
 # The failing tests for this change are in scripts/findings-contract-test.mjs (hyphen convention).
 scripts/lean-risk-classify.mjs
 scripts/reviewer-dispatch.mjs
+# Phase 1 wave 1 — red bar verified via plan-revise-loop-test.mjs (exit 1, ERR_MODULE_NOT_FOUND).
+# tdd-guard resolveTestFile only detects .test.mjs convention, not -test.mjs (hyphen convention).
+scripts/plan-revise-loop.mjs

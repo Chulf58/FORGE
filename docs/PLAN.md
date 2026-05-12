@@ -96,3 +96,104 @@ Addresses spec-precision items from r-ded76e32 gate1 reviewers (reviewer-logic R
 **4. `suggestedCheck` field source + sanitization (reviewer-safety)** — `suggestedCheck` is a STATIC string defined alongside each entry in `RISK_CONTENT_PATTERNS` and `RISK_DIFF_PATTERNS` in `lean-risk-classify.mjs`. NOT derived from match content. No sanitization required since the field is editor-authored constant text controlled by the pattern table. AC-4 test asserts: (a) every pattern entry in both tables has a non-empty static `suggestedCheck` string defined; (b) the field on each emitted finding object equals the matching pattern's static `suggestedCheck` value. No string interpolation of match content into this field is permitted.
 
 **5. Worktree path validation (reviewer-safety)** — `findings.json` write target MUST be inside the worktree. AC-5 implementation requires: (a) validate `<worktreePath>` exists and is a directory via `fs.statSync(...).isDirectory()` before write; (b) compute the resolved target as `path.join(worktreePath, 'docs/context/findings.json')`; (c) call `path.resolve(target)` and assert the resolved path starts with `path.resolve(worktreePath) + path.sep` (rejects path-traversal attempts). On any validation failure: log `[reviewer-dispatch] findings.json write rejected: <reason>` to stderr and skip the write (fail-open — do NOT throw, do NOT crash the dispatch script). AC-5 test asserts the write path is rejected when `worktreePath` is non-directory OR when the resolved target escapes the worktree root.
+
+---
+
+### Feature: Plan-stage REVISE retry loop (closes TODO c41f1504)
+
+Summary: Add a REVISE-retry loop to `skills/plan/SKILL.md` mirroring the implement-stage loop so planner iterates on reviewer feedback before gate1 fires.
+
+**Acceptance criteria (contractual — preserved verbatim from TODO):**
+- AC-1: `skills/plan/SKILL.md` has a Step (mirror implement-stage Step 5c at SKILL.md:250-264) that handles REVISE-retry on plan-stage reviewer output.
+- AC-2: Worker re-invokes planner with `[revision-mode: M]` prefix + REVISE feedback. Max M=2.
+- AC-3: Reviewer dispatch is NOT re-run on revision passes (same reviewer set iterates).
+- AC-4: After 2 unresolved REVISE passes, gate1 still opens but with a clear marker that human review is required.
+- AC-5: BLOCK behavior unchanged — exits the retry loop, conductor decides.
+- AC-6: TDD-structured: new test in `skills/plan` or new helper exercises the retry loop in isolation. Red bar before implementation.
+- AC-7: r-5caed835-style scenario (3 REVISE concerns, all spec-precision, all inline-fixable) reaches APPROVED on retry M=1 in a smoke test.
+
+**Files to modify:**
+- `skills/plan/SKILL.md` — add REVISE-retry step after the reviewer dispatch step (Step 5/6 area)
+- `agents/planner.md` — add `## Revision mode` section explaining `[revision-mode: M]` semantics
+
+**Files to create:**
+- `scripts/plan-revise-loop-test.mjs` — isolated test exercising the retry loop logic
+
+**Out of scope:**
+- BLOCK auto-retry (separate TODO 1db279a1)
+- bba4a9d9 (stacked PLAN.md cleanup) — orthogonal
+- Reviewer-side retry — reviewers are already idempotent
+
+**Symmetry checklist (implement-stage → plan-stage mapping):**
+
+| Implement-stage concept | Plan-stage equivalent |
+|---|---|
+| Revision counter `N` (starts 0, max 2) | Revision counter `M` (starts 0, max 2) |
+| Verdict files in `reviewer-output/` | Same directory — `<worktreePath>/.pipeline/context/reviewer-output/` |
+| `[revision-mode: N]` prefix to coder | `[revision-mode: M]` prefix to planner |
+| `[failed-criteria: AC-X, AC-Y]` from `AC-<N>: NOT_MET` lines | Same signal — `AC-<N>: NOT_MET` lines from reviewer output |
+| REVISE + `N < 2` → re-invoke coder | REVISE + `M < 2` → re-invoke planner |
+| REVISE + `N >= 2` → `status: "failed"` | REVISE + `M >= 2` → gate1 opens with `[revise-unresolved]` marker |
+| BLOCK → `status: "failed"`, no gate | BLOCK → existing behavior, no gate (unchanged) |
+| Reviewer dispatch NOT re-run on revision | Same — same reviewer set iterates, no re-classification |
+| Revised coder re-saves git diff before re-review | Planner re-writes PLAN.md before re-review |
+| mtime check on each verdict file (`verify-output.mjs`) | Same mtime check on each verdict file |
+
+**Key divergence from implement-stage:** when `M >= 2` and REVISE is still unresolved, gate1 OPENS (with marker) rather than failing the run, because the human conductor can still fix PLAN.md inline before approving gate1. This preserves the existing fallback path while eliminating the common case of manual toil.
+
+#### Phase 1 — Failing tests (TDD red bar)
+
+- [ ] 1. Add failing test for REVISE-retry loop logic (`scripts/plan-revise-loop-test.mjs`) (wave: 1)
+  Intent: Establish a red bar that gates implementation — the test must fail before any SKILL.md change, confirming the loop does not yet exist.
+  Verify: AC-1: `node scripts/plan-revise-loop-test.mjs` exits non-zero before any skill change; the test asserts that a simulated plan-stage worker with a REVISE verdict re-invokes the planner with `[revision-mode: 1]` on the first pass and `[revision-mode: 2]` on the second pass, never exceeding M=2.
+
+- [ ] 2. Add failing smoke test for M=1 APPROVED scenario (`scripts/plan-revise-loop-test.mjs`) (wave: 1)
+  Intent: Lock down the happy path — one REVISE followed by APPROVED resolves cleanly without opening a `[revise-unresolved]` gate.
+  Verify: AC-2: A test case in `scripts/plan-revise-loop-test.mjs` simulates a reviewer emitting REVISE on pass 0, then APPROVED on pass 1 (M=1), and asserts gate1 opens with `status: "pending"` and no `[revise-unresolved]` marker; exits non-zero before implementation.
+
+- [ ] 3. Add failing smoke test for M=2 unresolved gate marker (`scripts/plan-revise-loop-test.mjs`) (wave: 1)
+  Intent: Confirm that two failed revision passes produce a visible `[revise-unresolved]` marker in gate1 rather than a silent failure, so the conductor knows manual fix is required.
+  Verify: AC-3: A test case asserts that when both revision passes still emit REVISE, the gate1 JSON written to disk contains a `revisingUnresolved: true` field and the gate status is `"pending"` not `"failed"`; exits non-zero before implementation.
+
+#### Phase 2 — Implementation (TDD green bar)
+
+- [ ] 4. Add REVISE-retry step to plan-stage skill (`skills/plan/SKILL.md`) (wave: 2)
+  Depends: 1, 2, 3
+  Intent: Mirror the implement-stage Step 5b/5c loop so the worker auto-retries the planner on REVISE before writing gate1, eliminating recurring conductor toil.
+  Verify: AC-4: `skills/plan/SKILL.md` contains a numbered step after reviewer dispatch that (a) tracks counter M starting at 0, (b) on REVISE with M<2 re-invokes planner with `[revision-mode: M]` and REVISE context, (c) on REVISE with M>=2 writes gate1 with `revisingUnresolved: true`, (d) on BLOCK exits without writing gate1; `node scripts/plan-revise-loop-test.mjs` exits 0.
+
+- [ ] 5. Add `## Revision mode` section to planner agent (`agents/planner.md`) (wave: 2)
+  Depends: 4
+  Intent: Teach the planner how to behave when invoked with `[revision-mode: M]` so it edits PLAN.md inline to address REVISE concerns rather than rewriting from scratch.
+  Verify: AC-5: `agents/planner.md` contains a `## Revision mode` section that specifies (a) read the `[revision-mode: M]` signal, (b) read the REVISE feedback from the reviewer output dir, (c) edit PLAN.md to address each concern using Resolution sections or direct AC edits, (d) do not rewrite the full plan; the section appears before `## Output signal`.
+
+#### Phase 3 — Regression and smoke verification
+
+- [ ] 6. Smoke test: r-5caed835 scenario reaches APPROVED at M=1 (`scripts/plan-revise-loop-test.mjs`) (wave: 3)
+  Depends: 4, 5
+  Intent: Validate the end-to-end contract against the scenario that motivated this feature — three spec-precision REVISE concerns resolved in one planner revision pass.
+  Verify: AC-6: A test case in `scripts/plan-revise-loop-test.mjs` injects three REVISE concerns (all spec-precision, all inline-fixable), runs one planner revision pass, simulates a reviewer emitting APPROVED, and asserts gate1 opens clean without `revisingUnresolved`; test exits 0.
+
+- [ ] 7. Full regression suite green after plan-stage loop changes (`scripts/run-tests.mjs`) (wave: 3)
+  Depends: 4, 5, 6
+  Intent: Confirm the new skill step and planner section do not break existing plan-pipeline behavior or any other test that reads `skills/plan/SKILL.md`.
+  Verify: AC-7: `node scripts/run-tests.mjs` exits 0 with no previously-passing tests now failing; `node scripts/plan-revise-loop-test.mjs` exits 0 with all three scenario cases passing.
+
+### Research needed
+
+None — the implement-stage loop in `skills/implement/SKILL.md:250-264` and `mcp/forge-worker.mjs` provide the complete pattern to mirror; the divergence (gate1 opens with marker vs. run fails) is fully specified in the TODO.
+
+### Approach summary
+- Decision: Mirror the implement-stage 2-iteration REVISE loop at skill level (`skills/plan/SKILL.md`) with one deliberate divergence — M>=2 opens gate1 with `revisingUnresolved: true` rather than failing the run, preserving the human fallback path.
+- Trade-off: Gate1 may open in a partially-unresolved state, requiring conductor attention — accepted because the prior state (always manual) was strictly worse.
+- Uncertainty: Whether `scripts/run-tests.mjs` already covers `skills/plan/SKILL.md` content or only script files; if not, the regression task (7) verifies only the new test file.
+
+### Risk and rollback
+
+**Infinite loop risk:** If M is not incremented before re-invoking the planner, the loop runs forever. Mitigation: test task 1 explicitly asserts M increments on each pass and the loop terminates after M=2.
+
+**Divergence drift:** The implement-stage loop may evolve after this feature ships, causing the plan-stage loop to diverge silently. Mitigation: the symmetry checklist in this plan is the canonical reference; any future implement-stage change should note the corresponding plan-stage update in the TODO.
+
+**gate1 marker ignored:** If the conductor does not check `revisingUnresolved` in gate1, the unresolved-REVISE case degrades silently to the current state (manual fix required but not surfaced). Mitigation: the `revisingUnresolved: true` field is added to `gate-pending.json` which the observer dashboard already renders.
+
+**Rollback:** The changes are additive — adding a new step to SKILL.md and a new section to planner.md. Rolling back requires removing those additions. No schema changes to existing data files; `gate-pending.json` gains one optional boolean field, which existing consumers ignore.
