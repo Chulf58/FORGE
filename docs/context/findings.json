@@ -1,0 +1,10 @@
+[
+  {
+    "rule": "signal-format-change",
+    "file": "agents/planner.md",
+    "line": 20,
+    "snippet": "[todo]",
+    "suggestedCheck": "Review signal-format change for downstream parser compatibility",
+    "id": "FIND-1"
+  }
+]
