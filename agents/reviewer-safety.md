@@ -167,3 +167,7 @@ When a new file-writing handler IS present:
 - Grep the project's handler directory recursively for the pattern `if (!file.startsWith(` to confirm the proposed path-traversal validation is consistent with the established pattern in this codebase.
 
 No other source file reading is required for safety review.
+
+## Context checkpoint
+
+If you approach your context limit mid-review, write a partial summary to `docs/context/checkpoint.md` (list findings reviewed so far, ACs evaluated, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.

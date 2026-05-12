@@ -216,3 +216,7 @@ After all checks, emit `[reviewer-verdict]` JSON:
 - `"blockers"`: count of BLOCK-level findings (typically 0 for architect review)
 - `"warnings"`: count of false positives found
 - `"feature"`: use the literal string `"architect"`
+
+## Context checkpoint
+
+If you approach your context limit mid-review, write a partial summary to `docs/context/checkpoint.md` (list findings reviewed so far, ACs evaluated, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.

@@ -180,3 +180,7 @@ Rules for the signal fields:
 - `warnings` is the count of distinct REVISE-level findings in your `### Issues` section. If the verdict is `APPROVED`, `warnings` is `0`. A `REVISE` verdict must have at least 1 warning.
 - The signal line must be the very last character sequence in your text output. End with a single newline after the closing `}`. No blank lines before or after the signal line.
 - This replaces the previous APPROVED output discipline rule: even when APPROVED, the full analysis goes to the file, not to text output.
+
+## Context checkpoint
+
+If you approach your context limit mid-review, write a partial summary to `docs/context/checkpoint.md` (list findings reviewed so far, ACs evaluated, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.

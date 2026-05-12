@@ -196,3 +196,7 @@ When shared interface or public API files ARE changed in the diff:
 - Read at most 1 additional file beyond the above — focus only on the directly referenced shared interface.
 
 Do not read files not referenced by `+++ b/<path>` headers in the diff.
+
+## Context checkpoint
+
+If you approach your context limit mid-review, write a partial summary to `docs/context/checkpoint.md` (list findings reviewed so far, ACs evaluated, and any open notes) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects this and re-dispatches you with a `[resume-from-checkpoint]` message; on resume, read `checkpoint.md` and continue. Cap: 2 resume passes per agent.
