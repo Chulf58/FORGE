@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-12] Narrow bash-guard.js to FORGE-specific safety guards (r-ca46d7a8)
+
+- Removed `BLOCKED_COMMANDS` (tool-choice enforcement layer) — `cat`, `find`, `grep`, etc. via Bash now allowed; dedicated tools remain the documented best practice but not hard-blocked by hook.
+- Removed `GIT_HARD_BLOCKED_PATTERNS` (generic git hygiene layer) — destructive ops (`--force`, `--amend`, `--reset`, etc.) no longer hard-blocked by hook; documented restrictions in CLAUDE.md remain authoritative.
+- Retained three FORGE-specific guards: control-file write block, commit-gate hard-block (worktree boundary), commit/push soft-block (approval token gating). TDD wave-split verified: 18/18 tests passing; no regression in existing bash-guard tests.
+
 ## [2026-05-12] Slice 1 — Structured findings contract (r-ded76e32)
 
 - `scripts/lean-risk-classify.mjs` now emits `triggeredRules` as structured objects `{rule, file, line, snippet, suggestedCheck}` (sequential `FIND-<N>` ids attached downstream in `reviewer-dispatch.mjs`). Legacy `"rule:snippet"` string array preserved as `triggeredRulesLegacy` for back-compat. Both `classifyHandoff` and `classifyDiff` emit identical key sets (Resolution §2). `line` is `number | null` computed via `addedCode.slice(0, m.index).split('\n').length` (Resolution §1). Every `RISK_PATH_PATTERNS` and `RISK_CONTENT_PATTERNS` entry has a static editor-authored `suggestedCheck` string (Resolution §4 — never derived from match content).

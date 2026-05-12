@@ -26,20 +26,6 @@ function exitBlock(msg) {
   process.exit(2);
 }
 
-// Commands that should use dedicated tools instead of Bash.
-// Note: ls and wc are NOT in this map — they are read-only when used without
-// output redirect and have no dedicated tool equivalent for that use case.
-// They are handled as redirect-conditional special cases below (like echo).
-const BLOCKED_COMMANDS = {
-  'cat':  'Read',
-  'head': 'Read',
-  'tail': 'Read',
-  'grep': 'Grep',
-  'rg':   'Grep',
-  'find': 'Glob',
-  'sed':  'Edit',
-  'awk':  'Edit',
-};
 
 /**
  * Extracts the first command word from a shell command segment.
@@ -181,22 +167,6 @@ function hasBashWriteVector(command) {
 // Git guard constants and helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Patterns that are always hard-blocked on any git command.
- * Each entry is tested against the full original command string (not a single
- * segment) — this catches flags like --force or --no-verify wherever they appear
- * in a chained expression.
- */
-const GIT_HARD_BLOCKED_PATTERNS = [
-  { pattern: /--force(?:-with-lease)?(?:\s|$)/, reason: '--force / --force-with-lease are forbidden' },
-  { pattern: /--no-verify(?:\s|$)/, reason: '--no-verify is forbidden' },
-  { pattern: /\bgit\b[^|;&]*commit[^|;&]*--amend/, reason: 'git commit --amend is forbidden' },
-  { pattern: /\bgit\b[^|;&]*reset[^|;&]*--hard/, reason: 'git reset --hard is forbidden' },
-  { pattern: /\bgit\b[^|;&]*clean[^|;&]*-[a-zA-Z]*f/, reason: 'git clean -f (any variant) is forbidden' },
-  { pattern: /\bgit\b[^|;&]*branch[^|;&]*-D/, reason: 'git branch -D (force-delete) is forbidden' },
-  { pattern: /\bgit\b[^|;&]*checkout[^|;&]* -- /, reason: 'git checkout -- <path> (discard changes) is forbidden — use `git restore <path>` instead' },
-  { pattern: /\bgit\b[^|;&]*stash[^|;&]*drop/, reason: 'git stash drop is forbidden' },
-];
 
 /**
  * Git subcommands that require approval (soft-blocked).
@@ -366,58 +336,6 @@ async function main(rawInput) {
     return;
   }
 
-  const cmdWords = extractAllCommandWords(command);
-  if (cmdWords.length === 0) {
-    exitOk();
-    return;
-  }
-
-  // Check every operator-separated segment's first word. If any segment starts
-  // with a blocked command, deny the whole expression — chained commands like
-  // `cd . && cat file` must not smuggle a blocked command in past an allowed
-  // first segment.
-  for (const cmdWord of cmdWords) {
-    const redirectTool = BLOCKED_COMMANDS[cmdWord];
-    if (redirectTool) {
-      exitBlock(
-        '[bash-guard] Use ' + redirectTool + ' tool instead of `' + cmdWord + '`. ' +
-        'Bash is reserved for git, npm, node, and process operations.'
-      );
-      return;
-    }
-
-    // Special case: echo with output redirect should use Write.
-    // Redirect check uses the full command (conservative — any redirect anywhere
-    // in a chained expression counts, matching the pre-segment-aware behavior).
-    if (cmdWord === 'echo' && hasOutputRedirect(command)) {
-      exitBlock(
-        '[bash-guard] Use Write tool instead of `echo > file`. ' +
-        'Bash is reserved for git, npm, node, and process operations.'
-      );
-      return;
-    }
-
-    // Special case: ls and wc are read-only when used without output redirect.
-    // Plain `ls /dir` or `wc -l file` are informational (human-visible only) and
-    // have no dedicated tool equivalent for that use case. Only block when the
-    // output is being redirected to a file — in that case, use Glob + Write or Read.
-    if (cmdWord === 'ls' && hasOutputRedirect(command)) {
-      exitBlock(
-        '[bash-guard] Use Glob tool instead of `ls > file`. ' +
-        'Bash is reserved for git, npm, node, and process operations.'
-      );
-      return;
-    }
-
-    if (cmdWord === 'wc' && hasOutputRedirect(command)) {
-      exitBlock(
-        '[bash-guard] Avoid redirecting `wc` output to a file via Bash. ' +
-        'Bash is reserved for git, npm, node, and process operations.'
-      );
-      return;
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Control file write guard (skipped during init — project not yet bootstrapped)
   // ---------------------------------------------------------------------------
@@ -437,17 +355,6 @@ async function main(rawInput) {
   for (const segment of segments) {
     const sub = getGitSubcommand(segment);
     if (sub === null) continue; // not a git command segment
-
-    // Hard-block: test the masked command string for destructive patterns.
-    // Masking neutralizes quoted strings and heredocs so commit message content
-    // (e.g. "sidecar cleanup" matching git clean) doesn't cause false positives.
-    const maskedCommand = maskStringContent(command);
-    for (const { pattern, reason } of GIT_HARD_BLOCKED_PATTERNS) {
-      if (pattern.test(maskedCommand)) {
-        exitBlock('[bash-guard] Blocked: ' + reason + '. This operation is permanently disabled.');
-        return;
-      }
-    }
 
     // Commit-gate hard-block: deny git commit ONLY when the command targets
     // the gated worktree path. Conductor commits to main fall through to the
