@@ -32,15 +32,40 @@ import { extractSection, extractCodeBlockContent } from './lib/handoff-utils.mjs
 // --- Risk-surface rules -----------------------------------------------------
 // Path-based: if any handoff-declared file path matches, reviewers must run.
 const RISK_PATH_PATTERNS = [
-  { rule: 'bin-script', regex: /^bin\// },
-  { rule: 'hook-script', regex: /^hooks\// },
-  { rule: 'mcp-tool', regex: /^mcp\// },
-  { rule: 'command', regex: /^commands\// },
-  { rule: 'plugin-manifest', regex: /^\.claude-plugin\// },
-  { rule: 'pipeline-state-schema', regex: /^\.pipeline\/.*\.json$/ },
+  {
+    rule: 'bin-script',
+    regex: /^bin\//,
+    suggestedCheck: 'Review bin/ script entrypoint for shell injection, arg handling, and side effects',
+  },
+  {
+    rule: 'hook-script',
+    regex: /^hooks\//,
+    suggestedCheck: 'Review hook script for stdin handling, exit codes, and project root escape',
+  },
+  {
+    rule: 'mcp-tool',
+    regex: /^mcp\//,
+    suggestedCheck: 'Review MCP tool registration for schema correctness and side effects',
+  },
+  {
+    rule: 'command',
+    regex: /^commands\//,
+    suggestedCheck: 'Review slash-command markdown for unintended LLM instructions',
+  },
+  {
+    rule: 'plugin-manifest',
+    regex: /^\.claude-plugin\//,
+    suggestedCheck: 'Review plugin manifest for permission changes',
+  },
+  {
+    rule: 'pipeline-state-schema',
+    regex: /^\.pipeline\/.*\.json$/,
+    suggestedCheck: 'Review pipeline-state schema change for backward compatibility',
+  },
   {
     rule: 'merge-apply-worktree-boundary',
     regex: /^(bin\/forge-worktree|hooks\/(workflow-guard|gate-enforcement|routing-enforcement|subagent-(start|stop)))/,
+    suggestedCheck: 'Review worktree merge/apply boundary for force flags, hook bypass, and uncommitted state',
   },
 ];
 
@@ -50,6 +75,7 @@ const RISK_CONTENT_PATTERNS = [
   {
     rule: 'shell-spawn',
     regex: /\b(child_process|spawn\s*\(|execSync\s*\(|spawnSync\s*\(|\.exec\s*\()/,
+    suggestedCheck: 'Review shell invocation for injection risk and argument quoting',
   },
   {
     rule: 'fs-write-outside-pipeline',
@@ -62,30 +88,37 @@ const RISK_CONTENT_PATTERNS = [
       const line = content.slice(lineStart, lineEnd);
       return !/\.pipeline\//.test(line);
     },
+    suggestedCheck: 'Review fs write/delete for path traversal and unintended target',
   },
   {
     rule: 'auth-crypto-secrets',
     regex: /\b(jsonwebtoken|\bjwt\.|\boauth\b|bcrypt|createCipher|createHash|crypto\.subtle|process\.env\.[A-Z_]*(?:SECRET|TOKEN|KEY|PASSWORD|PASS|CREDENTIAL)[A-Z_]*)/i,
+    suggestedCheck: 'Review secret handling for leakage in logs, files, or env',
   },
   {
     rule: 'network-boundary',
     regex: /\b(http\.createServer|https?:\/\/[\w.-]+|\bfetch\s*\(|\baxios\b|node-fetch|express\s*\(\s*\)|new\s+URL\s*\()/,
+    suggestedCheck: 'Review network call for trust boundary, validation, and rate limits',
   },
   {
     rule: 'new-public-handler',
     regex: /\b(export\s+(async\s+)?function\s+\w*(Handler|Route)\b|function\s+handle[A-Z]\w*|app\.(get|post|put|delete|patch)\s*\()/,
+    suggestedCheck: 'Review new public handler for input validation and error response shape',
   },
   {
     rule: 'schema-contract-change',
     regex: /\b(registerTool\s*\(|z\.object\s*\(|z\.string\s*\(|z\.enum\s*\()/,
+    suggestedCheck: 'Review schema change for downstream consumer compatibility',
   },
   {
     rule: 'env-or-path-resolution',
     regex: /\b(path\.resolve\s*\(.*process\.env|resolveProjectDir|resolvePluginRoot|resolvePluginDataDir)/,
+    suggestedCheck: 'Review env/path resolution for symlink traversal and unset-var fallback',
   },
   {
     rule: 'signal-format-change',
     regex: /\[reviewer-verdict\]|\[todo\]|\[suggest\]|\[health\]|\[task-block\]|\[solution-hit\]|\[promote-gotcha\]/,
+    suggestedCheck: 'Review signal-format change for downstream parser compatibility',
   },
 ];
 
@@ -130,6 +163,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
       skipReviewers: false,
       reasons: ['force-review-requested'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
     };
   }
 
@@ -138,6 +172,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
       skipReviewers: false,
       reasons: ['handoff-empty-or-invalid'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
     };
   }
 
@@ -148,6 +183,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
       skipReviewers: false,
       reasons: ['verification-section-missing'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
     };
   }
   const verificationTrimmed = verificationBody.trim();
@@ -157,6 +193,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
       skipReviewers: false,
       reasons: ['verification-not-clean'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
     };
   }
 
@@ -169,6 +206,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
         skipReviewers: false,
         reasons: ['blockers-present'],
         triggeredRules: [],
+        triggeredRulesLegacy: [],
       };
     }
   }
@@ -190,11 +228,13 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
   ].join('\n');
 
   const triggered = [];
+  const triggeredLegacy = [];
 
   for (const file of filePaths) {
     for (const pat of RISK_PATH_PATTERNS) {
       if (pat.regex.test(file)) {
-        triggered.push(`${pat.rule}:${file}`);
+        triggered.push({ rule: pat.rule, file, line: null, snippet: file, suggestedCheck: pat.suggestedCheck });
+        triggeredLegacy.push(`${pat.rule}:${file}`);
       }
     }
   }
@@ -205,7 +245,23 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
     while ((m = globalRegex.exec(codeContent)) !== null) {
       const passesExtraCheck = !pat.extraCheck || pat.extraCheck(codeContent, m.index);
       if (passesExtraCheck) {
-        triggered.push(`${pat.rule}:${m[0].slice(0, 40)}`);
+        const snippet = m[0].slice(0, 80);
+        // Compute line number: count newlines before match index (1-based)
+        const line = (typeof m.index === 'number') ? codeContent.slice(0, m.index).split('\n').length : null;
+        // Resolve which file contains this snippet by checking all file sections
+        let matchFile = null;
+        const sectionContents = [
+          { body: createBody, paths: extractFilePaths(createBody) },
+          { body: modifyBody, paths: extractFilePaths(modifyBody) },
+        ];
+        for (const sec of sectionContents) {
+          if (sec.body && sec.body.includes(snippet)) {
+            matchFile = sec.paths[0] || null;
+            break;
+          }
+        }
+        triggered.push({ rule: pat.rule, file: matchFile || '', line, snippet, suggestedCheck: pat.suggestedCheck });
+        triggeredLegacy.push(`${pat.rule}:${m[0].slice(0, 40)}`);
         break; // one confirmed match per rule is enough
       }
     }
@@ -216,6 +272,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
       skipReviewers: false,
       reasons: ['risk-surface-match'],
       triggeredRules: triggered,
+      triggeredRulesLegacy: triggeredLegacy,
     };
   }
 
@@ -223,6 +280,7 @@ export function classifyHandoff({ handoffContent, forceReview = false }) {
     skipReviewers: true,
     reasons: ['verification-clean', 'no-blockers', 'no-risk-surface-match'],
     triggeredRules: [],
+    triggeredRulesLegacy: [],
   };
 }
 
@@ -250,12 +308,46 @@ function extractDiffAddedCode(diffContent) {
     .join('\n');
 }
 
+/**
+ * Given a diff and a character offset into the addedCode string, resolve which
+ * source file owns that offset by reconstructing which +++ b/<file> header
+ * the added line was extracted from.
+ *
+ * @param {string} diffContent - raw unified diff text
+ * @param {number} addedCodeOffset - character offset into the addedCode string
+ * @param {string} addedCode - the result of extractDiffAddedCode(diffContent)
+ * @returns {string} - resolved file path, or '' if not resolvable
+ */
+function resolveFileFromDiff(diffContent, addedCodeOffset, addedCode) {
+  // Build a map of [addedCodeCharOffset, filePath] by scanning the diff
+  const diffLines = diffContent.split('\n');
+  let currentFile = '';
+  let addedCharCount = 0;
+
+  for (const diffLine of diffLines) {
+    if (diffLine.startsWith('+++ b/')) {
+      currentFile = diffLine.slice(6).trim().replace(/\\/g, '/');
+      continue;
+    }
+    if (diffLine.startsWith('+') && !diffLine.startsWith('+++')) {
+      const addedLine = diffLine.slice(1);
+      const lineLen = addedLine.length + 1; // +1 for the '\n' join
+      if (addedCharCount + lineLen > addedCodeOffset) {
+        return currentFile;
+      }
+      addedCharCount += lineLen;
+    }
+  }
+  return currentFile || '';
+}
+
 export function classifyDiff({ diffContent, coderStatus, forceReview = false }) {
   if (forceReview) {
     return {
       skipReviewers: false,
       reasons: ['force-review-requested'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
       classifiedBy: 'diff',
     };
   }
@@ -265,6 +357,7 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
       skipReviewers: false,
       reasons: ['diff-empty-or-invalid'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
       classifiedBy: 'diff',
     };
   }
@@ -275,6 +368,7 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
       skipReviewers: false,
       reasons: ['coder-status-missing'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
       classifiedBy: 'diff',
     };
   }
@@ -283,6 +377,7 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
       skipReviewers: false,
       reasons: ['verification-not-clean'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
       classifiedBy: 'diff',
     };
   }
@@ -293,20 +388,23 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
       skipReviewers: false,
       reasons: ['blockers-present'],
       triggeredRules: [],
+      triggeredRulesLegacy: [],
       classifiedBy: 'diff',
     };
   }
 
   // --- Check 3: Risk-surface classification ---
   const filePaths = extractDiffFilePaths(diffContent);
-  const codeContent = extractDiffAddedCode(diffContent);
+  const addedCode = extractDiffAddedCode(diffContent);
 
   const triggered = [];
+  const triggeredLegacy = [];
 
   for (const file of filePaths) {
     for (const pat of RISK_PATH_PATTERNS) {
       if (pat.regex.test(file)) {
-        triggered.push(`${pat.rule}:${file}`);
+        triggered.push({ rule: pat.rule, file, line: null, snippet: file, suggestedCheck: pat.suggestedCheck });
+        triggeredLegacy.push(`${pat.rule}:${file}`);
       }
     }
   }
@@ -314,10 +412,16 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
   for (const pat of RISK_CONTENT_PATTERNS) {
     const globalRegex = new RegExp(pat.regex.source, pat.regex.flags.includes('g') ? pat.regex.flags : pat.regex.flags + 'g');
     let m;
-    while ((m = globalRegex.exec(codeContent)) !== null) {
-      const passesExtraCheck = !pat.extraCheck || pat.extraCheck(codeContent, m.index);
+    while ((m = globalRegex.exec(addedCode)) !== null) {
+      const passesExtraCheck = !pat.extraCheck || pat.extraCheck(addedCode, m.index);
       if (passesExtraCheck) {
-        triggered.push(`${pat.rule}:${m[0].slice(0, 40)}`);
+        const snippet = m[0].slice(0, 80);
+        // Compute line number: count newlines before match index (1-based)
+        const line = (typeof m.index === 'number') ? addedCode.slice(0, m.index).split('\n').length : null;
+        // Resolve file from diff headers: find which +++ b/<path> file owns this added code
+        const fileForMatch = resolveFileFromDiff(diffContent, m.index, addedCode);
+        triggered.push({ rule: pat.rule, file: fileForMatch || '', line, snippet, suggestedCheck: pat.suggestedCheck });
+        triggeredLegacy.push(`${pat.rule}:${m[0].slice(0, 40)}`);
         break;
       }
     }
@@ -328,6 +432,7 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
       skipReviewers: false,
       reasons: ['risk-surface-match'],
       triggeredRules: triggered,
+      triggeredRulesLegacy: triggeredLegacy,
       classifiedBy: 'diff',
     };
   }
@@ -336,6 +441,7 @@ export function classifyDiff({ diffContent, coderStatus, forceReview = false }) 
     skipReviewers: true,
     reasons: ['verification-clean', 'no-blockers', 'no-risk-surface-match'],
     triggeredRules: [],
+    triggeredRulesLegacy: [],
     classifiedBy: 'diff',
   };
 }

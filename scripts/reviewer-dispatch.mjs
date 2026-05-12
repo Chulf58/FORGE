@@ -18,6 +18,51 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { classifyHandoff, classifyDiff } from './lean-risk-classify.mjs';
 
+/**
+ * Write findings.json to <worktreePath>/docs/context/findings.json.
+ * Applies Resolution item 5 validation: must be a directory, no path traversal.
+ * Fail-open: logs to stderr and returns without throwing on any error.
+ *
+ * @param {string} worktreePath - the --worktree= CLI arg value
+ * @param {Array<{rule: string, file: string, line: number|null, snippet: string, suggestedCheck: string, id: string}>} findings
+ */
+function writeFindingsJson(worktreePath, findings) {
+  if (!worktreePath || typeof worktreePath !== 'string') {
+    process.stderr.write('[reviewer-dispatch] findings.json write rejected: worktreePath is missing or not a string\n');
+    return;
+  }
+
+  // (a) Validate worktreePath is an existing directory
+  try {
+    const stat = fs.statSync(worktreePath);
+    if (!stat.isDirectory()) {
+      process.stderr.write(`[reviewer-dispatch] findings.json write rejected: ${worktreePath} is not a directory\n`);
+      return;
+    }
+  } catch (err) {
+    process.stderr.write(`[reviewer-dispatch] findings.json write rejected: ${worktreePath} does not exist or is not accessible\n`);
+    return;
+  }
+
+  // (b) Compute the target path
+  const target = path.join(worktreePath, 'docs', 'context', 'findings.json');
+
+  // (c) Path-traversal check: resolved target must be inside resolved worktreePath
+  const resolvedWorktree = path.resolve(worktreePath);
+  const resolvedTarget = path.resolve(target);
+  if (!resolvedTarget.startsWith(resolvedWorktree + path.sep) && resolvedTarget !== resolvedWorktree) {
+    process.stderr.write(`[reviewer-dispatch] findings.json write rejected: path traversal detected — target ${resolvedTarget} is outside worktree ${resolvedWorktree}\n`);
+    return;
+  }
+
+  // (d) Write
+  try {
+    fs.writeFileSync(target, JSON.stringify(findings, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    process.stderr.write(`[reviewer-dispatch] findings.json write rejected: write failed — ${err.message}\n`);
+  }
+}
+
 // --- Rule-to-reviewer mapping ------------------------------------------------
 const RULE_TO_REVIEWERS = {
   'shell-spawn': ['reviewer-safety'],
@@ -163,8 +208,14 @@ function dispatchForImplementStage(handoffContent, forceReview, pipeline, diffCo
   const reviewerSet = new Set();
   const reasons = [];
 
-  for (const rule of classification.triggeredRules) {
-    const ruleName = rule.split(':')[0];
+  // Attach sequential FIND-<N> IDs before processing
+  const findingsWithIds = classification.triggeredRules.map((rule, index) => ({
+    ...rule,
+    id: `FIND-${index + 1}`,
+  }));
+
+  for (const rule of findingsWithIds) {
+    const ruleName = typeof rule === 'string' ? rule.split(':')[0] : rule.rule;
     const mapped = RULE_TO_REVIEWERS[ruleName];
     if (mapped) {
       for (const r of mapped) reviewerSet.add(r);
@@ -194,7 +245,7 @@ function dispatchForImplementStage(handoffContent, forceReview, pipeline, diffCo
   const result = {
     reviewers: Array.from(reviewerSet).sort(),
     reasons,
-    triggeredRules: classification.triggeredRules,
+    triggeredRules: findingsWithIds,
   };
 
   if (classification.classifiedBy === 'diff') {
@@ -299,6 +350,12 @@ if (isMainModule()) {
       diffContent,
       coderStatus,
     );
+
+    // Write findings.json when --worktree is provided and findings are non-empty
+    if (args.worktree && result.triggeredRules && result.triggeredRules.length > 0) {
+      writeFindingsJson(args.worktree, result.triggeredRules);
+    }
+
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
   }

@@ -280,16 +280,18 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
    - If exit 0 and stdout JSON has `ok: true`: log the `verdict.signal` field from stdout. The completeness verdict is valid — use `verdict.verdict` for downstream gate logic. Proceed to step 4.
    - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[completeness-check] script failed: <reason from stdout or stderr>`. Skip completeness check and proceed to reviewer dispatch.
 4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script. This replaces the reviewer-triage agent.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --diff=<worktreePath>/docs/context/git-diff.txt --coder-status=<worktreePath>/docs/context/coder-status.json --stage=implement`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --diff=<worktreePath>/docs/context/git-diff.txt --coder-status=<worktreePath>/docs/context/coder-status.json --stage=implement --worktree=<worktreePath>`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`). Write it to `<worktreePath>/docs/context/lean-gate.json` for auditability.
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
    - If `reviewers` is empty: skip step 5 entirely and proceed directly to step 6 (Gate #2).
    - If `reviewers` is non-empty: proceed to step 5 with exactly those reviewers. Do NOT add or remove reviewers — the script output is authoritative.
 5. **Reviewers:** dispatch exactly the reviewers listed in step 4's `reviewers[]` output. Use `forge_get_model_recommendation` for each and spawn them (in parallel when multiple). No reviewer-triage agent — the script already determined the list.
 
-   **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
+   **Before spawning each reviewer**, prepend the following signal lines to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
 
    > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
+
+   Additionally, when `<worktreePath>/docs/context/findings.json` exists, prepend `[findings: <worktreePath>/docs/context/findings.json]` to each reviewer's prompt — the dispatch script writes this file; the reviewer agents read it to scope analysis to pre-identified findings.
 
    **Special case — `reviewer-style`:** When `reviewer-style` appears in the dispatch list, run the deterministic script first:
    - Run via Bash: `node scripts/reviewer-style-check.mjs --root <worktreePath>` with `timeout: 30000`.
