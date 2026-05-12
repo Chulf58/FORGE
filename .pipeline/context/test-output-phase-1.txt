@@ -1,28 +1,388 @@
- lines): src/main.js
-[verify-critic-citations] verified: 0, dropped: 1
-[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-1UCKW9\docs\context\critic-verified.json
-[verify-critic-citations] ERROR: zero findings survived verification
-[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-4terl8\docs\context\critic-findings.json
-[verify-critic-citations] DROP: "nonexistent file citation" — file not found: src/ghost.js
-[verify-critic-citations] verified: 0, dropped: 1
-[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-4terl8\docs\context\critic-verified.json
-[verify-critic-citations] ERROR: zero findings survived verification
-[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-aa29tz\docs\context\critic-findings.json
-[verify-critic-citations] PASS: "good finding"
-[verify-critic-citations] DROP: "bad finding" — evidence not found in lines 1-1 of src/main.js
-[verify-critic-citations] verified: 1, dropped: 1
-[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-aa29tz\docs\context\critic-verified.json
-[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-BmINsH\docs\context\critic-findings.json
-[verify-critic-citations] PASS: "ws normalize test"
-[verify-critic-citations] verified: 1, dropped: 0
-[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-BmINsH\docs\context\critic-verified.json
-✔ exits 0 and writes verified.json when all citations pass (429.5683ms)
-✔ exits 1 and drops finding when evidence not in source (433.3941ms)
-✔ exits 1 and drops finding when no citations array (424.1803ms)
-✔ exits 1 when line range is out of bounds (473.1575ms)
-✔ exits 1 when cited file does not exist (468.5723ms)
-✔ passes verified finding and drops failed one in mixed batch (506.4814ms)
-✔ whitespace normalization: evidence with collapsed whitespace matches (487.924ms)
+[run-tests] running 59 test file(s) from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c
+
+── hooks/agent-loop-guard-test.mjs ─────────────────────────────────────
+✔ exits 0 for non-Agent tool calls (423.8828ms)
+✔ exits 0 when tool_name is missing (421.8549ms)
+✔ exits 0 for documenter (exempt) (432.6302ms)
+✔ exits 0 when no run-active.json (conductor session) (422.7793ms)
+✔ exits 0 on first dispatch (count 0 → 1) (438.8993ms)
+✔ exits 0 on second dispatch (count 1 → 2) (470.4176ms)
+✔ exits 2 and denies at the cap (count >= 15) (446.2396ms)
+✔ deny message includes agent type and run id (430.8173ms)
+✔ strips forge: prefix for counter key (851.9028ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4346.0379
+
+── hooks/apply-context-inject-test.js ──────────────────────────────────
+
+--- Test 1: documenter + worktree run → context injected ---
+Exit: 0
+stderr: [apply-context] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Context injected: false
+  ASSERTION FAILED: Should have additionalContext
+✗ FAIL
+
+--- Test 2: documenter + worktree run → context injected ---
+Context injected: false
+  ASSERTION FAILED: Documenter should also get worktree context
+✗ FAIL
+
+--- Test 3: coder agent → no context injected ---
+stdout: (empty)
+✓ PASS
+
+--- Test 4: no implement run → no context ---
+stderr: [apply-context] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+  ASSERTION FAILED: Should log fallback
+✓ PASS
+
+--- Test 5: worktree path set but dir missing → no context ---
+stderr: [apply-context] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+  ASSERTION FAILED: Should log missing worktree
+✓ PASS
+
+--- Test 6: implement run without worktree → no context ---
+stderr: [apply-context] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+✓ PASS
+
+--- Test 7: pipelineType=plan + stages.implement.completed → context injected ---
+Exit: 0
+stderr: [apply-context] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Context injected: false
+  ASSERTION FAILED: Plan run with stages.implement.completed should inject context
+✗ FAIL
+
+--- Test 8: pipelineType=implement + no stages → context injected (backward compat) ---
+Exit: 0
+stderr: [apply-context] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Context injected: false
+  ASSERTION FAILED: Implement run without stages should still inject context (backward compat)
+✗ FAIL
+
+All tests complete.
+6 assertion(s) failed.
+
+── hooks/approval-token-test.mjs ───────────────────────────────────────
+✔ ACTION_KEYWORDS gate-approve is the literal string "approve" (1.5644ms)
+✔ ACTION_KEYWORDS commit and push remain string-valued (0.1618ms)
+✔ NEGATION_REGEXES is hoisted at module scope (compiled once) (0.241ms)
+✔ detectActions: literal "approve" fires gate-approve (1.2257ms)
+✔ detectActions: commit fires for string keyword (0.3974ms)
+✔ detectActions: push fires for string keyword (0.1772ms)
+✔ detectActions: "don't approve" suppresses gate-approve (0.1702ms)
+✔ detectActions: "don't commit" suppresses commit (0.1783ms)
+✔ detectActions: "do not push" suppresses push (0.1905ms)
+✔ detectActions: "do  not push" (double space) suppresses push (0.2896ms)
+✔ detectActions: "no, don't commit" suppresses commit (0.194ms)
+✔ detectActions: standalone "no" still suppresses (0.157ms)
+✔ detectActions: standalone "never" still suppresses (0.1543ms)
+✔ detectActions: "no" inside "note" does NOT suppress following commit (0.1655ms)
+✔ detectActions: "no" inside "none" does NOT suppress following commit (0.337ms)
+✔ detectActions: "no" inside "diagnose" does NOT suppress following push (0.1455ms)
+✔ detectActions: "no" inside "north" does NOT suppress following commit (0.1152ms)
+✔ stripInjectedContext: removes a single system-reminder block (0.3685ms)
+✔ stripInjectedContext: removes multiple non-overlapping blocks (0.0959ms)
+✔ stripInjectedContext: handles CRLF inside a block (0.089ms)
+✔ stripInjectedContext: handles LF inside a block (0.1052ms)
+✔ stripInjectedContext: leaves unclosed system-reminder tag untouched (0.1343ms)
+✔ stripInjectedContext: case-insensitive tag matching (0.1313ms)
+✔ stripInjectedContext: returns non-string inputs unchanged (0.1259ms)
+✔ detectActions: "approve" inside <system-reminder> does NOT detect (after strip) (0.2087ms)
+✔ detectActions: two system-reminder blocks each with keywords are both stripped (0.1349ms)
+✔ detectActions: keyword OUTSIDE system-reminder still detects (with system-reminder also present) (0.1376ms)
+✔ detectActions: literal "approve" with FORGE conductor rule injection still fires (0.1865ms)
+✔ extractUserMessage: payload.message.content as string (0.1218ms)
+✔ extractUserMessage: payload.message.content as array of text blocks (0.1525ms)
+✔ extractUserMessage: payload.user_prompt fallback (0.1131ms)
+✔ extractUserMessage: returns empty string for invalid payloads (0.1113ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20.8384
+
+── hooks/bash-guard-commit-gate-test.js ────────────────────────────────
+
+── bash-guard-commit-gate-test.js ───────────────────────────────────
+  PASS  T1 main-root commit allowed when worktree commit-gate pending + token present (got code=0 stderr=)
+  PASS  T2 worktree-targeted commit BLOCKED when commit-gate pending (got code=2 stderr=[bash-guard] Blocked: a commit gate is pending for worktree `C:\Users\cuj\AppData\Local\Temp\bash-guard-cg-test-pd8R95\.worktrees\r-bbbbbbbb`. Run `/forge:approve` to review and merge the pending gate before committing inside the worktree.)
+  PASS  T2 block message mentions pending commit gate
+  PASS  T3 soft-block fires when no token present (got code=2)
+  PASS  T3 soft-block message mentions user approval
+  PASS  T4 non-worktree gate does not block unrelated main commit with token (got code=0 stderr=)
+
+  6 tests: 6 passed, 0 failed
+
+
+── hooks/bash-guard-multirun-test.js ───────────────────────────────────
+
+── bash-guard-multirun-test.js ──────────────────────────────────────
+  PASS  T1 worker commit ALLOWED when env-var resolves runId despite 2 non-terminal runs (got code=0 stderr=[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-I3PWZD\.worktrees\r-aaaaaaaa", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-I3PWZD" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-I3PWZD\.worktrees\r-aaaaaaaa", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-I3PWZD" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-I3PWZD\.worktrees\r-aaaaaaaa", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-I3PWZD" — falling back to process.cwd())
+  PASS  T2 commit targeting OTHER worktree must NOT bypass via env var (got code=2)
+  PASS  T3 single-run worktree commit allowed without env var (got code=0 stderr=[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-1VP7T0\.worktrees\r-cccccccc", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-1VP7T0" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-1VP7T0\.worktrees\r-cccccccc", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-1VP7T0" — falling back to process.cwd()
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-1VP7T0\.worktrees\r-cccccccc", expected "C:\Users\cuj\AppData\Local\Temp\bash-guard-mr-test-1VP7T0" — falling back to process.cwd())
+  PASS  T4 invalid env-var runId format must NOT bypass (got code=2)
+
+  4 tests: 4 passed, 0 failed
+
+
+── hooks/bash-guard-narrowing-test.js ──────────────────────────────────
+
+── bash-guard-narrowing-test.js ─────────────────────────────────────
+  Verifies BLOCKED_COMMANDS and GIT_HARD_BLOCKED_PATTERNS are removed.
+
+  PASS  T1 `cat foo.txt` ALLOWED — not a FORGE safety concern (code=0 stderr=)
+  PASS  T2 `find . -name "*.js"` ALLOWED — not a FORGE safety concern (code=0 stderr=)
+  PASS  T3 `git commit --amend` ALLOWED when approval token present (code=0 stderr=)
+  PASS  T4 node -e write to .pipeline/project.json BLOCKED by control-file guard (code=2)
+  PASS  T4 block message mentions bash-guard
+  PASS  T5 `git commit` without approval token BLOCKED by soft-block (code=2)
+  PASS  T5 soft-block message mentions explicit user approval
+  PASS  T6 `git reset --hard` ALLOWED after removing GIT_HARD_BLOCKED_PATTERNS (code=0 stderr=)
+
+  8 tests: 8 passed, 0 failed
+
+
+── hooks/checkpoint-detection-test.js ──────────────────────────────────
+
+── checkpoint-detection-test.js ─────────────────────────────────────────
+  FAIL  coder emits [CONTEXT-CHECKPOINT] + checkpoint.md exists: outcome is "checkpoint"
+  FAIL  coder checkpoint: stderr confirms "stamping outcome: checkpoint"
+  FAIL  coder emits [CONTEXT-CHECKPOINT] but checkpoint.md missing: outcome is "completed" (orphan)
+  FAIL  orphan signal: stderr warns about missing checkpoint.md
+  FAIL  coder with no signal: outcome is "completed"
+  PASS  AC-3 (d): bridge remaining:20 causes ctx-post-tool.js to emit [CONTEXT-CHECKPOINT]
+  FAIL  AC-3 (e): subagent-start.js writes sidecar with expected sessionId
+
+  7 tests: 1 passed, 6 failed
+
+── hooks/control-file-guard-test.js ────────────────────────────────────
+
+── control-file-guard-test.js ───────────────────────────────────────
+
+  19 tests: 19 passed, 0 failed
+
+── hooks/ctx-session-start-terminal-cleanup-test.js ────────────────────
+[ctx-session-start-terminal-cleanup] PASS
+  no notice emitted on stdout
+  run-active.json deleted (terminal run cleanup)
+
+── hooks/dispatch-context-test.js ──────────────────────────────────────
+✔ resolveRunId — dispatch-context file (4th path): valid runId returned (32.8813ms)
+✔ resolveRunId — dispatch-context file: invalid runId format falls through (27.7141ms)
+✔ resolveRunId — dispatch-context file absent: falls through to findActiveRun (5.8626ms)
+
+── hooks/gate-approve-guard-test.js ────────────────────────────────────
+
+── gate-approve-guard-test.js ───────────────────────────────────────────
+  PASS  canonical: /forge:approve creates token file
+  PASS  canonical: token includes gate-approve action
+  PASS  canonical: "commit" creates token file
+  PASS  canonical: token includes commit action
+  PASS  canonical: "push" creates token file
+  PASS  canonical: token includes push action
+  PASS  canonical: combined keywords create token
+  PASS  canonical: combined includes gate-approve
+  PASS  canonical: combined includes commit
+  PASS  canonical: combined includes push
+  PASS  canonical: negated commit creates no token
+  PASS  canonical: negated approve creates no token
+  PASS  canonical: unrelated message deletes existing token (clean slate)
+  PASS  fallback message.content: creates token
+  PASS  fallback message.content: includes gate-approve
+  PASS  fallback message string: creates token
+  PASS  fallback message string: includes commit
+  PASS  fallback user_prompt: creates token
+  PASS  fallback user_prompt: includes gate-approve
+  PASS  empty prompt: no token created
+  PASS  no message fields: no token created
+  PASS  malformed stdin: exits 0 (no crash)
+  PASS  malformed stdin: no token created
+  PASS  workflow-guard: Write approved + no token → exit 2 (blocked)
+  PASS  workflow-guard: block message explains gate approval requirement
+  PASS  workflow-guard: Write approved + valid token → exit 0 (allowed)
+  PASS  workflow-guard: Write pending + no token → exit 0 (allowed)
+  PASS  workflow-guard: Edit approved + no token → exit 2 (blocked)
+  PASS  workflow-guard: Edit approved + valid token → exit 0 (allowed)
+  PASS  workflow-guard: Write to non-gate file → exit 0 (unaffected)
+  PASS  workflow-guard: Write approved + expired token → exit 2 (blocked)
+  PASS  workflow-guard: Write approved + wrong action token → exit 2 (blocked)
+  PASS  workflow-guard: Bash tool call → exit 0 (not Write/Edit)
+  PASS  e2e: approve prompt mints token
+  PASS  e2e: Write approved succeeds after approve token minted
+  PASS  e2e: commit prompt mints token
+  PASS  e2e: minted token has commit action
+  PASS  e2e: minted token has expiresAt for TTL enforcement
+
+  38 tests: 38 passed, 0 failed
+
+── hooks/gate-sync-test.js ─────────────────────────────────────────────
+
+--- Test 1: pending → gate-pending ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Status: running | Step: planner
+Assertion failed: Expected gate-pending, got running
+✗ FAIL
+
+--- Test 2: approved → completed ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Status: gate-pending | Step: planner
+Assertion failed: Expected completed, got gate-pending
+✗ FAIL
+
+--- Test 3: non-gate file ignored ---
+✓ PASS
+
+--- Test 4: no run exists → auto-create on pending gate ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Runs in index: 0
+Assertion failed: Should have 1 auto-created run
+✗ FAIL — no run created
+
+--- Test 5: gate2 no run → auto-create implement ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+✗ FAIL
+
+--- Test 6: stale run with wrong feature → auto-create new run ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Runs in index: 1
+Assertion failed: Should have 2 runs (stale + new)
+Stale run status: created
+✗ FAIL — no new run found
+
+--- Test 7: run with matching feature → attach correctly ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Runs in index: 1
+Run status: running
+Assertion failed: Matching run should be gate-pending
+✗ FAIL
+
+--- Test 8: gate2 pending + implement run → auto-create worktree ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+worktreePath: null
+branchName: null
+Assertion failed: worktreePath should be set
+Assertion failed: branchName should be forge/<runId>
+Worktree dir exists: null
+Assertion failed: Worktree directory should exist
+handoff.md copied to worktree: null
+Assertion failed: handoff.md should be in worktree
+✗ FAIL
+
+--- Test 9: gate2 pending + run with worktree → skip ---
+Exit: 0 | stderr: [gate-sync] Failed to load core module: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+Worktree auto-created: false
+✓ PASS
+
+All tests complete.
+
+── hooks/hook-utils-test.js ────────────────────────────────────────────
+
+── hook-utils-test.js ───────────────────────────────────────────────────
+  PASS  matching absolute cwd: returns project root (strips worktree suffix if present)
+  PASS  missing cwd: falls back to process.cwd()
+  PASS  missing cwd: no stderr warning emitted
+[forge-hook] payload.cwd is not absolute ("relative/path") — falling back to process.cwd()
+  PASS  non-absolute cwd: falls back to process.cwd()
+  PASS  non-absolute cwd: stderr warning emitted
+[forge-hook] payload.cwd mismatch: received "/tmp/attacker-controlled", expected "C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c" — falling back to process.cwd()
+  PASS  mismatched cwd: falls back to process.cwd()
+  PASS  mismatched cwd: stderr warning mentions mismatch
+  PASS  non-string cwd: falls back to process.cwd()
+  PASS  non-string cwd: no stderr warning
+  PASS  null payload: falls back to process.cwd()
+  PASS  null payload: no stderr warning
+[forge-hook] payload.cwd mismatch: received "C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c/../../../etc", expected "C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c" — falling back to process.cwd()
+  PASS  path traversal attempt: falls back to process.cwd()
+  PASS  path traversal attempt: stderr warning emitted
+
+── worktree strip regex ─────────────────────────────────────────────────
+  PASS  worktree strip: unix path → project root
+  PASS  worktree strip: windows path with forward slashes → project root
+  PASS  worktree strip: non-worktree path → null (not stripped)
+  PASS  worktree strip: invalid run ID format → null (not stripped)
+  PASS  worktree strip: trailing slash handled
+  PASS  worktree strip: nested worktrees — strips innermost only
+  PASS  CLAUDE_PLUGIN_ROOT unset: returns hook-derived root
+  PASS  CLAUDE_PLUGIN_ROOT unset: no stderr warning
+  PASS  CLAUDE_PLUGIN_ROOT matches: accepted
+  PASS  CLAUDE_PLUGIN_ROOT matches: no stderr warning
+[forge-hook] CLAUDE_PLUGIN_ROOT is not absolute ("relative/path/to/plugin") — falling back to hook-derived plugin root
+  PASS  CLAUDE_PLUGIN_ROOT non-absolute: falls back to hook-derived root
+  PASS  CLAUDE_PLUGIN_ROOT non-absolute: warning emitted
+[forge-hook] CLAUDE_PLUGIN_ROOT mismatch: "\tmp\attacker-plugin" !== "C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c" — falling back to hook-derived plugin root
+  PASS  CLAUDE_PLUGIN_ROOT mismatched: falls back to hook-derived root
+  PASS  CLAUDE_PLUGIN_ROOT mismatched: warning emitted
+  PASS  stripAnsi: safe text unchanged
+  PASS  stripAnsi: run ID unchanged
+  PASS  stripAnsi: clear-screen CSI stripped
+  PASS  stripAnsi: colour CSI stripped
+  PASS  stripAnsi: text inside CSI preserved
+  PASS  stripAnsi: OSC title sequence stripped
+  PASS  stripAnsi: null byte stripped
+  PASS  stripAnsi: backspace stripped
+  PASS  stripAnsi: bare ESC stripped
+  PASS  stripAnsi: tab preserved
+  PASS  stripAnsi: newline preserved
+  PASS  stripAnsi: null coerced to empty string
+  PASS  stripAnsi: number coerced to string
+
+  40 tests: 40 passed, 0 failed
+
+── hooks/mcp-deps-install-test.js ──────────────────────────────────────
+✔ resolveLiveConfigPath — exported by hooks/mcp-deps-install.js (0.969ms)
+✔ resolveLiveConfigPath — pluginDataDir set returns <pluginDataDir>/forge-config.json (0.2814ms)
+✔ resolveLiveConfigPath — pluginDataDir null returns <mainProjectDir>/.pipeline/forge-config.json (0.1815ms)
+✔ resolveLiveConfigPath — regression guard: never includes .worktrees/ when mainProjectDir is the main root (0.9585ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9.7141
+
+── hooks/per-run-active-path-test.mjs ──────────────────────────────────
+✔ resolvePerRunPath — valid runId returns correct path (1.308ms)
+✔ resolvePerRunPath — null runId returns null (0.1538ms)
+✔ resolvePerRunPath — undefined runId returns null (0.1467ms)
+✔ resolvePerRunPath — empty string returns null (0.9306ms)
+✔ resolvePerRunPath — runId missing r- prefix returns null (0.2431ms)
+✔ resolvePerRunPath — runId with path-traversal characters returns null (0.1511ms)
+✔ resolvePerRunPath — runId with slash returns null (0.1814ms)
+✔ resolvePerRunPath — runId with special chars returns null (0.1746ms)
+✔ resolvePerRunPath — runId r-fcedb742 (real run) returns correct path (0.2273ms)
+✔ resolvePerRunPath — runId with uppercase is valid (0.2983ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11.9691
+
+── hooks/planmd-worktree-guard-test.mjs ────────────────────────────────
+✔ guard passes — absolute path inside worktree (1.0757ms)
+✔ guard blocks — absolute path to main root docs/PLAN.md from worktree cwd (0.2936ms)
+✔ guard passes — write from main root cwd (not a worktree) (0.1644ms)
+✔ guard passes — non-plan file from worktree cwd (0.147ms)
+✔ guard passes — null target (0.8744ms)
+✔ guard blocks — relative path resolving outside worktree (0.1963ms)
+✔ guard passes — cwd with non-runId worktrees segment is treated as main root (0.1633ms)
 ℹ tests 7
 ℹ suites 0
 ℹ pass 7
@@ -30,155 +390,1068 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 3230.9929
+ℹ duration_ms 10.3058
 
-── scripts/wiring-verify-test.mjs ──────────────────────────────────────
-✖ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (646.8028ms)
-✖ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (447.132ms)
-✖ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (499.7499ms)
-✖ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (412.7562ms)
-✖ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (402.0505ms)
-ℹ tests 5
+── hooks/resolve-runid-test.js ─────────────────────────────────────────
+✔ resolveRunId — exported by hooks/hook-utils.js (1.0708ms)
+✔ resolveRunId — env var FORGE_WORKER_RUN_ID takes precedence over everything (5.886ms)
+✔ resolveRunId — worktree path detection from payload.cwd (6.441ms)
+✔ resolveRunId — env var rejects invalid runId format (12.6193ms)
+✔ resolveRunId — falls back to findActiveRun when env+cwd unavailable (7.5193ms)
+✔ resolveRunId — returns null when env+cwd unavailable AND multiple non-terminal runs (7.9623ms)
+✔ resolveRunId — returns null when env+cwd unavailable AND zero non-terminal runs (4.3126ms)
+✔ resolveRunId — payload.cwd outside .worktrees/ does not match (7.841ms)
+ℹ tests 8
 ℹ suites 0
-ℹ pass 0
-ℹ fail 5
+ℹ pass 8
+ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 2415.5599
+ℹ duration_ms 60.4111
 
-✖ failing tests:
+── hooks/subagent-stop-verdict-test.js ─────────────────────────────────
 
-test at scripts\wiring-verify-test.mjs:109:1
-✖ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (646.8028ms)
-  AssertionError [ERR_ASSERTION]: (a) — scripts/wiring-verify.mjs must exist before tests can pass
-      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
-      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:135:5)
-      at Test.runInAsyncScope (node:async_hooks:228:14)
-      at Test.run (node:internal/test_runner/test:1118:25)
-      at Test.start (node:internal/test_runner/test:1015:17)
-      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
-    generatedMessage: false,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
+── subagent-stop-verdict-test.js ────────────────────────────────────────
+  FAIL  reviewer-safety with [reviewer-verdict]: outcome is BLOCK
+  FAIL  reviewer-logic with [reviewer-verdict]: outcome is APPROVED
+  FAIL  planner with forged [reviewer-verdict]: outcome is "truncated" (signal ignored, artifact missing)
+  PASS  planner with forged [reviewer-verdict]: BLOCK not applied
+  FAIL  coder with forged [reviewer-verdict]: outcome is "completed"
+  FAIL  reviewer-boundary (bare name): outcome is REVISE
+  FAIL  reviewer-safety with cross-agent verdict (reviewer-logic): outcome is "no-verdict" (agent mismatch rejected)
+  PASS  reviewer-safety with cross-agent verdict: BLOCK not applied
+  FAIL  reviewer-safety with matching agent field: BLOCK still extracted
+  FAIL  completeness-checker with [reviewer-verdict]: outcome is APPROVED
+  FAIL  completeness-checker without verdict: outcome is "no-verdict" (truncation detected)
+  FAIL  gotcha-checker with "### Verdict" section: outcome is "completed"
+  FAIL  gotcha-checker without "### Verdict" section: outcome is "truncated"
+  FAIL  researcher without researcher-status.json: outcome is "truncated"
+  FAIL  researcher with up-to-date researcher-status.json: outcome is "completed"
+  FAIL  reviewer-safety with fresh verdict file: outcome is APPROVED (unchanged)
+  FAIL  reviewer-safety with STALE verdict file (mtime < startedAt): outcome downgraded to no-verdict
+  FAIL  reviewer-safety with MISSING verdict file: outcome downgraded to no-verdict
+  FAIL  planner with worktree-fresh PLAN.md but per-run-active missing worktreePath: outcome stays "completed" (not truncated)
+  FAIL  reviewer-safety with no signal but verdict file **APPROVED**: outcome recovered from file
+  FAIL  reviewer-boundary with no signal but verdict file **BLOCK**: outcome recovered as BLOCK
+  FAIL  reviewer-logic with no signal AND verdict file lacks **VERDICT** marker: outcome stays no-verdict
+  FAIL  reviewer-boundary with plain-text REVISE under ### Verdict (no bold): recovered as REVISE
+  FAIL  verdict scanner picks final ### Verdict APPROVED, not per-criterion REVISE
+  FAIL  reviewer-safety with no signal + STALE verdict file: outcome stays no-verdict (no recovery from stale)
+  FAIL  reviewer fallback resolves worktreePath from run.json when per-run-active lacks it: APPROVED recovered
+  FAIL  reviewer mtime cross-check resolves worktreePath from run.json when per-run-active lacks it: APPROVED stays
 
-test at scripts\wiring-verify-test.mjs:155:1
-✖ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (447.132ms)
-  AssertionError [ERR_ASSERTION]: (b) — scripts/wiring-verify.mjs must exist before tests can pass
-      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
-      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:180:5)
-      at Test.runInAsyncScope (node:async_hooks:228:14)
-      at Test.run (node:internal/test_runner/test:1118:25)
-      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
-      at Test.postRun (node:internal/test_runner/test:1247:19)
-      at Test.run (node:internal/test_runner/test:1175:12)
-      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
-    generatedMessage: false,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
+  27 tests: 2 passed, 25 failed
 
-test at scripts\wiring-verify-test.mjs:204:1
-✖ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (499.7499ms)
-  AssertionError [ERR_ASSERTION]: (c) — scripts/wiring-verify.mjs must exist before tests can pass
-      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
-      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:221:5)
-      at Test.runInAsyncScope (node:async_hooks:228:14)
-      at Test.run (node:internal/test_runner/test:1118:25)
-      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
-      at Test.postRun (node:internal/test_runner/test:1247:19)
-      at Test.run (node:internal/test_runner/test:1175:12)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
-    generatedMessage: false,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
+── hooks/worker-task-inject-marker-test.mjs ────────────────────────────
+✔ marker is written at the worker-cwd worktree path (closes worker-session-missing bug) (520.5957ms)
+✔ marker is also written to the main project root (preserves existing consumer behavior) (443.5742ms)
+✔ non-worktree session: marker is written at the single cwd location (no regression) (442.9851ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1413.6389
 
-test at scripts\wiring-verify-test.mjs:242:1
-✖ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (412.7562ms)
-  AssertionError [ERR_ASSERTION]: (d) — scripts/wiring-verify.mjs must exist before tests can pass
-      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
-      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:279:5)
-      at Test.runInAsyncScope (node:async_hooks:228:14)
-      at Test.run (node:internal/test_runner/test:1118:25)
-      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
-      at Test.postRun (node:internal/test_runner/test:1247:19)
-      at Test.run (node:internal/test_runner/test:1175:12)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
-    generatedMessage: false,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
+── hooks/worker-task-inject-test.mjs ───────────────────────────────────
+✔ targeted: returns exact file when present (4.4395ms)
+✔ targeted: returns null when exact file absent (sibling present) (4.0543ms)
+✔ targeted: does NOT return lex-first sibling for wrong run (3.6488ms)
+✔ targeted: returns null when .pipeline dir missing (0.3378ms)
+✔ fallback: returns lex-first matching file (3.4394ms)
+✔ fallback: returns null when no task file exists (1.6999ms)
+✔ fallback: does not match non-task files (3.3184ms)
+✔ fallback: returns null when .pipeline dir missing (0.3194ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30.7788
 
-test at scripts\wiring-verify-test.mjs:303:1
-✖ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (402.0505ms)
-  AssertionError [ERR_ASSERTION]: (e) — scripts/wiring-verify.mjs must exist before tests can pass
-      at assertVerifierLoaded (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:96:10)
-      at TestContext.<anonymous> (file:///C:/Users/cuj/forge-plugin/.worktrees/r-b4176e35/scripts/wiring-verify-test.mjs:346:5)
-      at Test.runInAsyncScope (node:async_hooks:228:14)
-      at Test.run (node:internal/test_runner/test:1118:25)
-      at Test.processPendingSubtests (node:internal/test_runner/test:787:18)
-      at Test.postRun (node:internal/test_runner/test:1247:19)
-      at Test.run (node:internal/test_runner/test:1175:12)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
-    generatedMessage: false,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
+── mcp/advance-stage-auto-complete-test.mjs ────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\advance-stage-auto-complete-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/apply-guard-test.mjs ────────────────────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── mcp/canUseTool-return-test.mjs ──────────────────────────────────────
+node:internal/modules/cjs/loader:1456
+  const err = new Error(message);
+              ^
+
+Error: Cannot find module 'zod'
+Require stack:
+- C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\canUseTool-return-test.mjs
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1456:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1066:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1071:22)
+    at Module._load (node:internal/modules/cjs/loader:1242:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.require (node:internal/modules/cjs/loader:1556:12)
+    at require (node:internal/modules/helpers:152:16)
+    at file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/canUseTool-return-test.mjs:10:15
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    'C:\\Users\\cuj\\forge-plugin\\.worktrees\\r-7bc33c4c\\mcp\\canUseTool-return-test.mjs'
+  ]
+}
+
+Node.js v24.14.0
+
+── mcp/concurrent-runs-isolation-test.mjs ──────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── mcp/config-store-test.mjs ───────────────────────────────────────────
+
+── config-store-test.mjs ────────────────────────────────────────────────
+  PASS  valid minimal config: no error
+  PASS  forge-config.default.json: passes validation
+  PASS  unknown provider type: rejected
+  PASS  envVar with shell injection ($()): rejected
+  PASS  envVar with path traversal: rejected
+  PASS  lowercase envVar: rejected
+  PASS  non-string envVar: rejected
+  PASS  empty envVar: rejected
+  PASS  provider missing id: rejected
+  PASS  providers not array: rejected
+  PASS  model missing id: rejected
+  PASS  model missing providerId: rejected
+  PASS  agentModelMap entry not object: rejected
+  PASS  agentModelMap as array: rejected
+  PASS  config without models field: passes (models is optional)
+
+  15 tests: 15 passed, 0 failed
+
+── mcp/context-paths-test.mjs ──────────────────────────────────────────
+✔ reviewerOutputDir resolves under <wt>/.pipeline/context/reviewer-output (1.0563ms)
+✔ researcherStatusPath resolves under <wt>/.pipeline/context/researcher-status.json (0.2231ms)
+✔ verdictPath assembles <runId>-<reviewer>-<phase>.md for single-pass run (0.1931ms)
+✔ verdictPath assembles phase-indexed filename for phased run (0.908ms)
+✔ verdictPath supports debug and refactor phase labels (0.2098ms)
+✔ all three helpers share the same <wt>/.pipeline/context/ root (0.2802ms)
+✔ different worktrees produce non-overlapping paths (parallel-runs isolation) (0.2569ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10.8022
+
+── mcp/dashboard-state-shape-test.mjs ──────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\dashboard-state-shape-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/forge-list-runs-filter-test.mjs ─────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\forge-list-runs-filter-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/forge-read-board-filter-test.mjs ────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\forge-read-board-filter-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/gate-consume-test.mjs ───────────────────────────────────────────
+[forge-worker] cleared gate file after approval: gate1
+[forge-worker] cleared gate file after approval: gate2
+✔ T1 — gate-pending.json is DELETED after consumeGateApproval(gate1) (5.3326ms)
+✔ T2 — gate-pending.json is DELETED after consumeGateApproval(gate2) (2.1129ms)
+✔ T3 — consumeGateApproval does not throw when gate file is already absent (0.5764ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 17.8823
+
+── mcp/gate-pending-guard-test.mjs ─────────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\gate-pending-guard-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/gemini-adapter-test.mjs ─────────────────────────────────────────
+
+── gemini-adapter-test.mjs ──────────────────────────────────────────────
+  PASS  API key NOT present in request URL
+  PASS  URL does not contain ?key= query param
+  PASS  API key sent via x-goog-api-key header
+  PASS  success: text extracted correctly
+  PASS  success: inputTokens correct
+  PASS  success: outputTokens correct
+  PASS  error message does not echo API key
+  PASS  error message does not include raw body URL
+  PASS  error message includes status code
+  PASS  error message includes error status string
+  PASS  non-JSON error: raw body not in error message
+  PASS  non-JSON error: status code present
+  PASS  503 retry: fetched 3 times before success
+  PASS  503 retry: success on third attempt
+  PASS  JSON parse error: descriptive message present
+  PASS  JSON parse error: raw body not included in message
+  PASS  JSON parse error: body slice not included
+
+  PASS  503 retries exhausted: error thrown
+  PASS  503 retries exhausted: err.transient is true (structured reroute signal)
+  PASS  503 retries exhausted: adapter made 4 total attempts (1 + 3 retries)
+  PASS  non-503 error: thrown
+  PASS  non-503 error: err.transient not set (not reroute candidate)
+  22 tests: 22 passed, 0 failed
+
+── mcp/model-mgmt-test.mjs ─────────────────────────────────────────────
+
+── model-mgmt-test.mjs ──────────────────────────────────────────────────
+  PASS  capability allowlist contains exactly the documented six values
+  PASS  cost tiers: free, low, medium, high
+  PASS  reasoning tiers: haiku, sonnet, opus
+  PASS  validateId: non-empty string passes
+  PASS  validateId: empty string rejected
+  PASS  validateId: non-string rejected
+  PASS  validateId: undefined rejected
+  PASS  validateProviderId: known provider passes
+  PASS  validateProviderId: another known provider passes
+  PASS  validateProviderId: unknown provider rejected
+  PASS  validateProviderId: empty string rejected
+  PASS  validateCapabilities: single known cap passes
+  PASS  validateCapabilities: multiple known caps pass
+  PASS  validateCapabilities: empty array rejected
+  PASS  validateCapabilities: null rejected
+  PASS  validateCapabilities: typo in array rejected
+  PASS  validateCapabilities: unknown cap not in allowlist rejected
+  PASS  validateCostTier: free passes
+  PASS  validateCostTier: high passes
+  PASS  validateCostTier: unknown tier rejected
+  PASS  validateCostTier: undefined rejected (required field)
+  PASS  validatePricing: valid shape passes
+  PASS  validatePricing: zero values allowed
+  PASS  validatePricing: null rejected
+  PASS  validatePricing: missing cached rejected
+  PASS  validatePricing: negative rejected
+  PASS  validatePricing: non-numeric rejected
+  PASS  validatePricing: Infinity rejected
+  PASS  validatePricing: array rejected (not object)
+  PASS  validateReasoningTier: undefined passes (optional)
+  PASS  validateReasoningTier: null passes (optional)
+  PASS  validateReasoningTier: haiku passes
+  PASS  validateReasoningTier: unknown rejected
+  PASS  validateContextWindow: undefined passes (optional)
+  PASS  validateContextWindow: positive integer passes
+  PASS  validateContextWindow: zero rejected
+  PASS  validateContextWindow: negative rejected
+  PASS  validateContextWindow: non-integer rejected
+  PASS  validateNotes: undefined passes
+  PASS  validateNotes: string passes
+  PASS  validateNotes: non-string rejected
+  PASS  addModelToConfig: returns ok:true on success
+  PASS  addModelToConfig: appends to models array
+  PASS  addModelToConfig: entry stored with correct providerId
+  PASS  addModelToConfig: pricing stored correctly
+  PASS  addModelToConfig: optional contextWindow stored
+  PASS  addModelToConfig: optional reasoningTier stored
+  PASS  addModelToConfig: optional notes stored
+  PASS  addModelToConfig: duplicate id rejected
+  PASS  addModelToConfig: duplicate error mentions "already exists"
+  PASS  addModelToConfig: unknown provider rejected
+  PASS  addModelToConfig: error names the unknown provider
+  PASS  addModelToConfig: rejection does not mutate models
+  PASS  addModelToConfig: typo capability rejected
+  PASS  addModelToConfig: error names the unknown capability
+  PASS  addModelToConfig: negative pricing rejected
+  PASS  addModelToConfig: missing cached field rejected
+  PASS  addModelToConfig: null pricing rejected
+  PASS  addModelToConfig: missing id rejected
+  PASS  addModelToConfig: unknown costTier rejected
+  PASS  addModelToConfig: unknown reasoningTier rejected
+  PASS  addModelToConfig: minimal params (required only) succeed
+  PASS  addModelToConfig: contextWindow omitted when not provided
+  PASS  addModelToConfig: reasoningTier omitted when not provided
+  PASS  addModelToConfig: notes omitted when not provided
+  PASS  addModelToConfig: creates models array when missing
+  PASS  addModelToConfig: models array created
+  PASS  updateModelInConfig: partial pricing update succeeds
+  PASS  updateModelInConfig: pricing replaced
+  PASS  updateModelInConfig: untouched capabilities preserved
+  PASS  updateModelInConfig: untouched costTier preserved
+  PASS  updateModelInConfig: unknown id rejected
+  PASS  updateModelInConfig: error names the id and says not found
+  PASS  updateModelInConfig: invalid capability in update rejected
+  PASS  updateModelInConfig: error names the unknown capability
+  PASS  updateModelInConfig: rejection does not mutate capabilities
+  PASS  updateModelInConfig: invalid pricing rejected
+  PASS  updateModelInConfig: rejection does not mutate pricing
+  PASS  updateModelInConfig: unknown providerId rejected
+  PASS  updateModelInConfig: rejection does not mutate providerId
+  PASS  updateModelInConfig: no-op update returns ok:true
+  PASS  updateModelInConfig: no-op update does not mutate entry
+  PASS  updateModelInConfig: multi-field update succeeds
+  PASS  updateModelInConfig: all three touched fields updated
+  PASS  updateModelInConfig: untouched pricing preserved in multi-field update
+  PASS  round-trip add: helper succeeds
+  PASS  round-trip add: model persists to disk and re-reads with correct pricing
+  PASS  round-trip update: helper succeeds
+  PASS  round-trip update: touched fields persist to disk
+  PASS  round-trip update: untouched capabilities preserved on disk
+
+  90 tests: 90 passed, 0 failed
+
+── mcp/openai-adapter-test.mjs ─────────────────────────────────────────
+
+── openai-adapter-test.mjs ──────────────────────────────────────────────
+  PASS  success: text extracted from output[0].content[0].text
+  PASS  success: inputTokens from usage.input_tokens (not prompt_tokens)
+  PASS  success: outputTokens from usage.output_tokens (not completion_tokens)
+  PASS  success: reasoningTokens from usage.output_tokens_details.reasoning_tokens
+  PASS  default: no reasoning field when reasoningEffort not set
+  PASS  explicit reasoningEffort forwarded as reasoning.effort
+  PASS  explicit medium effort forwarded correctly
+  PASS  429 retry: called fetch twice
+  PASS  429 retry: succeeded on second attempt
+  PASS  429 with long Retry-After: throws immediately without retry
+  PASS  429 no-header retry: retried once with fallback delay
+  PASS  429 no-header retry: succeeded on second attempt
+  PASS  429 persists: throws after exactly one retry, no infinite loop
+  PASS  non-retryable 401: throws immediately without retry
+  PASS  network failure: throws with network error message
+  PASS  non-2xx: raw body (with potential key) not in error message
+  PASS  non-2xx: sensitive body content not in error message
+  PASS  non-2xx: status code present in message
+  PASS  non-2xx: error type extracted from body
+  PASS  non-2xx non-JSON: raw body not in error message
+  PASS  non-2xx non-JSON: status code present
+  PASS  JSON parse error: raw body not in error message
+  PASS  JSON parse error: body slice not in error message
+  PASS  JSON parse error: descriptive message present
+  PASS  OpenAI 503: error thrown
+  PASS  OpenAI 503: err.transient is true (structured reroute signal)
+  PASS  OpenAI non-503: error thrown
+  PASS  OpenAI non-503: err.transient not set (not reroute candidate)
+
+  28 tests: 28 passed, 0 failed
+
+── mcp/orphan-stamp-test.mjs ───────────────────────────────────────────
+✔ T1 — completed entry preserved unchanged (26.4466ms)
+✔ T2 — orphan entry stamped with outcome=orphan-stop, completedAt, durationMs (40.9989ms)
+✔ T3 — mixed case: only orphan stamped, completed entry unchanged (39.4816ms)
+✔ T4 — entry with startedAt only (completedAt field absent) treated as orphan (35.6897ms)
+✔ T5 — file absent → no throw, no error (1.2143ms)
+✔ T6 — empty agents array → no-op (6.3957ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 158.1039
+
+── mcp/per-run-state-lifecycle-test.mjs ────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\per-run-state-lifecycle-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/resume-terminal-suppression-test.mjs ────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\resume-terminal-suppression-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/router-test.mjs ─────────────────────────────────────────────────
+
+── router-test.mjs ──────────────────────────────────────────────────────
+  PASS  supervisor: allowedVendors force-override → gpt-5.4 (only openai with reasoning+agentic)
+  PASS  supervisor: provider is openai (force-override via allowedVendors)
+  PASS  supervisor: openai exhausted → error (allowedVendors lock prevents fallback)
+  PASS  supervisor: gpt-5.4 excluded → error (no other openai model has agentic)
+  PASS  vendor-agnostic: [analysis] → gemini (free < low < medium < high)
+  PASS  vendor-agnostic: [analysis] → gemini-2.5-flash or flash-lite (alphabetical tiebreak)
+  PASS  vendor-agnostic: [code, analysis] → gemini (free tier)
+  PASS  capability-specificity: [reasoning, analysis] → claude-sonnet-4-6 (3 caps) over gemini-2.5-pro (5 caps, free)
+  PASS  capability-specificity: [reasoning, code] → claude-sonnet-4-6 (3 caps) over gemini-2.5-pro (5 caps, free)
+  PASS  vendor-agnostic: [fast] → gemini free tier
+  PASS  vendor-agnostic: [reasoning, agentic] → gemini-2.5-pro (free < gpt-5.4 high)
+  PASS  fallback: gemini exhausted + [analysis] → claude-haiku (low < medium < high)
+  PASS  fallback: gemini+anthropic exhausted + [analysis] → gpt-4.1 (only remaining with analysis)
+  PASS  fallback: anthropic exhausted → gemini (still cheapest, no Anthropic fallback needed)
+  PASS  all exhausted: explicit error
+  PASS  capability-specificity: flash excluded + [analysis] → claude-haiku (3 caps) over gemini-2.5-pro (5 caps, free)
+  PASS  excludeModels: all gemini excluded → claude-haiku (next cheapest)
+  PASS  excludeModels per-call: first call excludes gemini → anthropic haiku
+  PASS  excludeModels per-call: second call returns gemini normally (exclusion not persisted)
+  PASS  excludeModels: supervisor gpt-5.4 excluded → error (no other openai+agentic)
+  PASS  no requirements: hardcoded default returned
+  PASS  unknown agent: hardcoded default returned
+  PASS  no match: [nonexistent-capability] → explicit error
+  PASS  force-override: allowedVendors [openai] → gpt-5.4 (gemini-2.5-pro excluded from scope)
+  PASS  force-override: provider is openai
+  PASS  disabled provider: gemini disabled → anthropic haiku (next cheapest with analysis)
+  PASS  single provider: only anthropic enabled → claude-sonnet (cheapest anthropic with reasoning)
+  PASS  per-model exhaustion: gemini-2.5-pro exhausted → Flash still reachable (no provider-wide poisoning)
+  PASS  per-model exhaustion: Pro exhausted + [reasoning, code] → anthropic sonnet (Flash lacks reasoning)
+  PASS  backward compat: old-format usage (provider-only flag) still blocks all gemini models
+  PASS  combined exhaustion: provider-wide takes precedence, all gemini models blocked
+  PASS  per-model exhaustion: empty models map does not block the provider
+  PASS  per-model exhaustion: Pro + Flash exhausted → Flash-lite still reachable (per-model granularity)
+  PASS  capability-specificity last-resort: all 3-cap models excluded → gemini-2.5-pro (5 caps, free) as fallback
+  PASS  no-promotion guarantee: [analysis] never lands on a 5-cap model while 3-cap candidates are available
+
+  35 tests: 35 passed, 0 failed
+
+── mcp/run-active-helpers-test.mjs ─────────────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── mcp/runid-schema-test.mjs ───────────────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\runid-schema-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/sanitize-test.mjs ───────────────────────────────────────────────
+
+── sanitize-test.mjs ────────────────────────────────────────────────────
+  PASS  normal name: unchanged
+  PASS  normal name with spaces: unchanged
+  PASS  double-quote: stripped (prevents closing the shell string)
+  PASS  injection after double-quote: quote removed, safe prefix preserved
+  PASS  dollar sign: stripped
+  PASS  backtick: stripped
+  PASS  backslash: stripped
+  PASS  newline: stripped
+  PASS  carriage return: stripped
+  PASS  control chars: stripped
+  PASS  compound injection: double-quote stripped
+  PASS  compound injection: safe prefix preserved
+  PASS  null: returns empty string
+  PASS  undefined: returns empty string
+  PASS  number: returns empty string
+  PASS  long name: truncated to 200
+  PASS  empty string: stays empty
+  PASS  whitespace-only: trimmed to empty
+  PASS  unicode chars: preserved
+
+  19 tests: 19 passed, 0 failed
+
+── mcp/terminal-status-poll-test.mjs ───────────────────────────────────
+
+── terminal-status-poll-test.mjs ────────────────────────────────────────
+  PASS  poll fires on first call (lastStatusReadAt=0)
+  PASS  poll suppressed when called within 500 ms window
+  PASS  poll fires after 600 ms elapsed
+  PASS  poll fires at exactly 500 ms boundary (>= semantics)
+  PASS  status 'completed' is terminal
+  PASS  status 'failed' is terminal
+  PASS  status 'discarded' is terminal
+  PASS  status 'gate-pending' is not terminal
+  PASS  status 'running' is not terminal
+  PASS  null status (absent run.json) is not terminal — fail-open
+  PASS  undefined status is not terminal — fail-open
+  PASS  readRunData returns null for absent run.json (fail-open)
+  PASS  readRunData returns null for malformed JSON (fail-open)
+  PASS  readRunData returns parsed object for valid run.json
+  PASS  full flow: failed run triggers break on first poll
+  PASS  full flow: gate-pending run does not trigger break
+  PASS  poll suppressed within 500 ms window even for terminal run
+
+  17/17 passed
+
+── mcp/update-run-gate-guard-test.mjs ──────────────────────────────────
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\node_modules\@modelcontextprotocol\sdk\dist\esm\client\index.js' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\mcp\update-run-gate-guard-test.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:865:10)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33)
+    at ModuleJob.link (node:internal/modules/esm/module_job:245:17) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///C:/Users/cuj/forge-plugin/.worktrees/r-7bc33c4c/mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js'
+}
+
+Node.js v24.14.0
+
+── mcp/update-run-merge-test.mjs ───────────────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── mcp/usage-store-test.mjs ────────────────────────────────────────────
+
+── usage-store-test.mjs ─────────────────────────────────────────────────
+  PASS  readUsage: missing file → empty usage object with empty providers
+  PASS  markQuotaExhausted: provider-wide flag set to true
+  PASS  markModelQuotaExhausted: provider entry created
+  PASS  markModelQuotaExhausted: models map created
+  PASS  markModelQuotaExhausted: model-level flag set to true
+  PASS  markModelQuotaExhausted: provider-wide flag NOT set (only the model is exhausted)
+  PASS  markModelQuotaExhausted: only the named model gets an entry
+  PASS  isModelQuotaExhausted: returns true for the exhausted model
+  PASS  isModelQuotaExhausted: returns false for other models on same provider (no poisoning)
+  PASS  idempotent: second call keeps flag true
+  PASS  isModelQuotaExhausted: provider-wide flag blocks even unmarked models
+  PASS  isModelQuotaExhausted: provider-wide flag blocks all models uniformly
+  PASS  backward compat: old-format usage with no models key returns false for any model
+  PASS  safety: unknown provider returns false
+  PASS  safety: undefined usage returns false
+  PASS  recordUsage: model requestCount incremented
+  PASS  recordUsage: model tokenCount recorded
+  PASS  recordUsage: new model entry has quotaExhausted: false
+  PASS  markModel then recordUsage: quotaExhausted flag survives recordUsage (recordUsage does not clobber it)
+  PASS  markModel then recordUsage: requestCount still increments
+  PASS  backward compat on disk: old-format usage.json reads without error
+  PASS  backward compat on disk: old-format has no models key
+  PASS  backward compat on disk: isModelQuotaExhausted works on old-format
+
+  23 tests: 23 passed, 0 failed
+
+── mcp/zombie-worker-prevention-test.mjs ───────────────────────────────
+[worker-pids] marked run r-deadtest1 as failed (worker PID 10568 is dead)
+[worker-pids] deleted stale PID file: C:\Users\cuj\AppData\Local\Temp\forge-zombie-test-sRIbVB\.pipeline\worker-pids\r-deadtest1.json
+[worker-pids] deleted stale PID file: C:\Users\cuj\AppData\Local\Temp\forge-zombie-test-sRIbVB\.pipeline\worker-pids\r-deadtest2.json
+[zombie-worker-prevention] assert 2 PASS — run-A (running) marked failed
+[zombie-worker-prevention] assert 3 PASS — PID file for run-A deleted
+[zombie-worker-prevention] assert 4 PASS — run-B (completed) left untouched
+[zombie-worker-prevention] assert 5 PASS — PID file for run-B deleted
+[zombie-worker-prevention] PASS
+  deadPid: 10568
+  swept:   2
+  alive:   0
+  errors:  0
+
+── scripts/cleanup-stale-pipeline-state-test.mjs ───────────────────────
+✔ T1 — orphan singleton (runId has no run.json) is deleted (423.7153ms)
+✔ T2 — valid singleton (runId points to running run.json) is preserved (460.6733ms)
+✔ T3 — counter file for non-existent run is deleted (482.3371ms)
+✔ T4 — counter file for terminal run is deleted (466.8101ms)
+✔ T5 — counter file for running run is preserved (450.9189ms)
+✔ T6 — idempotent (running twice has same end state) (842.7062ms)
+✔ T7 — missing .pipeline/ is a no-op with no errors (427.5465ms)
+✔ T8 — singleton points to terminal run is treated as orphan and deleted (425.7262ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3988.9142
+
+── scripts/copy-dir-sync-test.mjs ──────────────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── scripts/covers-map-test.mjs ─────────────────────────────────────────
+✔ (a) two fixture test files with @covers produce correct srcFile → [testFile] map (17.7161ms)
+✔ (b) test file with no @covers contributes no entries to the map (9.1849ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 32.6743
+
+── scripts/covers-parser-test.mjs ──────────────────────────────────────
+✔ (a) single @covers line returns covered path (1.7072ms)
+✔ (b) file with no @covers tag returns empty covered array (0.1694ms)
+✔ (c) multiple @covers lines are all collected (0.1725ms)
+✔ (d) leading ./ is stripped from @covers path (0.2047ms)
+✔ (e) Windows backslashes in @covers path are normalized to forward-slashes (0.894ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10.1698
+
+── scripts/covers-verify-test.mjs ──────────────────────────────────────
+✔ (a) verifier resolves covering test for a touched src file and reports PASS (1349.7304ms)
+✔ (a) sub-assertion: parser reads @covers tag and map key matches canonical forward-slash path (23.7645ms)
+✔ (b) touched src file with no @covers entry emits [covers-gap] on stderr (452.5839ms)
+✔ (c) touched src file with a failing covering test causes verifier to exit non-zero (1403.8505ms)
+✔ (d) multiple test files batched in one node --test invocation: pass/fail per file independently (1779.4906ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5015.6315
+
+── scripts/dashboard-server-runid-test.mjs ─────────────────────────────
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'zod' imported from C:\Users\cuj\forge-plugin\.worktrees\r-7bc33c4c\packages\forge-core\src\runs\schemas.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.0
+
+── scripts/findings-contract-test.mjs ──────────────────────────────────
+✔ AC-1a: classifyHandoff triggeredRules elements are objects with required keys (not strings) (5.8975ms)
+✔ AC-1b: classifyHandoff returns triggeredRulesLegacy as array of strings in "rule:snippet" format (0.9697ms)
+✔ AC-1c: classifyDiff triggeredRules elements are objects with required keys (not strings) (0.8831ms)
+✔ AC-1d: classifyDiff returns triggeredRulesLegacy as array of strings (0.3627ms)
+✔ AC-1e: handoff and diff classifiers emit findings with same five keys (shape equivalence) (0.511ms)
+✔ AC-1f: every RISK_CONTENT_PATTERNS entry has a non-empty static suggestedCheck string (0.3809ms)
+✔ AC-2a: dispatch writes findings.json to <worktreePath>/docs/context/ with correct schema (426.6723ms)
+✔ AC-2b: dispatch does NOT write findings.json when worktreePath is a non-directory (444.8108ms)
+✔ AC-2c: dispatch rejects path-traversal worktree path (440.9128ms)
+✔ AC-3: skills/implement/SKILL.md contains [findings: injection adjacent to reviewer-output-dir (0.7605ms)
+✔ AC-8: smoke test — classifier emits 3 findings, simulated reviewer output has 3 FIND-<id>: lines (order-independent) (1.5085ms)
+✔ AC-8b: smoke test via dispatch CLI — 3 rules trigger, findings.json written with 3 entries (454.0846ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1787.6395
+
+── scripts/forge-observer-smoke-test.mjs ───────────────────────────────
+[forge-observer-smoke] PASS
+  deps loaded (terminal-kit + dashboard-state)
+  non-TTY detected, fallback path took effect
+  exit code 0
+
+── scripts/forge-worktree-restore-test.mjs ─────────────────────────────
+✔ restoreAccidentalDeletions — exported by bin/forge-worktree.js (1.7841ms)
+✔ restoreAccidentalDeletions — no deletions returns empty array (1830.851ms)
+✔ restoreAccidentalDeletions — single deletion is restored (775.9398ms)
+✔ restoreAccidentalDeletions — multiple deletions are all restored (1010.6225ms)
+✔ restoreAccidentalDeletions — git failure does not throw (allowFail path) (67.5505ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3695.4114
+
+── scripts/plan-revise-loop-test.mjs ───────────────────────────────────
+✔ AC-1a: first REVISE pass re-invokes planner with [revision-mode: 1] (2.568ms)
+✔ AC-1b: second REVISE pass re-invokes planner with [revision-mode: 2] (0.2117ms)
+✔ AC-1c: loop never exceeds M=2 (maximum 3 total planner invocations) (0.2045ms)
+✔ AC-1d: M counter increments correctly on each REVISE pass (1.192ms)
+✔ AC-2a: REVISE then APPROVED — gate1 opens with status "pending" (0.2498ms)
+✔ AC-2b: REVISE then APPROVED — gate1 has no revisingUnresolved marker (0.244ms)
+✔ AC-2c: REVISE then APPROVED — exactly 2 planner invocations (0.2069ms)
+✔ AC-2d: REVISE then APPROVED — run does not enter failed state (0.1588ms)
+✔ AC-3a: two unresolved REVISE passes — gate1 written with revisingUnresolved: true (0.2037ms)
+✔ AC-3b: two unresolved REVISE passes — gate1 status is "pending" not "failed" (0.25ms)
+✔ AC-3c: two unresolved REVISE passes — run is NOT marked as failed (0.5275ms)
+✔ AC-3d: BLOCK verdict — loop exits without writing gate1 (0.3029ms)
+✔ AC-3e: APPROVED immediately — gate1 opens clean, no revision invocations (0.2303ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16.8925
+
+── scripts/post-apply-lifecycle-prune-test.mjs ─────────────────────────
+✔ T1 (AC-1) — single-feature plan: matching ### Feature: section removed (655.3933ms)
+✔ T2 (AC-2) — multi-feature plan: only just-shipped feature removed (432.2961ms)
+✔ T3 (AC-3 real case) — long slugified feature matches shorter heading (420.3066ms)
+✔ T4 (AC-3 reverse) — heading title is substring of feature name (434.2103ms)
+✔ T5 (AC-4 zero matches) — no overlap → skip, no edit (428.2361ms)
+✔ T6 (AC-4 multiple matches) — ambiguous → skip, no edit (427.1438ms)
+✔ T7 — empty/short feature name skipped (435.2217ms)
+✔ T8 — PLAN.md absent → no error, no edit (433.3439ms)
+✔ T9 (96b5e0ce) — worktree cwd → script edits main's PLAN.md, not worktree's (444.9522ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4119.7759
+
+── scripts/verify-critic-citations-test.mjs ────────────────────────────
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-QoOXE5\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "foo returns hardcoded value"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-QoOXE5\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-zeNzvS\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "fabricated finding" — evidence not found in lines 1-2 of src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-zeNzvS\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-WSxOby\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "uncited finding" — no citations provided
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-WSxOby\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-5J63cF\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "out of bounds citation" — line range 999-999 out of bounds (file has 2 lines): src/main.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-5J63cF\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-Hm4tpj\docs\context\critic-findings.json
+[verify-critic-citations] DROP: "nonexistent file citation" — file not found: src/ghost.js
+[verify-critic-citations] verified: 0, dropped: 1
+[verify-critic-citations] wrote 0 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-Hm4tpj\docs\context\critic-verified.json
+[verify-critic-citations] ERROR: zero findings survived verification
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-S8gTpG\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "good finding"
+[verify-critic-citations] DROP: "bad finding" — evidence not found in lines 1-1 of src/main.js
+[verify-critic-citations] verified: 1, dropped: 1
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-S8gTpG\docs\context\critic-verified.json
+[verify-critic-citations] reading findings from C:\Users\cuj\AppData\Local\Temp\critic-verify-test-t1dN9S\docs\context\critic-findings.json
+[verify-critic-citations] PASS: "ws normalize test"
+[verify-critic-citations] verified: 1, dropped: 0
+[verify-critic-citations] wrote 1 finding(s) to C:\Users\cuj\AppData\Local\Temp\critic-verify-test-t1dN9S\docs\context\critic-verified.json
+✔ exits 0 and writes verified.json when all citations pass (459.2873ms)
+✔ exits 1 and drops finding when evidence not in source (443.391ms)
+✔ exits 1 and drops finding when no citations array (605.8789ms)
+✔ exits 1 when line range is out of bounds (423.9282ms)
+✔ exits 1 when cited file does not exist (445.1953ms)
+✔ passes verified finding and drops failed one in mixed batch (448.0481ms)
+✔ whitespace normalization: evidence with collapsed whitespace matches (424.9844ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3259.7333
+
+── scripts/wiring-verify-test.mjs ──────────────────────────────────────
+✔ (a) smoke-pass: new helper imported elsewhere exits 0 under --strict with no [wiring-gap] (435.0242ms)
+✔ (b) smoke-gap: new helper with no callers emits [wiring-gap] and exits non-zero under --strict (442.2094ms)
+✔ (c) diagnostic-only: zero-consumer helper emits [wiring-gap] but exits 0 without --strict (425.4538ms)
+✔ (d) new agent file with no reference in skills/config emits [wiring-gap] agent:<name> (433.7494ms)
+✔ (e) new hook file with no entry in hooks/hooks.json emits [wiring-gap] hook:<name> (449.3217ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2193.3645
 
 ─── summary ─────────────────────────────────────────────────────────────
-  FAIL  hooks/apply-context-inject-test.js   (4070ms)
-  PASS  hooks/checkpoint-detection-test.js   (3127ms)
-  PASS  hooks/control-file-guard-test.js   (8864ms)
-  FAIL  hooks/ctx-session-start-terminal-cleanup-test.js   (1236ms)
-  PASS  hooks/gate-approve-guard-test.js   (12224ms)
-  PASS  hooks/gate-sync-test.js   (8074ms)
-  PASS  hooks/hook-utils-test.js   (429ms)
-  PASS  hooks/subagent-stop-verdict-test.js   (8034ms)
-  FAIL  mcp/apply-guard-test.mjs   (676ms)
-  FAIL  mcp/canUseTool-return-test.mjs   (515ms)
-  PASS  mcp/config-store-test.mjs   (443ms)
-  PASS  mcp/context-paths-test.mjs   (448ms)
-  FAIL  mcp/dashboard-state-shape-test.mjs   (438ms)
-  FAIL  mcp/forge-list-runs-filter-test.mjs   (420ms)
-  FAIL  mcp/forge-read-board-filter-test.mjs   (446ms)
-  FAIL  mcp/gate-pending-guard-test.mjs   (424ms)
-  PASS  mcp/gemini-adapter-test.mjs   (34476ms)
-  PASS  mcp/model-mgmt-test.mjs   (673ms)
-  PASS  mcp/openai-adapter-test.mjs   (14511ms)
-  FAIL  mcp/per-run-state-lifecycle-test.mjs   (667ms)
-  FAIL  mcp/resume-terminal-suppression-test.mjs   (483ms)
-  PASS  mcp/router-test.mjs   (494ms)
-  FAIL  mcp/run-active-helpers-test.mjs   (480ms)
-  FAIL  mcp/runid-schema-test.mjs   (422ms)
-  PASS  mcp/sanitize-test.mjs   (419ms)
-  PASS  mcp/terminal-status-poll-test.mjs   (501ms)
-  FAIL  mcp/update-run-merge-test.mjs   (445ms)
-  PASS  mcp/usage-store-test.mjs   (606ms)
-  PASS  mcp/zombie-worker-prevention-test.mjs   (925ms)
-  PASS  scripts/cleanup-stale-pipeline-state-test.mjs   (4677ms)
-  PASS  scripts/covers-map-test.mjs   (461ms)
-  PASS  scripts/covers-parser-test.mjs   (458ms)
-  PASS  scripts/covers-verify-test.mjs   (5533ms)
-  FAIL  scripts/dashboard-server-runid-test.mjs   (659ms)
-  PASS  scripts/forge-observer-smoke-test.mjs   (843ms)
-  PASS  scripts/verify-critic-citations-test.mjs   (3648ms)
-  FAIL  scripts/wiring-verify-test.mjs   (2837ms)
+  PASS  hooks/agent-loop-guard-test.mjs   (4786ms)
+  FAIL  hooks/apply-context-inject-test.js   (3955ms)
+  PASS  hooks/approval-token-test.mjs   (495ms)
+  PASS  hooks/bash-guard-commit-gate-test.js   (2676ms)
+  PASS  hooks/bash-guard-multirun-test.js   (2233ms)
+  PASS  hooks/bash-guard-narrowing-test.js   (3277ms)
+  FAIL  hooks/checkpoint-detection-test.js   (2654ms)
+  PASS  hooks/control-file-guard-test.js   (8276ms)
+  PASS  hooks/ctx-session-start-terminal-cleanup-test.js   (942ms)
+  PASS  hooks/dispatch-context-test.js   (566ms)
+  PASS  hooks/gate-approve-guard-test.js   (12705ms)
+  PASS  hooks/gate-sync-test.js   (7233ms)
+  PASS  hooks/hook-utils-test.js   (428ms)
+  PASS  hooks/mcp-deps-install-test.js   (446ms)
+  PASS  hooks/per-run-active-path-test.mjs   (499ms)
+  PASS  hooks/planmd-worktree-guard-test.mjs   (441ms)
+  PASS  hooks/resolve-runid-test.js   (502ms)
+  FAIL  hooks/subagent-stop-verdict-test.js   (12043ms)
+  PASS  hooks/worker-task-inject-marker-test.mjs   (2093ms)
+  PASS  hooks/worker-task-inject-test.mjs   (468ms)
+  FAIL  mcp/advance-stage-auto-complete-test.mjs   (469ms)
+  FAIL  mcp/apply-guard-test.mjs   (420ms)
+  FAIL  mcp/canUseTool-return-test.mjs   (442ms)
+  FAIL  mcp/concurrent-runs-isolation-test.mjs   (424ms)
+  PASS  mcp/config-store-test.mjs   (414ms)
+  PASS  mcp/context-paths-test.mjs   (446ms)
+  FAIL  mcp/dashboard-state-shape-test.mjs   (419ms)
+  FAIL  mcp/forge-list-runs-filter-test.mjs   (717ms)
+  FAIL  mcp/forge-read-board-filter-test.mjs   (435ms)
+  PASS  mcp/gate-consume-test.mjs   (450ms)
+  FAIL  mcp/gate-pending-guard-test.mjs   (409ms)
+  PASS  mcp/gemini-adapter-test.mjs   (34486ms)
+  PASS  mcp/model-mgmt-test.mjs   (784ms)
+  PASS  mcp/openai-adapter-test.mjs   (14478ms)
+  PASS  mcp/orphan-stamp-test.mjs   (827ms)
+  FAIL  mcp/per-run-state-lifecycle-test.mjs   (422ms)
+  FAIL  mcp/resume-terminal-suppression-test.mjs   (423ms)
+  PASS  mcp/router-test.mjs   (438ms)
+  FAIL  mcp/run-active-helpers-test.mjs   (408ms)
+  FAIL  mcp/runid-schema-test.mjs   (431ms)
+  PASS  mcp/sanitize-test.mjs   (418ms)
+  PASS  mcp/terminal-status-poll-test.mjs   (441ms)
+  FAIL  mcp/update-run-gate-guard-test.mjs   (408ms)
+  FAIL  mcp/update-run-merge-test.mjs   (435ms)
+  PASS  mcp/usage-store-test.mjs   (703ms)
+  PASS  mcp/zombie-worker-prevention-test.mjs   (1126ms)
+  PASS  scripts/cleanup-stale-pipeline-state-test.mjs   (4422ms)
+  FAIL  scripts/copy-dir-sync-test.mjs   (650ms)
+  PASS  scripts/covers-map-test.mjs   (477ms)
+  PASS  scripts/covers-parser-test.mjs   (422ms)
+  PASS  scripts/covers-verify-test.mjs   (5465ms)
+  FAIL  scripts/dashboard-server-runid-test.mjs   (468ms)
+  PASS  scripts/findings-contract-test.mjs   (2221ms)
+  PASS  scripts/forge-observer-smoke-test.mjs   (915ms)
+  PASS  scripts/forge-worktree-restore-test.mjs   (4340ms)
+  PASS  scripts/plan-revise-loop-test.mjs   (489ms)
+  PASS  scripts/post-apply-lifecycle-prune-test.mjs   (4548ms)
+  PASS  scripts/verify-critic-citations-test.mjs   (3684ms)
+  PASS  scripts/wiring-verify-test.mjs   (2637ms)
 ─────────────────────────────────────────────────────────────────────────
-  22/37 passed, 15 failed
+  40/59 passed, 19 failed

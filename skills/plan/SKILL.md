@@ -139,10 +139,33 @@ Exit — do not proceed to further steps.
      > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
 
    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
-6. **Gate #1:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
-   - Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md"}` (absolute path so the user can locate the worktree's PLAN.md unambiguously).
-   - Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}` — the `runId` field is required so approve/discard can target this exact run unambiguously.
-   - Present the plan summary to the user; include the absolute path `<worktreePath>/docs/PLAN.md` so they know which file to review (each plan run lives in its own worktree).
+6. **REVISE-retry loop** — handle reviewer verdicts before writing gate1.
+
+   Track a revision counter `M` (starts at 0, incremented before each planner re-invocation). Maximum iterations: 2. This mirrors the implement-stage Step 5b/5c loop with one deliberate divergence: when M >= 2 and REVISE is still unresolved, gate1 OPENS with a `revisingUnresolved: true` marker rather than failing the run — the conductor can fix PLAN.md inline before approving gate1.
+
+   **Before reading verdicts**, mtime-check each reviewer's verdict file. For each reviewer in the dispatched list, run:
+   `node scripts/verify-output.mjs --file=<worktreePath>/.pipeline/context/reviewer-output/<reviewer>.md --since=<reviewerStartedAtMs>`
+   where `reviewerStartedAtMs` is the epoch-ms timestamp recorded when that reviewer was spawned.
+   - Exit 0: verdict file is fresh — accept the signal.
+   - Exit 1 or exit 2: verdict file is absent or stale — treat as **no-verdict**. Log: `[verdict-check] <reviewer> verdict file stale or missing — treating as no-verdict`. A no-verdict is treated as REVISE-unresolved.
+
+   **Verdict processing:**
+   - Collect all `[reviewer-verdict]` signals from reviewer output files that passed the mtime check (in `<worktreePath>/.pipeline/context/reviewer-output/`).
+   - If ANY reviewer emitted **BLOCK**: call `forge_update_run` with `status: "failed"` and `failureReason: "reviewer BLOCK: <reviewer> — <first line of the violation>"`. Do NOT write `gate-pending.json`. Log the block reason and exit the worker.
+   - If ANY reviewer emitted **REVISE** or yielded no-verdict (and none BLOCK):
+     - If `M < 2`: increment `M` to `M+1`.
+       1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
+       2. Re-invoke the planner with `[revision-mode: M]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]`. Pass all REVISE warnings as context.
+       3. After the revised planner writes the updated `docs/PLAN.md`, re-clear stale reviewer output (same `find ... -delete` command as step 5) and re-dispatch the **same reviewer set** using the updated PLAN.md (no re-classification — same `--plan=<worktreePath>/docs/PLAN.md --stage=plan` invocation). Return to the top of step 6 verdict processing with the updated `M`.
+     - If `M >= 2` (max iterations reached): write gate1 with `revisingUnresolved: true` and proceed to the gate1 write below. Log: `[plan-revise-loop] M=2 unresolved — opening gate1 with revisingUnresolved marker`.
+   - If ALL reviewers emitted **APPROVED**: proceed to gate1 write normally.
+
+   > The `scripts/plan-revise-loop.mjs` helper is the pure-function reference implementation of this loop. The loop behavior described above must remain aligned with `runPlanReviseLoop` in that module — if the loop logic changes, update both.
+
+7. **Gate #1:** Write gate file first, then update the run (the worker exits on status change, so the file must exist first):
+   - **Clean gate1 (APPROVED or M=0):** Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md"}` (absolute path so the user can locate the worktree's PLAN.md unambiguously). Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`.
+   - **Unresolved gate1 (M>=2 REVISE):** Write `<worktreePath>/.pipeline/gate-pending.json`: `{"runId":"<the runId from Step 1>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"<worktreePath>/docs/PLAN.md","revisingUnresolved":true}`. Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>","revisingUnresolved":true}`.
+   - Present the plan summary to the user; include the absolute path `<worktreePath>/docs/PLAN.md` so they know which file to review (each plan run lives in its own worktree). If `revisingUnresolved` is true, also display: "Note: Reviewers requested changes that were not fully resolved after 2 planner revision passes. Review the REVISE feedback in `<worktreePath>/.pipeline/context/reviewer-output/` before approving."
    - Ask user to type /forge:approve or /forge:discard — the implement worker will start automatically on approval
 
 ## Feature request

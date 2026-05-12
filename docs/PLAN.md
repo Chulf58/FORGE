@@ -1,5 +1,7 @@
 ## Active Plan
 
+<!-- Note: a stale "clear gate-pending.json" Feature 3 leftover from r-451ff6ed/r-1d2d7ebe inherited via main's PLAN.md (lifecycle-prune bug 96b5e0ce). Removed here to prevent implementer-scoping confusion with Slice 1. -->
+
 ### Feature: Structured findings contract — Slice 1 (folds TODOs 4623e1d2 + 8eded49c)
 
 SHIPPED 2026-05-12 (r-ded76e32) — reviewers APPROVED at gate2
@@ -97,157 +99,101 @@ Addresses spec-precision items from r-ded76e32 gate1 reviewers (reviewer-logic R
 
 ---
 
-# Plan — Worker-side proactive context-budget interrupt
+### Feature: Plan-stage REVISE retry loop (closes TODO c41f1504)
 
-### Feature: Worker-side proactive context-budget interrupt (closes TODO 47ee70b9)
+Summary: Add a REVISE-retry loop to `skills/plan/SKILL.md` mirroring the implement-stage loop so planner iterates on reviewer feedback before gate1 fires.
 
-Summary: Add proactive pre-truncation interrupt to `mcp/forge-worker.mjs` so agents that approach context exhaustion are stopped cleanly, a synthetic checkpoint is written, and the existing checkpoint-resume handler recovers them automatically.
+**Acceptance criteria (contractual — preserved verbatim from TODO):**
+- AC-1: `skills/plan/SKILL.md` has a Step (mirror implement-stage Step 5c at SKILL.md:250-264) that handles REVISE-retry on plan-stage reviewer output.
+- AC-2: Worker re-invokes planner with `[revision-mode: M]` prefix + REVISE feedback. Max M=2.
+- AC-3: Reviewer dispatch is NOT re-run on revision passes (same reviewer set iterates).
+- AC-4: After 2 unresolved REVISE passes, gate1 still opens but with a clear marker that human review is required.
+- AC-5: BLOCK behavior unchanged — exits the retry loop, conductor decides.
+- AC-6: TDD-structured: new test in `skills/plan` or new helper exercises the retry loop in isolation. Red bar before implementation.
+- AC-7: r-5caed835-style scenario (3 REVISE concerns, all spec-precision, all inline-fixable) reaches APPROVED on retry M=1 in a smoke test.
 
-## Context (what exists today)
+**Files to modify:**
+- `skills/plan/SKILL.md` — add REVISE-retry step after the reviewer dispatch step (Step 5/6 area)
+- `agents/planner.md` — add `## Revision mode` section explaining `[revision-mode: M]` semantics
 
-**`mcp/forge-worker.mjs` — current state (citations):**
-- Line 11–16: `BUDGET_THRESHOLD_CONSUMED = 0.70`, `BUDGET_CONTEXT_WINDOW = 200_000`, `BUDGET_AUTOCOMPACT_FACTOR = 0.835`, `BUDGET_DEBOUNCE_MS = 30_000` — constants for the bridge-file approach already shipped.
-- Lines 383–408: `budgetLastWriteAt` map and `readAgentSidecar()` — per-agent sidecar lookup to find a subagent's session_id.
-- Lines 410–431: `writeBridge()` — writes `claude-ctx-<sessionId>.json` (remaining budget %) to `tmpdir()` so the PostToolUse hook can signal the subagent.
-- Lines 433–478: `handleBudgetUsage()` — fires on every `assistant` message's `usage` block; writes bridge when session-cumulative tokens > 70% of usable window.
-- Line 339: `const stream = query({...})` — `stream` is the `Query` object; `sdk.d.ts:1960` confirms it has `interrupt(): Promise<void>`.
-- Lines 361–362: `CHECKPOINT_RESUME_CAP = 2`, `checkpointResumeCounts` Map — reactive cap, keyed by normalized agent type.
-- Lines 492–568: Reactive checkpoint handler — fires on `task_notification: completed`; reads `run-active.json`; if `latest.outcome === 'checkpoint'`, injects `[resume-from-checkpoint]` message into `inputChannel` and increments resume count.
-- Lines 583–587: `handleBudgetUsage(u).catch(...)` — called on every `assistant` message usage block; already tracking session-cumulative tokens.
+**Files to create:**
+- `scripts/plan-revise-loop-test.mjs` — isolated test exercising the retry loop logic
 
-**`hooks/subagent-stop.js` — current state (citations):**
-- Lines 340–365: Checkpoint detection block — reads `lastMessage` for `[CONTEXT-CHECKPOINT]` signal AND checks `docs/context/checkpoint.md` exists; if both true, stamps `outcome = 'checkpoint'`. Without agent cooperation (no signal), this block never fires.
-- Lines 446–468: Writes `run-active.json` with updated `entry.outcome`.
+**Out of scope:**
+- BLOCK auto-retry (separate TODO 1db279a1)
+- bba4a9d9 (stacked PLAN.md cleanup) — orthogonal
+- Reviewer-side retry — reviewers are already idempotent
 
-**SDK types (citations):**
-- `sdk.d.ts:1960–1970`: `Query` interface extends `AsyncGenerator`; has `interrupt(): Promise<void>` described as "stop processing and return control to the caller."
-- `sdk.d.ts:5248`: `TerminalReason` includes `'aborted_streaming'` and `'aborted_tools'` — interruption is a first-class terminal state.
-- `sdk.d.ts:1120–1123`: `Options.abortController?: AbortController` — alternative abort path.
+**Symmetry checklist (implement-stage → plan-stage mapping):**
 
-**CLAUDE-WORKER.md checkpoint resume protocol:** When the worker receives `[resume-from-checkpoint]` prefix it re-dispatches the named agent via `Agent(subagent_type=<X>)` with the prefix, instructing the agent to read `docs/context/checkpoint.md`. The cap (2 resumes) applies.
+| Implement-stage concept | Plan-stage equivalent |
+|---|---|
+| Revision counter `N` (starts 0, max 2) | Revision counter `M` (starts 0, max 2) |
+| Verdict files in `reviewer-output/` | Same directory — `<worktreePath>/.pipeline/context/reviewer-output/` |
+| `[revision-mode: N]` prefix to coder | `[revision-mode: M]` prefix to planner |
+| `[failed-criteria: AC-X, AC-Y]` from `AC-<N>: NOT_MET` lines | Same signal — `AC-<N>: NOT_MET` lines from reviewer output |
+| REVISE + `N < 2` → re-invoke coder | REVISE + `M < 2` → re-invoke planner |
+| REVISE + `N >= 2` → `status: "failed"` | REVISE + `M >= 2` → gate1 opens with `[revise-unresolved]` marker |
+| BLOCK → `status: "failed"`, no gate | BLOCK → existing behavior, no gate (unchanged) |
+| Reviewer dispatch NOT re-run on revision | Same — same reviewer set iterates, no re-classification |
+| Revised coder re-saves git diff before re-review | Planner re-writes PLAN.md before re-review |
+| mtime check on each verdict file (`verify-output.mjs`) | Same mtime check on each verdict file |
 
-## Strategy decision
+**Key divergence from implement-stage:** when `M >= 2` and REVISE is still unresolved, gate1 OPENS (with marker) rather than failing the run, because the human conductor can still fix PLAN.md inline before approving gate1. This preserves the existing fallback path while eliminating the common case of manual toil.
 
-**Strategy A (token-budget heuristic) — CHOSEN.**
+#### Phase 1 — Failing tests (TDD red bar)
 
-Evidence from code: `handleBudgetUsage()` (lines 433–478) ALREADY tracks session-cumulative tokens per assistant message and fires bridge writes at 70% consumed. The per-agent sidecar (lines 394–408) resolves `agent_id → session_id`. What is missing is the `interrupt()` call when the threshold is crossed.
+- [ ] 1. Add failing test for REVISE-retry loop logic (`scripts/plan-revise-loop-test.mjs`) (wave: 1)
+  Intent: Establish a red bar that gates implementation — the test must fail before any SKILL.md change, confirming the loop does not yet exist.
+  Verify: AC-1: `node scripts/plan-revise-loop-test.mjs` exits non-zero before any skill change; the test asserts that a simulated plan-stage worker with a REVISE verdict re-invokes the planner with `[revision-mode: 1]` on the first pass and `[revision-mode: 2]` on the second pass, never exceeding M=2.
 
-The existing `BUDGET_THRESHOLD_CONSUMED = 0.70` triggers bridge writes (passive signal to the subagent). The proactive interrupt should fire at a higher threshold — e.g. 85% consumed — to give the agent a window to finish any in-flight tool call before hard stop. 85% is ~170 k tokens consumed out of ~167 k usable (200 k × 0.835), which empirically precedes the truncation observations cited in the TODO (planner: 148 s ≈ ~175 k tokens, researcher: 135 s ≈ ~165 k tokens).
+- [ ] 2. Add failing smoke test for M=1 APPROVED scenario (`scripts/plan-revise-loop-test.mjs`) (wave: 1)
+  Intent: Lock down the happy path — one REVISE followed by APPROVED resolves cleanly without opening a `[revise-unresolved]` gate.
+  Verify: AC-2: A test case in `scripts/plan-revise-loop-test.mjs` simulates a reviewer emitting REVISE on pass 0, then APPROVED on pass 1 (M=1), and asserts gate1 opens with `status: "pending"` and no `[revise-unresolved]` marker; exits non-zero before implementation.
 
-**Why not B (time-based) or C (tool-count):** Strategy A reuses already-instrumented session-cumulative token data, making it immediately hookable into `handleBudgetUsage()` with minimal new code. Strategies B and C require separate per-agent dispatch-start timestamps or tool-call counters that are not yet tracked.
+- [ ] 3. Add failing smoke test for M=2 unresolved gate marker (`scripts/plan-revise-loop-test.mjs`) (wave: 1)
+  Intent: Confirm that two failed revision passes produce a visible `[revise-unresolved]` marker in gate1 rather than a silent failure, so the conductor knows manual fix is required.
+  Verify: AC-3: A test case asserts that when both revision passes still emit REVISE, the gate1 JSON written to disk contains a `revisingUnresolved: true` field and the gate status is `"pending"` not `"failed"`; exits non-zero before implementation.
 
-**Open question resolved: does `stream.interrupt()` stop only the active subagent or the parent?**
-Static analysis of `sdk.d.ts:1960` and `sdk.d.ts:5248`: `interrupt()` is a method on the parent `Query` handle (`stream`), not on a per-subagent handle. The type description says "Interrupt the current query execution" — the query IS the parent session. Therefore `stream.interrupt()` stops the entire parent query, which terminates the currently dispatched subagent along with it. The for-await loop exits and control returns to the caller. This is acceptable — the worker exits cleanly after writing the synthetic checkpoint, and the existing `task_notification: completed` handler (line 492) will fire before the loop exits (since the subagent completes when interrupted), allowing the checkpoint outcome to be detected. If `task_notification` does NOT fire on interrupt (an unknown), the worker falls back to writing `run-active.json` directly before calling `interrupt()` as belt-and-suspenders.
+#### Phase 2 — Implementation (TDD green bar)
 
-**Can the worker construct a usable synthetic checkpoint.md from streamed assistant text?**
-Yes, with caveats. The worker's `for await` loop receives all `assistant` messages including partial tool outputs. The last `assistant` message before interrupt contains the most recent text block. This is not the agent's internal state — it is the last visible output (partial analysis, last paragraph written, etc.). The synthetic checkpoint will contain: the last assistant text block + a one-line auto-interrupt note. Quality is lower than an agent-written checkpoint (no structured "what remains" section), but the `[resume-from-checkpoint]` prompt instructs the agent to read it and continue — a partial-state checkpoint is better than no checkpoint.
+- [ ] 4. Add REVISE-retry step to plan-stage skill (`skills/plan/SKILL.md`) (wave: 2)
+  Depends: 1, 2, 3
+  Intent: Mirror the implement-stage Step 5b/5c loop so the worker auto-retries the planner on REVISE before writing gate1, eliminating recurring conductor toil.
+  Verify: AC-4: `skills/plan/SKILL.md` contains a numbered step after reviewer dispatch that (a) tracks counter M starting at 0, (b) on REVISE with M<2 re-invokes planner with `[revision-mode: M]` and REVISE context, (c) on REVISE with M>=2 writes gate1 with `revisingUnresolved: true`, (d) on BLOCK exits without writing gate1; `node scripts/plan-revise-loop-test.mjs` exits 0.
 
-**Coordination with `hooks/subagent-stop.js`:**
-The hook stamps `outcome` based on `last_assistant_message` content and artifact presence (lines 340–365). For a proactively interrupted agent: (a) the agent did NOT emit `[CONTEXT-CHECKPOINT]`, so the reactive path (line 344) does not fire; (b) the worker writes `docs/context/checkpoint.md` BEFORE calling `interrupt()`, so the file will exist when `subagent-stop.js` runs. However, without the signal in `last_assistant_message`, the hook still won't stamp `outcome = 'checkpoint'`.
-
-**Solution:** The worker must stamp `outcome = 'checkpoint'` in `run-active.json` DIRECTLY before calling `interrupt()`, bypassing the hook. This is the same approach used at line 518–522 for `context-exhausted` stamping: the worker writes `run-active.json` directly when it has information the hook lacks. The hook write (lines 460–467) will overwrite the entry afterwards — so the worker must also set a flag that causes the next `task_notification: completed` message to re-read the (potentially hook-overwritten) entry and check for checkpoint. Belt-and-suspenders: the worker writes a small sidecar file (e.g. `<tmpdir>/forge-proactive-interrupt-<agentId>.json`) recording the intended checkpoint outcome, and the `task_notification` handler re-stamps from the sidecar if `latest.outcome !== 'checkpoint'`.
-
-## Out of scope
-
-- Do NOT modify or replace the reactive `[CONTEXT-CHECKPOINT]` path in `hooks/subagent-stop.js` — augment only.
-- Do NOT change `CHECKPOINT_RESUME_CAP` value (stays at 2).
-- Do NOT change `BUDGET_THRESHOLD_CONSUMED` (stays at 0.70 for bridge writes).
-- Do NOT touch apply/documenter/refactor/debug worker stages — only the subagent dispatch loop.
-- Do NOT add interrupt logic for non-subagent contexts (gate polling, watchFile handlers, etc.).
-
-## Tasks
-
-#### Phase 1 — Failing tests (TDD wave 1 — red bar)
-
-TDD applies: this is enforcement infrastructure (truncation guard that fails silently if broken). Per `docs/RESEARCH/tdd-agentic-llm-setups.md` §3.2, Red+Green collapse failure mode is prevented by writing tests first that confirm the red bar before implementation exists.
-
-- [ ] 1. Add failing unit tests for proactive interrupt logic (`mcp/forge-worker-interrupt-test.mjs`) (wave: 1)
-  Intent: Establish a red bar verifying per-agent interrupt threshold detection, synthetic checkpoint write, and `run-active.json` outcome stamp before any worker code changes exist.
-  Verify: AC-1: `node mcp/forge-worker-interrupt-test.mjs` exits non-zero; tests assert (a) threshold calculation fires at the correct consumed fraction, (b) checkpoint file is written with auto-interrupt note before `interrupt()` is called, (c) `run-active.json` entry for the agent has `outcome: 'checkpoint'` after the stamp step.
-
-- [ ] 2. Add failing test for cap interaction with proactive interrupts (`mcp/forge-worker-interrupt-test.mjs`) (wave: 1)
-  Intent: Confirm that proactive checkpoints count against the same `CHECKPOINT_RESUME_CAP` counter as reactive checkpoints, preventing double-counting or cap bypass.
-  Verify: AC-2: A test case in `mcp/forge-worker-interrupt-test.mjs` simulates two proactive interrupt + resume cycles for the same agent type, then asserts the cap counter reaches 2 and a third would be rejected with `context-exhausted` outcome; exits non-zero before implementation.
-
-#### Phase 2 — Implementation (TDD wave 2 — green bar)
-
-- [ ] 3. Add proactive interrupt threshold constant and trigger to `handleBudgetUsage` (`mcp/forge-worker.mjs`) (wave: 2)
-  Depends: 1
-  Intent: Elevate the existing bridge-write monitoring into an active interrupt so agents that exceed 85% context consumption are stopped before model truncation, not just signalled.
-  Verify: AC-3: `node mcp/forge-worker-interrupt-test.mjs` threshold tests exit 0; a new `BUDGET_INTERRUPT_THRESHOLD` constant (≥ `BUDGET_THRESHOLD_CONSUMED`) is present in `mcp/forge-worker.mjs`; `handleBudgetUsage()` calls `stream.interrupt()` when `consumedFraction >= BUDGET_INTERRUPT_THRESHOLD` and an active agent sidecar exists; the 70% bridge-write path is unchanged.
-
-- [ ] 4. Write synthetic checkpoint and stamp outcome before interrupt (`mcp/forge-worker.mjs`) (wave: 2)
-  Depends: 1, 3
-  Intent: Ensure the checkpoint file and outcome stamp exist before `interrupt()` is called so the resume handler can detect and re-dispatch the agent correctly.
-  Verify: AC-4: `node mcp/forge-worker-interrupt-test.mjs` checkpoint-write tests exit 0; `docs/context/checkpoint.md` contains the last assistant text block and a one-line "auto-interrupted at <reason>" note; the active agent's entry in `run-active.json` has `outcome: 'checkpoint'` written atomically before `interrupt()` is invoked; a proactive-interrupt sidecar (`forge-proactive-interrupt-<agentId>.json` in `tmpdir()`) records the intended outcome as belt-and-suspenders.
-
-- [ ] 5. Inject `[resume-from-checkpoint]` into `inputChannel` immediately after `await stream.interrupt()` resolves (`mcp/forge-worker.mjs`) (wave: 2)
+- [ ] 5. Add `## Revision mode` section to planner agent (`agents/planner.md`) (wave: 2)
   Depends: 4
-  Intent: Because the SDK does NOT fire `task_notification: completed` after `interrupt()` (Resolution 2026-05-12 — research finding in `docs/RESEARCH/sdk-interrupt-task-notification-ordering.md`), the reactive re-stamp branch never runs. The worker must inject the resume message synchronously in the same for-await loop body that called `interrupt()`, BEFORE the loop exits.
-  Verify: AC-5: All sub-criteria below MUST be true.
-    - **(a) Call site location — single chosen site.** The existing fire-and-forget call at `mcp/forge-worker.mjs:585-587` (`handleBudgetUsage(u).catch(...)`) is refactored to `await handleBudgetUsage(u)` wrapped in `try { ... } catch (err) { writeLog(...) }`. `handleBudgetUsage` is changed to RETURN a directive object `{ interrupt: true, agentId: <string>, normType: <string> } | { interrupt: false }` instead of fire-and-forget. The interrupt call (`await stream.interrupt()`), the sidecar read/delete, the cap check, the counter increment, and the `inputChannel.push(...)` ALL happen in the for-await loop body at lines ~585–588 immediately after `await handleBudgetUsage(u)` returns with `interrupt: true` — NOT inside `handleBudgetUsage` itself. Rationale: `handleBudgetUsage` does not have access to `stream`, `inputChannel`, or `checkpointResumeCounts`; pivoting the decision to the loop body keeps those references colocated and matches the reactive handler's location at lines 492–568.
-    - **(b) Sidecar atomic read-then-delete.** The sidecar `<tmpdir>/forge-proactive-interrupt-<agentId>.json` (written in task 4) is consumed via: `const raw = readFileSync(sidecarPath, 'utf-8'); unlinkSync(sidecarPath);` in immediate succession inside a `try { ... } catch (_) { /* fail-open */ }` block. No second consumer exists. If the file is missing on read (race or fail-open from task 4), skip injection and continue — the for-await loop will eventually terminate via the SDK's interrupt-driven loop exit.
-    - **(c) Cap counter key normalization parity.** Use the EXACT same normalization as the reactive path at `mcp/forge-worker.mjs:503-504`: `const rawType = directive.normType || ''; const normType = rawType.startsWith('forge:') ? rawType.slice('forge:'.length) : rawType;`. Use the SAME Map (`checkpointResumeCounts`) and SAME constant (`CHECKPOINT_RESUME_CAP`, defined at line 361). Increment via `checkpointResumeCounts.set(normType, priorResumes + 1)` mirroring line 540.
-    - **(d) Cap check (mirrors lines 507–538).** Before increment, check `priorResumes = checkpointResumeCounts.get(normType) || 0`. If `priorResumes >= CHECKPOINT_RESUME_CAP`, stamp `outcome = 'context-exhausted'` in `run-active.json` (using the same atomic-write pattern as lines 515–520) and `break` out of the for-await loop. Do NOT call `inputChannel.push(...)`. Also write `run.json` `status = 'failed'` with `failureReason` mirroring the format at line 531. Reuse line 537's `break;` exit pattern.
-    - **(e) inputChannel push shape parity.** When not capped, push the message using the EXACT shape from lines 549–553: `inputChannel.push({ type: 'user', message: { role: 'user', content: resumeMsg }, parent_tool_use_id: null });`. `resumeMsg` is constructed via the same template as lines 544–547 with `normType` interpolated.
-    - **(f) Reactive path unchanged.** No edits to lines 492–568 (the existing `task_notification: completed` checkpoint detection branch). The agent-emitted `[CONTEXT-CHECKPOINT]` case continues to use that path; the proactive path is purely additive.
-    - **(g) Smoke verification.** `node mcp/forge-worker-interrupt-test.mjs` (task 7) exercises this end-to-end: simulates handleBudgetUsage returning `interrupt: true`, asserts `stream.interrupt()` is awaited, sidecar is read-then-deleted, counter is incremented, and the resume message is pushed to inputChannel with the exact shape above.
+  Intent: Teach the planner how to behave when invoked with `[revision-mode: M]` so it edits PLAN.md inline to address REVISE concerns rather than rewriting from scratch.
+  Verify: AC-5: `agents/planner.md` contains a `## Revision mode` section that specifies (a) read the `[revision-mode: M]` signal, (b) read the REVISE feedback from the reviewer output dir, (c) edit PLAN.md to address each concern using Resolution sections or direct AC edits, (d) do not rewrite the full plan; the section appears before `## Output signal`.
 
-- [ ] 6. Register new test file with `scripts/run-tests.mjs` discovery (`scripts/run-tests.mjs`) (wave: 2)
-  Depends: 1
-  Intent: Make the new interrupt test discoverable by the regression runner so it is included in every CI pass without manual registration.
-  Verify: AC-6: `node scripts/run-tests.mjs` discovers and runs `mcp/forge-worker-interrupt-test.mjs`; `run-tests.mjs` test discovery pattern at line 26 already covers `mcp/*-test.mjs` — confirm the new file name matches, or add it explicitly if needed; `run-tests.mjs` exits 0 only when the new test exits 0.
+#### Phase 3 — Regression and smoke verification
 
-#### Phase 3 — Smoke test and regression (TDD wave N)
+- [ ] 6. Smoke test: r-5caed835 scenario reaches APPROVED at M=1 (`scripts/plan-revise-loop-test.mjs`) (wave: 3)
+  Depends: 4, 5
+  Intent: Validate the end-to-end contract against the scenario that motivated this feature — three spec-precision REVISE concerns resolved in one planner revision pass.
+  Verify: AC-6: A test case in `scripts/plan-revise-loop-test.mjs` injects three REVISE concerns (all spec-precision, all inline-fixable), runs one planner revision pass, simulates a reviewer emitting APPROVED, and asserts gate1 opens clean without `revisingUnresolved`; test exits 0.
 
-- [ ] 7. Smoke test for end-to-end proactive interrupt → resume flow (`mcp/forge-worker-interrupt-test.mjs`) (wave: 3)
-  Depends: 3, 4, 5
-  Intent: Validate the full cycle — threshold crossed → checkpoint written → outcome stamped → `task_notification` handler re-dispatches with `[resume-from-checkpoint]` — using an artificially low interrupt threshold.
-  Verify: AC-7: A smoke-test case in `mcp/forge-worker-interrupt-test.mjs` runs the `handleBudgetUsage` + `task_notification` path with `BUDGET_INTERRUPT_THRESHOLD` overridden to 0.01 (fires immediately); asserts that `docs/context/checkpoint.md` exists, `run-active.json` shows `outcome: 'checkpoint'`, and the resume message injected into `inputChannel` begins with `[resume-from-checkpoint]`; test exits 0.
-
-- [ ] 8. Full regression suite green after interrupt changes (`scripts/run-tests.mjs`) (wave: 3)
-  Depends: 3, 4, 5, 6, 7
-  Intent: Confirm the proactive interrupt additions do not break any existing test, including the budget-monitoring and checkpoint-reactive paths.
-  Verify: AC-8: `node scripts/run-tests.mjs` exits 0 with no previously-passing tests now failing; `mcp/forge-worker-interrupt-test.mjs` exits 0 for all test cases including smoke test.
-
-## Risk surface
-
-- **`reviewer-safety`**: Worker writes `docs/context/checkpoint.md` and modifies `run-active.json` from inside the budget monitoring path — both are fs writes outside `.pipeline/` (checkpoint.md is under `docs/`). Must use atomic write (.tmp + rename) pattern per project convention.
-- **`reviewer-safety`**: `stream.interrupt()` halts the entire parent query. If called at an unexpected point (e.g. during gate polling or commit), it terminates the worker session unrecoverably. Guard: only call `interrupt()` when an active non-completed agent is confirmed in `run-active.json` AND the worker is actively in the subagent-dispatch loop (not waiting at a gate).
-- **`reviewer-boundary`**: The proactive-interrupt sidecar (`forge-proactive-interrupt-<agentId>.json`) is a new coordination file between `handleBudgetUsage()` and the `task_notification` handler in the same process. If the two writes race (unlikely — both are in the same event loop), the sidecar must be read atomically (read-then-delete in the task_notification handler).
-- **`reviewer-boundary`**: Cap interaction — proactive interrupts must increment `checkpointResumeCounts` the same way as reactive checkpoints. If they increment in different places, the cap could be bypassed (agent gets 4 resumes: 2 reactive + 2 proactive). Fix: the cap check and increment in the `task_notification` handler (lines 507–540) must apply regardless of whether the checkpoint was proactive or reactive.
-- **`reviewer-safety`**: `sdk.d.ts:1970` `interrupt()` returns `Promise<void>` — must be awaited. Non-awaited interrupt in the budget loop (which is `async` but fire-and-forget via `.catch(...)`) could lose the interrupt signal. The interrupt call must be made directly in the `for await` loop body, not inside `handleBudgetUsage()`.
+- [ ] 7. Full regression suite green after plan-stage loop changes (`scripts/run-tests.mjs`) (wave: 3)
+  Depends: 4, 5, 6
+  Intent: Confirm the new skill step and planner section do not break existing plan-pipeline behavior or any other test that reads `skills/plan/SKILL.md`.
+  Verify: AC-7: `node scripts/run-tests.mjs` exits 0 with no previously-passing tests now failing; `node scripts/plan-revise-loop-test.mjs` exits 0 with all three scenario cases passing.
 
 ### Research needed
 
-None — resolved 2026-05-12. See Resolution below and `docs/RESEARCH/sdk-interrupt-task-notification-ordering.md`.
-
-### Resolution 2026-05-12 (research finding + gotcha-check WARNING)
-
-Addresses the one open question from the original `### Research needed` block above and the single WARNING from the plan-stage gotcha-check (key-links concreteness on task 5).
-
-**1. SDK research finding (resolves the open question)** — Researcher (run r-7c121da2) inspected `mcp/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` and `sdk.mjs`. Verdict: **NO** — `task_notification: completed` does NOT reliably fire after `stream.interrupt()`. Evidence:
-  - `sdk.d.ts:1966-1970` — `Query.interrupt()` doc says only "stop processing and return control to the caller"; no mention of flushing pending notifications.
-  - `sdk.d.ts:5246` — `TerminalReason` comment explicitly states the value is "Unset when ... interrupted externally". The `completed` terminal reason (the one tied to a `task_notification: completed` emission) is not set on interrupt — the actual terminal reason is `'aborted_streaming'` or `'aborted_tools'`.
-  - `sdk.mjs` (compiled runtime) — grep for `aborted_streaming` returned zero readable matches; interrupt code path is in minified form. No readable flush-notifications-before-return code path was extractable. Static evidence converges on NO.
-
-  Implication: the planner's original task 5 design (re-stamp inside the existing reactive `task_notification: completed` handler at lines 492–568) is invalid — that handler never fires on a proactive interrupt. Task 5 is rewritten above to inject `[resume-from-checkpoint]` directly into `inputChannel` IMMEDIATELY after `await stream.interrupt()` resolves, mirroring the existing reactive injection pattern at forge-worker.mjs lines 549–553. The cap counter (`checkpointResumeCounts`) is incremented in the same code site, so the cap (2) is shared across reactive + proactive paths — this also resolves the cap-bypass risk flagged in `## Risk surface` for reviewer-boundary.
-
-  Full research artifact: `docs/RESEARCH/sdk-interrupt-task-notification-ordering.md`.
-
-**2. Gotcha-checker WARNING (task 5 key-links concreteness)** — The original task 5 prose used "reads sidecar" without a backtick-quoted file name. The rewritten task 5 above now backtick-quotes `forge-proactive-interrupt-<agentId>.json` and `checkpointResumeCounts` and `CHECKPOINT_RESUME_CAP` in the Verify line, and cites the exact forge-worker.mjs line ranges for both the injection site (~585–588 in the for-await loop body) and the existing reactive injection shape (549–553). Warning resolved.
-
-### Resolution 2026-05-12 (round 2 — reviewer-boundary REVISE response)
-
-Addresses 3 spec-precision issues from the plan-stage reviewer-boundary verdict (REVISE, 0 blockers, 3 warnings). All 3 are inline fixes to task 5's Verify sub-criteria; no architectural change.
-
-**1. Sidecar lifecycle (AC-1 from reviewer)** — Task 5 Verify sub-criterion (b) now specifies atomic read-then-delete: `readFileSync(sidecarPath, 'utf-8'); unlinkSync(sidecarPath);` in immediate succession inside a fail-open try/catch. No second consumer exists. If missing on read, skip injection (fail-open).
-
-**2. Cap counter key normalization (AC-2 from reviewer)** — Task 5 Verify sub-criterion (c) now cites the EXACT normalization code from `mcp/forge-worker.mjs:503-504`: `rawType.startsWith('forge:') ? rawType.slice('forge:'.length) : rawType`. Uses the same `checkpointResumeCounts` Map and same `CHECKPOINT_RESUME_CAP` constant (line 361). Cap check mirrors lines 507–538 (sub-criterion d).
-
-**3. Call site location (AC-3 from reviewer)** — Task 5 Verify sub-criterion (a) picks ONE site definitively: the for-await loop body at lines ~585–588, immediately after `await handleBudgetUsage(u)`. `handleBudgetUsage` is refactored to return a directive object instead of fire-and-forget; the interrupt call, sidecar consumption, cap check, counter increment, and inputChannel push ALL happen in the loop body (NOT inside `handleBudgetUsage`). Rationale documented inline: `handleBudgetUsage` lacks references to `stream`, `inputChannel`, and `checkpointResumeCounts`; pivoting the decision to the loop body colocates those references with the existing reactive handler at lines 492–568.
+None — the implement-stage loop in `skills/implement/SKILL.md:250-264` and `mcp/forge-worker.mjs` provide the complete pattern to mirror; the divergence (gate1 opens with marker vs. run fails) is fully specified in the TODO.
 
 ### Approach summary
-- Decision: Strategy A (token heuristic) extended with a second threshold constant (`BUDGET_INTERRUPT_THRESHOLD`) that triggers `stream.interrupt()` after synthetic checkpoint write and direct `run-active.json` stamp. Reuses existing `handleBudgetUsage()` instrumentation with minimal new code.
-- Trade-off: `stream.interrupt()` stops the entire parent query (not just the active subagent) — this is acceptable because the worker exits cleanly and the checkpoint resume re-dispatches the agent, but it means the interrupt cannot be partial. Accepted as the only interrupt mechanism available in the SDK.
-- Uncertainty: Whether `task_notification: completed` fires after `stream.interrupt()` — if it does not, the resume injection point must shift to immediately post-interrupt rather than the task_notification handler.
+- Decision: Mirror the implement-stage 2-iteration REVISE loop at skill level (`skills/plan/SKILL.md`) with one deliberate divergence — M>=2 opens gate1 with `revisingUnresolved: true` rather than failing the run, preserving the human fallback path.
+- Trade-off: Gate1 may open in a partially-unresolved state, requiring conductor attention — accepted because the prior state (always manual) was strictly worse.
+- Uncertainty: Whether `scripts/run-tests.mjs` already covers `skills/plan/SKILL.md` content or only script files; if not, the regression task (7) verifies only the new test file.
+
+### Risk and rollback
+
+**Infinite loop risk:** If M is not incremented before re-invoking the planner, the loop runs forever. Mitigation: test task 1 explicitly asserts M increments on each pass and the loop terminates after M=2.
+
+**Divergence drift:** The implement-stage loop may evolve after this feature ships, causing the plan-stage loop to diverge silently. Mitigation: the symmetry checklist in this plan is the canonical reference; any future implement-stage change should note the corresponding plan-stage update in the TODO.
+
+**gate1 marker ignored:** If the conductor does not check `revisingUnresolved` in gate1, the unresolved-REVISE case degrades silently to the current state (manual fix required but not surfaced). Mitigation: the `revisingUnresolved: true` field is added to `gate-pending.json` which the observer dashboard already renders.
+
+**Rollback:** The changes are additive — adding a new step to SKILL.md and a new section to planner.md. Rolling back requires removing those additions. No schema changes to existing data files; `gate-pending.json` gains one optional boolean field, which existing consumers ignore.

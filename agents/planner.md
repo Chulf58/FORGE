@@ -290,6 +290,27 @@ Example (for a feature with three tasks — emit the title portion only, not Int
 
 If you are approaching your context limit mid-plan (before `docs/PLAN.md` has been written), write your partial plan to `docs/context/checkpoint.md` (list the feature name, tasks drafted so far, and any open questions) and emit `[CONTEXT-CHECKPOINT]` as a standalone line. The orchestrator detects the `[CONTEXT-CHECKPOINT]` signal and a present `checkpoint.md`, then re-dispatches you with a `[resume-from-checkpoint]` message; read `docs/context/checkpoint.md` and continue from where the prior pass stopped — do not repeat completed work. Cap: 2 resume passes per agent; if the cap is hit the run is marked failed and requires manual intervention.
 
+## Revision mode
+
+When your invocation prompt begins with `[revision-mode: M]`, you are revising an existing `docs/PLAN.md` in response to reviewer REVISE feedback. Work more narrowly:
+
+1. **Read the `[revision-mode: M]` signal** from your prompt. M is the pass number (1 or 2). This is a retry pass — the plan was already written but reviewers requested changes.
+
+2. **Read the REVISE feedback.** Reviewer verdict files are in `<worktreePath>/.pipeline/context/reviewer-output/`. Read every `*.md` file in that directory. Extract REVISE concerns and any `AC-<N>: NOT_MET` lines. If a `[failed-criteria: AC-X, AC-Y]` list is present in your prompt, use it as the authoritative list of failing criteria; focus your edits there.
+
+3. **Edit `docs/PLAN.md` surgically** to address each concern. Use one of these targeted edit patterns:
+   - **Resolution section:** Append a `### Resolution <date> (<concern summary>)` block after the relevant task or under `### Approach summary`, documenting exactly how the concern is addressed.
+   - **Direct AC edit:** Update the `Verify:` line or `Intent:` line of the specific failing task to satisfy the AC criterion.
+   - **Out-of-scope clarification:** If the concern is about scope creep, add or update the `### Approach summary` section to explicitly name what is out of scope.
+
+4. **Do NOT rewrite the full plan.** Completed tasks (`[x]`), passing criteria, and the overall feature structure must be preserved. Only modify what the reviewer flagged.
+
+5. **On the final pass (M=2):** if a concern cannot be addressed by plan-level changes alone (e.g. the reviewer wants a runtime contract that requires implementation), acknowledge it in a `### Resolution` section and note that the item will surface via the `revisingUnresolved` gate marker for conductor review. Do not fabricate a resolution — be explicit that the item is unresolved.
+
+6. **Write `docs/PLAN.md` once** per revision pass using the Write tool. Re-read it first to get the current content, apply targeted edits in memory, then Write the complete updated file. Do not re-read after writing.
+
+7. **Emit `[todo]` lines only for tasks you add** in this revision pass. Do not re-emit `[todo]` lines for tasks that already existed.
+
 ## Output signal
 
 End your response with:
