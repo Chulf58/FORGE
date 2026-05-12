@@ -339,3 +339,74 @@ test('AC-2: proactive interrupts use the same cap counter normalization as react
     rmSync(workDir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// AC-7 — End-to-end smoke (TDD wave 3): evaluateBudget at artificially low
+// threshold fires immediately and proactiveInterruptStep produces all four
+// expected artefacts (checkpoint.md, outcome stamp, resume message, sidecar).
+// ---------------------------------------------------------------------------
+
+test('AC-7 smoke: artificially low threshold (0.01) fires evaluateBudget, and proactiveInterruptStep produces checkpoint.md, outcome:checkpoint, and [resume-from-checkpoint] message', async () => {
+  // 1. evaluateBudget with threshold 0.01 fires immediately on small non-zero usage
+  //    once the consumedFraction crosses 0.01 (≥ ~1670 tokens against the 167000-token
+  //    usable window).
+  const dec = evaluateBudget(
+    { input_tokens: 2000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    { window: 200_000, autocompactFactor: 0.835, interruptThreshold: 0.01 },
+  );
+  assert.equal(dec.interrupt, true, 'low-threshold evaluateBudget must fire on small usage above 1670 tokens');
+
+  // 2. proactiveInterruptStep produces the full E2E artefacts.
+  const runId = 'r-ac7-smoke';
+  const agentId = 'ag-007';
+  const normType = 'researcher';
+  const workDir = makeWorkDir(runId, [
+    { agent_id: agentId, agent_type: 'forge:researcher', startedAt: Date.now(), completedAt: null, outcome: null },
+  ]);
+
+  try {
+    const fakeStream = { interrupt: async () => {} };
+    const channel = [];
+    const counters = new Map();
+    const lastText = 'Partial researcher output: investigating SDK interrupt semantics — last paragraph before truncation.';
+
+    const result = await proactiveInterruptStep({
+      directive: { interrupt: true, agentId, normType },
+      runId,
+      workDir,
+      stream: fakeStream,
+      channel,
+      counters,
+      cap: 2,
+      lastAssistantText: lastText,
+    });
+
+    assert.equal(result.capped, false, 'first proactive interrupt should not be capped');
+
+    // checkpoint.md exists and contains the last assistant text + auto-interrupt note.
+    const cpPath = join(workDir, 'docs', 'context', 'checkpoint.md');
+    assert.ok(existsSync(cpPath), 'checkpoint.md must exist after proactiveInterruptStep');
+    const cpBody = readFileSync(cpPath, 'utf8');
+    assert.ok(cpBody.includes('Partial researcher output'), 'checkpoint.md should contain last assistant text');
+    assert.ok(cpBody.includes('auto-interrupted'), 'checkpoint.md should contain auto-interrupt note');
+
+    // run-active.json outcome stamp.
+    const active = readRunActive(workDir, runId);
+    assert.equal(active.agents[0].outcome, 'checkpoint', 'agent outcome must be stamped to checkpoint');
+
+    // Resume message in channel.
+    assert.equal(channel.length, 1, 'exactly one resume message should be pushed');
+    const msg = channel[0];
+    assert.equal(msg.type, 'user', 'resume message envelope shape: type=user');
+    assert.equal(msg.parent_tool_use_id, null, 'parent_tool_use_id=null');
+    assert.ok(msg.message.content.startsWith('[resume-from-checkpoint]'),
+      'resume message body must begin with [resume-from-checkpoint]');
+    assert.ok(msg.message.content.includes(normType),
+      'resume message should reference the agent normType for re-dispatch');
+
+    // Counter incremented.
+    assert.equal(counters.get(normType), 1, 'counter incremented for proactive interrupt');
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
