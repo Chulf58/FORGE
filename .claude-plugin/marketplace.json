@@ -12,7 +12,7 @@
       "name": "forge",
       "source": {
         "source": "url",
-        "url": "<INTERNAL-GITHUB-URL>"
+        "url": "https://github.com/Chulf58/FORGE.git"
       },
       "description": "AI-powered development pipeline manager. Plans, implements, reviews, and applies features through a structured agent pipeline with 29 agents, 21 skills, and 24 MCP tools.",
       "version": "0.5.7",
