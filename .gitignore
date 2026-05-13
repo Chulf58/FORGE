@@ -47,6 +47,33 @@ docs/context/lean-gate.json
 docs/lean-lite-skip-audit-*.md
 docs/token-audit-*.md
 
+# Plugin-development runtime artifacts — were tracked historically, kept local now.
+# These accumulate while FORGE develops itself; end users start fresh via /forge:init.
+.pipeline/SESSION-HANDOVER.md
+.pipeline/baseline-*.txt
+.pipeline/regress-*.txt
+.pipeline/regression-*.txt
+.pipeline/sub*.txt
+.pipeline/plan-diff.txt
+.pipeline/test-stage-output.txt
+.pipeline/context/phase-*.json
+.pipeline/context/phase-*.txt
+.pipeline/context/researcher-status.json
+.pipeline/context/reviewer-output/
+.pipeline/context/test-*.txt
+.pipeline/context/verdicts/
+.pipeline/notes.json
+.pipeline/project.json
+docs/brainstorms/
+docs/context/critic-wiring-gaps.json
+docs/context/findings.json
+docs/context/ideator-findings-*.json
+docs/context/red-team-findings-*.json
+docs/context/baseline-test.txt
+docs/context/plan-diff.txt
+docs/context/plan-test.txt
+docs/gotchas/GENERAL.md
+
 # Pipeline runtime state (per-project, not plugin source)
 .worktrees/
 .pipeline/run-active.json
