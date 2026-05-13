@@ -96,19 +96,11 @@ Nothing runs in the background between sessions. FORGE is stateless until you in
 
 ## Install
 
-### Local path
+Clone the internal repo, then start Claude Code with the plugin loaded:
 
 ```bash
+git clone <INTERNAL-GITHUB-URL>
 claude --plugin-dir /path/to/forge-plugin
-```
-
-### Marketplace
-
-Marketplace distribution is in progress — use local path for now.
-
-```bash
-claude plugin marketplace add <your-forge-repo>
-claude plugin install forge@forge-tools
 ```
 
 ---

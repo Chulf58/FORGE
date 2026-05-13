@@ -16,3 +16,5 @@ scripts/reviewer-dispatch.mjs
 # Phase 1 wave 1 — red bar verified via plan-revise-loop-test.mjs (exit 1, ERR_MODULE_NOT_FOUND).
 # tdd-guard resolveTestFile only detects .test.mjs convention, not -test.mjs (hyphen convention).
 scripts/plan-revise-loop.mjs
+# 2-line launcher shim — no logic; full path baked by mcp-deps-install.js on SessionStart.
+bin/forge-mcp-server.cmd
