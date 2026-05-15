@@ -1,99 +1,190 @@
-# FORGE Worker — Runtime Instructions
+# FORGE Pipeline — Runtime Instructions
 
-These rules apply when `.pipeline/worker-task.json` exists — i.e., this is a worker session executing a pipeline task.
+These rules govern how FORGE operates in any project where the plugin is installed.
 
-## Change philosophy
+## Conductor sessions
 
-Choose the smallest safe implementation that solves the stated problem. No speculative abstractions. No unrelated cleanup. Prefer existing patterns in the codebase over new structure. Keep the patch easy to justify against unnecessary complexity, hidden side effects, and scope creep.
+If `.pipeline/.worker-session` does NOT exist in the project root, this is a **conductor session**. Conductor sessions orchestrate pipelines and manage workflow.
 
-Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
+(`.pipeline/.worker-session` is the durable marker — written by `hooks/worker-task-inject.js` at SessionStart and persisted for the worker's lifetime. The transient task file `.pipeline/worker-task-<runId>.json` is consumed and deleted by `worker-task-inject.js` immediately after injection, so it is NOT a reliable discriminator after the first prompt.)
 
-## Anti-speculation rule
+**Conductor rules (mandatory — override default behavior):**
+- Do NOT use the Agent tool for ad-hoc work. No Explore, no general-purpose, no claude-code-guide — no ad-hoc subagents.
+- **Pipeline skills are exempt:** `/forge:plan`, `/forge:implement`, `/forge:debug`, `/forge:refactor`, `/forge:research`, `/forge:explore` invoke agents as in-session subagents. This is expected and allowed — the skill handles run creation, model routing, and agent dispatch.
+- For quick lookups (1-2 tool calls): use Read/Grep/Glob directly — no worker needed.
+- **Status checks are read-only:** "check the run" / "status" / "what's happening" → Read `run.json`, glance at `git log` + `git status --porcelain` if needed. Stop there. NEVER re-run the regression suite or any tests — reviewer-approved verdicts on `run.json` are the authority. If the user wants re-verification they'll say so explicitly. Worktree-specific tests will often fail on missing `node_modules` — do not substitute by running in main unless asked.
+- **Inline gate approval (gate1/gate2):** when the user says "approve", execute inline — no `/forge:approve` skill needed. ("approve" is the only gate-approval trigger keyword by design — the friction is intentional.)
+  1. `forge_list_runs({ status: "gate-pending" })` — if multiple, pick most recently updated. Then `forge_check_gate({ runId })` — extract `gate`, `feature`.
+  2. `forge_set_gate({ gate, feature, status: "approved", runId })`
+  3. `forge_update_run({ runId, gateState: { ...existing, status: "approved", approvedAt: <now ISO> } })` — do NOT set `status: "completed"`. The run stays `gate-pending` with an approved gateState until commit+merge.
+  4. If `gate` is `"gate1"`: read `run.stages.implement.agents` from the run object fetched in step 1, then call `forge_advance_stage({ runId, targetStage: "implement", agents: run.stages.implement.agents })`. Print: "Gate 1 approved — implement worker spawned. Use /forge:approve when Gate #2 is ready."
+  5. Print next step: gate1 → already printed above, gate2 → "Worker resumes automatically — the commit will be bundled when it is ready"
+  6. If `gate` is `"commit"`: execute MERGE inline (mirrors `skills/approve/SKILL.md` Step 4 — that doc is canonical). The worker has already committed in the worktree via apply Step 3c (closes TODO `38bca814`). The conductor only merges; it never stages or commits. Summary:
+     - When `worktreePath` is non-null: optionally check `git -C <worktreePath> status --porcelain` and log a warning for any uncommitted files (means worker's apply commit failed — do NOT auto-stage and ship potentially BLOCKED work). Then run `node bin/forge-worktree.js merge <runId>`. On failure, log and instruct manual resolution — never force-merge.
+     - When `worktreePath` is null: skip merge (apply commit was in main root already).
+     - Auto-PR (only when `.pipeline/project.json` `gitIntegration.autoPR` is true): `git push -u origin HEAD` then `gh pr create --title "feat(forge): <safe-feature>" --body "Applied via FORGE pipeline"`.
+     - After merge (or no-merge for null worktree): `forge_update_run({ runId, status: "completed" })`. When `worktreePath` is non-null, also mark the source implement/debug/refactor run (extracted from the worktree path's last segment) as `status: "completed"`. Print: `Commit approved for '<feature>'. Merged.`
+     - Forbidden ops: `--force`, `--force-with-lease`, `--amend`, `--no-verify`, `git reset`, `git clean`, `git stash`.
+- **After gate2 approval:** the existing worker resumes automatically and handles apply (documenter, lifecycle, commit gate). NEVER invoke `/forge:apply` unless the worker is confirmed dead (`status: "failed"` or `"discarded"`). The apply skill is manual recovery only.
+- **Commit gates** are inline-approvable using the same keywords on line 15 — the conductor calls `forge_set_gate` (with `gate: "commit"`) and then executes the merge inline per step 6 above (the worker already committed in apply Step 3c). The `/forge:approve` skill remains the canonical implementation (`skills/approve/SKILL.md` Step 4) and a manual fallback for direct invocation; both paths must produce the same outcome.
+- **Approach-first protocol (MANDATORY):** Before ANY direct file edit, present the approach to the user — what will change, which files, why — and wait for explicit approval. Only the literal word "approve" counts as authorization. The conductor narrating intent ("let me fix", "I'll update") is NOT self-authorization. This applies even for obvious one-line fixes, even in auto mode.
 
-Before claiming anything about this codebase's state, history, what exists, or what happened — cite a file:line from a Read/Grep done THIS turn, or say "I don't know, checking" and call the tool. No "appears to", "likely", "probably", "I assume", "seems to have been". If you lack tool-call evidence this turn, you don't know — verify or disclaim.
+Worker sessions load `CLAUDE-WORKER.md` via the `worker-task-inject.js` hook at SessionStart.
+
+## Pipeline types and agent sets
+
+Pipeline **types** (the slash command) determine which agents run. Reviewer dispatch is driven by risk surface — see `scripts/reviewer-dispatch.mjs`.
+
+| Type | Command | Agent set | Gate |
+|------|---------|-----------|------|
+| Plan feature | `/forge:plan` | planner, researcher, gotcha-checker, script-dispatched reviewers | #1 |
+| Implement feature | `/forge:implement` | coder, script-dispatched reviewers | #2 |
+| Implement feature (scoped) | `/forge:implement` | implementation-architect, coder, script-dispatched reviewers | #2 |
+| Apply feature | `/forge:apply` | documenter | none |
+| Debug | `/forge:debug` | debug, coder, script-dispatched reviewers | #2 |
+| Apply debug | `/forge:apply` | documenter | none |
+| Refactor | `/forge:refactor` | refactor, coder, script-dispatched reviewers | #2 |
+| Apply refactor | `/forge:apply` | documenter | none |
+| Research | `forge_create_run` with `spawnWorker: true` | researcher (worker session) | none |
+| Architect | (direct) | architect, reviewer-logic | #1 |
+| Ideate | `/forge:ideate` | critic | none |
+
+### Run stages
+
+Each run has a `stages` map — the conductor sets it at run creation, workers read it to dispatch agents.
+
+```json
+"stages": { "<stage>": { "agents": ["planner"], "status": "pending" } }
+```
+
+| Field | Description |
+|-------|-------------|
+| Stage key | Pipeline phase: `plan`, `implement`, `review`, `apply`, `debug`, `refactor`, `research` |
+| `agents` | Which agents the worker should dispatch for this stage |
+| `status` | Progress: `pending` → `running` → `completed` \| `skipped` (cannot roll back from completed/skipped) |
+
+`stages` is `null` until populated. Pass it to `forge_create_run` to set the initial value; use `forge_update_run` to advance status. Stage updates merge into the map — existing keys preserved, new keys added, provided keys overwritten. The dashboard derives its activity label from the first stage with `status === "running"`.
+
+Workers call `forge_get_run`, extract `stages.<stage>.agents`, and dispatch exactly those agents — never a hardcoded list.
+
+### Pre-run classification (forge_classify_risk)
+
+Before calling `forge_create_run`, the conductor calls `forge_classify_risk` to assess the planned change:
+
+```
+forge_classify_risk({ feature, filePaths, forceReview? })
+  → { classificationId, riskLevel, advisories, planStageReview, reviewers }
+```
+
+| Output | Use |
+|--------|-----|
+| `classificationId` | Pass to `forge_create_run` → stored on `run.classificationId` for audit trail |
+| `riskLevel` + `advisories` | Show to user before starting the pipeline |
+| `planStageReview` | Whether reviewers should run at plan stage |
+| `reviewers` | Advisory suggested reviewers (shown to user; plan pipeline uses this) |
+
+The conductor uses the classification result to populate `stages.<stage>.agents` when creating the run. This is the link between classification and worker dispatch: conductor classifies → sets `stages` → worker reads `stages.<stage>.agents` and executes.
+
+**Mandatory present-and-wait (applies to all four pipeline skills):**
+
+After displaying the classification result and before calling `forge_create_run`, the conductor MUST:
+
+1. Present the full resolved agent team — core pipeline agents for the pipeline type plus `reviewers` from the `forge_classify_risk` output.
+2. Display a formatted agent list so the user can see who will run.
+3. Pause with the canonical phrase: **"Waiting for approval — type 'go' or 'approve' to proceed, or describe changes to the team"**
+4. Call `forge_create_run` only after the user responds affirmatively ("go", "approve", "yes", or equivalent).
+
+This applies to `/forge:plan`, `/forge:implement`, `/forge:debug`, and `/forge:refactor`. The user may request changes to the team before approving — adjust the agent list and re-present before proceeding.
+
+**Two distinct classifiers — do not conflate:**
+
+| Classifier | When | Authority |
+|-----------|------|-----------|
+| `forge_classify_risk` | Pre-run, before worktree exists | Advisory — shown to user, stored as `classificationId` |
+| `scripts/lean-risk-classify.mjs` | Post-handoff, after coder/refactor/debug writes `handoff.md` | Authoritative — drives actual reviewer dispatch |
+
+## Task approach protocol
+
+When starting work on any task from the backlog or TODO list:
+
+### Step 1 — Read the task (FULL TEXT, mandatory)
+Read the COMPLETE `text` field of the TODO from `.pipeline/board.json` — not just the title, not just the summary, not just the first paragraph. The body often contains decision-affecting markers that gate implementation work:
+
+- **`NEEDS DISCUSSION`**, **`DISCUSS`**, **`[PARKED]`**, **`pending discussion`** — the task is NOT cleared for implementation. Present the options or open questions to the user and wait for explicit direction. Do NOT call `forge_classify_risk` or `forge_create_run` until that discussion happens.
+- **`DESIGN PROPOSAL`** + **`ALTERNATIVE`** (multiple options listed) — surface the tradeoffs to the user and let them pick before proceeding.
+- **`PARTIALLY SHIPPED`**, **`PARTIALLY MITIGATED`**, **`SHIPPED 2026-...`** — the task is already partly done. Confirm what's left vs. what's claimed-but-unverified before scoping work.
+- **`OUT OF SCOPE:`**, **`Do NOT ...`** — respect explicit out-of-scope clauses; don't slip them into the implementation.
+
+Read the WHOLE text before recommending a pipeline type or agent team. Skimming the title and tags is what landed d316415f (a DISCUSS-required task) into an unauthorized plan run — see commit `bc6b116e` postmortem.
+
+### Step 2 — Assess the task
+Understand what the task involves: which files, what complexity, what risk. If Step 1 revealed a discussion marker, the assessment IS the discussion — list the options and wait.
+
+### Step 3 — Decide the agent team
+Based on the assessment, determine which agents are needed. The pipeline type follows from this.
+
+**Reviewer dispatch** — `scripts/reviewer-dispatch.mjs` determines which reviewers to invoke. It replaces the reviewer-triage agent. The script maps risk-surface rules to specific reviewers deterministically — no LLM needed.
+
+**Risk surface** — the classifier (`scripts/lean-risk-classify.mjs`) scans handoff code blocks for these patterns and the dispatch script maps each to the appropriate reviewer:
+
+| Risk pattern | Reviewer |
+|---|---|
+| Shell / `child_process` / process spawning | `reviewer-safety` |
+| `fs` writes or deletes outside `.pipeline/` | `reviewer-safety` |
+| Auth / crypto / secret / credential handling | `reviewer-safety` |
+| Security-sensitive path / env-var resolution | `reviewer-safety` |
+| Network boundaries (HTTP, fetch, servers) | `reviewer-safety` + `reviewer-boundary` |
+| New MCP tools, hook scripts, commands | `reviewer-safety` + `reviewer-boundary` |
+| Schema / contract changes | `reviewer-boundary` |
+| Signal format changes | `reviewer-boundary` |
+| Merge / apply / worktree boundary code | `reviewer-safety` + `reviewer-boundary` |
+
+When the classifier cannot confirm safety (missing verification, blockers present, unclean) but no specific rules trigger, the script falls back to `reviewer-safety` + `reviewer-boundary`.
+
+For plan-stage dispatch, the script keyword-scans active task lines and maps to reviewers (safety, boundary, logic, performance) based on domain keywords.
+
+**Contextual agents** — dispatched based on pipeline type and risk surface: `implementation-architect` (scoped implement), `researcher` (plan + research pipelines), `gotcha-checker` (plan pipeline), `reviewer-logic` (architect pipeline; logic risk surface), `reviewer-performance` (performance risk surface), `reviewer-style` (refactor pipeline; style surface).
+
+### Step 4 — The agent team determines the pipeline
+
+| Agent team | Pipeline |
+|------------|----------|
+| No reviewers needed | direct (single file, low risk) |
+| Reviewers needed + new feature | `/forge:plan` then `/forge:implement` |
+| Reviewers needed + broken behaviour | `/forge:debug` |
+| Reviewers needed + cleanup | `/forge:refactor` |
+
+### Step 5 — Present and wait for approval
+
+Before doing anything, present the full agent team and pipeline with reasoning. Wait for explicit user approval before starting.
+
+## Model routing
+
+Before each agent invocation, resolve which model and execution path to use:
+
+1. Call `forge_get_model_recommendation` with the agent name.
+2. If `source === "error"` or `modelId === null`: surface the `reason` prefixed with `[routing error]` and stop — do not proceed to the agent.
+3. Dispatch based on `providerId`:
+   - **`"anthropic"`** → invoke via `Agent(subagent_type=<agent>, model=<family>)` where `family` is the short name returned by the recommendation (`sonnet`, `opus`, or `haiku`). If `family` is `null`, fall back to the agent's frontmatter `model:` field.
+   - **any other provider** → read `agents/<agent>.md` (extract body after the closing `---` frontmatter line), assemble required context (plan/handoff content the agent needs), call `forge_call_external(providerId=<providerId>, modelId=<modelId>, prompt=<assembled prompt>, maxTokens=8192)`, treat the text response as the agent's output
+4. If `forge_get_model_recommendation` is unavailable (MCP error) or `family` is `null`: fall back to the agent's frontmatter `model:` field via `Agent`.
 
 ## TDD discipline
 
-When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), you MUST build it test-first:
+When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), build it **test-first**. The discipline must apply to the enforcement code:
 
-- Write failing tests first (red bar — confirm the test command exits non-zero before the implementation exists)
-- Implement until tests pass (green bar — confirm same test command exits 0)
-- Run the full regression suite — confirm no regression
+- Wave 1: failing tests (red bar verified — run the test command, confirm exit non-zero)
+- Wave 2: implementation (green bar verified — same test command exits 0)
+- Wave N: full regression suite still green
 
-Anti-pattern to avoid (research §3.2 — Red+Green collapse): writing tests + implementation in the same turn, then running the suite once and claiming success. Tests must be created and observed-failing BEFORE the implementation exists.
+For non-enforcement work, pragmatic TDD vs. direct-fix is a judgment call (see memory `feedback_inline_edit_block_resolution.md`). For enforcement work, TDD is non-negotiable — a tool that silently fails open is worse than no tool.
 
-For non-enforcement work, pragmatic TDD vs. direct fix is a judgment call — see the planner's guidance in `docs/PLAN.md` for the run.
+Decision heuristic for the planner: *"if this code's behavior breaks silently, how do we know?"* If the answer is *"we don't"* → TDD-structure the plan.
 
-Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` — research catalogues 11 failure modes; §3.2 documents Red+Green collapse as the second-most-common; §4.1 names hook-enforced TDD as the strongest single intervention.
+Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` (run `r-e3068c22`, 2026-05-09) — research catalogues 11 failure modes; §4.1 names hook-enforced TDD as the strongest single intervention.
 
 ## Tool efficiency
 
 Use dedicated tools over Bash: `Read` not `cat`, `Glob` not `find`, `Grep` not `grep`, `Edit` not `sed`. Prefer `forge_*` MCP tools for pipeline state; fall back to direct file reads if MCP unavailable. `hooks/bash-guard.js` enforces this as a backstop.
 
 **No subagents for file reads.** Use `Read`, `Grep`, or `Glob` directly. Subagents are for open-ended research or protecting context from large outputs.
-
----
-
-## Checkpoint resume
-
-When you receive a user message starting with `[resume-from-checkpoint]`, a subagent hit its context limit mid-task and was paused. The `[resume-from-checkpoint]` message names the agent type and tells you the `docs/context/checkpoint.md` file holds the partial state.
-
-**What to do:** Re-dispatch the named agent via `Agent(subagent_type=<X>)` with a prompt that begins with the literal `[resume-from-checkpoint]` prefix and instructs it to read `docs/context/checkpoint.md` to continue. Do NOT do the agent's work yourself — re-dispatch it.
-
-**What NOT to do:** Do not treat this as a conversational message and narrate intent. Do not do the work yourself. The worker must be the dispatcher, not the implementer.
-
-Example: if you receive:
-```
-[resume-from-checkpoint]
-The previous debug agent hit its context limit mid-task. Read `docs/context/checkpoint.md` to see what was completed and what remains. Continue from where the prior pass stopped — do not repeat completed work.
-```
-Dispatch `Agent(subagent_type='forge:debug', prompt='[resume-from-checkpoint]\n...')` immediately.
-
-**Cap:** the orchestrator allows at most 2 resume passes per agent per run. If the run reaches the cap, it is marked failed with `failureReason: "context-exhausted"` and requires manual intervention.
-
----
-
-## Plugin development
-
-> These rules apply when working on the FORGE plugin source code itself — editing agents, hooks, skills, or MCP server code in this repo.
-
-### Stack
-
-- **Runtime:** Node.js (hooks are `.js` scripts executed by Claude Code)
-- **Content:** Markdown (agents, commands, skills)
-- **Config:** JSON (plugin manifest, pipeline state, board)
-- **Distribution:** Claude Code plugin system (marketplace or local path)
-
-### Key source locations
-
-| Area | Path |
-|------|------|
-| Plugin manifest | `.claude-plugin/plugin.json` |
-| Pipeline agents | `agents/*.md` |
-| Slash commands | `commands/forge/*.md` |
-| Hook declarations | `hooks/hooks.json` |
-| Hook scripts | `hooks/*.js` |
-| Status line script | `bin/forge-status.js` |
-| Worktree manager | `bin/forge-worktree.js` |
-| Project scaffolds | `scaffolds/` |
-| Pipeline state (per-project) | `.pipeline/` |
-| Pipeline docs (per-project) | `docs/` |
-| Gotchas for this plugin project | `docs/gotchas/GENERAL.md` |
-
-### How the plugin works
-
-When installed, Claude Code loads:
-1. **Agents** from `agents/` — available as subagents in any session
-2. **Commands** from `commands/forge/` — available as `/forge:plan`, `/forge:init`, etc.
-3. **Hooks** from `hooks/hooks.json` — fire on SessionStart, PreToolUse, PostToolUse
-4. **MCP servers** from `.mcp.json` — spawned automatically
-
-The plugin does NOT modify project files on install. Projects get their pipeline state (`docs/`, `.pipeline/`) via `/forge:init`.
-
-### Working on this plugin
-
-Edit files directly — no build step, no compilation. Agent changes take effect on next invocation (no restart needed). Hook and command changes require restarting the Claude Code session.
-
-### Stack rules and gotchas
-
-@docs/gotchas/GENERAL.md
