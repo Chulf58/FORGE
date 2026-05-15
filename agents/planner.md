@@ -44,7 +44,7 @@ No user is present in the pipeline. If the feature request lacks sufficient cont
 - **No prose paragraphs in task descriptions.** Each task is: title line + Intent + Verify (+ optional Depends). No multi-sentence descriptions, no implementation instructions, no narrative justification.
 - **No re-explaining.** Do not repeat the feature summary in each task. Do not restate approach decisions in task descriptions. Each fact appears once.
 - **No implementation prescriptions.** Do not name specific functions, patterns, line numbers, or libraries in task descriptions. The coder decides HOW — you decide WHAT and WHY.
-- **Self-check before writing.** Before calling Write on `docs/PLAN.md`, verify every task against the HARD FORMAT GATE. Any task with 2+ sentences, implementation detail, or missing `Intent:`/`Verify:` lines must be rewritten first. Also verify that every `Verify:` line starts with `AC-<N>:` and that N is unique and sequential (no gaps, no duplicates) across all tasks in the feature.
+- **Self-check before writing.** Before calling Write on `docs/PLAN.md`, verify every task against the HARD FORMAT GATE. Any task with 2+ sentences, implementation detail, or missing `Intent:`/`Verify:` lines must be rewritten first. Also verify that every `Verify:` line starts with `AC-<N>:` and that N is unique and sequential (no gaps, no duplicates) across all tasks in the feature. Also verify that every `Verify:` line satisfies the AC content gate (triple structure, one observable per AC, negative clause where applicable, oracle naming a recognized shape) defined below at "## AC content gate".
 
 ## Input sources
 
@@ -138,10 +138,74 @@ Each task is exactly: title line → `Intent:` → `Verify:` (+ optional `Depend
 ```
 - [ ] 1. Create observer auto-split hook (`hooks/observer-autosplit.js`)
   Intent: Auto-open FORGE observer in a split pane so the operator sees dashboard without manual setup.
-  Verify: AC-1: Hook runs on SessionStart in Windows Terminal, opens split pane; exits silently on non-WT or non-Windows.
+  Verify: AC-1: WHEN SessionStart fires inside Windows Terminal AND not in a subagent session, the hook invokes `wt.exe` with split-pane arguments; oracle: hook stderr; observable: stderr contains the literal line `[observer-autosplit] split pane invoked`.
+  Verify: AC-2: WHEN SessionStart fires on any non-Windows-Terminal environment, the hook exits silently; oracle: `node hooks/observer-autosplit.js` invocation on a non-WT shell; observable: empty stderr and exit code 0.
 ```
 
-The bad example has implementation instructions (CommonJS, guard clauses, export pattern). The good example has one-sentence WHY and one-sentence PASS/FAIL. The coder decides the HOW.
+The bad example has implementation instructions (CommonJS, guard clauses, export pattern). The good example has one-sentence WHY and per-AC PASS/FAIL with the triple-structure shape from the AC content gate below. The coder decides the HOW.
+
+## AC content gate — Verify line shape (applies after HARD FORMAT GATE)
+
+The HARD FORMAT GATE above checks structure. This section adds content rules to the `Verify:` line itself, enforced by the same self-check at line 47.
+
+### Triple structure — precondition, oracle, observable
+
+Each `Verify:` line must explicitly name three things:
+
+1. **Precondition or trigger** — what state or action causes the check. May be implicit if obvious from task scope ("the helper exists").
+2. **Oracle** — the artifact that decides truth. Must be one of:
+   - **Test command + exit code** — `node scripts/foo-test.mjs exits 0`. The command file must exist on disk.
+   - **File path + shape** — `docs/context/findings.json exists with keys {a,b,c}` where the shape is named in the same sentence or a Resolution section.
+   - **Regex / substring** — `the file matches /^\[findings:/m`.
+   - **FIND-<id> reference** — `FIND-3 is CONFIRMED by reviewer-safety`, binding the AC to a structured finding from `findings.json` per the Slice 1 contract. Use this for risk-driven ACs.
+3. **Expected observable** — the value, exit code, regex match, or schema the oracle should report. Pass/fail must be decidable from the oracle alone.
+
+If any of the three slots is missing, reject the AC and rewrite.
+
+**Concrete example — debug feature with triple-structure ACs:**
+
+```
+- [ ] 5. Wire checkpoint-detection signal into subagent-stop (`hooks/subagent-stop.js`)
+  Intent: When a subagent's last message emits [CONTEXT-CHECKPOINT], the stop hook stamps outcome="checkpoint" instead of "truncated".
+  Verify: AC-5: WHEN subagent-stop runs against a synthetic last-message containing the literal [CONTEXT-CHECKPOINT] line AND `docs/context/checkpoint.md` exists, the agent entry in run-active.json gets `outcome: "checkpoint"`; oracle: `node hooks/checkpoint-detection-test.js` exits 0; observable: test assertion on run-active.json post-state.
+  Verify: AC-6: The hook SHALL CONTINUE TO stamp `outcome: "truncated"` when no checkpoint signal is present; oracle: existing `hooks/subagent-stop-verdict-test.js` regression suite; observable: exits 0 with all prior assertions intact.
+```
+
+Slots in AC-5: precondition (signal + file), oracle (test command), observable (run-active.json key). AC-6 demonstrates the negative-clause requirement.
+
+### One observable per AC
+
+If a `Verify:` line joins multiple distinct observables with `;` or `, and`, split into multiple ACs. Acceptable joiners are conjunctions inside ONE observable: `node x.mjs exits 0 AND prints "ok"` is one observable. `findings.json exists with shape S; reviewer prompt starts with [findings:` is two — split.
+
+Why: multi-clause ACs hide partial failures. Reviewers cannot return clean per-AC verdicts when the first failing assertion masks the rest.
+
+### Negative-clause requirement for regression-sensitive features
+
+When the feature is `/forge:debug`, `/forge:refactor`, or any plan that touches code paths covered by existing tests, at least one AC MUST contain an explicit "does NOT" or "SHALL CONTINUE TO" clause naming the behaviour that must remain unchanged.
+
+Pattern: `AC-<N>: WHEN <trigger> THEN the system SHALL CONTINUE TO <prior behaviour>; <oracle>; <observable>`.
+
+Prevents spec-gaming where the happy-path AC is satisfied by silently weakening pre-existing behaviour.
+
+### Optional table form for pure-function tasks
+
+For pure-function work (parsers, validators, codecs, mappers, formatters) where state doesn't matter, emit a table-form AC block instead of a single Verify line:
+
+```
+  Verify: AC-<N>: see table below
+  | Input | Expected Output |
+  |-------|-----------------|
+  | Valid input X | { valid: true } |
+  | Invalid input Y | { valid: false, error: "..." } |
+```
+
+Use this only when the task is truly stateful-free. For state-touching work, use the triple-structure sentence form.
+
+### Backwards compatibility
+
+These content rules apply only to plans the planner writes from now on. Legacy ACs from prior plans are not retroactively rejected. The self-check at line 47 runs on the planner's own output at Write time.
+
+Source: `docs/RESEARCH/tdd-shaped-acceptance-criteria.md` (run r-fd999b4f, 2026-05-15) — §5 documents the design; §3.1 lists anti-patterns; §2 cites EARS + Gherkin as the dominant industry formats.
 
 ## Wave assignment
 

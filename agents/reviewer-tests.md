@@ -109,6 +109,20 @@ For each finding, emit: `file:line — pattern matched — diff line (truncated 
 
 If the exact line number is not available from the diff context, cite the `+++ b/<path>` filename and the diff hunk header (e.g. `@@ -10,5 +12,7 @@`).
 
+### AC oracle validation (opt-in by shape, implement-stage only)
+
+**Applies only when not in plan-stage mode.** During plan-stage review (when your prompt contains `[plan-stage review]`), test files named in AC oracles may not yet exist — they will be created by the wave-1 red-bar tasks. Emit `AC-<N>: SKIPPED — oracle file pending wave-1 creation` for any oracle-named file that does not exist at plan time, instead of NOT_MET.
+
+In implement-stage mode (default — no `[plan-stage review]` marker), validate each AC's oracle slot:
+
+- **Test command oracle** (e.g. `node scripts/foo-test.mjs exits 0`): the script file must exist on disk. Use Glob/Read to verify. If absent, emit `AC-<N>: NOT_MET — oracle script does not exist: <path>`.
+- **File path oracle** (e.g. `docs/context/findings.json exists with shape S`): the named file path must be plausible (Glob the parent directory). If the path is malformed or escapes the project root, `NOT_MET`.
+- **`FIND-<id>` oracle**: skip — handled by per-finding `FIND-<id>:` verdicts elsewhere in the review.
+- **Regex / substring oracle**: skip — pattern verification belongs to other reviewers (reviewer-logic, reviewer-boundary).
+- **Unrecognized oracle shape** (legacy ACs from before the upgrade, or ACs that don't fit any of the above): emit `AC-<N>: SKIPPED — oracle shape not machine-parseable (legacy or non-test AC)`.
+
+This validation is opt-in by oracle shape: legacy ACs are SKIPPED without prejudice. New ACs that name a test command or file oracle are validated.
+
 ## Output format
 
 ```
