@@ -125,3 +125,113 @@ test('fallback: returns null when .pipeline dir missing', () => {
   const result = findWorkerTaskFile(dir, '/irrelevant', undefined);
   assert.equal(result, null);
 });
+
+// --- taskBrief injection (end-to-end, spawns the hook subprocess) ---
+
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+
+const __hookDir = dirname(fileURLToPath(import.meta.url));
+const HOOK_PATH = join(__hookDir, 'worker-task-inject.js');
+
+function runHookSubprocess(projectDir) {
+  return new Promise((resolve, reject) => {
+    const payload = { cwd: projectDir, session_id: 'test', hook_event_name: 'SessionStart' };
+    const child = spawn(process.execPath, [HOOK_PATH], {
+      cwd: projectDir,
+      env: { ...process.env, CLAUDE_PLUGIN_ROOT: join(__hookDir, '..'), FORGE_WORKER_RUN_ID: 'r-test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => { stderr += d; });
+    child.stdin.write(JSON.stringify(payload));
+    child.stdin.end();
+    child.on('close', code => resolve({ code, stdout: stdout.trim(), stderr }));
+    child.on('error', reject);
+  });
+}
+
+function extractAdditionalContext(stdout) {
+  try {
+    const obj = JSON.parse(stdout);
+    return obj?.hookSpecificOutput?.additionalContext || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function makeProjectWithTask(taskData) {
+  const dir = makeTmp();
+  const taskPath = join(dir, '.pipeline', 'worker-task-' + (taskData.runId || 'r-test') + '.json');
+  writeFileSync(taskPath, JSON.stringify(taskData), 'utf8');
+  return dir;
+}
+
+test('taskBrief present: hook injects brief between markers', async () => {
+  const dir = makeProjectWithTask({
+    runId: 'r-test',
+    feature: 'short feature',
+    pipelineType: 'research',
+    taskBrief: 'Detailed research brief.\nLine two of brief.',
+  });
+  try {
+    const { stdout } = await runHookSubprocess(dir);
+    const ctx = extractAdditionalContext(stdout);
+    assert.ok(ctx.includes('--- Task brief ---'),
+      'additionalContext missing "--- Task brief ---" opening marker. Got: ' + ctx.slice(0, 300));
+    assert.ok(ctx.includes('Detailed research brief.'),
+      'additionalContext missing brief body. Got: ' + ctx.slice(0, 300));
+    assert.ok(ctx.includes('Line two of brief.'),
+      'additionalContext lost multi-line brief content. Got: ' + ctx.slice(0, 300));
+    assert.ok(ctx.includes('--- end brief ---'),
+      'additionalContext missing "--- end brief ---" closing marker.');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('taskBrief absent: hook injects no brief markers', async () => {
+  const dir = makeProjectWithTask({
+    runId: 'r-test',
+    feature: 'short feature',
+    pipelineType: 'research',
+  });
+  try {
+    const { stdout } = await runHookSubprocess(dir);
+    const ctx = extractAdditionalContext(stdout);
+    assert.ok(!ctx.includes('--- Task brief ---'),
+      'additionalContext should not include "--- Task brief ---" when taskBrief absent.');
+    assert.ok(!ctx.includes('--- end brief ---'),
+      'additionalContext should not include "--- end brief ---" when taskBrief absent.');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('taskBrief with control characters: stripped, surrounding text preserved', async () => {
+  // Use String.fromCharCode to ensure non-literal control bytes in the source.
+  const NUL = String.fromCharCode(0);
+  const ESC = String.fromCharCode(27);
+  const DEL = String.fromCharCode(127);
+  const brief = 'Safe text' + NUL + 'with null' + ESC + 'with esc' + DEL + 'with del - end';
+  const dir = makeProjectWithTask({
+    runId: 'r-test',
+    feature: 'short feature',
+    pipelineType: 'research',
+    taskBrief: brief,
+  });
+  try {
+    const { stdout } = await runHookSubprocess(dir);
+    const ctx = extractAdditionalContext(stdout);
+    assert.ok(!ctx.includes(NUL), 'NUL byte should be stripped from additionalContext');
+    assert.ok(!ctx.includes(ESC), 'ESC byte should be stripped from additionalContext');
+    assert.ok(!ctx.includes(DEL), 'DEL byte should be stripped from additionalContext');
+    assert.ok(ctx.includes('Safe text') && ctx.includes('with null') && ctx.includes('end'),
+      'surrounding text should survive control-char stripping. Got: ' + ctx.slice(0, 300));
+  } finally {
+    cleanup(dir);
+  }
+});

@@ -77,6 +77,9 @@ async function main(rawInput) {
   const safe = (s) => String(s || '?').replace(/[\r\n]/g, ' ').trim();
   const pType = safe(data.pipelineType || 'plan');
   const feat = safe(data.feature);
+  const taskBrief = typeof data.taskBrief === 'string'
+    ? data.taskBrief.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').slice(0, 16384)
+    : '';
   const runId = safe(data.runId);
   const lines = [];
   lines.push('You are a FORGE worker session spawned to execute a pipeline task.');
@@ -85,6 +88,16 @@ async function main(rawInput) {
   lines.push('Feature: ' + feat);
   lines.push('Pipeline: ' + pType);
   lines.push('');
+
+  // Optional long-form brief — injected for all pipeline types when present.
+  // Carries detailed topic specs, references, output requirements that don't
+  // fit in the short `feature` dashboard label.
+  if (taskBrief) {
+    lines.push('--- Task brief ---');
+    lines.push(taskBrief);
+    lines.push('--- end brief ---');
+    lines.push('');
+  }
 
   // These pipeline types do their work directly — do NOT call the slash command
   // (that would spawn another worker, causing an infinite loop).

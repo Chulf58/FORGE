@@ -11,7 +11,8 @@ model: claude-sonnet-4-6
 Call `forge_create_run` with:
 - `sessionId`: your session ID (or `"unknown"` if unavailable)
 - `pipelineType`: `"research"`
-- `feature`: a short summary derived from the user's input below
+- `feature`: a SHORT title (one phrase, under 120 chars) for the dashboard label
+- `taskBrief`: the FULL detailed topic from the user's input below — questions, file references, output spec, constraints. The worker sees this verbatim in its SessionStart prompt. Capped at 16 KB; control chars stripped.
 - `spawnWorker`: `true`
 - `useWorktree`: `false`
 

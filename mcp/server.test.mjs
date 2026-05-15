@@ -142,6 +142,50 @@ async function main() {
       }
     }
 
+    // ── Test 3: taskBrief flows through to worker-task JSON ────────────────
+    // Exercises the additive taskBrief parameter on forge_create_run.
+    // Uses spawnWorker:true to trigger the worker-task write at mcp/server.js,
+    // then kills the worker immediately to avoid API token cost.
+    if (!failure) {
+      // Re-seed an approved plan so the implement-pipeline guard passes.
+      await seedApprovedPlanRun(client, projectDir);
+      const briefText = 'Test brief content\nLine two of brief';
+      const createResult3 = parseToolResult(await callTool(client, 'forge_create_run', {
+        sessionId: 'sess-server-test',
+        pipelineType: 'implement',
+        feature: 'task-brief-feature',
+        spawnWorker: true,
+        useWorktree: false,
+        taskBrief: briefText,
+      }));
+      const runId3 = createResult3.runId;
+      // Kill the spawned worker immediately to limit cost. The worker-task JSON
+      // is written synchronously by the MCP process BEFORE the child spawn, so
+      // it is already on disk regardless of the kill.
+      try {
+        await callTool(client, 'forge_kill_worker', { runId: runId3 });
+      } catch (_) { /* best-effort cleanup */ }
+      if (!runId3) {
+        failure = 'forge_create_run (taskBrief) did not return a runId';
+      } else {
+        const taskJsonPath = join(projectDir, '.pipeline', 'worker-task-' + runId3 + '.json');
+        // The worker-task file may be unlinked by the spawned worker's
+        // worker-task-inject.js hook on SessionStart. To make the assertion
+        // deterministic we read it synchronously after forge_create_run returns —
+        // before the spawned worker has had time to start its hooks.
+        if (!existsSync(taskJsonPath)) {
+          failure = 'worker-task JSON not written at ' + taskJsonPath + ' (forge_create_run with spawnWorker:true should write it synchronously)';
+        } else {
+          const taskJson = JSON.parse(readFileSync(taskJsonPath, 'utf-8'));
+          if (taskJson.taskBrief !== briefText) {
+            failure = 'taskBrief missing or mismatched in worker-task JSON. Expected: ' + JSON.stringify(briefText) + '. Got: ' + JSON.stringify(taskJson.taskBrief);
+          } else {
+            console.error('[server-test] test 3 PASS — taskBrief persisted to worker-task JSON');
+          }
+        }
+      }
+    }
+
     if (!failure) {
       console.error('[server-test] PASS');
     }

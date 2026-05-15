@@ -1650,10 +1650,11 @@ server.registerTool(
       })).nullable().optional().describe("Initial stage map — keys are stage names, values are per-stage objects with agents array and status"),
       classificationId: z.string().nullable().optional().describe("Risk classification ID from forge_classify_risk"),
       reviewerOverrides: z.array(z.string()).optional().describe("Explicit reviewer list overriding classification-derived reviewers. Valid values: 'reviewer-safety', 'reviewer-boundary', 'reviewer-logic', 'reviewer-style', 'reviewer-performance'"),
+      taskBrief: z.string().optional().describe("Optional long-form briefing injected verbatim into the worker's SessionStart prompt. Use when the short `feature` field cannot carry sufficient detail (research/explore runs with numbered questions, file references, output specs). Capped at 16384 chars; control characters stripped."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
-  async ({ sessionId, pipelineType, feature, spawnWorker, useWorktree, parentRunId, stages, classificationId, reviewerOverrides }) => {
+  async ({ sessionId, pipelineType, feature, spawnWorker, useWorktree, parentRunId, stages, classificationId, reviewerOverrides, taskBrief }) => {
     try {
       const projectDir = resolveProjectDir();
       // Sanitize feature name at ingestion — strips shell-injection chars before
@@ -1835,10 +1836,14 @@ server.registerTool(
 
       const taskDir = join(workDir, ".pipeline");
       if (!existsSync(taskDir)) mkdirSync(taskDir, { recursive: true });
+      // Sanitize taskBrief: strip ANSI/null/control chars (preserve \r\n inside the brief), cap at 16KB.
+      const sanitizedBrief = taskBrief
+        ? String(taskBrief).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').slice(0, 16384)
+        : '';
       const taskFilePath = join(taskDir, "worker-task-" + started.runId + ".json");
       writeFileSync(
         taskFilePath,
-        JSON.stringify({ runId: started.runId, feature: safeFeature, pipelineType, createdAt: new Date().toISOString() }, null, 2) + "\n",
+        JSON.stringify({ runId: started.runId, feature: safeFeature, pipelineType, taskBrief: sanitizedBrief, createdAt: new Date().toISOString() }, null, 2) + "\n",
         "utf-8",
       );
 

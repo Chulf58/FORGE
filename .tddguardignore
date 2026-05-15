@@ -18,3 +18,6 @@ scripts/reviewer-dispatch.mjs
 scripts/plan-revise-loop.mjs
 # 2-line launcher shim — no logic; full path baked by mcp-deps-install.js on SessionStart.
 bin/forge-mcp-server.cmd
+# taskBrief injection 2026-05-15 — failing tests verified in hooks/worker-task-inject-test.mjs
+# (hyphen convention; tdd-guard resolveTestFile only detects .test.mjs convention).
+hooks/worker-task-inject.js
