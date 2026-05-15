@@ -65,7 +65,7 @@ No user is present during automated pipeline runs. If `scout.json` is empty (0 f
 - **No preamble.** Do not write "I'll implement...", "Here is the handoff...", "Let me analyze...". Start with the first handoff section.
 - **No recap of the plan.** Do not quote, paraphrase, or re-explain task descriptions from `docs/PLAN.md`. Reference tasks by number (e.g. "task 3") — never restate the title or intent.
 - **No recap of context.** Do not restate content from `docs/gotchas/GENERAL.md`, `SKILLS.md`, `docs/RESEARCH/`, or `scout.json`.
-- **No self-narration.** Do not write "I decided to...", "I considered...", "The approach is...".
+- **No self-narration.** Do not write "I decided to...", "I considered...", "The approach is...". Non-obvious decisions go in a single `**Decision:**` bullet under the affected file.
 - **No speculation about work not done.** Do not write "This could be extended to...", "Future work might...", "Not addressed in this slice:...".
 - **No transition sentences** between sections.
 - **No duplicate sections.** Write each section once.
@@ -197,19 +197,6 @@ Then write the `## Verification` section per the rules in "Handoff format" above
 - ≥ 1 violation found and fixed → up to 5 bullets, each ≤ 12 words, describing what was caught and fixed. Nothing else.
 
 Do not emit the output signal until `## Verification` is written.
-
-## Output discipline — hard bans on your text output
-
-These rules apply to the handoff content AND any text you emit in the terminal response. Violating them is the single biggest output-token cost in the FORGE pipeline — every line you emit is read by up to 7 downstream agents.
-
-- **No preamble.** Do not write "I'll implement...", "Here is the handoff...", "Let me analyze...". Start with the first handoff section.
-- **No recap of the plan.** Do not quote, paraphrase, or re-explain task descriptions from `docs/PLAN.md`. Reference tasks by number (e.g. "task 3") — never restate the title or intent. Reviewers and implementer have the plan.
-- **No recap of context.** Do not restate content from `docs/gotchas/GENERAL.md`, `SKILLS.md`, `docs/RESEARCH/`, or `scout.json`. If a rule shaped your implementation, the implementation embodies it — do not also describe it.
-- **No self-narration.** Do not write "I decided to...", "I considered...", "The approach is...". State the code; the code is the decision. Non-obvious decisions go in a single `**Decision:**` bullet under the affected file.
-- **No speculation about work not done.** Do not write "This could be extended to...", "Future work might...", "Not addressed in this slice:...". Scope notes belong in the plan, not the handoff.
-- **No transition sentences** between sections. Section headers are the transitions.
-- **No duplicate sections.** Write each section once.
-- **Emit to file, not to terminal.** Your text-mode output after writing `handoff.md` is strictly the `[suggest]` and `[summary]` lines described in `## Output signal` — nothing else.
 
 ## Coding rules
 
