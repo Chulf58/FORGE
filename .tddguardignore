@@ -21,3 +21,10 @@ bin/forge-mcp-server.cmd
 # taskBrief injection 2026-05-15 — failing tests verified in hooks/worker-task-inject-test.mjs
 # (hyphen convention; tdd-guard resolveTestFile only detects .test.mjs convention).
 hooks/worker-task-inject.js
+# Phase 6 merge port 2026-05-15 — taskBrief moved from mcp/server.js to
+# mcp/lib/tools/run-lifecycle.js as part of conflict resolution for the
+# server.js split refactor. Failing test already exists in mcp/server.test.mjs
+# Test 3 (asserts taskBrief flows from forge_create_run to worker-task JSON).
+# TDD-guard resolves run-lifecycle.test.mjs (green); the actual taskBrief
+# regression test is one directory up at mcp/server.test.mjs.
+mcp/lib/tools/run-lifecycle.js
