@@ -193,7 +193,10 @@ The coder-scout, reviewer dispatch, test stage, and reviewers operate on the sam
   Then call `forge_update_run` with `status: "failed"` and `failureReason: "REVISE unresolved in phase <N> after 2 revision passes — <comma-joined unresolved AC-IDs>"`. Do NOT write `gate-pending.json`. Do NOT continue to the next phase. Exit the worker.
 
 - **APPROVED** (all reviewers approved, or reviewers were skipped):
-  Create a worktree git commit: `git add -A && git commit -m "forge: <label> [<runId>]"` in `<worktreePath>`. Capture the short commit hash.
+  Create a worktree git commit (mirrors skills/apply/SKILL.md:149 and skills/ship/SKILL.md:145 — do NOT use `git add -A`, which would stage worktree-only swaps like CLAUDE.md from bin/forge-worktree.js:126 createWorktree):
+  - Run `git -C <worktreePath> diff --name-only HEAD` to list changed files.
+  - For each file in the output, stage it individually: `git -C <worktreePath> add <file>`.
+  - Then: `git -C <worktreePath> commit -m "forge: <label> [<runId>]"`. Capture the short commit hash.
   Update phase: `forge_update_run` with `phases: [{ index: <N>, label: "<label>", status: "completed", reviewerVerdict: "APPROVED", committedAt: "<now ISO>" }]`.
   **Reset the worker's safety-valve timer** so the next phase gets its own 60-min budget instead of sharing one ceiling across all phases. Write an empty file at `<worktreePath>/.pipeline/worker-reset/<runId>` (create the directory first if absent). This path follows the `resetPillPath(worktreePath, runId)` convention from `mcp/lib/worker-paths.js` — it is intentionally in the WORKTREE, not the main project root, because both the skill (writer) and the worker (reader) operate inside the worktree. The forge-worker.mjs harness watches that path, calls `resetWorkerTimer()` on detection, and unlinks the file. No response is needed — fire and forget.
   Continue to the next phase.
