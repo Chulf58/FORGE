@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-15] SPECS tab v2 — token attribution, cost projection, classifier audit (r-3dccb4a9)
+
+- `mcp/server.js`: `forge_create_run` persists `classification.json` to `.pipeline/runs/<runId>/` when classificationId is non-null, enabling audit trail of predicted vs actual classifier behavior.
+- `scripts/lib/model-pricing.js`: new ESM helper exporting `estimateCost(tokens, modelId)` and `MODEL_PRICING` (rates matching token-usage.mjs), supporting cost projections.
+- `scripts/forge-observer.mjs`: SPECS tab gains Token Attribution (5 recent runs + per-agent breakdown), Cost (est.) (7-day USD per provider), Classifier Audit (5 recent classified runs showing predicted vs actual match flag). 12-test suite added; all passing.
+
 ## [2026-05-12] Narrow bash-guard.js to FORGE-specific safety guards (r-ca46d7a8)
 
 - Removed `BLOCKED_COMMANDS` (tool-choice enforcement layer) — `cat`, `find`, `grep`, etc. via Bash now allowed; dedicated tools remain the documented best practice but not hard-blocked by hook.

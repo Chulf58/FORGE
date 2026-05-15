@@ -10,6 +10,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import { execSync, spawn } from 'node:child_process';
+import { estimateCost, modelTier } from './lib/model-pricing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = resolve(__dirname, '..');
@@ -992,6 +993,49 @@ function buildNotesTab(cols) {
   return { lines, regions: [] };
 }
 
+// ── SPECS tab helpers ────────────────────────────────────────────────────
+
+const REVIEWER_AGENT_TYPES = new Set([
+  'reviewer-safety', 'reviewer-boundary', 'reviewer-logic',
+  'reviewer-style', 'reviewer-performance',
+]);
+
+/** Returns the N most recent run.json objects (any status), sorted by run.json mtime desc. */
+function loadRecentRunsSorted(projectDir, limit = 10) {
+  const runsDir = join(projectDir, '.pipeline', 'runs');
+  const results = [];
+  try {
+    for (const runId of readdirSync(runsDir)) {
+      const runPath = join(runsDir, runId, 'run.json');
+      try {
+        const mtime = statSync(runPath).mtimeMs;
+        const run = JSON.parse(readFileSync(runPath, 'utf8'));
+        results.push({ run, mtime });
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return results.sort((a, b) => b.mtime - a.mtime).slice(0, limit).map((r) => r.run);
+}
+
+/** Returns up to N entries {run, classification} for runs that have classification.json, mtime desc. */
+function loadRunsWithClassification(projectDir, limit = 5) {
+  const runsDir = join(projectDir, '.pipeline', 'runs');
+  const results = [];
+  try {
+    for (const runId of readdirSync(runsDir)) {
+      const classPath = join(runsDir, runId, 'classification.json');
+      if (!existsSync(classPath)) continue;
+      try {
+        const mtime = statSync(classPath).mtimeMs;
+        const run = JSON.parse(readFileSync(join(runsDir, runId, 'run.json'), 'utf8'));
+        const classification = JSON.parse(readFileSync(classPath, 'utf8'));
+        results.push({ run, classification, mtime });
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return results.sort((a, b) => b.mtime - a.mtime).slice(0, limit);
+}
+
 // ── Tab 4: SPECS ────────────────────────────────────────────────────────
 
 function buildSpecsTab(cols) {
@@ -1086,6 +1130,100 @@ function buildSpecsTab(cols) {
       }
       if (mm.missing.length > 0) {
         lines.push('      ' + c('yellow', 'missing:  ') + c('white', mm.missing.join(', ')));
+      }
+    }
+  }
+
+  // ── Token Attribution ────────────────────────────────────────────────
+  lines.push('');
+  lines.push('  ' + cb('cyan', 'Token Attribution'));
+  {
+    const recentRuns = loadRecentRunsSorted(PROJECT_DIR, 10);
+    const completedRuns = recentRuns.filter((r) => r.status === 'completed').slice(0, 5);
+    if (completedRuns.length === 0) {
+      lines.push(c('gray', '    No run data'));
+    } else {
+      // usage.json has provider-level totals only — per-run token counts are unavailable
+      // until per-run tracking is added (deferred). Show agent dispatch breakdown instead.
+      for (const run of completedRuns) {
+        const label = trunc(run.feature || run.runId, Math.max(16, cols - 28));
+        lines.push('    ' + c('white', run.runId) + c('gray', '  ' + label));
+        if (Array.isArray(run.agents) && run.agents.length > 0) {
+          const byType = {};
+          for (const agent of run.agents) {
+            const t = (agent.agentType || '').replace(/^forge:/, '');
+            if (t) byType[t] = (byType[t] || 0) + 1;
+          }
+          const parts = Object.entries(byType)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 4)
+            .map(([t, n]) => c('gray', t + ':') + c('white', String(n)));
+          lines.push('      ' + parts.join(c('gray', '  ')));
+        }
+      }
+      const totalTok = (usage && usage.providers)
+        ? Object.values(usage.providers).reduce((s, p) => s + (Number(p.tokenCount) || 0), 0)
+        : 0;
+      if (totalTok > 0) {
+        lines.push('    ' + c('gray', 'Provider total (all time): ') + c('white', totalTok.toLocaleString() + ' tok'));
+      }
+      lines.push(c('gray', '    Per-run tok counts require per-run tracking (deferred)'));
+    }
+  }
+
+  // ── Cost (est.) ──────────────────────────────────────────────────────
+  lines.push('');
+  lines.push('  ' + cb('cyan', 'Cost (est.)'));
+  if (!usage || !usage.providers || Object.keys(usage.providers).length === 0) {
+    lines.push(c('gray', '    No usage data'));
+  } else {
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let grandTotal = 0;
+    for (const [providerId, provider] of Object.entries(usage.providers)) {
+      const lastUsedMs = provider.lastUsed ? new Date(provider.lastUsed).getTime() : 0;
+      if (lastUsedMs > 0 && lastUsedMs < sevenDaysAgo) continue;
+      let providerUsd = 0;
+      if (provider.models && typeof provider.models === 'object') {
+        for (const [modelId, model] of Object.entries(provider.models)) {
+          providerUsd += estimateCost(Number(model.tokenCount) || 0, modelId);
+        }
+      } else {
+        // No per-model breakdown — use provider total at sonnet blended rate
+        providerUsd = estimateCost(Number(provider.tokenCount) || 0, 'claude-sonnet-4-5');
+      }
+      grandTotal += providerUsd;
+      lines.push('    ' + cb('white', providerId) + c('gray', '  $') + c('white', providerUsd.toFixed(4)));
+    }
+    lines.push('    ' + c('gray', 'Total (7 days): ') + cb('white', '$' + grandTotal.toFixed(4)));
+    lines.push(c('gray', '    Rates: opus $15/$75, sonnet $3/$15, haiku $0.80/$4 per 1M tok'));
+  }
+
+  // ── Classifier Audit ─────────────────────────────────────────────────
+  lines.push('');
+  lines.push('  ' + cb('cyan', 'Classifier Audit'));
+  {
+    const auditEntries = loadRunsWithClassification(PROJECT_DIR);
+    if (auditEntries.length === 0) {
+      lines.push(c('gray', '    No classified runs yet'));
+      lines.push(c('gray', '    Appears after forge_create_run with a classificationId'));
+    } else {
+      for (const { run, classification } of auditEntries) {
+        const predicted = new Set(Array.isArray(classification.reviewers) ? classification.reviewers : []);
+        const actual = new Set(
+          (run.agents || [])
+            .map((a) => (a.agentType || '').replace(/^forge:/, ''))
+            .filter((t) => REVIEWER_AGENT_TYPES.has(t)),
+        );
+        const isMatch = [...predicted].every((r) => actual.has(r)) && [...actual].every((r) => predicted.has(r));
+        const matchFlag = isMatch ? c('green', '✓ match') : c('yellow', '≠ mismatch');
+        const riskColor = classification.riskLevel === 'high' ? 'red'
+          : classification.riskLevel === 'medium' ? 'yellow' : 'green';
+        lines.push('    ' + c('gray', run.runId) + '  ' + matchFlag +
+          '  ' + c(riskColor, classification.riskLevel || '?'));
+        const predList = [...predicted].join(', ') || 'none';
+        const actList = [...actual].join(', ') || 'none';
+        lines.push('      ' + c('gray', 'pred: ') + c('white', trunc(predList, Math.max(20, cols - 18))));
+        lines.push('      ' + c('gray', 'act:  ') + c('white', trunc(actList, Math.max(20, cols - 18))));
       }
     }
   }
