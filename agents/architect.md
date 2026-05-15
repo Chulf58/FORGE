@@ -7,7 +7,7 @@ tools:
   - Write
   - Glob
   - Grep
-maxTurns: 25
+maxTurns: 60
 effort: high
 ---
 
