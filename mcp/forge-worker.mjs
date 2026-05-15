@@ -753,6 +753,22 @@ async function main() {
           writeLog('[forge-worker] injected ' + gateName + ' approval — resuming pipeline');
         } else {
           writeLog('[forge-worker] gate ' + decision + ' — stopping worker');
+          if (decision === 'timeout') {
+            // Closes TODO aea02487. Without this stamp, run.status stays 'gate-pending'
+            // with an approved gateState — /forge:apply refuses to spawn recovery
+            // because the apply guard treats the run as "worker should be resuming".
+            // Mirrors the poison-pill pattern at lines 683-692.
+            const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+            try {
+              const raw = readFileSync(runPath, 'utf-8');
+              const runObj = JSON.parse(raw);
+              runObj.status = 'failed';
+              runObj.failureReason = 'worker timeout: ' + gateName + ' gate poll exceeded 60-minute limit at ' + new Date().toISOString();
+              writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+            } catch (_) {
+              // fail-open: run.json update is best-effort
+            }
+          }
           break;
         }
       }
