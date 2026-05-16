@@ -53,6 +53,7 @@ Call `forge_create_run` (only after user approves) with:
 - `spawnWorker`: `true`
 - `useWorktree`: `true`
 - `classificationId`: the `classificationId` value from the `forge_classify_risk` result
+- `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
 - `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
 
 Report to the user:
@@ -104,6 +105,7 @@ Call `forge_create_run` with:
 - `spawnWorker`: `true`
 - `useWorktree`: `true`
 - `classificationId`: the `classificationId` value from the `forge_classify_risk` result
+- `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
 - `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
 
 Report to the user:
@@ -131,7 +133,7 @@ Exit — do not proceed to further steps.
 4. **Gotcha-checker + Researcher (concurrent when both needed):** If both gotcha-checker and researcher are needed (researcher not skipped), spawn them in a single concurrent Agent dispatch (one tool call, two agents). Gate #1 waits for both to finish before proceeding. If only one is needed, run it sequentially.
 5. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
    - **Clear stale reviewer output first.** Delete every `*.md` file under `<worktreePath>/.pipeline/context/reviewer-output/` before dispatching reviewers. Without this, a stale file from a previous run blocks the new reviewer's Write call (Claude Code refuses to Write to a file that has not been Read in the current session — observed silent failure on r-ad7b145e and r-d5b1ccd9). Run via Bash: `find <worktreePath>/.pipeline/context/reviewer-output -maxdepth 1 -name '*.md' -delete 2>/dev/null || true` — if the directory doesn't exist yet, the command is a no-op. Do not block on the cleanup.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=<worktreePath>/docs/PLAN.md --stage=plan`.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=<worktreePath>/docs/PLAN.md --stage=plan --run-id=<runId>`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`).
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
    - **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-16] Lock approved agent team — reviewerOverrides drives dispatch (r-c4fe0b19)
+
+- `scripts/reviewer-dispatch.mjs`: added `--run-id` argument parsing and `reviewerOverrides` bypass path; dispatcher returns approved reviewer team verbatim when `--run-id` is provided and override list is non-empty; drift advisories log to stderr when post-approval classification would add reviewers not in approved set.
+- All four pipeline skills (`plan`, `implement`, `debug`, `refactor`): wired `reviewerOverrides` to `forge_create_run` call and `--run-id` to dispatcher invocation; approved reviewer team from classification now persists and gates all subsequent dispatch calls.
+- Closes TODO 77731f87 (reviewer drift after approval).
+
 ## [2026-05-16] Stop accumulating PLAN.md on main — worktree-local PLAN.md only (r-7a75f304)
 
 - `scripts/post-apply-lifecycle.mjs`: removed dead Job 6 plan-pruning block (`tokenize`, `headingMatchesFeature`, `removePlanSection` and its `main()` call) — ~112 lines deleted. `docs/PLAN.md` has been gitignored since commit `60a68dbd`, so the lifecycle no longer needs to mutate it.

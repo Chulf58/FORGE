@@ -48,6 +48,7 @@ Call `forge_create_run` (only after user approves) with:
 - `feature`: the feature name from `$ARGUMENTS`, or read from `docs/PLAN.md` first heading
 - `spawnWorker`: `true`
 - `classificationId`: the `classificationId` value from the `forge_classify_risk` result
+- `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
 - `stages`: `{ "implement": { "agents": ["coder-scout", "coder", "completeness-checker"], "status": "pending" } }`
 
 Do NOT pass `useWorktree: true` — the worker creates its own worktree via `forge_create_worktree` inside the pipeline.
@@ -283,7 +284,7 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
    - If exit 0 and stdout JSON has `ok: true`: log the `verdict.signal` field from stdout. The completeness verdict is valid — use `verdict.verdict` for downstream gate logic. Proceed to step 4.
    - If exit non-zero, stdout is malformed, or `ok` is not `true`: log `[completeness-check] script failed: <reason from stdout or stderr>`. Skip completeness check and proceed to reviewer dispatch.
 4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script. This replaces the reviewer-triage agent.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --diff=<worktreePath>/docs/context/git-diff.txt --coder-status=<worktreePath>/docs/context/coder-status.json --stage=implement --worktree=<worktreePath>`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --diff=<worktreePath>/docs/context/git-diff.txt --coder-status=<worktreePath>/docs/context/coder-status.json --stage=implement --worktree=<worktreePath> --run-id=<runId>`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`). Write it to `<worktreePath>/docs/context/lean-gate.json` for auditability.
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
    - If `reviewers` is empty: skip step 5 entirely and proceed directly to step 6 (Gate #2).
