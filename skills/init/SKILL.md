@@ -170,14 +170,16 @@ The launcher opens Claude Code with the FORGE Observer TUI in a split-pane layou
 set "PROJECT=%~dp0."
 set "NODE=<NODE_EXE>"
 set "CLAUDE=<CLAUDE_EXE>"
-for /f "delims=" %%i in ('where wt 2^>nul') do set "WT=%%i"
+set "WT="
+for /f "delims=" %%i in ('where wt 2^>nul') do if not defined WT set "WT=%%i"
+if not defined WT if exist "%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe" set "WT=%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe"
 if not defined WT (
   echo Windows Terminal not found. Install it from the Microsoft Store.
   echo Falling back to Claude only...
   "%CLAUDE%"
   exit /b
 )
-"%WT%" -d "%PROJECT%" cmd /k "%CLAUDE%" ; sp -V -s 0.35 -d "%PROJECT%" cmd /k call "%NODE%" "<PLUGIN_ROOT>/scripts/forge-observer.mjs"
+"%WT%" -d "%PROJECT%" cmd /k "%CLAUDE%" ; sp -V -s 0.35 -d "%PROJECT%" cmd /k call "%NODE%" "<PLUGIN_ROOT>\scripts\forge-observer.mjs"
 ```
 
 Substitute `<NODE_EXE>`, `<CLAUDE_EXE>`, and `<PLUGIN_ROOT>` with the resolved values. Use `\r\n` line endings.
