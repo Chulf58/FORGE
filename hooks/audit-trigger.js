@@ -2,7 +2,7 @@
 
 const path = require('path');
 const readline = require('readline');
-const { spawn } = require('child_process');
+const { execFileSync } = require('child_process');
 const { resolveProjectDir, resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
@@ -39,15 +39,20 @@ function main(rawInput) {
     spawnArgs.push('--session', sessionId);
   }
 
+  // Synchronous invocation — detached spawn was unreliable on Windows
+  // (process killed before completing the audit, producing zero audit-log
+  // entries despite hundreds of SubagentStop events). The audit run is
+  // <100ms in practice; blocking the hook is acceptable.
   try {
-    const child = spawn('node', [scriptPath, ...spawnArgs], {
-      detached: true,
+    execFileSync(process.execPath, [scriptPath, ...spawnArgs], {
       stdio: 'ignore',
+      timeout: 5000,  // hard cap — defensive, audit should be far faster
+      windowsHide: true,
     });
-    child.unref();
   } catch (err) {
-    // Spawn errors are non-fatal — log and continue
-    process.stderr.write('[audit-trigger] spawn failed: ' + err.message + '\n');
+    // Spawn errors, non-zero exit, or timeout — all non-fatal.
+    // The audit chain is observability; never block the pipeline on its failure.
+    process.stderr.write('[audit-trigger] audit failed: ' + err.message + '\n');
   }
 
   // Always exit 0 immediately — fire-and-forget, never block the pipeline
