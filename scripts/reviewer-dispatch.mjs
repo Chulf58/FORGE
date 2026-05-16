@@ -307,11 +307,62 @@ function parseArgs(argv) {
   return out;
 }
 
+/**
+ * Resolve the main project root from a worktree path.
+ * A worktree has a .git FILE (not directory) containing "gitdir: <path>/.git/worktrees/<name>".
+ * If .git is a directory (not a worktree), or unreadable, return worktreePath as-is (fail-open).
+ *
+ * @param {string} worktreePath
+ * @returns {string}
+ */
+function resolveMainProjectRoot(worktreePath) {
+  const gitFile = path.join(worktreePath, '.git');
+  try {
+    const content = fs.readFileSync(gitFile, 'utf8').trim();
+    if (content.startsWith('gitdir:')) {
+      const gitdir = content.replace('gitdir:', '').trim();
+      const match = gitdir.match(/(.+)[/\\]\.git[/\\]worktrees[/\\]/);
+      if (match) return path.resolve(match[1]);
+    }
+  } catch (err) {
+    if (err.code !== 'EISDIR' && err.code !== 'ENOENT') {
+      process.stderr.write('[reviewer-dispatch] .git read failed: ' + err.message + '\n');
+    }
+  }
+  return path.resolve(worktreePath);
+}
+
 if (isMainModule()) {
   const args = parseArgs(process.argv);
   const stage = args.stage || 'implement';
   const pipeline = args.pipeline || 'implement';
   const forceReview = Boolean(args['force-review']);
+
+  // --- reviewerOverrides resolution via --run-id ----------------------------
+  const runId = args['run-id'];
+  let reviewerOverrides = null;
+
+  if (runId !== undefined) {
+    // Validate runId against safe pattern before any path.join() or file I/O.
+    // Allow hyphens in the body (e.g. r-test-override-a, r-c4fe0b19).
+    if (!/^r-[a-zA-Z0-9-]+$/.test(runId)) {
+      process.stderr.write(`[reviewer-dispatch] invalid --run-id: ${runId} — skipping override read, falling back to keyword-scan\n`);
+    } else {
+      const worktreeRoot = args.worktree || process.cwd();
+      const projectRoot = resolveMainProjectRoot(worktreeRoot);
+      const runJsonPath = path.join(projectRoot, '.pipeline', 'runs', runId, 'run.json');
+      try {
+        const runData = JSON.parse(fs.readFileSync(runJsonPath, 'utf8'));
+        if (Array.isArray(runData.reviewerOverrides) && runData.reviewerOverrides.length > 0) {
+          reviewerOverrides = runData.reviewerOverrides;
+        }
+      } catch (err) {
+        // fail-open: run.json missing or unreadable → fall through to keyword-scan
+        process.stderr.write(`[reviewer-dispatch] run.json unreadable for ${runId}: ${err.message} — falling back to keyword-scan\n`);
+      }
+    }
+  }
+  // --------------------------------------------------------------------------
 
   // Diff-first path: --diff= and optionally --coder-status=
   if (args.diff && stage !== 'plan') {
@@ -343,7 +394,7 @@ if (isMainModule()) {
       }
     }
 
-    const result = dispatchForImplementStage(
+    const classifiedResult = dispatchForImplementStage(
       '', // handoffContent unused when diff+coderStatus provided
       forceReview,
       pipeline,
@@ -352,11 +403,39 @@ if (isMainModule()) {
     );
 
     // Write findings.json when --worktree is provided and findings are non-empty
-    if (args.worktree && result.triggeredRules && result.triggeredRules.length > 0) {
-      writeFindingsJson(args.worktree, result.triggeredRules);
+    if (args.worktree && classifiedResult.triggeredRules && classifiedResult.triggeredRules.length > 0) {
+      writeFindingsJson(args.worktree, classifiedResult.triggeredRules);
     }
 
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    // Apply reviewerOverrides bypass (task 2 + task 3: drift advisory)
+    if (reviewerOverrides !== null) {
+      // Emit drift advisory for each reviewer the classifier would have added
+      // that is NOT in the approved override list (task 3)
+      for (const classifiedReviewer of classifiedResult.reviewers) {
+        if (!reviewerOverrides.includes(classifiedReviewer)) {
+          // Find the triggering rule for this reviewer
+          const triggeringRule = classifiedResult.reasons
+            ? classifiedResult.reasons.find((r) => r.includes(classifiedReviewer))
+            : null;
+          const sanitizedRule = (triggeringRule || classifiedReviewer)
+            .replace(/[\r\n]/g, ' ').trim();
+          const sanitizedReviewer = classifiedReviewer.replace(/[\r\n]/g, ' ').trim();
+          process.stderr.write(
+            `[advisory-drift] handoff introduced ${sanitizedRule}; approved team does not include ${sanitizedReviewer}\n`,
+          );
+        }
+      }
+      // Return approved list verbatim, ignoring classification result
+      const overrideResult = {
+        reviewers: reviewerOverrides,
+        reasons: ['reviewerOverrides-from-run'],
+        classifiedBy: classifiedResult.classifiedBy || 'diff',
+      };
+      process.stdout.write(JSON.stringify(overrideResult, null, 2) + '\n');
+      process.exit(0);
+    }
+
+    process.stdout.write(JSON.stringify(classifiedResult, null, 2) + '\n');
     process.exit(0);
   }
 
@@ -377,9 +456,32 @@ if (isMainModule()) {
     process.exit(1);
   }
 
-  const result = stage === 'plan'
+  const classifiedFallbackResult = stage === 'plan'
     ? dispatchForPlanStage(content)
     : dispatchForImplementStage(content, forceReview, pipeline);
 
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  // Apply reviewerOverrides bypass on handoff/plan path too (task 2 + task 3)
+  if (reviewerOverrides !== null && stage !== 'plan') {
+    for (const classifiedReviewer of classifiedFallbackResult.reviewers) {
+      if (!reviewerOverrides.includes(classifiedReviewer)) {
+        const triggeringRule = classifiedFallbackResult.reasons
+          ? classifiedFallbackResult.reasons.find((r) => r.includes(classifiedReviewer))
+          : null;
+        const sanitizedRule = (triggeringRule || classifiedReviewer)
+          .replace(/[\r\n]/g, ' ').trim();
+        const sanitizedReviewer = classifiedReviewer.replace(/[\r\n]/g, ' ').trim();
+        process.stderr.write(
+          `[advisory-drift] handoff introduced ${sanitizedRule}; approved team does not include ${sanitizedReviewer}\n`,
+        );
+      }
+    }
+    const overrideResult = {
+      reviewers: reviewerOverrides,
+      reasons: ['reviewerOverrides-from-run'],
+      classifiedBy: classifiedFallbackResult.classifiedBy || 'handoff',
+    };
+    process.stdout.write(JSON.stringify(overrideResult, null, 2) + '\n');
+  } else {
+    process.stdout.write(JSON.stringify(classifiedFallbackResult, null, 2) + '\n');
+  }
 }

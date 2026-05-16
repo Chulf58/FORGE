@@ -36,6 +36,7 @@ Call `forge_create_run` (only after user approves) with:
 - `feature`: a short summary of the bug from `$ARGUMENTS` (e.g. "price fetch returns empty array")
 - `spawnWorker`: `true`
 - `classificationId`: the `classificationId` value from the `forge_classify_risk` result
+- `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
 
 Do NOT pass `useWorktree: true` — the worker creates its own worktree as part of the pipeline.
 
@@ -124,7 +125,7 @@ Do NOT proceed without resolving `<worktreePath>`.
    > Tests do NOT re-run on Step 5c (reviewer-REVISE) revision passes. The test stage is a one-time post-coder checkpoint. The test counter `T` and the reviewer revision counter `N` are independent — either reaching its cap surfaces its own warning at Gate #2, with no cross-counting.
 
 4. **Reviewer dispatch** — determine which reviewers to invoke via the deterministic dispatcher script.
-   - Run via Bash: `node scripts/reviewer-dispatch.mjs --handoff=<worktreePath>/docs/context/handoff.md --stage=implement`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
+   - Run via Bash: `node scripts/reviewer-dispatch.mjs --handoff=<worktreePath>/docs/context/handoff.md --stage=implement --run-id=<runId>`. Append `--force-review` if the operator's original `$ARGUMENTS` contains the literal token `[force-review]`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`). Write it to `<worktreePath>/docs/context/lean-gate.json` for auditability.
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
    - If `reviewers` is empty: skip step 5 entirely and proceed directly to step 6 (Gate #2).
