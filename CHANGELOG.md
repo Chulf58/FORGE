@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-05-16] Fix 4 false-positive sources in hooks/subagent-stop.js (r-141794f6)
+
+- `hooks/subagent-stop.js`: reviewer verdict-file mtime check changed from `stat.mtimeMs <= startedAtMs` → `stat.mtimeMs < startedAtMs - 2000`, adding a 2-second tolerance window that matches the artifact mtime check at line 436. Prevents false `no-verdict` downgrades when a reviewer writes its file in the same millisecond as `startedAt` (sub-ms filesystem granularity edge case).
+- `hooks/subagent-stop.js`: coder truncation check gains `[no-diff] no source changes needed` escape hatch — when the coder emits this literal line, the git-diff-based truncation stamp is skipped. Prevents false `truncated` outcomes on analysis-only or pure-review coder tasks. Signal integrity: exact-match `l.trim()` check requires the signal on its own line.
+- `hooks/subagent-stop.js`: gotcha-checker completion check upgraded from `msg.includes('### Verdict')` to also requiring APPROVED/BLOCK/REVISE keyword after the heading. Prevents false `completed` outcomes when the agent truncated after writing the heading but before emitting the verdict keyword.
+- `hooks/subagent-stop-verdict-test.js`: `runHook` now deletes `FORGE_WORKER_RUN_ID` from hook subprocess env. Fixed a pre-existing silent failure where the worker's run-ID leaked into the test subprocess, causing `resolveRunId` to look for the real run in the temp directory and exit early — all 27 existing tests were silently failing in any worker execution context. Three new tests (24–26) added, one per false-positive fix; 30/30 pass.
+
 ## [2026-05-15] SPECS tab v2 — token attribution, cost projection, classifier audit (r-3dccb4a9)
 
 - `mcp/server.js`: `forge_create_run` persists `classification.json` to `.pipeline/runs/<runId>/` when classificationId is non-null, enabling audit trail of predicted vs actual classifier behavior.
