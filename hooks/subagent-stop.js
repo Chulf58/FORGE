@@ -323,9 +323,9 @@ async function main(rawInput) {
     try {
       const stat = fs.statSync(verdictFilePath);
       const startedAtMs = Number(entry.startedAt) || 0;
-      if (stat.mtimeMs <= startedAtMs) {
+      if (stat.mtimeMs < startedAtMs - 2000) {
         stale = true;
-        reason = 'mtime=' + stat.mtimeMs + ' <= startedAt=' + startedAtMs;
+        reason = 'mtime=' + stat.mtimeMs + ' < startedAt-2000=' + (startedAtMs - 2000);
       }
     } catch (statErr) {
       stale = true;
@@ -365,33 +365,46 @@ async function main(rawInput) {
   }
 
   if (normalizedType === 'coder' && data.worktreePath && outcome === 'completed') {
-    try {
-      const { spawnSync } = require('child_process');
-      const result = spawnSync('git', ['diff', '--quiet', 'HEAD'], { cwd: data.worktreePath });
-      if (result.error) {
-        // git not found or worktree path invalid — fail-open, assume not truncated
-        console.error('[forge-subagent] coder git diff check failed: ' + result.error.message + ' — assuming completed');
-      } else if (result.status === 0) {
-        // exit 0 = no changes present — coder produced no diff, likely truncated
-        outcome = 'truncated';
-        console.error('[forge-subagent] WARNING: coder stopped but git diff shows no changes — possible truncation');
+    const noDiffLines = (lastMessage || '').split('\n');
+    const hasNoDiffSignal = noDiffLines.some((l) => l.trim() === '[no-diff] no source changes needed');
+    if (hasNoDiffSignal) {
+      // Coder explicitly reported no changes needed — skip truncation check.
+      console.error('[forge-subagent] coder emitted [no-diff] signal — skipping no-diff truncation check');
+    } else {
+      try {
+        const { spawnSync } = require('child_process');
+        const result = spawnSync('git', ['diff', '--quiet', 'HEAD'], { cwd: data.worktreePath });
+        if (result.error) {
+          // git not found or worktree path invalid — fail-open, assume not truncated
+          console.error('[forge-subagent] coder git diff check failed: ' + result.error.message + ' — assuming completed');
+        } else if (result.status === 0) {
+          // exit 0 = no changes present — coder produced no diff, likely truncated
+          outcome = 'truncated';
+          console.error('[forge-subagent] WARNING: coder stopped but git diff shows no changes — possible truncation');
+        }
+        // exit non-zero = changes present — outcome stays 'completed'
+      } catch (err) {
+        // spawnSync threw — fail-open
+        console.error('[forge-subagent] coder git diff check threw: ' + err.message + ' — assuming completed');
       }
-      // exit non-zero = changes present — outcome stays 'completed'
-    } catch (err) {
-      // spawnSync threw — fail-open
-      console.error('[forge-subagent] coder git diff check threw: ' + err.message + ' — assuming completed');
     }
   }
 
   // Truncation detection for the gotcha-checker agent.
-  // The agent's output always ends with a "### Verdict" section. If that
-  // section is absent from the last message, the agent was truncated before
-  // completing its analysis.
+  // The agent's output always ends with a "### Verdict" section containing a
+  // verdict keyword (APPROVED/BLOCK/REVISE). If the heading is absent or the
+  // keyword is missing after it, the agent was truncated before completing.
   if (normalizedType === 'gotcha-checker' && outcome === 'completed') {
     const msg = lastMessage || '';
-    if (!msg.includes('### Verdict')) {
+    const headingIdx = msg.indexOf('### Verdict');
+    let hasVerdictKeyword = false;
+    if (headingIdx !== -1) {
+      const afterHeading = msg.slice(headingIdx + '### Verdict'.length);
+      hasVerdictKeyword = /\b(APPROVED|BLOCK|REVISE)\b/i.test(afterHeading);
+    }
+    if (!hasVerdictKeyword) {
       outcome = 'truncated';
-      console.error('[forge-subagent] WARNING: gotcha-checker stopped but no "### Verdict" section found — possible truncation');
+      console.error('[forge-subagent] WARNING: gotcha-checker stopped but no verdict keyword (APPROVED/BLOCK/REVISE) found after "### Verdict" — possible truncation');
     }
   }
 
