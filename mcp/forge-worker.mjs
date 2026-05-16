@@ -341,6 +341,15 @@ async function main() {
     const stream = query({
       prompt: inputChannel,
       options: {
+        // Worker is tool-routing only — dispatching subagents, gate polling,
+        // checkpoint detection. Subagents carry their own model: in frontmatter.
+        // Without an explicit model, the worker inherits the conductor session
+        // model (often Opus 4.7) — expensive AND prone to over-thinking in
+        // ambiguous states (cf. r-4addeb03 hang, 2026-05-16). Drop to Haiku
+        // after TODOs 1db279a1 (BLOCK handling) and the CLAUDE-WORKER.md
+        // loading bug land — at that point the worker has near-zero judgment
+        // moments and Haiku is sufficient.
+        model: 'claude-sonnet-4-6',
         cwd: workDir,
         persistSession: true,
         maxTurns: 200,
