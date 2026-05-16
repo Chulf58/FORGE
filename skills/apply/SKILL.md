@@ -104,6 +104,10 @@ Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project`
 > Read and write all project files using absolute paths under this directory.
 > For example: `<worktreePath>/src/main.js`, `<worktreePath>/docs/context/handoff.md`, etc.
 > Do NOT read or write files in the main project root.
+> runId: `<runId>`
+> changelogFragmentPath: `<mainProjectRoot>/.pipeline/runs/<runId>/CHANGELOG-fragment.md`
+
+Where `<mainProjectRoot>` is the main project root, computed as two directory levels up from `<worktreePath>` (i.e. `<worktreePath>` is `<mainProjectRoot>/.worktrees/<runId>`). For example: if `<worktreePath>` is `C:\Users\user\project\.worktrees\r-abc123`, then `<mainProjectRoot>` is `C:\Users\user\project`.
 
 **If no worktree was resolved:** spawn the agent without the path prefix (it works in the main project directory).
 
