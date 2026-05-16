@@ -364,6 +364,24 @@ async function main(rawInput) {
     }
   }
 
+  // [no-diff] escape hatch — trust model and threat model:
+  //
+  // The coder is a semi-trusted agent: it already runs with full tool access
+  // (Read/Write/Edit/Bash), so it can forge this signal just as easily as it
+  // could write arbitrary files. We accept this risk by design because the
+  // alternative — always flagging analysis-only tasks as `truncated` — is
+  // worse: it creates noise that erodes confidence in the truncation signal.
+  //
+  // Trade-off (accepted by the plan): a truncated coder that still managed to
+  // emit the exact literal line '[no-diff] no source changes needed' would
+  // escape detection. In practice a truncated coder cannot produce a clean,
+  // well-formed output that ends with this signal — truncation typically cuts
+  // mid-sentence. The risk of false-negative detection is therefore very low.
+  //
+  // Signal integrity: the exact-match `l.trim() === '[no-diff] no source
+  // changes needed'` check requires the signal to appear on its own line.
+  // Embedded substrings (e.g. inside prose) do not match, preventing
+  // accidental or partial-match activation.
   if (normalizedType === 'coder' && data.worktreePath && outcome === 'completed') {
     const noDiffLines = (lastMessage || '').split('\n');
     const hasNoDiffSignal = noDiffLines.some((l) => l.trim() === '[no-diff] no source changes needed');
