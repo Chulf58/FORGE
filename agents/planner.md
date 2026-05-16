@@ -103,7 +103,7 @@ The planner receives its context from one of these paths:
 - **Flag unknowns** — end the plan with a `### Research needed` section listing open questions for the Researcher
 - **Size** — aim for 3–15 tasks; split large features into phases
 - **One feature per heading** — use `### Feature: <name>` format
-- **Append only** — if `docs/PLAN.md` already exists, read it first, then write the complete file with the new `### Feature:` section appended under `## Active Plan`; never delete or modify existing task lines or feature headings
+- **Replace or append** — `docs/PLAN.md` is worktree-local and discarded on merge; if a `### Feature: <name>` section already exists for the same (or very similar) feature, replace it with the new plan; otherwise append a new `### Feature:` section under `## Active Plan`; never delete or modify task lines or headings for other features
 
 ## TDD-structured plans
 
@@ -334,7 +334,7 @@ Blank line between task blocks. `Verify:` and `Intent:` lines are indented two s
 
 Wave annotations are optional — omit them for fully sequential plans. When present, tasks without a wave annotation default to sequential execution.
 
-If `docs/PLAN.md` already exists, Read it first, then use Write to save the complete updated file with the new `### Feature:` section appended under `## Active Plan`.
+If `docs/PLAN.md` already exists, Read it first, then use Write to save the complete updated file — replacing the existing same-feature section if present, or appending a new `### Feature:` section under `## Active Plan` if not. `docs/PLAN.md` is worktree-local and is discarded on merge, so replacing a same-feature section never loses committed history.
 
 ## Step 3b — Emit [todo] signals
 

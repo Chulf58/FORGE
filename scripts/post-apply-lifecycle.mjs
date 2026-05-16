@@ -336,118 +336,6 @@ function deleteResearchFile() {
   }
 }
 
-// --- Job 6: Plan.md section removal ------------------------------------------
-//
-// Matching strategy (closes bba4a9d9):
-//   The original substring-only match failed in the common case where the
-//   feature name passed in is a slugified, prefixed expansion of the human
-//   heading (e.g. "add-wiring-verify-tdd-chain-wave-5-post-handoff-de" vs
-//   "wiring-verify (TDD chain Wave 5)") — neither string contained the other.
-//
-//   A heading matches the feature when ANY of these holds:
-//     (a) heading text contains feature name (case-insensitive substring)
-//     (b) feature name contains heading text (case-insensitive substring)
-//     (c) significant-token overlap >= 2 (tokens >= 3 chars after lowercasing
-//         and splitting on non-alphanumerics)
-//
-//   AC-4 fail-open: if zero or >=2 headings match, log a warning and skip.
-function tokenize(s) {
-  return new Set(
-    String(s)
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length >= 3),
-  );
-}
-
-function headingMatchesFeature(headingText, featureName) {
-  const h = headingText.toLowerCase();
-  const f = featureName.toLowerCase();
-  if (h.includes(f) || f.includes(h)) return true;
-  const ht = tokenize(h);
-  const ft = tokenize(f);
-  let overlap = 0;
-  for (const t of ft) if (ht.has(t)) overlap++;
-  return overlap >= 2;
-}
-
-function removePlanSection() {
-  try {
-    if (!featureName) {
-      log('plan-cleanup: no feature name provided, skipping');
-      return;
-    }
-
-    const planPath = path.join(projectDir, 'docs', 'PLAN.md');
-    let content;
-    try {
-      content = fs.readFileSync(planPath, 'utf8');
-    } catch {
-      log('plan-cleanup: docs/PLAN.md absent, skipping');
-      return;
-    }
-
-    // Collect ALL ### Feature: headings + their indices, then match per the
-    // strategy above. Disambiguates between multi-feature plans.
-    const lines = content.split('\n');
-    const matches = [];
-    for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].startsWith('### Feature:')) continue;
-      const headingText = lines[i].slice('### Feature:'.length).trim();
-      if (headingMatchesFeature(headingText, featureName)) {
-        matches.push(i);
-      }
-    }
-
-    if (matches.length === 0) {
-      log(`plan-cleanup: no matching "### Feature:" section found for "${featureName}", skipping`);
-      return;
-    }
-    if (matches.length > 1) {
-      log(`plan-cleanup: ambiguous — ${matches.length} headings match "${featureName}", skipping (fail-open)`);
-      return;
-    }
-    const sectionStart = matches[0];
-
-    // Find end: next '---' separator line after the section start, or EOF.
-    let sectionEnd = lines.length; // default: through EOF
-    for (let i = sectionStart + 1; i < lines.length; i++) {
-      if (lines[i].trim() === '---') {
-        sectionEnd = i + 1; // include the separator
-        break;
-      }
-    }
-
-    const before = lines.slice(0, sectionStart);
-    const after = lines.slice(sectionEnd);
-
-    // Trim trailing blank lines from `before` to avoid double-blank gaps
-    while (before.length > 0 && before[before.length - 1].trim() === '') {
-      before.pop();
-    }
-    // Trim vestigial --- separator (was between this and the removed last section)
-    if (before.length > 0 && before[before.length - 1].trim() === '---') {
-      before.pop();
-      // Trim any additional trailing blanks above the removed separator
-      while (before.length > 0 && before[before.length - 1].trim() === '') {
-        before.pop();
-      }
-    }
-
-    const newContent = (before.length > 0 ? before.join('\n') + '\n' : '') +
-      (after.length > 0 ? (before.length > 0 ? '\n' : '') + after.join('\n') : '');
-
-    try {
-      fs.writeFileSync(planPath, newContent, 'utf8');
-      log(`plan-cleanup: removed section for "${featureName}"`);
-    } catch (err) {
-      log(`plan-cleanup: write failed: ${err.message}`);
-    }
-  } catch (err) {
-    log(`plan-cleanup: unexpected error: ${err.message}`);
-  }
-}
-
 // --- Job 7: Board cleanup ----------------------------------------------------
 function cleanupBoard() {
   try {
@@ -581,7 +469,6 @@ function main() {
   archiveTesting();
   archiveChangelog();
   deleteResearchFile();
-  removePlanSection();
   cleanupBoard();
   logModulesTouched();
 

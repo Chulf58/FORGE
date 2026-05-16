@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026-05-16] Stop accumulating PLAN.md on main — worktree-local PLAN.md only (r-7a75f304)
+
+- `scripts/post-apply-lifecycle.mjs`: removed dead Job 6 plan-pruning block (`tokenize`, `headingMatchesFeature`, `removePlanSection` and its `main()` call) — ~112 lines deleted. `docs/PLAN.md` has been gitignored since commit `60a68dbd`, so the lifecycle no longer needs to mutate it.
+- `scripts/post-apply-lifecycle-prune-test.mjs`: deleted — all 8 tests targeted only the removed Job 6.
+- `scripts/post-apply-lifecycle.test.mjs`: added as a small regression guard — asserts stderr emits `[lifecycle] done` and never `plan-cleanup` after Job 6 removal.
+- `agents/planner.md`: "Append only" rule reframed to "Replace or append" — planner may replace an existing same-feature `### Feature:` section in the worktree-local PLAN.md (discarded on merge) instead of stacking; `### Always`/`### Ask First`/`### Never` heading order preserved.
+- `docs/PLAN.md`: collapsed to a stable stub (gitignored) — top-of-file comment + `## Active Plan` heading only, no `### Feature:` sections; new worktrees inherit a clean starting point.
+- Closes TODOs `96b5e0ce` (Apply-lifecycle PLAN.md pruning slug-vs-heading mismatch) and `bba4a9d9` (Stacked PLAN.md across runs) — both became moot once Job 6 was removed.
+- Reviewers (post-coder): `reviewer-safety APPROVED` (0 blockers, 0 warnings), `reviewer-boundary APPROVED` (0 blockers, 0 warnings).
+
 ## [2026-05-15] SPECS tab v2 — token attribution, cost projection, classifier audit (r-3dccb4a9)
 
 - `mcp/server.js`: `forge_create_run` persists `classification.json` to `.pipeline/runs/<runId>/` when classificationId is non-null, enabling audit trail of predicted vs actual classifier behavior.
