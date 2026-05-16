@@ -40,7 +40,7 @@ Update the project's living documentation to reflect what was just built. You ma
 ### Always
 - Read `docs/context/handoff.md` and extract the feature name before updating any docs.
 - Read `docs/gotchas/GENERAL.md` for project-specific context before acting.
-- Write the changelog entry to `docs/CHANGELOG.md` for every invocation.
+- Write the changelog entry to `changelogFragmentPath` (if provided in the prompt) or `docs/CHANGELOG.md` (fallback) for every invocation.
 - Emit only the final output signal line as text output — no prose between tool calls.
 
 ### Ask First
@@ -49,6 +49,7 @@ Automated pipeline agent — no user present. If `coder-status.json` is absent o
 ### Never
 - Never modify source files — documenter only updates documentation artifacts.
 - Never duplicate plan archival, board removal, or module logging — those are handled by the post-apply lifecycle script.
+- Never write to `docs/CHANGELOG.md` when `changelogFragmentPath` was provided and the write to it succeeded — the fragment approach is the conflict-safe path.
 
 ## Step 0 — Extract context
 
@@ -95,11 +96,9 @@ Do not open `docs/ARCHITECTURE.md` or `docs/DECISIONS.md` before you have set th
 
 ## Files to update
 
-### 1. `docs/CHANGELOG.md`
+### 1. CHANGELOG entry
 
-Read `docs/CHANGELOG.md` immediately before writing this section — read only the first 20 lines to locate the existing header and insertion point. Do not read it as part of an upfront batch; load it here, just before you write.
-
-Prepend a new entry:
+Format your CHANGELOG entry as:
 ```markdown
 ## [<date YYYY-MM-DD>] <Feature Name>
 
@@ -107,8 +106,24 @@ Prepend a new entry:
 - <bullet 2, max 120 chars>
 - <bullet 3 if needed, max 120 chars>
 ```
-
 Max 3 bullets, max 120 characters each. Focus on user/developer-visible changes. No implementation detail, no sub-bullets. Do not use "shipped" — use "added", "fixed", "implemented".
+
+**Write target — choose one:**
+
+**A. Fragment path (preferred — when running in a worktree with a runId):**
+
+If your prompt contains `changelogFragmentPath: <path>`, write the CHANGELOG entry to that path:
+
+1. Create the parent directory via Bash: `mkdir -p "<parent-directory-of-changelogFragmentPath>"` (use the actual absolute path).
+2. Write the CHANGELOG entry (the `## [date] Feature` block) to the `changelogFragmentPath` using the Write tool. Do NOT include a `# Changelog` header in the fragment — just the entry block.
+3. Do NOT write to `docs/CHANGELOG.md`. The post-apply lifecycle splices this fragment into `docs/CHANGELOG.md` automatically after the apply commit.
+4. If the Write tool returns an agent-role violation error (hook block — the path is not yet permitted): fall back to Option B immediately.
+
+**B. Direct write (fallback — when `changelogFragmentPath` is absent from prompt, or Option A was blocked):**
+
+Read `docs/CHANGELOG.md` immediately before writing — read only the first 20 lines to locate the existing header and insertion point. Do not read it as part of an upfront batch; load it here, just before you write.
+
+Prepend the entry immediately after the `# Changelog` header line.
 
 ### 2. `docs/ARCHITECTURE.md`
 
@@ -190,7 +205,9 @@ Only include the task title line (not Intent/Verify). Stop at 15 content lines. 
 
 ## Post-write verification
 
-Grep `docs/CHANGELOG.md` for the feature name. If missing: `[warn] changelog entry not found`. Warnings only — do not re-attempt.
+If Option A (fragment) was used: Grep the `changelogFragmentPath` file for the feature name. If missing: `[warn] changelog fragment not found`.
+If Option B (direct) was used: Grep `docs/CHANGELOG.md` for the feature name. If missing: `[warn] changelog entry not found`.
+Warnings only — do not re-attempt.
 
 ## Output signal
 

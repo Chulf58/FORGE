@@ -78,17 +78,41 @@ async function main(rawInput) {
     stale.push('docs/context/handoff.md (missing)');
   }
 
-  // Check CHANGELOG.md freshness
+  // Check CHANGELOG.md freshness — guard: suppress warning if a fresh
+  // CHANGELOG fragment exists (documenter wrote fragment instead of CHANGELOG
+  // directly). Fragment freshness window: 5 minutes.
+  const FRAGMENT_FRESHNESS_MS = 5 * 60 * 1000;
+  let freshFragmentFound = false;
   try {
-    const stat = await fs.promises.stat(
-      path.join(projectDir, 'docs', 'CHANGELOG.md'),
-    );
-    if ((now - stat.mtimeMs) > FRESHNESS_MS) {
-      stale.push('docs/CHANGELOG.md');
+    const runsDir = path.join(projectDir, '.pipeline', 'runs');
+    const runEntries = await fs.promises.readdir(runsDir).catch(() => []);
+    for (const entry of runEntries) {
+      const fragPath = path.join(runsDir, entry, 'CHANGELOG-fragment.md');
+      try {
+        const fragStat = await fs.promises.stat(fragPath);
+        if ((now - fragStat.mtimeMs) <= FRAGMENT_FRESHNESS_MS) {
+          freshFragmentFound = true;
+          break;
+        }
+      } catch (_) { /* fragment absent for this run — skip */ }
     }
-  } catch (_) {
-    stale.push('docs/CHANGELOG.md (missing)');
+  } catch (_) { /* runs dir absent — no fragments */ }
+
+  if (!freshFragmentFound) {
+    // No fresh fragment — apply the existing stale-CHANGELOG check as before.
+    try {
+      const stat = await fs.promises.stat(
+        path.join(projectDir, 'docs', 'CHANGELOG.md'),
+      );
+      if ((now - stat.mtimeMs) > FRESHNESS_MS) {
+        stale.push('docs/CHANGELOG.md');
+      }
+    } catch (_) {
+      stale.push('docs/CHANGELOG.md (missing)');
+    }
   }
+  // If freshFragmentFound: documenter wrote a fragment this session — skip
+  // the CHANGELOG staleness check. The post-apply lifecycle will splice it.
 
   if (stale.length > 0) {
     process.stderr.write(

@@ -11,6 +11,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spliceChangelog } from './splice-changelog.mjs';
 
 const featureName = process.argv[2] || '';
 
@@ -306,6 +307,20 @@ function archiveChangelog() {
   }
 }
 
+// --- Job 4b: Splice pending CHANGELOG fragments into docs/CHANGELOG.md -------
+// Runs after archiveChangelog (Job 4) so the canonical file is updated
+// atomically from per-run fragment files written by the documenter.
+// This decouples parallel documenter writes (each writes its own fragment)
+// from the CHANGELOG update, eliminating merge conflicts on the same hunk.
+function spliceChangelogJob() {
+  try {
+    spliceChangelog(projectDir);
+    log('changelog-splice: done');
+  } catch (err) {
+    log(`changelog-splice: unexpected error: ${err.message}`);
+  }
+}
+
 // --- Job 5: RESEARCH file deletion -------------------------------------------
 function deleteResearchFile() {
   try {
@@ -468,6 +483,7 @@ function main() {
   deleteSidecars();
   archiveTesting();
   archiveChangelog();
+  spliceChangelogJob();
   deleteResearchFile();
   cleanupBoard();
   logModulesTouched();
