@@ -22,9 +22,15 @@ function runHook(payload, projectDir) {
   const hookCwd = projectDir || join(__dirname, '..');
   const fullPayload = projectDir ? { ...payload, cwd: projectDir } : payload;
   return new Promise((resolve, reject) => {
+    // Clear FORGE_WORKER_RUN_ID so the hook's resolveRunId uses the temp
+    // directory's r-test run rather than the real worker run (r-141794f6).
+    // Without this, the env var leaks in and the hook exits silently because
+    // it can't find r-141794f6 in the temp .pipeline/runs/ tree.
+    const testEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: join(__dirname, '..') };
+    delete testEnv.FORGE_WORKER_RUN_ID;
     const child = spawn(process.execPath, [join(__dirname, 'subagent-stop.js')], {
       cwd: hookCwd,
-      env: { ...process.env, CLAUDE_PLUGIN_ROOT: join(__dirname, '..') },
+      env: testEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stderr = '';
@@ -646,6 +652,136 @@ async function test() {
     const entry = data.agents.find(a => a.agent_id === 'agent-rev-mtime-wt');
     assert(entry && entry.outcome === 'APPROVED',
       'reviewer mtime cross-check resolves worktreePath from run.json when per-run-active lacks it: APPROVED stays');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 24: reviewer with verdict file mtime within 2s tolerance window
+  // → verdict should stay APPROVED (mtime tolerance not yet implemented,
+  // so this test will FAIL — the current code downgrades to no-verdict).
+  //
+  // Intent: verify that the current mtime check (stat.mtimeMs <= startedAtMs)
+  // has no tolerance window, so a verdict file written 500ms after startedAt
+  // is falsely downgraded to no-verdict. This test confirms the red bar
+  // before the fix adds tolerance.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now() - 5000; // 5s ago
+    mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+      runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+    }));
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+      runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test', agents: [
+        { agent_id: 'agent-rev-mtol', agent_type: 'forge:reviewer-safety', startedAt },
+      ], currentUnit: { agent: 'forge:reviewer-safety', startedAt },
+    }));
+    // Verdict file written with mtime = startedAt (same millisecond as agent start).
+    // Current code: stat.mtimeMs <= startedAtMs triggers downgrade to no-verdict
+    // because <= treats same-ms as stale (no tolerance window).
+    // Expected after fix: stat.mtimeMs < startedAtMs - 2000 allows same-ms files.
+    mkdirSync(join(tmp, '.pipeline', 'context', 'reviewer-output'), { recursive: true });
+    const verdictPath = join(tmp, '.pipeline', 'context', 'reviewer-output', 'reviewer-safety.md');
+    writeFileSync(verdictPath, '## Safety Review: test\n\n### Verdict\n\n**APPROVED** — within tolerance.\n');
+    // Set mtime to exactly startedAt (same ms) — triggers the <= false positive.
+    const mtimeSeconds = startedAt / 1000;
+    require('fs').utimesSync(verdictPath, mtimeSeconds, mtimeSeconds);
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-rev-mtol',
+      agent_type: 'forge:reviewer-safety',
+      last_assistant_message: '[reviewer-verdict] {"agent":"reviewer-safety","verdict":"APPROVED","blockers":0,"warnings":0,"feature":"test","model":"claude-haiku-4-5-20251001"}',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-rev-mtol');
+    assert(entry && entry.outcome === 'APPROVED',
+      'reviewer-safety with verdict file mtime within 2s tolerance: outcome is APPROVED (not downgraded to no-verdict)');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 25: coder with [no-diff] signal in message but no actual changes
+  // → outcome should stay "completed" (escape hatch for intentional no-op).
+  // Currently the coder check ignores the signal and marks truncated, so this
+  // test will FAIL — proving the escape hatch doesn't exist yet.
+  //
+  // Intent: confirm the [no-diff] signal is currently ignored by the coder
+  // truncation check (line 367-378 of subagent-stop.js). The test checks
+  // git diff --quiet HEAD (exit 0 = no changes) and asserts outcome stays
+  // "completed" even though git shows no diff.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    const startedAt = Date.now();
+    // Create a worktree with a clean git state (no uncommitted changes).
+    const wtPath = join(tmp, '.worktrees', 'r-test-nodiff');
+    mkdirSync(join(wtPath, '.git'), { recursive: true });
+    // Initialize git repo and make one empty commit.
+    const { execSync } = require('child_process');
+    let gitAvailable = true;
+    try {
+      execSync('git init', { cwd: wtPath, stdio: 'pipe' });
+      execSync('git -c user.email="test@test.com" -c user.name="test" commit --allow-empty -m "init"', {
+        cwd: wtPath,
+        stdio: 'pipe',
+      });
+    } catch (e) {
+      // git init/commit failed — skip this test (git may not be available)
+      gitAvailable = false;
+    }
+    if (!gitAvailable) {
+      rmSync(tmp, { recursive: true, force: true });
+      assert(false, 'coder with [no-diff] signal and clean git diff: outcome stays "completed" (skipped — git unavailable)');
+    } else {
+      mkdirSync(join(tmp, '.pipeline', 'runs', 'r-test'), { recursive: true });
+      writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run.json'), JSON.stringify({
+        runId: 'r-test', status: 'running', pipelineType: 'plan', feature: 'test',
+        worktreePath: wtPath,
+      }));
+      // worktreePath must be at the TOP LEVEL of run-active.json — the hook
+      // reads data.worktreePath (not entry.worktreePath) for the coder check.
+      writeFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), JSON.stringify({
+        runId: 'r-test', startedAt, pipelineType: 'plan', feature: 'test',
+        worktreePath: wtPath, agents: [
+          { agent_id: 'agent-coder-nodiff', agent_type: 'coder', startedAt },
+        ], currentUnit: { agent: 'coder', startedAt },
+      }));
+      // Coder emits [no-diff] signal — should stay "completed" despite git diff exit 0.
+      const hookResult = await runHook({ tool_name: 'agent_stop', agent_id: 'agent-coder-nodiff',
+        agent_type: 'coder',
+        last_assistant_message: '[no-diff] no source changes needed',
+        session_id: 'test' }, tmp);
+      // Verify hook ran successfully (exit 0 from the hook itself).
+      if (hookResult.code !== 0) {
+        // Hook errored — skip this assertion. The coder check is guarded by
+        // data.worktreePath, so if setup failed, the check won't run anyway.
+        rmSync(tmp, { recursive: true, force: true });
+        assert(false, 'coder with [no-diff] signal and clean git diff: outcome stays "completed" (skipped — hook error)');
+      } else {
+        const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+        const entry = data.agents.find(a => a.agent_id === 'agent-coder-nodiff');
+        assert(entry && entry.outcome === 'completed',
+          'coder with [no-diff] signal and clean git diff: outcome stays "completed" (escape hatch works)');
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  }
+
+  // Test 26: gotcha-checker with "### Verdict" heading but no verdict keyword
+  // → should be marked "truncated" (incomplete section). Currently the check
+  // only looks for the heading string, so this test will FAIL because it
+  // marks "completed" despite no actual verdict keyword.
+  //
+  // Intent: confirm the current gotcha-checker check (line 392:
+  // !msg.includes('### Verdict')) is insufficient. A heading alone without
+  // a final APPROVED/BLOCK/REVISE keyword means the output is incomplete.
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-gc-nokw', 'gotcha-checker');
+    // Message has "### Verdict" heading but NO verdict keyword (APPROVED/BLOCK/REVISE).
+    const incompleteMsg = '## Gotcha Check: test\n\n### Issues\n(none)\n\n### Verdict\n\nAnalysis incomplete.';
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-gc-nokw',
+      agent_type: 'gotcha-checker', last_assistant_message: incompleteMsg,
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-gc-nokw');
+    assert(entry && entry.outcome === 'truncated',
+      'gotcha-checker with ### Verdict heading but no verdict keyword: outcome is "truncated" (heading alone insufficient)');
     rmSync(tmp, { recursive: true, force: true });
   }
 
