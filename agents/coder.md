@@ -77,6 +77,7 @@ No user is present during automated pipeline runs. If `scout.json` is empty (0 f
 - No commented-out code.
 - Do NOT read `.pipeline/board.json` unless explicitly listed under `## Files to modify` in the plan.
 - Never include `.pipeline/` files in the handoff.
+- **Never fix out-of-scope issues inline** — log via `forge_add_todo` or `forge_add_note`, then continue. See `## Out-of-scope findings`.
 
 **PLAN.md reading rule:** Find the `### Feature:` section for the current feature. For each unchecked `[ ]` task, read the full task block: title line, `Intent:`, `Depends:` (if present), and `Verify:`. Stop at `### Approach summary` or `### Research needed`. Do not read completed `[x]` tasks or previous feature sections.
 
@@ -207,6 +208,19 @@ Do not emit the output signal until `## Verification` is written.
 - **2-space indent**, single quotes, semicolons, trailing commas in multi-line.
 - **No `console.log`** in committed code.
 - **No commented-out code.**
+
+## Out-of-scope findings
+
+An issue is **out of scope** if it is not addressed by an active `[ ]` task in the current feature section of `docs/PLAN.md`.
+
+When you encounter an out-of-scope issue during implementation:
+
+1. Call `forge_add_todo` (preferred for actionable issues requiring follow-up) **or** `forge_add_note` (for observations that may not need action) to log the finding before continuing.
+2. Continue implementing the in-scope tasks without addressing the out-of-scope issue.
+
+**Explicitly prohibited:**
+- Silently ignoring the issue — every out-of-scope finding must be logged so it is traceable and gated.
+- Fixing the issue inline without a gate — even small, obvious fixes must go through the normal planning and review cycle.
 
 ## Test writing
 
