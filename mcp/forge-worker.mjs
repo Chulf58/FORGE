@@ -8,6 +8,7 @@ import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.j
 import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
 import { consumeGateApproval } from './lib/gate-helpers.js';
 import { evaluateBudget, proactiveInterruptStep } from './lib/proactive-interrupt.mjs';
+import buildInProcessMcpServer from './forge-worker-mcp.mjs';
 
 // Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
 // Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
@@ -337,6 +338,24 @@ async function main() {
     parent_tool_use_id: null,
   });
 
+  // Last-resort crash containment for in-process MCP tool throws.
+  // The shim wraps every handler in try/catch (primary net); this handler
+  // catches anything that escapes into the worker event loop. Log and continue.
+  process.on('uncaughtException', (err) => {
+    const msg = err && err.message ? err.message : String(err);
+    writeLog('[forge-worker] uncaughtException: ' + msg);
+    process.stderr.write('[forge-worker] uncaughtException: ' + msg + '\n');
+  });
+
+  // Set env vars required by in-process MCP tools BEFORE query() initialises
+  // the SDK server. These were previously set only on the stdio subprocess env.
+  // FORGE_WORKER_SESSION: recursion guard at run-lifecycle.js:296,1132
+  // CLAUDE_PROJECT_DIR: project-dir resolver at shared.js:47 (belt-and-braces)
+  // CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: lift SDK MCP 60s default to 300s (sdk.d.ts:419)
+  process.env.FORGE_WORKER_SESSION = '1';
+  process.env.CLAUDE_PROJECT_DIR = workDir;
+  process.env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT = '300000';
+
   try {
     const stream = query({
       prompt: inputChannel,
@@ -356,11 +375,7 @@ async function main() {
         permissionMode: 'bypassPermissions',
         plugins: [{ type: 'local', path: pluginRoot }],
         mcpServers: {
-          'forge-pipeline': {
-            command: 'node',
-            args: [join(pluginRoot, 'mcp', 'server.js')],
-            env: { CLAUDE_PROJECT_DIR: workDir, FORGE_WORKER_SESSION: '1' },
-          },
+          'forge-pipeline': buildInProcessMcpServer(workDir),
         },
       },
     });

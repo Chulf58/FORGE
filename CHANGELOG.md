@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] In-process MCP for workers
+
+- Replaced stdio subprocess MCP with in-process SDK server in `forge-worker.mjs`
+- Added crash containment (uncaughtException handler) and per-tool timing logs
+- Created 3 integration tests covering tool registration, env vars, and error handling
+
 ## [2026-05-16] Lock approved agent team — reviewerOverrides drives dispatch (r-c4fe0b19)
 
 - `scripts/reviewer-dispatch.mjs`: added `--run-id` argument parsing and `reviewerOverrides` bypass path; dispatcher returns approved reviewer team verbatim when `--run-id` is provided and override list is non-empty; drift advisories log to stderr when post-approval classification would add reviewers not in approved set.
