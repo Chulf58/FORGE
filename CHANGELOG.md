@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] Notes-knowledge bidirectional link
+
+- Added `knowledgeRefs` to notes and `sourceNotes` to knowledge index entries for bidirectional linking
+- Implemented transactional mirroring: links written to both sides atomically on creation
+- Added `forge_get_linked` tool to discover linked notes/knowledge entries across the index
+
 ## [2026-05-17] Fix observer-autosplit worker session detection
 
 - Added durable `.worker-session` marker check in `shouldSkip()` before legacy transient task file

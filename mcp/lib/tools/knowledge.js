@@ -142,10 +142,11 @@ export function register(server, _shared) {
         title: z.string().min(1).describe('Section heading for gotcha, or document title for solution.'),
         content: z.string().min(1).describe('Body content. For gotcha: markdown prose. For solution: full document body (without frontmatter).'),
         tags: z.array(z.string()).describe('Tags for indexing and future search.'),
+        sourceNotes: z.array(z.string()).optional().describe('Optional note IDs from .pipeline/notes.json that this learning entry was derived from. Each ID must exist; dead links are rejected.'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async ({ type, title, content, tags }) => {
+    async ({ type, title, content, tags, sourceNotes }) => {
       try {
         const projectDir = resolveProjectDir();
 
@@ -159,6 +160,23 @@ export function register(server, _shared) {
         const safeTags = Array.isArray(tags)
           ? tags.map((t) => String(t).replace(/[\r\n]/g, ' ').trim())
           : [];
+
+        // Validate sourceNotes against .pipeline/notes.json when provided
+        const check = requirePipeline(projectDir);
+        if (sourceNotes && sourceNotes.length > 0) {
+          if (!check.ok) {
+            return errorResult('forge_add_learning: cannot validate sourceNotes — pipeline not initialised');
+          }
+          const notesPath = join(check.pipelineDir, 'notes.json');
+          const notesRead = readJsonSafe(notesPath);
+          const existingNotes = (notesRead.ok && Array.isArray(notesRead.data.notes)) ? notesRead.data.notes : [];
+          const validIds = new Set(existingNotes.map(n => n.id));
+          for (const noteId of sourceNotes) {
+            if (!validIds.has(noteId)) {
+              return errorResult('forge_add_learning: unknown sourceNote ID "' + noteId + '" — not found in .pipeline/notes.json');
+            }
+          }
+        }
 
         if (type === 'gotcha') {
           const generalMdPath = join(projectDir, 'docs', 'gotchas', 'GENERAL.md');
@@ -213,13 +231,88 @@ export function register(server, _shared) {
             // appendSolutionDoc throws when index update fails (orphaned doc)
             return errorResult('forge_add_learning: ' + err.message);
           }
-          return { content: [{ type: 'text', text: `Solution "${safeTitle}" written to ${result.file} and index updated.` }] };
+
+          // Derive slug from file path for reciprocal write
+          const slug = result.file.replace('docs/solutions/', '').replace('.md', '');
+
+          // Write reciprocal knowledgeRefs on each referenced note when sourceNotes provided
+          if (sourceNotes && sourceNotes.length > 0 && check.ok) {
+            const notesPath = join(check.pipelineDir, 'notes.json');
+            const notesRead = readJsonSafe(notesPath);
+            if (notesRead.ok && Array.isArray(notesRead.data.notes)) {
+              const notesStore = notesRead.data;
+              let dirty = false;
+              for (const note of notesStore.notes) {
+                if (sourceNotes.includes(note.id)) {
+                  if (!Array.isArray(note.knowledgeRefs)) note.knowledgeRefs = [];
+                  if (!note.knowledgeRefs.includes(slug)) {
+                    note.knowledgeRefs.push(slug);
+                    dirty = true;
+                  }
+                }
+              }
+              if (dirty) {
+                writeJsonSafe(notesPath, notesStore);
+              }
+            }
+          }
+
+          return textResult({ file: result.file, slug, title: safeTitle });
         }
 
         // Should never reach here — Zod enum guards type
         return errorResult('forge_add_learning: unknown type');
       } catch (err) {
         return errorResult('forge_add_learning failed: ' + err.message);
+      }
+    },
+  );
+
+  // -- Tool: forge_get_linked --------------------------------------------------
+  server.registerTool(
+    'forge_get_linked',
+    {
+      title: 'FORGE Get Linked',
+      description:
+        'Returns entries linked to the given item on the opposite side of the knowledge ↔ notes link. For kind="note": given a note ID, returns solution index entries whose sourceNotes include that ID. For kind="knowledge": given a solution slug, returns notes whose knowledgeRefs include that slug.',
+      inputSchema: z.object({
+        kind: z.enum(['note', 'knowledge']).describe('"note" to look up linked knowledge entries for a note; "knowledge" to look up linked notes for a solution slug.'),
+        id: z.string().min(1).describe('The note ID (e.g. "n-abc12345") when kind="note", or the solution slug (e.g. "my-solution") when kind="knowledge".'),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ kind, id }) => {
+      try {
+        const projectDir = resolveProjectDir();
+
+        if (kind === 'note') {
+          // Return solution index entries whose sourceNotes include this note ID
+          const indexPath = join(projectDir, 'docs', 'solutions', 'index.json');
+          const indexRead = readJsonSafe(indexPath);
+          if (!indexRead.ok || !Array.isArray(indexRead.data)) return textResult([]);
+          const linked = indexRead.data.filter(
+            e => Array.isArray(e.sourceNotes) && e.sourceNotes.includes(id),
+          );
+          return textResult(linked);
+        }
+
+        if (kind === 'knowledge') {
+          // Return notes whose knowledgeRefs include this slug
+          const check = requirePipeline(projectDir);
+          if (!check.ok) return textResult([]);
+          const notesPath = join(check.pipelineDir, 'notes.json');
+          const notesRead = readJsonSafe(notesPath);
+          if (!notesRead.ok || !Array.isArray(notesRead.data.notes)) return textResult([]);
+          const linked = notesRead.data.notes.filter(
+            n => Array.isArray(n.knowledgeRefs) && n.knowledgeRefs.includes(id),
+          );
+          return textResult(linked);
+        }
+
+        // Zod enum guards kind — should never reach here
+        return errorResult('forge_get_linked: unknown kind');
+      } catch (err) {
+        return errorResult('forge_get_linked failed: ' + err.message);
       }
     },
   );
