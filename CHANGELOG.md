@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] Worker gate-poll timeout — raise/decouple from active-worker cap
+
+- Introduced `GATE_POLL_TIMEOUT_DEFAULT_MS` (6 hours) as independent from 60-minute active-worker cap
+- Extracted `mcp/lib/worker-timeouts.js` with `parseGatePollTimeout()` validation and env var support
+- Updated `forge-worker.mjs` to use separate timeouts at gate vs. active-worker phases
+
 ## [2026-05-17] Merge script orphan .worktrees/ dirs — explicit fs cleanup
 
 - Added `removeWorktreeDir(wtPath)` helper that calls `fs.rmSync` after `git worktree remove`, with Windows EBUSY guard and structured `removalSkipped` warning on failure

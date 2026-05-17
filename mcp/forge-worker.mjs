@@ -9,6 +9,7 @@ import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
 import { consumeGateApproval } from './lib/gate-helpers.js';
 import { evaluateBudget, proactiveInterruptStep } from './lib/proactive-interrupt.mjs';
 import buildInProcessMcpServer from './forge-worker-mcp.mjs';
+import { WORKER_TIMEOUT_MS, parseGatePollTimeout, buildGatePollFailureReason } from './lib/worker-timeouts.js';
 
 // Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
 // Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
@@ -168,32 +169,36 @@ async function main() {
 
   writeLog('[forge-worker] starting run ' + runId + ' feature=' + safeFeature + ' type=' + pipelineType);
 
-  // 60-minute safety valve — prevents the worker from running indefinitely if
-  // gate polling hangs or the pipeline never reaches a terminal state. Was 30
-  // minutes; raised after phased implement runs hit the cap mid-Phase-3 (4
-  // phases × ~10 min each does not fit in 30 min). Per-phase reset is a
-  // follow-up — see TODO for skills/implement/SKILL.md to call resetWorkerTimer
-  // after each phase commit.
-  const WORKER_TIMEOUT_MS = 60 * 60 * 1000;
+  // Active-worker safety valve — 60 minutes (WORKER_TIMEOUT_MS from worker-timeouts.js).
+  // Gate-poll timeout — 6 h default, env-overridable via FORGE_WORKER_GATE_TIMEOUT_MS
+  // (GATE_POLL_TIMEOUT_DEFAULT_MS; validated by parseGatePollTimeout).
+  // The two timeouts serve different purposes and are now decoupled:
+  //   WORKER_TIMEOUT_MS       — active pipeline budget (per phase, reset by per-phase pill)
+  //   GATE_POLL_TIMEOUT_MS    — wait budget while gate is pending (human review time)
+  const GATE_POLL_TIMEOUT_MS = parseGatePollTimeout(process.env.FORGE_WORKER_GATE_TIMEOUT_MS);
   let workerTimedOut = false;
   let workerTimer = setTimeout(() => {
     workerTimedOut = true;
-    writeLog('[forge-worker] 60-minute timeout reached — aborting');
+    writeLog('[forge-worker] active-worker timeout reached (' + WORKER_TIMEOUT_MS + ' ms) — aborting');
   }, WORKER_TIMEOUT_MS);
   workerTimer.unref();
 
   /**
-   * Clears the existing safety-valve timer and starts a fresh 60-minute window.
-   * Called when entering gate-pending (so review time doesn't count against the
-   * worker budget) and after gate approval (so the resumed pipeline gets a full window).
+   * Clears the existing safety-valve timer and starts a fresh window.
+   *
+   * @param {number} [timeoutMs=WORKER_TIMEOUT_MS] - Timer duration in ms.
+   *   Pass GATE_POLL_TIMEOUT_MS when entering gate-pending so the gate-poll
+   *   budget is independent of the active-worker budget.
+   *   Omit (or pass WORKER_TIMEOUT_MS) for per-phase resets and post-approval
+   *   resumption — those use the active-worker safety valve.
    */
-  function resetWorkerTimer() {
+  function resetWorkerTimer(timeoutMs = WORKER_TIMEOUT_MS) {
     clearTimeout(workerTimer);
     workerTimedOut = false;
     workerTimer = setTimeout(() => {
       workerTimedOut = true;
-      writeLog('[forge-worker] 60-minute timeout reached — aborting');
-    }, WORKER_TIMEOUT_MS);
+      writeLog('[forge-worker] timeout reached (' + timeoutMs + ' ms) — aborting');
+    }, timeoutMs);
     workerTimer.unref();
   }
 
@@ -737,9 +742,11 @@ async function main() {
       if (runData && runData.status === 'gate-pending' &&
           runData.gateState && runData.gateState.status === 'pending') {
         gateHandled = true;
-        resetWorkerTimer();
+        // Use GATE_POLL_TIMEOUT_MS (6 h default) so human review time does not
+        // count against the active-worker budget (WORKER_TIMEOUT_MS = 60 min).
+        resetWorkerTimer(GATE_POLL_TIMEOUT_MS);
         const gateName = (runData.gateState && runData.gateState.gate) || 'unknown';
-        writeLog('[forge-worker] gate-pending detected for run ' + runId + ' gate=' + gateName);
+        writeLog('[forge-worker] gate-pending detected for run ' + runId + ' gate=' + gateName + ' gate-poll-timeout=' + GATE_POLL_TIMEOUT_MS + ' ms');
 
         // commit gates: worker's job is done — conductor owns commit+merge.
         if (gateName === 'commit') {
@@ -787,7 +794,7 @@ async function main() {
               const raw = readFileSync(runPath, 'utf-8');
               const runObj = JSON.parse(raw);
               runObj.status = 'failed';
-              runObj.failureReason = 'worker timeout: ' + gateName + ' gate poll exceeded 60-minute limit at ' + new Date().toISOString();
+              runObj.failureReason = buildGatePollFailureReason(gateName, GATE_POLL_TIMEOUT_MS);
               writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
             } catch (_) {
               // fail-open: run.json update is best-effort
