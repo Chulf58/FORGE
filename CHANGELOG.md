@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] Fix observer-autosplit worker session detection
+
+- Added durable `.worker-session` marker check in `shouldSkip()` before legacy transient task file
+- Tests 6–8 verify durable marker, legacy fallback, and conductor session detection paths
+- Cross-directory TDD placement documented in `.tddguardignore` for `test-observer-autosplit.mjs`
+
 ## [2026-05-17] In-process MCP for workers
 
 - Replaced stdio subprocess MCP with in-process SDK server in `forge-worker.mjs`
