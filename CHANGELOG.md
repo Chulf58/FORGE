@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-05-17] Merge script orphan .worktrees/ dirs — explicit fs cleanup
+
+- Added `removeWorktreeDir(wtPath)` helper that calls `fs.rmSync` after `git worktree remove`, with Windows EBUSY guard and structured `removalSkipped` warning on failure
+- Wired fs cleanup into `merge()`, `deleteWorktree()`, and `cleanup()` paths; `worktreeRemoved` field now reflects actual filesystem state (was always hardcoded `true`)
+- Added `audit [--prune]` subcommand: lists orphan `.worktrees/` dirs not registered in `git worktree list`, with `--prune` to remove them; includes `!d.isSymbolicLink()` guard in both `findOrphanWorktreeDirs()` and `cleanup()` to prevent symlink escape
+- New `scripts/forge-worktree-cleanup-test.mjs` — 8 tests covering AC-1 through AC-5 (TDD: red bar confirmed before implementation, green bar after)
+
 ## [2026-05-17] Fix observer-autosplit worker session detection
 
 - Added durable `.worker-session` marker check in `shouldSkip()` before legacy transient task file

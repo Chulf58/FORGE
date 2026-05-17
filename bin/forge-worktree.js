@@ -296,6 +296,8 @@ function merge() {
   run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
   run('git', ['branch', '-d', branch], { allowFail: true });
 
+  const fsResult = removeWorktreeDir(wtPath);
+
   const restoredFiles = restoreAccidentalDeletions();
   if (restoredFiles.length > 0) {
     console.error('[forge-worktree] Auto-restored ' + restoredFiles.length +
@@ -306,7 +308,8 @@ function merge() {
     ok: true,
     merged: branch,
     into: currentBranch,
-    worktreeRemoved: true,
+    worktreeRemoved: fsResult.removed,
+    ...(fsResult.removalSkipped ? { removalSkipped: [fsResult.removalSkipped] } : {}),
     ...(restoredFiles.length > 0 ? { restoredFiles } : {}),
     ...(autoResolved ? { autoResolved: true, strategy: 'theirs' } : {}),
   }));
@@ -330,6 +333,8 @@ function deleteWorktree() {
   run('git', ['branch', '-D', branch], { allowFail: true });
   run('git', ['worktree', 'prune'], { allowFail: true });
 
+  const fsResult = removeWorktreeDir(wtPath);
+
   const restoredFiles = restoreAccidentalDeletions();
   if (restoredFiles.length > 0) {
     console.error('[forge-worktree] Auto-restored ' + restoredFiles.length +
@@ -339,8 +344,9 @@ function deleteWorktree() {
   console.log(JSON.stringify({
     ok: true,
     deleted: slug,
-    worktreeRemoved: true,
+    worktreeRemoved: fsResult.removed,
     branchDeleted: branch,
+    ...(fsResult.removalSkipped ? { removalSkipped: [fsResult.removalSkipped] } : {}),
     ...(restoredFiles.length > 0 ? { restoredFiles } : {}),
   }));
 }
@@ -354,7 +360,7 @@ function cleanup() {
     return;
   }
 
-  const dirs = fs.readdirSync(wtDir, { withFileTypes: true }).filter(d => d.isDirectory());
+  const dirs = fs.readdirSync(wtDir, { withFileTypes: true }).filter(d => d.isDirectory() && !d.isSymbolicLink() && /^[a-zA-Z0-9_-]+$/.test(d.name));
   let removed = 0;
 
   for (const d of dirs) {
@@ -368,6 +374,7 @@ function cleanup() {
     const branch = `forge/${d.name}`;
     run('git', ['worktree', 'remove', wtPath, '--force'], { allowFail: true });
     run('git', ['branch', '-D', branch], { allowFail: true });
+    removeWorktreeDir(wtPath);
     removed++;
   }
 
@@ -380,6 +387,94 @@ function cleanup() {
   run('git', ['worktree', 'prune'], { allowFail: true });
 
   console.log(JSON.stringify({ ok: true, removed }));
+}
+
+/**
+ * Removes the filesystem directory for a worktree path after git has
+ * un-registered it. Handles the Windows case where git worktree remove
+ * leaves the directory on disk when a file handle is open.
+ *
+ * Returns { removed: true } on success, { removed: false } when the path
+ * did not exist, or { removed: false, removalSkipped: path, reason: msg }
+ * when the directory could not be removed due to a locked file.
+ *
+ * Never throws — errors are captured and returned as structured results.
+ */
+function removeWorktreeDir(wtPath) {
+  if (!fs.existsSync(wtPath)) {
+    return { removed: false };
+  }
+  try {
+    fs.rmSync(wtPath, { recursive: true, force: true });
+    // Verify the directory is actually gone (rmSync with force: true swallows errors on Windows)
+    if (fs.existsSync(wtPath)) {
+      return { removed: false, removalSkipped: wtPath, reason: 'directory still exists after rmSync (possible open file handle)' };
+    }
+    return { removed: true };
+  } catch (e) {
+    return { removed: false, removalSkipped: wtPath, reason: e.message };
+  }
+}
+
+/**
+ * Lists all subdirectory names under .worktrees/ that are NOT registered
+ * as active git worktrees. Returns an array of absolute paths.
+ */
+function findOrphanWorktreeDirs() {
+  if (!fs.existsSync(WORKTREE_DIR)) return [];
+
+  // Get registered worktree paths from git
+  let registeredPaths = new Set();
+  try {
+    const listOut = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    for (const line of listOut.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        registeredPaths.add(path.resolve(line.slice(9).trim()));
+      }
+    }
+  } catch (_) {
+    // If git fails, we can't determine orphans safely — return empty
+    return [];
+  }
+
+  const dirs = fs.readdirSync(WORKTREE_DIR, { withFileTypes: true })
+    .filter(d => d.isDirectory() && !d.isSymbolicLink() && /^[a-zA-Z0-9_-]+$/.test(d.name));
+
+  return dirs
+    .map(d => path.join(WORKTREE_DIR, d.name))
+    .filter(p => !registeredPaths.has(path.resolve(p)));
+}
+
+function audit() {
+  ensureGitRepo();
+
+  const prune = process.argv[3] === '--prune';
+  const orphans = findOrphanWorktreeDirs();
+
+  if (prune) {
+    let pruned = 0;
+    const removalSkipped = [];
+    for (const orphanPath of orphans) {
+      const result = removeWorktreeDir(orphanPath);
+      if (result.removed) {
+        pruned++;
+      } else if (result.removalSkipped) {
+        removalSkipped.push(result.removalSkipped);
+      }
+    }
+    const out = { ok: true, pruned, removalSkipped };
+    console.log(JSON.stringify(out));
+    return;
+  }
+
+  if (orphans.length === 0) {
+    console.log(JSON.stringify({ ok: true, orphans: [] }));
+  } else {
+    console.log(JSON.stringify({ ok: false, orphans }));
+  }
 }
 
 function copyDirSync(src, dst, skip) {
@@ -416,9 +511,10 @@ function isWhitelistedWorktreeSwap(worktreePath, pluginRoot) {
 }
 
 // Export pure helpers for regression-test access. Closes d9683d2a part B.
+// removeWorktreeDir is also exported for direct unit testing (AC-1 test harness).
 // Importable as a module without triggering the CLI dispatch below thanks to
 // the require.main === module guard.
-module.exports = { restoreAccidentalDeletions, isWhitelistedWorktreeSwap };
+module.exports = { restoreAccidentalDeletions, isWhitelistedWorktreeSwap, removeWorktreeDir };
 
 // Dispatch — only when invoked directly via the CLI, not on require().
 if (require.main === module) {
@@ -428,8 +524,9 @@ if (require.main === module) {
     case 'merge': merge(); break;
     case 'delete': deleteWorktree(); break;
     case 'cleanup': cleanup(); break;
+    case 'audit': audit(); break;
     default:
-      console.error('Usage: forge-worktree.js <create|list|merge|delete|cleanup> [slug]');
+      console.error('Usage: forge-worktree.js <create|list|merge|delete|cleanup|audit> [slug]');
       process.exit(1);
   }
 }
