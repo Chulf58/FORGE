@@ -203,6 +203,16 @@ Only include the task title line (not Intent/Verify). Stop at 15 content lines. 
 
 5. Log: `[plan-snapshot] plans/<feature-slug>.md` — nothing else.
 
+## Step 8e — Close source TODO (apply stage)
+
+If the feature name starts with an 8-hex-character TODO ID prefix (e.g., `f98719b6: Fix hook self-destruct...` or `bc57ba50: In-process MCP...`), extract the prefix and call `forge_update_task({ id: "<id>", done: true })` to mark the source TODO as done. Match pattern: the feature must begin with exactly 8 hex characters followed by `:`, ` —`, or whitespace (e.g., `/^([a-f0-9]{8})[: \s—]/`).
+
+- If no ID prefix matches: log `[todo-close] no source TODO id detected in feature name` and skip — do NOT scan body text for IDs.
+- If `forge_update_task` returns an error (TODO not found, etc.): log `[todo-close] failed: <id> — <error>` and continue. Do NOT retry. The conductor can close manually.
+- On success: log `[todo-close] <id> marked done` — nothing else.
+
+This closes the loop between feature work shipping and the source TODO being marked complete on the board, eliminating the manual-close step previously required after each apply merge.
+
 ## Post-write verification
 
 If Option A (fragment) was used: Grep the `changelogFragmentPath` file for the feature name. If missing: `[warn] changelog fragment not found`.
@@ -211,7 +221,7 @@ Warnings only — do not re-attempt.
 
 ## Output signal
 
-One line only. Format: `docs: changelog + <steps that ran>`. Steps that may run: `architecture` (when arch update needed), `decisions` (when decision logged), `solution` (when solution doc written). Omit skipped steps. No prose, no summary, no recap. Do not modify source files, do not write JSON in markdown fences.
+One line only. Format: `docs: changelog + <steps that ran>`. Steps that may run: `architecture` (when arch update needed), `decisions` (when decision logged), `solution` (when solution doc written), `todo-closed` (when Step 8e closed a source TODO). Omit skipped steps. No prose, no summary, no recap. Do not modify source files, do not write JSON in markdown fences.
 
 ## Context checkpoint
 
