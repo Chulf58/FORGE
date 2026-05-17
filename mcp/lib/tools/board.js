@@ -313,14 +313,30 @@ export function register(server, _shared) {
       inputSchema: z.object({
         text: z.string().describe('Note content'),
         tags: z.array(z.string()).default([]).describe('Tags for categorisation (e.g. \'salesforce\', \'integration\')'),
+        knowledgeRefs: z.array(z.string()).optional().describe('Optional slugs of solution docs in docs/solutions/index.json that this note references. Each slug must exist in the index; dead links are rejected.'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async ({ text, tags }) => {
+    async ({ text, tags, knowledgeRefs }) => {
       try {
         const projectDir = resolveProjectDir();
         const check = requirePipeline(projectDir);
         if (!check.ok) return check.result;
+
+        // Validate knowledgeRefs against docs/solutions/index.json when provided
+        if (knowledgeRefs && knowledgeRefs.length > 0) {
+          const indexPath = join(projectDir, 'docs', 'solutions', 'index.json');
+          const indexRead = readJsonSafe(indexPath);
+          const indexEntries = (indexRead.ok && Array.isArray(indexRead.data)) ? indexRead.data : [];
+          const validSlugs = new Set(
+            indexEntries.map(e => e.file.replace('docs/solutions/', '').replace('.md', '')),
+          );
+          for (const ref of knowledgeRefs) {
+            if (!validSlugs.has(ref)) {
+              return errorResult('forge_add_note: unknown knowledgeRef slug "' + ref + '" — not found in docs/solutions/index.json');
+            }
+          }
+        }
 
         const notesPath = join(check.pipelineDir, 'notes.json');
         const read = readJsonSafe(notesPath);
@@ -333,9 +349,35 @@ export function register(server, _shared) {
           tags,
           addedAt: new Date().toISOString(),
         };
+        if (knowledgeRefs && knowledgeRefs.length > 0) {
+          note.knowledgeRefs = knowledgeRefs;
+        }
 
         store.notes.push(note);
         writeJsonSafe(notesPath, store);
+
+        // Write reciprocal sourceNotes on each referenced solution index entry
+        if (knowledgeRefs && knowledgeRefs.length > 0) {
+          const indexPath = join(projectDir, 'docs', 'solutions', 'index.json');
+          const indexRead = readJsonSafe(indexPath);
+          if (indexRead.ok && Array.isArray(indexRead.data)) {
+            const indexEntries = indexRead.data;
+            let dirty = false;
+            for (const entry of indexEntries) {
+              const entrySlug = entry.file.replace('docs/solutions/', '').replace('.md', '');
+              if (knowledgeRefs.includes(entrySlug)) {
+                if (!Array.isArray(entry.sourceNotes)) entry.sourceNotes = [];
+                if (!entry.sourceNotes.includes(note.id)) {
+                  entry.sourceNotes.push(note.id);
+                  dirty = true;
+                }
+              }
+            }
+            if (dirty) {
+              writeJsonSafe(indexPath, indexEntries);
+            }
+          }
+        }
 
         return textResult(note);
       } catch (err) {

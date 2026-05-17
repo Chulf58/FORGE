@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @covers mcp/server.js (tool registration completeness gate)
 //
-// Asserts that the thin-shell mcp/server.js registers all 38 tools by name
+// Asserts that the thin-shell mcp/server.js registers all 39 tools by name
 // via the 6 domain modules. Mirrors the AC-8 oracle from Phase 6 of the
 // server.js split refactor.
 //
@@ -19,7 +19,7 @@ import { StdioClientTransport } from './node_modules/@modelcontextprotocol/sdk/d
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = resolve(__dirname, 'server.js');
 
-// The 38 expected tool names — must match what the 6 domain modules register.
+// The 39 expected tool names — must match what the 6 domain modules register.
 // Source of truth: each domain module's `register(server, shared)` body.
 const EXPECTED_TOOLS = [
   // board.js — 9 tools
@@ -60,12 +60,13 @@ const EXPECTED_TOOLS = [
   'forge_advance_stage',
   'forge_dashboard_state',
   'forge_kill_worker',
-  // knowledge.js — 5 tools
+  // knowledge.js — 6 tools
   'forge_get_constraints',
   'forge_get_patterns',
   'forge_add_learning',
   'forge_read_criteria',
   'forge_write_criteria',
+  'forge_get_linked',
 ];
 
 function fail(msg) {

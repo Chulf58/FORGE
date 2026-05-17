@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] Notes-knowledge bidirectional link
+
+- Added `knowledgeRefs` to notes and `sourceNotes` to knowledge index entries for bidirectional linking
+- Implemented transactional mirroring: links written to both sides atomically on creation
+- Added `forge_get_linked` tool to discover linked notes/knowledge entries across the index
+
 ## [2026-05-17] Worker gate-poll timeout — raise/decouple from active-worker cap
 
 - Introduced `GATE_POLL_TIMEOUT_DEFAULT_MS` (6 hours) as independent from 60-minute active-worker cap

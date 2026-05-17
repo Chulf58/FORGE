@@ -7,13 +7,13 @@
 // in that domain's module; adding a new domain belongs as a new module
 // here.
 //
-// Tool layout (38 tools total):
+// Tool layout (39 tools total):
 //   board.js          —  9 tools (board / tasks / notes / project / blocked-by)
 //   run-gate.js       —  3 tools (active run + gate read/write)
 //   modules.js        —  2 tools (module map read + assignment)
 //   model-mgmt.js     —  8 tools (router / external call / usage / catalog)
 //   run-lifecycle.js  — 11 tools (create / get / list / update / classify / resume / advance / escalate / worktree / dashboard / kill)
-//   knowledge.js      —  5 tools (constraints / patterns / learning / criteria read+write)
+//   knowledge.js      —  6 tools (constraints / patterns / learning / criteria read+write / get-linked)
 //
 // History: prior to commit on 2026-05-15 (Phase 6 of r-c6626d2a), all
 // 38 tools were inlined here (~3136 lines). Extraction shipped the
