@@ -4,6 +4,14 @@
 
 ---
 
+## TDD guard opt-out
+
+This project was initialized with the `power-automate` scaffold. The TDD guard hook is **disabled by default** for this scaffold type because Power Automate projects do not have automated test infrastructure.
+
+The opt-out is recorded in `.pipeline/project.json` as `"tddGuard": false`. To re-enable the guard (e.g. if you add a test suite), remove or set that field to `true`.
+
+---
+
 ## Approach-first protocol (MANDATORY)
 
 Before ANY direct file edit, present the approach to the user — what will change, which files, why — and wait for explicit approval. Only user words like "yes", "go", "do it", "approved" count. Narrating intent ("let me fix", "I'll update") is NOT self-authorization. This applies even for obvious one-line fixes, even in auto mode. Workers are exempt (they operate autonomously inside pipelines).

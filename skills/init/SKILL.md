@@ -223,9 +223,13 @@ Check if `.pipeline/project.json` exists. If it does, print "FORGE project alrea
 Ask: project name, tech stack, description.
 
 Create `.pipeline/` with:
-- `project.json` (name, description, techStacks)
+- `project.json` (name, description, techStacks) — see field details below
 - `board.json` (`{"todos":[]}`)
 - `modules.json` (`[]`)
+
+**project.json field order:** `name`, `description`, `techStacks`, `techStackLabels`, `testCommand`.
+
+**tddGuard field (scaffold-dependent):** For `power-automate` and `instructional` scaffolds, add `"tddGuard": false` as the field immediately after `testCommand`. This disables the TDD guard hook for projects that do not have automated test infrastructure. For `code` scaffolds, omit the `tddGuard` field entirely — the guard is enabled by default when the field is absent. Canonical defaults are defined in `skills/init/scaffold-defaults.js` (`getScaffoldDefaults(scaffoldType)`).
 
 Create `docs/` directory (via `Bash: mkdir -p docs`). Do NOT create `PLAN.md` here — it is copied from the scaffold in Step 4 (with format hints). If Step 4 is skipped (no plugin root), create a minimal `docs/PLAN.md` with content: `## Active Plan\n`.
 

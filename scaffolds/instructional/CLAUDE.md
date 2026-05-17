@@ -1,5 +1,7 @@
 <!-- Instructional template: pipeline ends after Gate #1 approval. No implementer, no tester, no Gate #2. -->
 
+<!-- tddGuard: this scaffold sets tddGuard: false in project.json — TDD guard is disabled for instructional projects. -->
+
 # FORGE Pipeline — Runtime Instructions
 
 These rules govern how FORGE operates in any project where the plugin is installed.
@@ -190,6 +192,14 @@ Agents should read only what they need:
 | Git/npm/process | Bash | — |
 
 **No subagents for file reads.** Use Read/Grep/Glob directly.
+
+---
+
+## TDD guard opt-out
+
+This project was initialized with the `instructional` scaffold. The TDD guard hook is **disabled by default** (`tddGuard: false` in `.pipeline/project.json`) because instructional projects do not have automated test infrastructure.
+
+To re-enable the guard, remove the `tddGuard` field or set it to `true`.
 
 ---
 

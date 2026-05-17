@@ -181,6 +181,21 @@ async function runGuard(payload, env = process.env, _spawnImpl = null) {
     return { exitCode: 0, stderr: '' };
   }
 
+  // (a.1) Project-level tddGuard bypass — fail-open if project.json unreadable or field absent.
+  // Non-code scaffolds (power-automate, instructional) set tddGuard: false to skip all guard
+  // logic. Fail-open: if project.json cannot be read for any reason, guard proceeds normally.
+  if (payload && typeof payload === 'object' && typeof payload.cwd === 'string') {
+    try {
+      const projectJsonPath = path.join(payload.cwd, '.pipeline', 'project.json');
+      const projectConfig = JSON.parse(fs.readFileSync(projectJsonPath, 'utf8'));
+      if (projectConfig.tddGuard === false) {
+        return { exitCode: 0, stderr: '' };
+      }
+    } catch {
+      // fail-open: can't read project.json → proceed with guard
+    }
+  }
+
   // (b) Defensive payload extraction — fail-open on missing/invalid payload
   if (!payload || typeof payload !== 'object') {
     return { exitCode: 0, stderr: '' };

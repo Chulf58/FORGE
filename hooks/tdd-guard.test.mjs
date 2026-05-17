@@ -294,3 +294,64 @@ test('(11) fail-open when spawn throws ENOENT (node not on PATH)', async () => {
     await removeTempProject(dir);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test case (12): tddGuard: false bypasses guard — source file with no test
+// ---------------------------------------------------------------------------
+test('(12) tddGuard: false bypasses guard — hooks/ source file, no adjacent test', async () => {
+  const dir = await makeTempProject({
+    'hooks/some-feature.js': '// source — no test file',
+    '.pipeline/project.json': JSON.stringify({ tddGuard: false }),
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'some-feature.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must allow (exitCode 0) — tddGuard: false bypasses all guard logic.
+    // WAVE 1: fails against unmodified hook (which returns exitCode 2, no test found).
+    assert.equal(result.exitCode, 0, 'tddGuard: false must bypass guard regardless of test-file presence');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (13): tddGuard: false bypasses guard even when test exists but is green
+// ---------------------------------------------------------------------------
+test('(13) tddGuard: false bypasses guard — test file exists but all tests pass (green)', async () => {
+  const dir = await makeTempProject({
+    'hooks/greentested.js': '// source',
+    'hooks/greentested.test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('passing', () => { assert.ok(true); });
+`,
+    '.pipeline/project.json': JSON.stringify({ tddGuard: false }),
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'greentested.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must allow (exitCode 0) — tddGuard: false skips guard before test resolution.
+    // WAVE 1: fails against unmodified hook (which returns exitCode 2, all tests green → block).
+    assert.equal(result.exitCode, 0, 'tddGuard: false must bypass guard even with an all-green test file');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test case (14): tddGuard: true keeps guard enforced (positive control / regression)
+// ---------------------------------------------------------------------------
+test('(14) tddGuard: true keeps guard enforced — no test file → block', async () => {
+  const dir = await makeTempProject({
+    'hooks/guarded.js': '// source — tddGuard explicitly true',
+    '.pipeline/project.json': JSON.stringify({ tddGuard: true }),
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'guarded.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must block (exitCode 2) — tddGuard: true means guard is active.
+    assert.equal(result.exitCode, 2, 'tddGuard: true must keep guard enforced');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
