@@ -28,3 +28,12 @@ hooks/worker-task-inject.js
 # TDD-guard resolves run-lifecycle.test.mjs (green); the actual taskBrief
 # regression test is one directory up at mcp/server.test.mjs.
 mcp/lib/tools/run-lifecycle.js
+# observer-autosplit TDD wave 1 — test-observer-autosplit.mjs IS the test file.
+# Named with test- prefix (not -test suffix), so TEST_FILE_RE doesn't match it.
+# guard ignores it so wave 1 test edits proceed; wave 2 hook edits are gated by
+# the failing tests once wave 1 is confirmed red.
+scripts/test-observer-autosplit.mjs
+# observer-autosplit wave 2 — red bar confirmed: node scripts/test-observer-autosplit.mjs
+# exits 1 (Test 6 fails). Test file lives in scripts/ not adjacent to hooks/,
+# so resolveTestFile cannot locate it. Red bar manually verified before this entry.
+hooks/observer-autosplit.js

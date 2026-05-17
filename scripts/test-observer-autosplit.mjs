@@ -8,6 +8,8 @@ import assert from 'assert/strict';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,10 +100,68 @@ try {
   console.error('[FAIL] Test 5: fallback cmd built-in check —', err.message);
 }
 
+// --- Test 6: .worker-session marker present → shouldSkip returns "worker session" ----
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
+  try {
+    const pipelineDir = path.join(tmpDir, '.pipeline');
+    fs.mkdirSync(pipelineDir);
+    fs.writeFileSync(path.join(pipelineDir, '.worker-session'), '', 'utf8');
+    const reason = shouldSkip({}, 'win32', tmpDir);
+    assert.ok(reason !== null, 'should return a skip reason when .worker-session exists');
+    assert.ok(typeof reason === 'string' && reason.includes('worker session'),
+      'reason should mention "worker session", got: ' + reason);
+    console.log('[PASS] Test 6: .worker-session marker → shouldSkip returns worker session reason');
+    passed++;
+  } catch (err) {
+    console.error('[FAIL] Test 6: .worker-session marker —', err.message);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// --- Test 7: legacy worker-task-*.json only (no .worker-session) → shouldSkip returns "worker session" ---
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
+  try {
+    const pipelineDir = path.join(tmpDir, '.pipeline');
+    fs.mkdirSync(pipelineDir);
+    fs.writeFileSync(path.join(pipelineDir, 'worker-task-abc123.json'), '{}', 'utf8');
+    const reason = shouldSkip({}, 'win32', tmpDir);
+    assert.ok(reason !== null, 'should return a skip reason when worker-task-*.json exists');
+    assert.ok(typeof reason === 'string' && reason.includes('worker session'),
+      'reason should mention "worker session", got: ' + reason);
+    console.log('[PASS] Test 7: legacy worker-task-*.json only → shouldSkip returns worker session reason');
+    passed++;
+  } catch (err) {
+    console.error('[FAIL] Test 7: legacy worker-task-*.json —', err.message);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// --- Test 8: no markers present (conductor session) → shouldSkip returns null ---
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-test-'));
+  try {
+    const pipelineDir = path.join(tmpDir, '.pipeline');
+    fs.mkdirSync(pipelineDir);
+    // No .worker-session, no worker-task-*.json
+    const reason = shouldSkip({}, 'win32', tmpDir);
+    assert.equal(reason, null, 'should return null (no skip) for a conductor session with no markers');
+    console.log('[PASS] Test 8: no markers present → shouldSkip returns null (conductor session)');
+    passed++;
+  } catch (err) {
+    console.error('[FAIL] Test 8: no-marker conductor session —', err.message);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 // --- Result -----------------------------------------------------------------
-if (passed === 5) {
+if (passed === 8) {
   process.exit(0);
 } else {
-  console.error('[FAIL] ' + (5 - passed) + ' test(s) failed');
+  console.error('[FAIL] ' + (8 - passed) + ' test(s) failed');
   process.exit(1);
 }
