@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-05-17] Fix hook self-destruct in mcp-deps-install.js (f98719b6)
+
+- Removed `fs.rmSync` from the npm install failure catch handler — previously deleted `node_modules` on any npm error, causing cascading failures on next session start
+- Extracted `_runNpmCatch(label, nodeModules, err)` helper; catch block now calls it instead of inline rmSync
+- Added `resolveNpmTimeout()` — defaults to 600 000 ms (10 min), overridable via `FORGE_NPM_INSTALL_TIMEOUT_MS` env var
+- Replaced hardcoded `timeout: 60000` in both `execFileSync` calls inside `runNpm()` with `resolveNpmTimeout()`
+- Added `hooks/mcp-deps-install.test.js` as TDD-guard entry point; full coverage in `mcp-deps-install-failure-preservation-test.js`
+- New exports: `resolveNpmTimeout`, `_runNpmCatch` alongside existing `resolveLiveConfigPath`
+
 ## [2026-05-17] In-process MCP for workers
 
 - Replaced stdio subprocess MCP with in-process SDK server in `forge-worker.mjs`

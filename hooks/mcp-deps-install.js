@@ -319,6 +319,14 @@ function migrateForgeConfig(pluginRoot, mainProjectDir) {
   }
 }
 
+function resolveNpmTimeout() {
+  return parseInt(process.env.FORGE_NPM_INSTALL_TIMEOUT_MS || '600000', 10);
+}
+
+function _runNpmCatch(label, nodeModules, err) {
+  console.error('[forge-mcp] Failed to install ' + label + ' dependencies: ' + err.message);
+}
+
 async function main(rawInput) {
   // Parse stdin payload — used to resolve the active project directory.
   let payload = {};
@@ -345,11 +353,11 @@ async function main(rawInput) {
   function runNpm(args, cwd) {
     if (hasNpmCli) {
       execFileSync(process.execPath, [npmCli].concat(args), {
-        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: 60000,
+        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: resolveNpmTimeout(),
       });
     } else {
       execFileSync('npm', args, {
-        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: 60000,
+        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: resolveNpmTimeout(),
       });
     }
   }
@@ -395,10 +403,7 @@ async function main(rawInput) {
       runNpm(installArgs, target.dir);
       console.error('[forge-mcp] ' + target.label + ' dependencies installed successfully.');
     } catch (err) {
-      console.error('[forge-mcp] Failed to install ' + target.label + ' dependencies: ' + err.message);
-      try {
-        fs.rmSync(nodeModules, { recursive: true, force: true });
-      } catch (_) { /* best effort cleanup — next session retries */ }
+      _runNpmCatch(target.label, nodeModules, err);
     }
   }
 
@@ -497,7 +502,7 @@ async function main(rawInput) {
 // Export pure helpers for regression-test access. Must come before the
 // require-main guard below so module.exports is populated even when this file
 // is imported (not invoked directly). Closes d9683d2a part A.
-module.exports = { resolveLiveConfigPath };
+module.exports = { resolveLiveConfigPath, resolveNpmTimeout, _runNpmCatch };
 
 // -- Stdin reader with timeout guard -----------------------------------------
 // Guard with require.main === module so unit tests can `require()` this file
