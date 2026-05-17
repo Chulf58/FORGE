@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] Merge-script CLAUDE.md swap whitelist
+
+- Added `isWhitelistedWorktreeSwap` helper to skip false-positive dirty-file rejections.
+- Pre-flight now whitelists CLAUDE.md swap when content matches CLAUDE-WORKER.md.
+- Regression tests pass; `scripts/forge-worktree-preflight-test.mjs` covers all cases.
+
 ## [2026-05-17] Fix hook self-destruct in mcp-deps-install.js (f98719b6)
 
 - Removed `fs.rmSync` from the npm install failure catch handler — previously deleted `node_modules` on any npm error, causing cascading failures on next session start
