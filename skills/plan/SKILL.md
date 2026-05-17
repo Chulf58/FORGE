@@ -136,9 +136,10 @@ Exit — do not proceed to further steps.
    - Run via Bash: `node scripts/reviewer-dispatch.mjs --plan=<worktreePath>/docs/PLAN.md --stage=plan --run-id=<runId>`.
    - Capture the stdout JSON (shape: `{ "reviewers": [...], "reasons": [...] }`).
    - Log: `[reviewer-dispatch] reviewers=[<comma-joined>] reasons=[<comma-joined>]`.
-   - **Before spawning each reviewer**, prepend the following signal line to the reviewer's prompt so the reviewer writes its verdict to the per-run directory:
+   - **Before spawning each reviewer**, prepend TWO signal lines to the reviewer's prompt so the reviewer writes its verdict to the per-run directory AND reads the plan from the worktree path (NOT main project root — main's PLAN.md is empty for non-active plans per the bba4a9d9 cleanup):
 
      > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
+     > `[plan-path: <worktreePath>/docs/PLAN.md]`
 
    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
 6. **REVISE-retry loop** — handle reviewer verdicts before writing gate1.

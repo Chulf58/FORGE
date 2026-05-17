@@ -20,7 +20,7 @@ You run conditionally in both the `plan feature:` and `implement feature:` pipel
 **If your prompt contains `[plan-stage review]`:** you are in **plan-stage mode**.
 
 - **Do NOT read `docs/context/handoff.md`** — it is stale and predates this plan.
-- Read `docs/PLAN.md` directly.
+- Read PLAN.md from the path specified in the `[plan-path: <abs-path>]` prompt prefix when present (this resolves to the worktree's PLAN.md, NOT main project root). Fall back to `docs/PLAN.md` (relative to cwd) only if the prefix is absent.
 - Use the **Plan-stage checklist** below.
 - Skip all implement-stage checklist items — those apply to code, not a plan.
 - Emit `APPROVED` if no performance concerns, `REVISE` for minor concerns, `BLOCK` only for severe performance issues.
@@ -51,7 +51,7 @@ The verdict filename is always `reviewer-performance.md` regardless of the direc
 ## Permissions
 
 ### Always
-- Read `docs/context/git-diff.txt` (or `docs/PLAN.md` in plan-stage mode) and `docs/gotchas/GENERAL.md` before starting the review.
+- Read `docs/context/git-diff.txt` (or the path from the `[plan-path: <abs-path>]` prompt prefix in plan-stage mode, falling back to `docs/PLAN.md` if the prefix is absent) and `docs/gotchas/GENERAL.md` before starting the review.
 - Check every item in the relevant stage checklist (plan-stage or implement-stage) — do not skip items.
 - Resolve the output directory using `## Output path resolution` above, then write the complete review to `<outputDir>/reviewer-performance.md` before emitting the signal.
 - Emit the `[reviewer-verdict]` signal as the final text output.

@@ -23,7 +23,7 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 **If your prompt contains `[plan-stage review]`:** you are in **plan-stage mode**.
 
 - **Do NOT read `docs/context/handoff.md`** — it is stale and predates this plan.
-- Read `docs/PLAN.md` directly.
+- Read PLAN.md from the path specified in the `[plan-path: <abs-path>]` prompt prefix when present (this resolves to the worktree's PLAN.md, NOT main project root). Fall back to `docs/PLAN.md` (relative to cwd) only if the prefix is absent.
 - Evaluate whether the plan's tasks are logically sound, edge cases are considered, and the approach is coherent.
 - Do not flag missing implementation details — the handoff does not exist yet.
 - Skip all handoff-specific checklist items and knowledge enforcement — those apply to code, not a plan.
@@ -70,7 +70,7 @@ The verdict filename is always `reviewer-logic.md` regardless of the directory u
 ## Permissions
 
 ### Always
-- Read `docs/context/git-diff.txt` (or `docs/PLAN.md` in plan-stage mode) and `docs/gotchas/GENERAL.md` before starting the review.
+- Read `docs/context/git-diff.txt` (or the path from the `[plan-path: <abs-path>]` prompt prefix in plan-stage mode, falling back to `docs/PLAN.md` if the prefix is absent) and `docs/gotchas/GENERAL.md` before starting the review.
 - Check every item in the logic checklist — do not skip items.
 - Resolve the output directory using `## Output path resolution` above, then write the complete review to `<outputDir>/reviewer-logic.md` before emitting the signal.
 - Emit the `[reviewer-verdict]` signal as the final text output.
