@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-17] Merge-script CLAUDE.md swap whitelist
+
+- Added `isWhitelistedWorktreeSwap` helper to skip false-positive dirty-file rejections.
+- Pre-flight now whitelists CLAUDE.md swap when content matches CLAUDE-WORKER.md.
+- Regression tests pass; `scripts/forge-worktree-preflight-test.mjs` covers all cases.
+
 ## [2026-05-17] In-process MCP for workers
 
 - Replaced stdio subprocess MCP with in-process SDK server in `forge-worker.mjs`

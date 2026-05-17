@@ -212,12 +212,25 @@ function merge() {
     if (diffErr.status && diffErr.status !== 0) {
       // Non-zero exit = real content changes exist
       const wtStatus = run('git', ['-C', wtPath, 'diff', '--name-only', 'HEAD'], { allowFail: true });
-      console.error(JSON.stringify({
-        ok: false,
-        error: 'Worktree has uncommitted tracked changes — the apply skill should have committed in Step 8.',
-        uncommittedFiles: wtStatus ? wtStatus.split('\n').filter(Boolean) : [],
-      }));
-      process.exit(1);
+      let uncommittedFiles = wtStatus ? wtStatus.split('\n').filter(Boolean) : [];
+
+      // CLAUDE.md inside the worktree is always overwritten by the create step
+      // (forge-worktree.js line 126: CLAUDE-WORKER.md → CLAUDE.md). If its
+      // content still matches CLAUDE-WORKER.md it was never touched by the
+      // worker — exclude it so the pre-flight does not fire a false positive.
+      const pluginRoot = path.resolve(__dirname, '..');
+      if (isWhitelistedWorktreeSwap(wtPath, pluginRoot)) {
+        uncommittedFiles = uncommittedFiles.filter((f) => f !== 'CLAUDE.md');
+      }
+
+      if (uncommittedFiles.length > 0) {
+        console.error(JSON.stringify({
+          ok: false,
+          error: 'Worktree has uncommitted tracked changes — the apply skill should have committed in Step 8.',
+          uncommittedFiles,
+        }));
+        process.exit(1);
+      }
     }
   }
 
@@ -384,10 +397,28 @@ function copyDirSync(src, dst, skip) {
   }
 }
 
+/**
+ * Returns true if worktreePath/CLAUDE.md was injected by the create step
+ * (i.e. its bytes match pluginRoot/CLAUDE-WORKER.md). Used by the merge
+ * pre-flight to skip false-positive dirty-file rejections.
+ * Pure function — no side effects, no git calls.
+ */
+function isWhitelistedWorktreeSwap(worktreePath, pluginRoot) {
+  const workerSrc = path.join(pluginRoot, 'CLAUDE-WORKER.md');
+  const injectedDst = path.join(worktreePath, 'CLAUDE.md');
+  try {
+    const srcBuf = fs.readFileSync(workerSrc);
+    const dstBuf = fs.readFileSync(injectedDst);
+    return srcBuf.equals(dstBuf);
+  } catch (_) {
+    return false;
+  }
+}
+
 // Export pure helpers for regression-test access. Closes d9683d2a part B.
 // Importable as a module without triggering the CLI dispatch below thanks to
 // the require.main === module guard.
-module.exports = { restoreAccidentalDeletions };
+module.exports = { restoreAccidentalDeletions, isWhitelistedWorktreeSwap };
 
 // Dispatch — only when invoked directly via the CLI, not on require().
 if (require.main === module) {

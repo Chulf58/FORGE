@@ -28,3 +28,7 @@ hooks/worker-task-inject.js
 # TDD-guard resolves run-lifecycle.test.mjs (green); the actual taskBrief
 # regression test is one directory up at mcp/server.test.mjs.
 mcp/lib/tools/run-lifecycle.js
+# CLAUDE.md swap whitelist 2026-05-17 — failing tests verified in scripts/forge-worktree-preflight-test.mjs
+# (hyphen convention; tdd-guard resolveTestFile only detects .test.mjs convention).
+# Red bar confirmed: exit code 1, 5/5 tests failing before Wave 2 implementation.
+bin/forge-worktree.js
