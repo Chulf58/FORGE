@@ -461,7 +461,7 @@ if (isMainModule()) {
     : dispatchForImplementStage(content, forceReview, pipeline);
 
   // Apply reviewerOverrides bypass on handoff/plan path too (task 2 + task 3)
-  if (reviewerOverrides !== null && stage !== 'plan') {
+  if (reviewerOverrides !== null) {
     for (const classifiedReviewer of classifiedFallbackResult.reviewers) {
       if (!reviewerOverrides.includes(classifiedReviewer)) {
         const triggeringRule = classifiedFallbackResult.reasons
