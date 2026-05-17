@@ -36,6 +36,11 @@ function shouldSkip(env, platform, projectDir) {
   if (projectDir) {
     try {
       const pipelineDir = path.join(projectDir, '.pipeline');
+      // Check durable marker first — survives worker-task file deletion
+      if (fs.existsSync(path.join(pipelineDir, '.worker-session'))) {
+        return 'worker session (.worker-session marker exists)';
+      }
+      // Legacy fallback: transient task file
       const entries = fs.readdirSync(pipelineDir);
       if (entries.some((e) => /^worker-task-.+\.json$/.test(e))) {
         return 'worker session (worker-task file exists)';
