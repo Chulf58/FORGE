@@ -22,12 +22,12 @@ The model can't be trusted to follow instructions when the instructions are inco
 
 /forge:implement
     → coder writes implementation to handoff.md
-    → reviewers check: safety, logic, style, performance
+    → reviewers check: safety, logic, boundary, performance, tests
     → Gate #2: you read the verdicts and approve
 
 /forge:apply
-    → implementer applies changes to source files
     → documenter updates changelog and architecture docs
+    → commit gate appears for worktree merge
 ```
 
 No code touches your project until you approve Gate #2.
@@ -55,7 +55,7 @@ Read the plan. If it looks right, approve. If something is off, discard and re-p
 ```
 /forge:implement
 ```
-The coder writes the implementation to a handoff document. Five specialist reviewers check it — safety, logic, style, performance, and boundary correctness — and emit verdicts. When they finish, Gate #2 appears with the implementation summary and all reviewer verdicts.
+The coder writes the implementation to a handoff document. Five specialist reviewers check it — safety, logic, boundary, performance, and tests — and emit verdicts. When they finish, Gate #2 appears with the implementation summary and all reviewer verdicts.
 
 **4. Approve or discard the implementation**
 ```
@@ -68,9 +68,9 @@ Read the verdicts. If anything is blocked, the pipeline won't let you approve un
 ```
 /forge:apply
 ```
-The implementer writes the changes to your actual source files. The documenter updates the changelog and architecture docs. Done.
+The documenter writes the changelog and architecture-doc updates in the worktree. The worker pauses at a commit gate, and approving it merges the worktree into your main branch. Done.
 
-Your project files are never touched until step 5.
+No changes land on your main branch until step 5.
 
 ---
 
@@ -82,7 +82,7 @@ Five things happen when you install FORGE and start a session:
 - **31 hook scripts** fire on 10 lifecycle events (session start, prompt submit, tool calls, subagent start/stop, and more) to enforce rules and inject context
 - **An MCP server** starts alongside your session and provides 39 tools for structured access to pipeline state, gates, and model routing
 - **All state lives in `.pipeline/`** in your project directory — board, run history, pending gates, config — nothing is sent anywhere else
-- **Anthropic models route via agent frontmatter**; external models (Gemini, OpenAI) route via the MCP server's `forge_call_external` tool
+- **All agents route to Anthropic models** via frontmatter; external-provider routing exists via the MCP server's `forge_call_external` tool for future expansion
 
 Nothing runs in the background between sessions. FORGE is stateless until you invoke a command.
 
@@ -93,7 +93,7 @@ Nothing runs in the background between sessions. FORGE is stateless until you in
 Clone the internal repo, then start Claude Code with the plugin loaded:
 
 ```bash
-git clone <INTERNAL-GITHUB-URL>
+git clone https://github.com/Chulf58/FORGE.git
 claude --plugin-dir /path/to/forge-plugin
 ```
 
@@ -159,15 +159,9 @@ You see the implementation summary and all reviewer verdicts. `/forge:approve` m
 
 ---
 
-## What's coming
-
-A native TUI dashboard for monitoring pipelines without leaving the terminal and improved worktree-based parallel execution are in active development.
-
----
-
 ## Docs
 
-- [FORGE-OVERVIEW.md](docs/FORGE-OVERVIEW.md) — what FORGE is, the glass wall principle, comparison with similar tools
+- [FORGE-OVERVIEW.md](docs/FORGE-OVERVIEW.md) — what FORGE is, design principles, comparison with similar tools
 - [FORGE-REFERENCE.md](docs/FORGE-REFERENCE.md) — full agent tables, signal protocol, hook system, MCP tools, model routing
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — module map and key file locations
 
