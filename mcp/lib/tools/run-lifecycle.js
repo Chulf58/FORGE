@@ -212,22 +212,6 @@ export function register(server, _shared) {
 
         const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, feature: safeFeature, parentRunId: parentRunId ?? null, stages: stages ?? null, classificationId: classificationId ?? null, reviewerOverrides: reviewerOverrides ?? [] });
 
-        // Persist classification result alongside run.json so audit panels survive
-        // MCP process restarts. Written immediately after createRun has produced the
-        // run directory at .pipeline/runs/<runId>/. Fail-open: write errors are
-        // logged but do NOT abort run creation.
-        if (classificationId) {
-          try {
-            const classification = classificationCache.get(classificationId);
-            if (classification) {
-              const classPath = join(projectDir, '.pipeline', 'runs', run.runId, 'classification.json');
-              writeFileSync(classPath, JSON.stringify(classification, null, 2), 'utf-8');
-            }
-          } catch (classErr) {
-            console.error('[forge_create_run] classification.json write failed (non-fatal): ' + classErr.message);
-          }
-        }
-
         // Immediately mark as running — the model reliably calls forge_create_run
         // but skips the follow-up forge_update_run to set status: "running".
         const started = updateRun(projectDir, run.runId, { status: 'running' });

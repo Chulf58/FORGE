@@ -1,6 +1,19 @@
 // @covers mcp/lib/tools/run-lifecycle.js
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+test('run-lifecycle no longer persists classification.json (SPECS surface removed)', () => {
+  const src = readFileSync(join(__dirname, 'run-lifecycle.js'), 'utf8');
+  assert.ok(
+    !src.includes("'classification.json'"),
+    'classification.json was a SPECS-only artifact and its write must be removed from forge_create_run',
+  );
+});
 
 // AC-6: run-lifecycle.js exports register(server, shared) that registers exactly
 // the 11 run-lifecycle tools.

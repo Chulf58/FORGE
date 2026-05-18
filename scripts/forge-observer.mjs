@@ -3,14 +3,13 @@
 //
 // Run:  node scripts/forge-observer.mjs   (or use observer.bat)
 // Quit: q / Ctrl+C  |  Navigate: ↑↓ / j k / scroll  |  Click: expand  |  Refresh: r
-// Tabs: 1=Sessions  2=TODOs  3=Notes  4=SPECS
+// Tabs: 1=Sessions  2=TODOs  3=Notes
 
 import { createRequire } from 'node:module';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import { execSync, spawn } from 'node:child_process';
-import { estimateCost, modelTier } from './lib/model-pricing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = resolve(__dirname, '..');
@@ -64,7 +63,6 @@ const TABS = [
   { key: '1', label: 'Sessions' },
   { key: '2', label: 'TODOs' },
   { key: '3', label: 'Notes' },
-  { key: '4', label: 'SPECS' },
 ];
 let currentTab = 0;
 
@@ -88,92 +86,6 @@ function loadNotes(projectDir) {
     const data = JSON.parse(raw);
     return Array.isArray(data.notes) ? data.notes : [];
   } catch (_) { return []; }
-}
-
-function loadUsage(projectDir) {
-  try {
-    const raw = readFileSync(join(projectDir, '.pipeline', 'usage.json'), 'utf8');
-    return JSON.parse(raw);
-  } catch (_) { return null; }
-}
-
-function loadProjectConfig(projectDir) {
-  try {
-    const raw = readFileSync(join(projectDir, '.pipeline', 'project.json'), 'utf8');
-    return JSON.parse(raw);
-  } catch (_) { return null; }
-}
-
-function loadAgentHealth(projectDir) {
-  const result = {
-    totalDispatches: 0,
-    successRate: 0,
-    truncatedCount: 0,
-    noVerdictCount: 0,
-    byAgent: {},
-    mismatches: [],
-  };
-  try {
-    const runsDir = join(projectDir, '.pipeline', 'runs');
-    let runDirs;
-    try {
-      runDirs = readdirSync(runsDir);
-    } catch (_) { return result; }
-    for (const runId of runDirs) {
-      let run;
-      try {
-        const raw = readFileSync(join(runsDir, runId, 'run.json'), 'utf8');
-        run = JSON.parse(raw);
-      } catch (_) { continue; }
-      if (!Array.isArray(run.agents)) continue;
-      for (const agent of run.agents) {
-        const rawType = typeof agent.agentType === 'string' ? agent.agentType : '';
-        const agentType = rawType.replace(/^forge:/, '');
-        if (!agentType) continue;
-        result.totalDispatches++;
-        const isTruncated = agent.outcome === null && agent.completedAt === null;
-        const isNoVerdict = agent.outcome === null && agent.completedAt !== null;
-        if (isTruncated) result.truncatedCount++;
-        if (isNoVerdict) result.noVerdictCount++;
-        if (!result.byAgent[agentType]) {
-          result.byAgent[agentType] = { dispatches: 0, truncated: 0, noVerdict: 0 };
-        }
-        result.byAgent[agentType].dispatches++;
-        if (isTruncated) result.byAgent[agentType].truncated++;
-        if (isNoVerdict) result.byAgent[agentType].noVerdict++;
-      }
-
-      // Locked vs dispatched comparison
-      if (run.stages && typeof run.stages === 'object') {
-        const locked = new Set();
-        for (const stage of Object.values(run.stages)) {
-          if (Array.isArray(stage.agents)) {
-            for (const a of stage.agents) locked.add(a);
-          }
-        }
-        const dispatched = new Set(
-          run.agents
-            .map((a) => (typeof a.agentType === 'string' ? a.agentType : '').replace(/^forge:/, ''))
-            .filter(Boolean),
-        );
-        const unlocked = [...dispatched].filter((a) => !locked.has(a));
-        const missing = [...locked].filter((a) => !dispatched.has(a));
-        if (unlocked.length > 0 || missing.length > 0) {
-          result.mismatches.push({
-            runId: run.runId || runId,
-            updatedAt: run.updatedAt || run.createdAt || '',
-            unlocked,
-            missing,
-          });
-        }
-      }
-    }
-  } catch (_) {}
-  const completed = result.totalDispatches - result.truncatedCount - result.noVerdictCount;
-  result.successRate = result.totalDispatches > 0
-    ? Math.round((completed / result.totalDispatches) * 100)
-    : 0;
-  return result;
 }
 
 function loadFullRun(projectDir, runId) {
@@ -540,9 +452,6 @@ const BANNER = buildBannerV2();
 let state = null;
 let todos = [];
 let notes = [];
-let usage = null;
-let projectConfig = null;
-let agentHealth = null;
 let workers = [];
 let completed = [];
 let orderedIds = [];
@@ -585,9 +494,6 @@ async function refresh() {
       return (a.addedAt || 0) - (b.addedAt || 0);
     });
     notes = loadNotes(PROJECT_DIR);
-    usage = loadUsage(PROJECT_DIR);
-    projectConfig = loadProjectConfig(PROJECT_DIR);
-    agentHealth = loadAgentHealth(PROJECT_DIR);
     escalations = loadEscalations(PROJECT_DIR);
 
     const gates = (state.activeRuns || []).filter(r => r.status === 'gate-pending');
@@ -993,244 +899,6 @@ function buildNotesTab(cols) {
   return { lines, regions: [] };
 }
 
-// ── SPECS tab helpers ────────────────────────────────────────────────────
-
-const REVIEWER_AGENT_TYPES = new Set([
-  'reviewer-safety', 'reviewer-boundary', 'reviewer-logic',
-  'reviewer-style', 'reviewer-performance',
-]);
-
-/** Returns the N most recent run.json objects (any status), sorted by run.json mtime desc. */
-function loadRecentRunsSorted(projectDir, limit = 10) {
-  const runsDir = join(projectDir, '.pipeline', 'runs');
-  const results = [];
-  try {
-    for (const runId of readdirSync(runsDir)) {
-      const runPath = join(runsDir, runId, 'run.json');
-      try {
-        const mtime = statSync(runPath).mtimeMs;
-        const run = JSON.parse(readFileSync(runPath, 'utf8'));
-        results.push({ run, mtime });
-      } catch (_) {}
-    }
-  } catch (_) {}
-  return results.sort((a, b) => b.mtime - a.mtime).slice(0, limit).map((r) => r.run);
-}
-
-/** Returns up to N entries {run, classification} for runs that have classification.json, mtime desc. */
-function loadRunsWithClassification(projectDir, limit = 5) {
-  const runsDir = join(projectDir, '.pipeline', 'runs');
-  const results = [];
-  try {
-    for (const runId of readdirSync(runsDir)) {
-      const classPath = join(runsDir, runId, 'classification.json');
-      if (!existsSync(classPath)) continue;
-      try {
-        const mtime = statSync(classPath).mtimeMs;
-        const run = JSON.parse(readFileSync(join(runsDir, runId, 'run.json'), 'utf8'));
-        const classification = JSON.parse(readFileSync(classPath, 'utf8'));
-        results.push({ run, classification, mtime });
-      } catch (_) {}
-    }
-  } catch (_) {}
-  return results.sort((a, b) => b.mtime - a.mtime).slice(0, limit);
-}
-
-// ── Tab 4: SPECS ────────────────────────────────────────────────────────
-
-function buildSpecsTab(cols) {
-  const lines = [];
-  lines.push('');
-
-  // ── Project section ────────────────────────────────────────────────────
-  lines.push('  ' + cb('cyan', 'Project'));
-  if (!projectConfig) {
-    lines.push(c('gray', '    No project config available'));
-    lines.push(c('gray', '    Run /forge:init or create .pipeline/project.json'));
-  } else {
-    if (projectConfig.name) {
-      lines.push('    ' + c('gray', 'Name:   ') + c('white', String(projectConfig.name)));
-    }
-    if (projectConfig.description) {
-      lines.push('    ' + c('gray', 'Desc:   ') + c('white', trunc(String(projectConfig.description), Math.max(20, cols - 16))));
-    }
-    const stacks = projectConfig.techStackLabels || projectConfig.techStacks;
-    if (Array.isArray(stacks) && stacks.length > 0) {
-      lines.push('    ' + c('gray', 'Stacks: ') + c('white', stacks.join(', ')));
-    }
-  }
-  lines.push('');
-
-  // ── Usage section ──────────────────────────────────────────────────────
-  lines.push('  ' + cb('cyan', 'Usage'));
-  if (!usage || !usage.providers || Object.keys(usage.providers).length === 0) {
-    lines.push(c('gray', '    No usage data available'));
-    lines.push(c('gray', '    Usage tracking activates during pipeline runs'));
-  } else {
-    for (const [providerId, provider] of Object.entries(usage.providers)) {
-      lines.push('    ' + cb('white', providerId));
-      lines.push('      ' + c('gray', 'Requests: ') + c('white', String(provider.requestCount ?? 0)));
-      lines.push('      ' + c('gray', 'Tokens:   ') + c('white', Number(provider.tokenCount ?? 0).toLocaleString()));
-      if (provider.lastUsed) {
-        lines.push('      ' + c('gray', 'Last:     ') + cd('gray', fmtRel(provider.lastUsed)));
-      }
-      if (provider.models && typeof provider.models === 'object') {
-        for (const [modelId, model] of Object.entries(provider.models)) {
-          lines.push('      ' + c('gray', '  ' + trunc(modelId, Math.max(10, cols - 28)) + ': ') +
-            c('white', String(model.requestCount ?? 0)) + c('gray', ' req  ') +
-            c('white', Number(model.tokenCount ?? 0).toLocaleString()) + c('gray', ' tok'));
-        }
-      }
-    }
-  }
-  lines.push('');
-
-  // ── Agent Health section ───────────────────────────────────────────────
-  lines.push('  ' + cb('cyan', 'Agent Health'));
-  if (!agentHealth || agentHealth.totalDispatches === 0) {
-    lines.push(c('gray', '    No agent dispatch data available'));
-    lines.push(c('gray', '    Agents appear here after pipeline runs'));
-  } else {
-    lines.push('    ' + c('gray', 'Dispatches: ') + c('white', String(agentHealth.totalDispatches)));
-    lines.push('    ' + c('gray', 'Success:    ') + c(agentHealth.successRate >= 80 ? 'green' : 'yellow', agentHealth.successRate + '%'));
-    if (agentHealth.truncatedCount > 0) {
-      lines.push('    ' + c('gray', 'Truncated:  ') + c('red', String(agentHealth.truncatedCount)));
-    }
-    if (agentHealth.noVerdictCount > 0) {
-      lines.push('    ' + c('gray', 'No-verdict: ') + c('yellow', String(agentHealth.noVerdictCount)));
-    }
-    const topAgents = Object.entries(agentHealth.byAgent)
-      .sort((a, b) => b[1].dispatches - a[1].dispatches)
-      .slice(0, 5);
-    if (topAgents.length > 0) {
-      lines.push('');
-      lines.push('    ' + c('gray', 'Top agents:'));
-      for (const [agentType, stats] of topAgents) {
-        const label = trunc(agentType, Math.max(16, cols - 32));
-        const flags = [];
-        if (stats.truncated > 0) flags.push(c('red', stats.truncated + ' trunc'));
-        if (stats.noVerdict > 0) flags.push(c('yellow', stats.noVerdict + ' nv'));
-        const flagStr = flags.length > 0 ? '  ' + flags.join(' ') : '';
-        lines.push('      ' + c('white', label) + c('gray', '  ' + stats.dispatches + ' runs') + flagStr);
-      }
-    }
-  }
-
-  // ── Locked vs Dispatched ────────────────────────────────────────────
-  if (agentHealth && agentHealth.mismatches.length > 0) {
-    lines.push('');
-    lines.push('  ' + cb('cyan', 'Locked vs Dispatched'));
-    const recent = agentHealth.mismatches
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
-      .slice(0, 5);
-    for (const mm of recent) {
-      lines.push('    ' + c('gray', mm.runId));
-      if (mm.unlocked.length > 0) {
-        lines.push('      ' + c('red', 'unlocked: ') + c('white', mm.unlocked.join(', ')));
-      }
-      if (mm.missing.length > 0) {
-        lines.push('      ' + c('yellow', 'missing:  ') + c('white', mm.missing.join(', ')));
-      }
-    }
-  }
-
-  // ── Token Attribution ────────────────────────────────────────────────
-  lines.push('');
-  lines.push('  ' + cb('cyan', 'Token Attribution'));
-  {
-    const recentRuns = loadRecentRunsSorted(PROJECT_DIR, 10);
-    const completedRuns = recentRuns.filter((r) => r.status === 'completed').slice(0, 5);
-    if (completedRuns.length === 0) {
-      lines.push(c('gray', '    No run data'));
-    } else {
-      // usage.json has provider-level totals only — per-run token counts are unavailable
-      // until per-run tracking is added (deferred). Show agent dispatch breakdown instead.
-      for (const run of completedRuns) {
-        const label = trunc(run.feature || run.runId, Math.max(16, cols - 28));
-        lines.push('    ' + c('white', run.runId) + c('gray', '  ' + label));
-        if (Array.isArray(run.agents) && run.agents.length > 0) {
-          const byType = {};
-          for (const agent of run.agents) {
-            const t = (agent.agentType || '').replace(/^forge:/, '');
-            if (t) byType[t] = (byType[t] || 0) + 1;
-          }
-          const parts = Object.entries(byType)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 4)
-            .map(([t, n]) => c('gray', t + ':') + c('white', String(n)));
-          lines.push('      ' + parts.join(c('gray', '  ')));
-        }
-      }
-      const totalTok = (usage && usage.providers)
-        ? Object.values(usage.providers).reduce((s, p) => s + (Number(p.tokenCount) || 0), 0)
-        : 0;
-      if (totalTok > 0) {
-        lines.push('    ' + c('gray', 'Provider total (all time): ') + c('white', totalTok.toLocaleString() + ' tok'));
-      }
-      lines.push(c('gray', '    Per-run tok counts require per-run tracking (deferred)'));
-    }
-  }
-
-  // ── Cost (est.) ──────────────────────────────────────────────────────
-  lines.push('');
-  lines.push('  ' + cb('cyan', 'Cost (est.)'));
-  if (!usage || !usage.providers || Object.keys(usage.providers).length === 0) {
-    lines.push(c('gray', '    No usage data'));
-  } else {
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    let grandTotal = 0;
-    for (const [providerId, provider] of Object.entries(usage.providers)) {
-      const lastUsedMs = provider.lastUsed ? new Date(provider.lastUsed).getTime() : 0;
-      if (lastUsedMs > 0 && lastUsedMs < sevenDaysAgo) continue;
-      let providerUsd = 0;
-      if (provider.models && typeof provider.models === 'object') {
-        for (const [modelId, model] of Object.entries(provider.models)) {
-          providerUsd += estimateCost(Number(model.tokenCount) || 0, modelId);
-        }
-      } else {
-        // No per-model breakdown — use provider total at sonnet blended rate
-        providerUsd = estimateCost(Number(provider.tokenCount) || 0, 'claude-sonnet-4-5');
-      }
-      grandTotal += providerUsd;
-      lines.push('    ' + cb('white', providerId) + c('gray', '  $') + c('white', providerUsd.toFixed(4)));
-    }
-    lines.push('    ' + c('gray', 'Total (7 days): ') + cb('white', '$' + grandTotal.toFixed(4)));
-    lines.push(c('gray', '    Rates: opus $15/$75, sonnet $3/$15, haiku $0.80/$4 per 1M tok'));
-  }
-
-  // ── Classifier Audit ─────────────────────────────────────────────────
-  lines.push('');
-  lines.push('  ' + cb('cyan', 'Classifier Audit'));
-  {
-    const auditEntries = loadRunsWithClassification(PROJECT_DIR);
-    if (auditEntries.length === 0) {
-      lines.push(c('gray', '    No classified runs yet'));
-      lines.push(c('gray', '    Appears after forge_create_run with a classificationId'));
-    } else {
-      for (const { run, classification } of auditEntries) {
-        const predicted = new Set(Array.isArray(classification.reviewers) ? classification.reviewers : []);
-        const actual = new Set(
-          (run.agents || [])
-            .map((a) => (a.agentType || '').replace(/^forge:/, ''))
-            .filter((t) => REVIEWER_AGENT_TYPES.has(t)),
-        );
-        const isMatch = [...predicted].every((r) => actual.has(r)) && [...actual].every((r) => predicted.has(r));
-        const matchFlag = isMatch ? c('green', '✓ match') : c('yellow', '≠ mismatch');
-        const riskColor = classification.riskLevel === 'high' ? 'red'
-          : classification.riskLevel === 'medium' ? 'yellow' : 'green';
-        lines.push('    ' + c('gray', run.runId) + '  ' + matchFlag +
-          '  ' + c(riskColor, classification.riskLevel || '?'));
-        const predList = [...predicted].join(', ') || 'none';
-        const actList = [...actual].join(', ') || 'none';
-        lines.push('      ' + c('gray', 'pred: ') + c('white', trunc(predList, Math.max(20, cols - 18))));
-        lines.push('      ' + c('gray', 'act:  ') + c('white', trunc(actList, Math.max(20, cols - 18))));
-      }
-    }
-  }
-
-  return { lines, regions: [] };
-}
-
 // ── Build body (dispatches to active tab) ───────────────────────────────
 
 function buildBody(cols) {
@@ -1238,7 +906,6 @@ function buildBody(cols) {
     case 0: return buildSessionsTab(cols);
     case 1: return buildTodosTab(cols);
     case 2: return buildNotesTab(cols);
-    case 3: return buildSpecsTab(cols);
     default: return { lines: [], regions: [] };
   }
 }
@@ -1605,7 +1272,6 @@ term.on('key', (name) => {
     case '1': switchTab(0); break;
     case '2': switchTab(1); break;
     case '3': switchTab(2); break;
-    case '4': switchTab(3); break;
     case 'LEFT': case 'h': switchTab(Math.max(0, currentTab - 1)); break;
     case 'RIGHT': case 'l': switchTab(Math.min(TABS.length - 1, currentTab + 1)); break;
     case 'UP': case 'k': selectPrev(); break;

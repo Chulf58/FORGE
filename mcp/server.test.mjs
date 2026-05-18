@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 // @covers mcp/server.js
-// Integration tests for forge_create_run classification persistence (task 1).
-//
-// AC-1: When forge_create_run is called with a non-null classificationId,
-// classification.json is written to .pipeline/runs/<runId>/classification.json.
-// The file is absent when classificationId is null.
+// Integration tests for forge_create_run (taskBrief flow).
 //
 // Run: node mcp/server-test.mjs
 // Auto-discovered by scripts/run-tests.mjs via mcp/*-test.mjs suffix.
@@ -84,65 +80,7 @@ async function main() {
     await client.connect(transport);
     await seedApprovedPlanRun(client, projectDir);
 
-    // ── Test 1: classificationId non-null → classification.json written ───
-    const classifyResult = parseToolResult(await callTool(client, 'forge_classify_risk', {
-      feature: 'server-test-feature',
-      filePaths: ['mcp/server.js'],
-    }));
-    const classificationId = classifyResult.classificationId;
-    if (!classificationId) {
-      failure = 'forge_classify_risk did not return a classificationId';
-    }
-
-    if (!failure) {
-      const createResult = parseToolResult(await callTool(client, 'forge_create_run', {
-        sessionId: 'sess-server-test',
-        pipelineType: 'implement',
-        feature: 'server-test-feature',
-        spawnWorker: false,
-        classificationId,
-      }));
-      const runId = createResult.runId;
-      if (!runId) {
-        failure = 'forge_create_run did not return a runId';
-      } else {
-        const classPath = join(projectDir, '.pipeline', 'runs', runId, 'classification.json');
-        if (!existsSync(classPath)) {
-          failure = 'classification.json not found at ' + classPath + ' after forge_create_run with classificationId';
-        } else {
-          const saved = JSON.parse(readFileSync(classPath, 'utf-8'));
-          if (saved.classificationId !== classificationId) {
-            failure = 'classification.json classificationId mismatch: expected ' + classificationId + ', got ' + saved.classificationId;
-          } else {
-            console.error('[server-test] test 1 PASS — classification.json written with correct classificationId');
-          }
-        }
-      }
-    }
-
-    // ── Test 2: classificationId null → classification.json NOT written ───
-    if (!failure) {
-      const createResult2 = parseToolResult(await callTool(client, 'forge_create_run', {
-        sessionId: 'sess-server-test',
-        pipelineType: 'implement',
-        feature: 'server-test-feature',
-        spawnWorker: false,
-        classificationId: null,
-      }));
-      const runId2 = createResult2.runId;
-      if (!runId2) {
-        failure = 'forge_create_run (null classificationId) did not return a runId';
-      } else {
-        const classPath2 = join(projectDir, '.pipeline', 'runs', runId2, 'classification.json');
-        if (existsSync(classPath2)) {
-          failure = 'classification.json should NOT exist when classificationId is null, but found at ' + classPath2;
-        } else {
-          console.error('[server-test] test 2 PASS — classification.json absent when classificationId is null');
-        }
-      }
-    }
-
-    // ── Test 3: taskBrief flows through to worker-task JSON ────────────────
+    // ── Test: taskBrief flows through to worker-task JSON ──────────────────
     // Exercises the additive taskBrief parameter on forge_create_run.
     // Uses spawnWorker:true to trigger the worker-task write at mcp/server.js,
     // then kills the worker immediately to avoid API token cost.
@@ -180,7 +118,7 @@ async function main() {
           if (taskJson.taskBrief !== briefText) {
             failure = 'taskBrief missing or mismatched in worker-task JSON. Expected: ' + JSON.stringify(briefText) + '. Got: ' + JSON.stringify(taskJson.taskBrief);
           } else {
-            console.error('[server-test] test 3 PASS — taskBrief persisted to worker-task JSON');
+            console.error('[server-test] PASS — taskBrief persisted to worker-task JSON');
           }
         }
       }

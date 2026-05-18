@@ -1,11 +1,7 @@
 // @covers scripts/forge-observer.mjs
-// Content-verification tests for the SPECS tab v2 additions.
-//
-// These tests confirm that the three new SPECS sections and the model-pricing
-// import are present in forge-observer.mjs after Phase 2 implementation.
-// They fail before implementation (red bar) and pass after (green bar).
-//
-// Run: node --test scripts/forge-observer.test.mjs
+// Content-removal tests: SPECS tab and its supporting code have been deleted
+// (2026-05-18 — SPECS decommissioned per user feedback). Tests assert the
+// negative — that no SPECS-related symbols remain in forge-observer.mjs.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,44 +12,44 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(__dirname, 'forge-observer.mjs'), 'utf8');
 
-test('AC-2: forge-observer imports from model-pricing.js', () => {
+test('forge-observer no longer imports model-pricing.js', () => {
   assert.ok(
-    src.includes('model-pricing.js'),
-    'forge-observer.mjs must import model-pricing.js (ESM import for estimateCost)',
+    !src.includes('model-pricing.js'),
+    'forge-observer.mjs must not import the deleted scripts/lib/model-pricing.js',
   );
 });
 
-test('AC-3: SPECS tab renders Token Attribution section', () => {
+test('forge-observer no longer references the SPECS tab', () => {
   assert.ok(
-    src.includes('Token Attribution'),
-    'buildSpecsTab must include a "Token Attribution" section header',
+    !src.includes("label: 'SPECS'"),
+    'forge-observer.mjs must not register a SPECS tab',
   );
 });
 
-test('AC-4: SPECS tab renders Cost (est.) section', () => {
+test('forge-observer no longer defines buildSpecsTab', () => {
   assert.ok(
-    src.includes('Cost (est.)'),
-    'buildSpecsTab must include a "Cost (est.)" section header',
+    !src.includes('buildSpecsTab'),
+    'buildSpecsTab and its switch case must be removed',
   );
 });
 
-test('AC-5: SPECS tab renders Classifier Audit section', () => {
+test('forge-observer no longer reads classification.json', () => {
   assert.ok(
-    src.includes('Classifier Audit'),
-    'buildSpecsTab must include a "Classifier Audit" section header',
+    !src.includes('classification.json'),
+    'classification.json reads were SPECS-only and must be removed',
   );
 });
 
-test('AC-5: classification.json lookup is present', () => {
+test('forge-observer no longer defines loadAgentHealth', () => {
   assert.ok(
-    src.includes('classification.json'),
-    'forge-observer.mjs must reference classification.json for the audit panel',
+    !src.includes('loadAgentHealth'),
+    'loadAgentHealth was SPECS-only and must be removed',
   );
 });
 
-test('AC-4: estimateCost is called in the observer', () => {
+test("forge-observer no longer binds the '4' key to a SPECS tab switch", () => {
   assert.ok(
-    src.includes('estimateCost'),
-    'forge-observer.mjs must call estimateCost() for cost projection',
+    !src.includes("case '4': switchTab(3)"),
+    "keypress handler must not route '4' to a removed tab index",
   );
 });
