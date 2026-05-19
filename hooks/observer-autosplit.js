@@ -30,6 +30,9 @@ function shouldSkip(env, platform, projectDir) {
   if (env.CLAUDE_CODE_TEAM_NAME) {
     return 'subagent session (CLAUDE_CODE_TEAM_NAME set)';
   }
+  if (env.FORGE_OBSERVER_SPLIT === '1') {
+    return 'launched via observer.bat (FORGE_OBSERVER_SPLIT=1)';
+  }
   if (platform !== 'win32') {
     return 'non-Windows platform';
   }

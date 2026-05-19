@@ -158,10 +158,22 @@ try {
   }
 }
 
+// --- Test 9: FORGE_OBSERVER_SPLIT=1 → shouldSkip returns "observer.bat" reason ----
+try {
+  const reason = shouldSkip({ FORGE_OBSERVER_SPLIT: '1' }, 'win32');
+  assert.ok(reason !== null, 'should return a skip reason when FORGE_OBSERVER_SPLIT=1');
+  assert.ok(typeof reason === 'string' && reason.includes('observer.bat'),
+    'reason should mention "observer.bat", got: ' + reason);
+  console.log('[PASS] Test 9: FORGE_OBSERVER_SPLIT=1 → shouldSkip returns observer.bat reason');
+  passed++;
+} catch (err) {
+  console.error('[FAIL] Test 9: FORGE_OBSERVER_SPLIT env guard —', err.message);
+}
+
 // --- Result -----------------------------------------------------------------
-if (passed === 8) {
+if (passed === 9) {
   process.exit(0);
 } else {
-  console.error('[FAIL] ' + (8 - passed) + ' test(s) failed');
+  console.error('[FAIL] ' + (9 - passed) + ' test(s) failed');
   process.exit(1);
 }
