@@ -9,7 +9,9 @@ const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 // Documenter is always exempt — a plan+implement+apply cycle dispatches it
 // once per stage and must never be hard-stopped.
-const EXEMPT_AGENTS = new Set(['documenter']);
+// Researcher is exempt so that [needs-researcher] signals can trigger
+// re-invocations without hitting the hard stop mid-REVISE loop.
+const EXEMPT_AGENTS = new Set(['documenter', 'researcher']);
 
 // Cap dispatches per agent type per run. Set high enough to cover phased
 // implements (each phase dispatches 1 coder + ~2 reviewers) plus retry
