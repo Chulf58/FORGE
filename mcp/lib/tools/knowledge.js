@@ -15,7 +15,7 @@ import {
   textResult,
   requirePipeline,
 } from './shared.js';
-import { searchConstraints, searchPatterns, appendSolutionDoc } from '../../lib/knowledge-store.js';
+import { searchConstraints, searchPatterns, appendSolutionDoc, detectConflict } from '../../lib/knowledge-store.js';
 import { getRun } from '../../../packages/forge-core/src/runs/index.js';
 
 // -- Local helper (mirrors board.js; no cross-module import) -------------------
@@ -179,6 +179,11 @@ export function register(server, _shared) {
         }
 
         if (type === 'gotcha') {
+          const conflictGotcha = detectConflict(projectDir, { type: 'gotcha', title: safeTitle, tags: safeTags });
+          if (conflictGotcha !== null) {
+            return textResult({ conflict: true, slug: conflictGotcha.slug, title: conflictGotcha.title });
+          }
+
           const generalMdPath = join(projectDir, 'docs', 'gotchas', 'GENERAL.md');
           let existing = '';
           try {
@@ -220,6 +225,11 @@ export function register(server, _shared) {
         }
 
         if (type === 'solution') {
+          const conflictSolution = detectConflict(projectDir, { type: 'solution', title: safeTitle, tags: safeTags });
+          if (conflictSolution !== null) {
+            return textResult({ conflict: true, slug: conflictSolution.slug, title: conflictSolution.title });
+          }
+
           let result;
           try {
             result = appendSolutionDoc(projectDir, {
