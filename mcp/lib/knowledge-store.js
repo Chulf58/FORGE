@@ -267,6 +267,116 @@ export function searchPatterns(projectDir, keyword, tags) {
 }
 
 /**
+ * Extract keyword tokens from a title for conflict detection.
+ * Splits on whitespace and non-alphanumeric chars, lowercases, filters to length >= 4, deduplicates.
+ * @param {string} title
+ * @returns {string[]}
+ */
+function extractKeywords(title) {
+  if (!title || typeof title !== 'string') return [];
+  const tokens = title.split(/[\s\W]+/)
+    .map((t) => t.toLowerCase())
+    .filter((t) => t.length >= 4);
+  return [...new Set(tokens)];
+}
+
+/**
+ * Detect whether an incoming learning entry (gotcha or solution) conflicts with an existing entry.
+ * Returns { slug, title } for the first conflicting entry, or null if no conflict.
+ *
+ * For type "solution": loads docs/solutions/index.json and checks keyword overlap (>= 50%
+ * incoming-denominator) OR tag overlap (>= 2 matching tags, case-insensitive).
+ *
+ * For type "gotcha": reads docs/gotchas/GENERAL.md, parses into sections, checks each section's
+ * heading + body for >= 2 key term matches AND >= ceil(0.4 * N) threshold.
+ *
+ * Fail-open: returns null when files are missing/unreadable.
+ *
+ * @param {string} projectDir
+ * @param {{ type: 'solution' | 'gotcha', title: string, tags?: string[] }} options
+ * @returns {{ slug: string, title: string } | null}
+ */
+export function detectConflict(projectDir, { type, title, tags }) {
+  const incomingKeywords = extractKeywords(title);
+  const incomingTags = Array.isArray(tags) ? tags.map((t) => String(t).toLowerCase()) : [];
+
+  if (type === 'solution') {
+    const indexPath = join(resolve(projectDir), INDEX_PATH);
+    let entries;
+    try {
+      const raw = readFileSync(indexPath, 'utf8');
+      entries = JSON.parse(raw);
+      if (!Array.isArray(entries)) return null;
+    } catch {
+      return null;
+    }
+
+    // Fail-open: no incoming keywords → no conflict
+    if (incomingKeywords.length === 0) return null;
+
+    const incomingSet = new Set(incomingKeywords);
+
+    for (const entry of entries) {
+      if (!entry || typeof entry.title !== 'string' || typeof entry.file !== 'string') continue;
+
+      const entryKeywords = Array.isArray(entry.keywords)
+        ? entry.keywords.map((k) => (typeof k === 'string' ? k.toLowerCase() : ''))
+        : [];
+      const entrySet = new Set(entryKeywords);
+
+      const intersection = [...incomingSet].filter((k) => entrySet.has(k));
+      const overlapScore = intersection.length / incomingKeywords.length;
+
+      const entryTags = Array.isArray(entry.tags)
+        ? entry.tags.map((t) => (typeof t === 'string' ? t.toLowerCase() : ''))
+        : [];
+      const tagOverlap = incomingTags.filter((t) => entryTags.includes(t)).length;
+
+      if (overlapScore >= 0.5 || tagOverlap >= 2) {
+        // Derive slug from file path: strip prefix and .md suffix
+        const slug = entry.file
+          .replace(/^docs\/solutions\//, '')
+          .replace(/\.md$/, '');
+        return { slug, title: entry.title };
+      }
+    }
+
+    return null;
+  }
+
+  if (type === 'gotcha') {
+    const generalMdPath = join(resolve(projectDir), 'docs', 'gotchas', 'GENERAL.md');
+    let text;
+    try {
+      text = readFileSync(generalMdPath, 'utf8');
+    } catch {
+      return null;
+    }
+
+    const sections = parseSections(text, generalMdPath);
+    const keyTerms = incomingKeywords; // same tokenisation
+    const N = keyTerms.length;
+
+    // Too short a title to yield meaningful signal
+    if (N < 2) return null;
+
+    const threshold = Math.ceil(0.4 * N);
+
+    for (const section of sections) {
+      const sectionText = (section.heading + ' ' + section.content).toLowerCase();
+      const matchCount = keyTerms.filter((term) => sectionText.includes(term)).length;
+      if (matchCount >= 2 && matchCount >= threshold) {
+        return { slug: section.heading, title: section.heading };
+      }
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Write a new solution doc and update docs/solutions/index.json.
  * Uses atomic writes for both the .md file and the index.
  * Throws if the index update fails (orphaned doc is reported).
