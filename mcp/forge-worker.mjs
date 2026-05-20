@@ -20,6 +20,9 @@ const BUDGET_AUTOCOMPACT_FACTOR = 0.835; // mirrors ctx-session-start.js
 const BUDGET_DEBOUNCE_MS = 30_000;      // write bridge at most once per 30 s per agent
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Path to CLAUDE-WORKER.md — supplies explicit worker system prompt to query().
+// Defined at module level so it is resolved once at startup and shared by query().
+const CLAUDE_WORKER_PATH = join(pluginRoot, 'CLAUDE-WORKER.md');
 
 /**
  * Mirrors mcp/server.js resolveMainProjectDir logic.
@@ -378,6 +381,16 @@ async function main() {
         persistSession: true,
         maxTurns: 200,
         permissionMode: 'bypassPermissions',
+        // Disable automatic CLAUDE.md loading so neither the worktree CLAUDE.md
+        // nor any parent-directory CLAUDE.md leaks conductor instructions into the
+        // worker session. settingSources: [] is the only way to suppress CLAUDE.md
+        // injection — systemPrompt alone does not prevent it (they are orthogonal).
+        settingSources: [],
+        // Supply CLAUDE-WORKER.md explicitly as the worker system prompt.
+        // This is robust to both root-cause hypotheses (swap failure OR external
+        // CLAUDE.md leak) — regardless of which path brings the wrong content,
+        // settingSources: [] suppresses it and systemPrompt provides the correct one.
+        systemPrompt: readFileSync(CLAUDE_WORKER_PATH, 'utf-8'),
         plugins: [{ type: 'local', path: pluginRoot }],
         mcpServers: {
           'forge-pipeline': buildInProcessMcpServer(workDir),
