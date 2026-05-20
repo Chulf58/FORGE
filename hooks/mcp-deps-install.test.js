@@ -94,3 +94,15 @@ test('AC-5a: no npm install invocation targets @anthropic-ai/claude-agent-sdk', 
   assert.ok(!match,
     'Source must not contain npm.*(install|ci).*claude-agent-sdk; found: ' + (match ? match[0] : ''));
 });
+
+// TODO 3d6b7587: npm ci EPERM-unlink corrupts node_modules on Windows when
+// file locks are held by other processes. mcp-deps-install.js must never
+// use `npm ci` — only `npm install` (incremental, doesn't delete first).
+test('TODO 3d6b7587: mcp-deps-install.js uses npm install, never npm ci', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'mcp-deps-install.js'), 'utf8');
+  // installArgs assignments must not produce ['ci']
+  const ciArgsMatch = src.match(/installArgs\s*=\s*[^;]*['"]ci['"]/);
+  assert.ok(!ciArgsMatch,
+    'installArgs must not be set to [\'ci\']; found: ' + (ciArgsMatch ? ciArgsMatch[0] : '') +
+    '. Use [\'install\'] always — see TODO 3d6b7587.');
+});

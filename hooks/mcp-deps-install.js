@@ -477,11 +477,11 @@ function scanCacheVersions(cacheBaseDir, opts) {
       const stillMissing = findMissingDirectDep(packageJson, nodeModules);
       if (!stillMissing) continue;
 
-      // Run npm ci/install for remaining missing deps (NOT for the SDK — handled above)
+      // Run npm install for remaining missing deps (NOT for the SDK — handled above)
+      // Always npm install, never npm ci — see TODO 3d6b7587 (EPERM-unlink on Windows).
       try {
-        const useCI = fs.existsSync(packageLockJson);
-        const installArgs = useCI ? ['ci'] : ['install'];
-        const cmdLabel = useCI ? 'npm ci' : 'npm install (no lockfile)';
+        const installArgs = ['install'];
+        const cmdLabel = 'npm install';
         console.error('[forge-mcp-cache-repair] Running ' + cmdLabel + ' in ' + mcpDir);
         runNpmFn(installArgs, mcpDir);
         console.error('[forge-mcp-cache-repair] deps installed in ' + versionDir);
@@ -551,12 +551,14 @@ async function main(rawInput) {
 
     if (!needsInstall) continue;
 
-    // Prefer `npm ci` when package-lock.json is present — deterministic,
-    // reproducible installs that cannot silently drift from the lockfile.
-    // Fall back to `npm install` only when no lockfile exists.
-    const useCI = fs.existsSync(packageLockJson);
-    const installArgs = useCI ? ['ci'] : ['install'];
-    const cmdLabel = useCI ? 'npm ci' : 'npm install (no lockfile)';
+    // Use `npm install` (not `npm ci`) on Windows to avoid EPERM-unlink
+    // corruption: `npm ci` deletes node_modules first, and on Windows the
+    // unlink syscall fails partway through when another process holds file
+    // handles open (concurrent worker, MCP server). The partial deletion
+    // leaves random packages missing. `npm install` is incremental — it
+    // updates only what changed and never wipes the tree. See TODO 3d6b7587.
+    const installArgs = ['install'];
+    const cmdLabel = 'npm install';
 
     console.error('[forge-mcp] Installing ' + target.label + ' dependencies (' + cmdLabel + ')...');
     try {
