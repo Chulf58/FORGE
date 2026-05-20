@@ -324,6 +324,7 @@ export function appendSolutionDoc(projectDir, { title, content, tags }) {
     file: repoRelFile,
     tags: safeTags,
     keywords: safeTags,
+    verifiedAt: new Date().toISOString(),
   };
 
   let existingEntries = [];
