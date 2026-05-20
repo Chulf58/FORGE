@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-05-20] Conflict-detect in forge_add_learning (Gap 4c)
+
+- Added `detectConflict(projectDir, { type, title, tags })` to `mcp/lib/knowledge-store.js` — returns `{ slug, title }` when a near-duplicate exists, null otherwise
+- Solution path: keyword overlap ≥ 50% (incoming-denominator) OR ≥ 2 tag matches → conflict
+- Gotcha path: `matchCount ≥ 2 AND matchCount ≥ Math.ceil(0.4 × N)` against GENERAL.md sections; fail-open on missing files or empty keywords
+- Wired into `forge_add_learning` handler (`mcp/lib/tools/knowledge.js`) for both `solution` and `gotcha` types — returns `{ conflict: true, slug, title }` as a MCP-valid textResult before writing
+- TDD: 8 unit tests in `mcp/lib/knowledge-store-conflict.test.mjs` + 2 integration tests extended in `mcp/lib/tools/knowledge.test.mjs`
+
 ## [2026-05-20] Add verifiedAt timestamp to forge_add_learning entries
 
 - Added `verifiedAt: new Date().toISOString()` to `newEntry` in `appendSolutionDoc` (`mcp/lib/knowledge-store.js`) — every solution and gotcha index entry now carries an ISO 8601 write timestamp
