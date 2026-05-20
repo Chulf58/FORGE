@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-05-20] Plugin cache npm install bug — option 4 cache-repair (TODO 897edb7e)
+
+- Added `scanCacheVersions(cacheBaseDir, opts)` to `hooks/mcp-deps-install.js` — at SessionStart, scans all plugin cache version dirs and repairs any with missing `mcp/node_modules`
+- SDK (`@anthropic-ai/claude-agent-sdk`) is copied from a healthy donor version via `copyDirSync` — never npm-installed, preserving the documented safe-fix pattern
+- Remaining missing direct deps installed via `npm ci`/`npm install` per existing pattern
+- Two guards: (a) `FORGE_WORKER_RUN_ID` env check — skip in worker sessions; (b) `_scanRanThisSession` module-level flag — once-per-Claude-session dedup so SessionStart re-fires (resume, compact) don't burn N scans
+- Fail-open at every level — hook never throws, logs and continues on any error
+- TDD wave structure: red bar in `hooks/mcp-deps-install-cache-repair-test.js` (4 tests) verified before implementation; green bar after; positive-copy test asserts SDK copied without npm invocation
+
 ## [2026-05-20] Conflict-detect in forge_add_learning (Gap 4c)
 
 - Added `detectConflict(projectDir, { type, title, tags })` to `mcp/lib/knowledge-store.js` — returns `{ slug, title }` when a near-duplicate exists, null otherwise
