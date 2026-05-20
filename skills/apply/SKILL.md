@@ -137,18 +137,24 @@ Where `<mainProjectRoot>` is the main project root, computed as two directory le
    - Exit 0 (`ok: true`): file was written or updated — continue.
    - Exit 1 (file absent) or exit 2 (`mtime < since`): documenter did NOT write this file. Re-invoke the documenter once with a note identifying the missing or stale file. If the second run also fails the mtime check, log `[apply] documenter output unverified: <file>` and continue — do NOT loop further.
 
-   After mtime verification passes (or the single retry is exhausted), proceed to Step 3.4.
+   After mtime verification passes (or the single retry is exhausted), proceed to Step 3.4a.
 
-3.4. **Auto-dispatch compound-refresh** (non-blocking):
+3.4a. **Auto-dispatch learnings-extractor** (non-blocking):
 
-   After mtime verification, auto-dispatch compound-refresh to keep the knowledge store current.
+   After mtime verification, dispatch the learnings-extractor to record outcome-keyed learnings.
+
+   - Determine `outcome`: read `run.json` `status` and `failureReason`; map to `"approved"`, `"blocked"`, or `"debug_resolved"` based on pipelineType.
+   - Dispatch: `Agent(subagent_type="forge:learnings-extractor")` targeting `<mainProjectRoot>` as the working directory. Do NOT pass `<worktreePath>`.
+   - Wrap in try/catch: on any failure log `[learnings] failed — continuing` and continue. Apply never blocks on learnings extraction.
+
+3.4b. **Auto-dispatch compound-refresh** (non-blocking):
+
+   After learnings extraction, auto-dispatch compound-refresh to keep the knowledge store current.
 
    - Compute `<mainProjectRoot>` (two directory levels up from `<worktreePath>`; if no worktree, use the main project root directly). This matches the `<mainProjectRoot>` derivation already described at the top of Step 3.
    - Dispatch: `Agent(subagent_type="forge:compound-refresh")` targeting `<mainProjectRoot>` as the working directory. Do NOT pass `<worktreePath>`.
    - Wrap in try/catch: on success log `[refresh] done`; on any failure log `[refresh] failed — continuing` and fall through to Step 3b. Apply never blocks on refresh.
    - **One dispatch per apply run.** Do NOT run `/forge:refresh` manually while apply is active — a 2nd dispatch triggers the loop-guard warning; a 3rd is hard-blocked.
-
-   > Future-ordering note: when Gap 2 (learnings-extractor) lands, the sequence becomes 3.3 → [3.4a] learnings-extractor → [3.4b] compound-refresh → 3b → 3c.
 
 3b. **Post-apply lifecycle cleanup** (always runs, not gated by gitIntegration):
    - Run via Bash: `node scripts/post-apply-lifecycle.mjs "<safe-feature>"` (use the sanitized `feature` from Step 1). Set `timeout: 30000`.

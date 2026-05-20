@@ -36,42 +36,41 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// AC-1 — Structural assertions (PASS now because artefacts are absent)
+// AC-1 — Structural assertions (PASS now because Phase 2 artefacts exist)
 // ---------------------------------------------------------------------------
 
-test('AC-1a: agents/learnings-extractor.md does not exist yet', () => {
+test('AC-1a: agents/learnings-extractor.md exists', () => {
   const agentPath = join(REPO_ROOT, 'agents', 'learnings-extractor.md');
   assert.strictEqual(
     existsSync(agentPath),
-    false,
-    'agents/learnings-extractor.md must not exist until Phase 2',
+    true,
+    'agents/learnings-extractor.md must exist after Phase 2',
   );
 });
 
-test('AC-1b: skills/apply/SKILL.md does not contain "3.4a" yet', () => {
+test('AC-1b: skills/apply/SKILL.md contains "3.4a"', () => {
   const skillPath = join(REPO_ROOT, 'skills', 'apply', 'SKILL.md');
   if (!existsSync(skillPath)) {
-    // File absent is also fine for red-bar — nothing to assert
-    return;
+    assert.fail('skills/apply/SKILL.md must exist after Phase 2');
   }
   const content = readFileSync(skillPath, 'utf8');
   assert.strictEqual(
     content.includes('3.4a'),
-    false,
-    'skills/apply/SKILL.md must not contain "3.4a" until Phase 2',
+    true,
+    'skills/apply/SKILL.md must contain "3.4a" after Phase 2',
   );
 });
 
-test('AC-1c: .pipeline/agent-roles.json does not have "learnings-extractor" key yet', () => {
+test('AC-1c: .pipeline/agent-roles.json has "learnings-extractor" key', () => {
   const rolesPath = join(REPO_ROOT, '.pipeline', 'agent-roles.json');
   if (!existsSync(rolesPath)) {
-    return;
+    assert.fail('.pipeline/agent-roles.json must exist after Phase 2');
   }
   const roles = JSON.parse(readFileSync(rolesPath, 'utf8'));
   assert.strictEqual(
     Object.prototype.hasOwnProperty.call(roles, 'learnings-extractor'),
-    false,
-    '.pipeline/agent-roles.json must not have "learnings-extractor" entry until Phase 2',
+    true,
+    '.pipeline/agent-roles.json must have "learnings-extractor" entry after Phase 2',
   );
 });
 
