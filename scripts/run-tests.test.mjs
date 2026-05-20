@@ -24,3 +24,12 @@ test('TEST_LOCATIONS includes hooks/*-test.mjs discovery', () => {
   assert.match(src, pattern,
     'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "hooks", suffix: "-test.mjs" }');
 });
+
+test('TEST_LOCATIONS includes mcp/lib/*-test.mjs discovery', () => {
+  const src = readFileSync(RUN_TESTS_PATH, 'utf8');
+  // mcp/lib/ tests (e.g. learnings-extractor-test.mjs) must be auto-discovered.
+  // readdirSync is non-recursive — mcp/ root scan misses mcp/lib/ files.
+  const pattern = /\{\s*dir:\s*['"]mcp\/lib['"]\s*,\s*suffix:\s*['"]-test\.mjs['"]\s*\}/;
+  assert.match(src, pattern,
+    'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib", suffix: "-test.mjs" }');
+});
