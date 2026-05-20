@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-20] Fix reviewer-dispatch plan-skeptic invariant
+
+- Fixed `reviewerOverrides` bypass in `scripts/reviewer-dispatch.mjs` dropping `plan-skeptic` from plan-stage dispatch
+- Added `effectiveOverrides` logic to inject `plan-skeptic` unconditionally at plan stage when absent from overrides
+- Added 4 regression tests in `scripts/reviewer-dispatch.test.mjs` covering the fix and boundary cases
+
 ## [2026-05-20] Plugin cache npm install bug — option 4 cache-repair (TODO 897edb7e)
 
 - Added `scanCacheVersions(cacheBaseDir, opts)` to `hooks/mcp-deps-install.js` — at SessionStart, scans all plugin cache version dirs and repairs any with missing `mcp/node_modules`
