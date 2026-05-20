@@ -116,7 +116,30 @@ async function main() {
       }
     }
 
-    // ── Test 4: forge_read_criteria returns empty array for unknown run ──
+    // ── Test 4: forge_add_learning (solution) writes verifiedAt to index entry ──
+    if (!failure) {
+      await callTool(client, 'forge_add_learning', {
+        type: 'solution',
+        title: 'Test verifiedAt solution',
+        content: 'Regression guard body.',
+        tags: ['test'],
+      });
+      const ISO_8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+      const indexRaw = readFileSync(join(projectDir, 'docs', 'solutions', 'index.json'), 'utf8');
+      const entries = JSON.parse(indexRaw);
+      const entry = entries.find(e => e.title === 'Test verifiedAt solution');
+      if (!entry) {
+        failure = 'forge_add_learning solution: entry not found in index';
+      } else if (!('verifiedAt' in entry)) {
+        failure = 'forge_add_learning solution: index entry missing verifiedAt field';
+      } else if (!ISO_8601_RE.test(entry.verifiedAt)) {
+        failure = 'forge_add_learning solution: verifiedAt does not match ISO 8601 pattern: ' + entry.verifiedAt;
+      } else {
+        console.error('[knowledge-test] test 4 PASS — forge_add_learning solution entry has verifiedAt');
+      }
+    }
+
+    // ── Test 5: forge_read_criteria returns empty array for unknown run ──
     if (!failure) {
       // Create the run directory manually so it exists
       const runDir = join(projectDir, '.pipeline', 'runs', 'r-testrun1');
@@ -129,11 +152,11 @@ async function main() {
       } else if (criteriaResult.criteria.length !== 0) {
         failure = 'forge_read_criteria: expected empty array for new run dir';
       } else {
-        console.error('[knowledge-test] test 4 PASS — forge_read_criteria returns empty array');
+        console.error('[knowledge-test] test 5 PASS — forge_read_criteria returns empty array');
       }
     }
 
-    // ── Test 5: forge_write_criteria then forge_read_criteria round-trips ──
+    // ── Test 6: forge_write_criteria then forge_read_criteria round-trips ──
     if (!failure) {
       const toWrite = [
         { id: 'AC-1', text: 'First criterion', status: 'accepted' },
@@ -151,12 +174,12 @@ async function main() {
         if (readBack.criteria.length !== 2 || readBack.criteria[0].id !== 'AC-1') {
           failure = 'forge_write_criteria round-trip: mismatch — ' + JSON.stringify(readBack);
         } else {
-          console.error('[knowledge-test] test 5 PASS — forge_write_criteria/read round-trip');
+          console.error('[knowledge-test] test 6 PASS — forge_write_criteria/read round-trip');
         }
       }
     }
 
-    // ── Test 6: forge_write_criteria with deferred creates board TODO ──
+    // ── Test 7: forge_write_criteria with deferred creates board TODO ──
     if (!failure) {
       const deferredCriteria = [
         { id: 'AC-3', text: 'Deferred acceptance check', status: 'deferred' },
@@ -171,7 +194,7 @@ async function main() {
       } else if (!deferredTodo.text.includes('[deferred AC-3]')) {
         failure = 'forge_write_criteria: board TODO text missing deferred AC-3 marker';
       } else {
-        console.error('[knowledge-test] test 6 PASS — deferred criterion creates board TODO');
+        console.error('[knowledge-test] test 7 PASS — deferred criterion creates board TODO');
       }
     }
 

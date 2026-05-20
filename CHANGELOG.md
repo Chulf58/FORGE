@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-20] Add verifiedAt timestamp to forge_add_learning entries
+
+- Added `verifiedAt: new Date().toISOString()` to `newEntry` in `appendSolutionDoc` (`mcp/lib/knowledge-store.js`) — every solution and gotcha index entry now carries an ISO 8601 write timestamp
+- Added test 4 in `mcp/lib/tools/knowledge-test.mjs` asserting the field is present and matches the ISO 8601 pattern; existing tests 4–6 renumbered 5–7
+- Added `mcp/lib/knowledge-store.test.mjs` — standalone node:test unit test for `appendSolutionDoc`
+
 ## [2026-05-17] Notes-knowledge bidirectional link
 
 - Added `knowledgeRefs` to notes and `sourceNotes` to knowledge index entries for bidirectional linking
