@@ -53,3 +53,21 @@ test("forge-observer no longer binds the '4' key to a SPECS tab switch", () => {
     "keypress handler must not route '4' to a removed tab index",
   );
 });
+
+// ── Task 4: latestBlock red-marker wiring ────────────────────────────────────
+// Red bar until forge-observer.mjs pushes a 'Block' row and colors it red.
+
+test("forge-observer pushes a Block row to detailRows when latestBlock is present", () => {
+  assert.ok(
+    src.includes("'Block'") && src.includes('latestBlock'),
+    "forge-observer.mjs must push a 'Block' row to detailRows when merged.latestBlock is non-null",
+  );
+});
+
+test("forge-observer applies red ANSI color to the Block detail row value", () => {
+  assert.ok(
+    src.includes("label === 'Block' ? 'red'") || src.includes('label===\'Block\'?\'red\''),
+    "forge-observer.mjs valColor logic must map label 'Block' to 'red'",
+  );
+});
+

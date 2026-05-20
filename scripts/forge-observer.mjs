@@ -654,6 +654,7 @@ function buildSessionsTab(cols) {
         const dur = fmtDuration(merged.createdAt, merged.status === 'running' ? new Date().toISOString() : merged.updatedAt);
         if (dur) detailRows.push(['Duration', dur]);
         if (merged.gateState) detailRows.push(['Gate', merged.gateState.gate + ' — ' + merged.gateState.status]);
+        if (merged.latestBlock) detailRows.push(['Block', merged.latestBlock.reviewer + (merged.latestBlock.reviseCount > 0 ? ' (' + merged.latestBlock.reviseCount + ' REVISE)' : '')]);
         if (merged.mergeBlocked) detailRows.push(['Blocked', merged.mergeBlocked.reason || 'merge blocked']);
         if (merged.currentUnit) detailRows.push(['Agent', merged.currentUnit.agent || '']);
         if (merged.actionNeeded) detailRows.push(['Action', '⏸ ' + merged.actionNeeded]);
@@ -672,7 +673,7 @@ function buildSessionsTab(cols) {
       const barLabel = trunc(p.label, Math.max(4, inner - p.bar.length - time.length - 4));
       push(boxMid(cols, borderColor, box, ' ' + c(s.color, p.bar) + ' ' + c('gray', barLabel) + '  ' + cd('gray', time), isSelected));
       for (const [label, value] of detailRows) {
-        const valColor = label === 'Status' ? s.color : (label === 'Action' ? 'yellow' : 'white');
+        const valColor = label === 'Status' ? s.color : (label === 'Action' ? 'yellow' : (label === 'Block' ? 'red' : 'white'));
         push(boxMid(cols, borderColor, box, ' ' + c('gray', label.padEnd(10)) + ' ' + c(valColor, trunc(String(value), Math.max(8, inner - 14))), isSelected));
       }
       push(boxBot(cols, borderColor, box, isSelected));

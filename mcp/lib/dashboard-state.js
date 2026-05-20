@@ -17,6 +17,23 @@ const HARD_TERMINAL_STATUSES = new Set(["failed", "discarded", "completed"]);
 const RECENT_COMPLETED_LIMIT = 5;
 const TOP_TODOS_LIMIT = 5;
 
+/**
+ * Scan an agents array for the most recent BLOCK outcome and count REVISE outcomes.
+ * Returns { reviewer, reviseCount } when a BLOCK exists, or null.
+ * `reviewer` is the agentType with the `forge:` prefix stripped.
+ * Pure function — no I/O, no external dependencies.
+ */
+export function extractLatestBlock(agents) {
+  if (!Array.isArray(agents) || agents.length === 0) return null;
+  const blocker = [...agents].reverse().find(a => a.outcome === 'BLOCK');
+  if (!blocker) return null;
+  const reviewer = (blocker.agentType || '').startsWith('forge:')
+    ? blocker.agentType.slice('forge:'.length)
+    : (blocker.agentType || '');
+  const reviseCount = agents.filter(a => a.outcome === 'REVISE').length;
+  return { reviewer, reviseCount };
+}
+
 function isTerminal(entry) {
   return HARD_TERMINAL_STATUSES.has(entry.status);
 }
@@ -140,6 +157,7 @@ export async function buildDashboardState(projectDir) {
       mergeBlocked: src.mergeBlocked || null,
       updatedAt: src.updatedAt || null,
       actionNeeded: deriveActionNeeded(src),
+      latestBlock: extractLatestBlock(src.agents || []),
     };
   });
   activeRuns.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));

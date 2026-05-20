@@ -133,8 +133,9 @@ Exit — do not proceed to further steps.
    - If ANY reviewer emitted **REVISE** or yielded no-verdict (and none BLOCK):
      - If `M < 2`: increment `M` to `M+1`.
        1. Collect all `AC-<N>: NOT_MET` lines from reviewer output files in `<worktreePath>/.pipeline/context/reviewer-output/`. Extract the AC-IDs (e.g. `AC-2`, `AC-4`).
-       2. Re-invoke the planner with `[revision-mode: M]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]`. Pass all REVISE warnings as context.
-       3. After the revised planner writes the updated `docs/PLAN.md`, re-clear stale reviewer output (same `find ... -delete` command as step 5) and re-dispatch the **same reviewer set** using the updated PLAN.md (no re-classification — same `--plan=<worktreePath>/docs/PLAN.md --stage=plan` invocation). Return to the top of step 6 verdict processing with the updated `M`.
+       2. Scan reviewer output files for `[needs-researcher]: <question>` signals. If any reviewer emitted this signal, the finding requires factual verification that planner revision alone cannot resolve (e.g. actual external API behavior, library constraints, module internals). In that case: dispatch researcher before re-invoking the planner. The researcher output will be written to `docs/RESEARCH/` and available as context for the planner revision.
+       3. Re-invoke the planner with `[revision-mode: M]` prepended to its prompt. If the failed-criteria list is non-empty, also prepend `[failed-criteria: <comma-joined AC-IDs>]`. Pass all REVISE warnings as context.
+       4. After the revised planner writes the updated `docs/PLAN.md`, re-clear stale reviewer output (same `find ... -delete` command as step 5) and re-dispatch the **same reviewer set** using the updated PLAN.md (no re-classification — same `--plan=<worktreePath>/docs/PLAN.md --stage=plan` invocation). Return to the top of step 6 verdict processing with the updated `M`.
      - If `M >= 2` (max iterations reached): write gate1 with `revisingUnresolved: true` and proceed to the gate1 write below. Log: `[plan-revise-loop] M=2 unresolved — opening gate1 with revisingUnresolved marker`.
    - If ALL reviewers emitted **APPROVED**: proceed to gate1 write normally.
 

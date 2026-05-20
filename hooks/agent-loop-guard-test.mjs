@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -178,6 +179,14 @@ test('deny message includes agent type and run id', async (t) => {
   assert.equal(result.exitCode, 2);
   assert.ok(result.stderr.includes('planner'), 'stderr should name the agent type');
   assert.ok(result.stderr.includes('r-abc123'), 'stderr should include runId');
+});
+
+test('researcher is in EXEMPT_AGENTS (task 1)', () => {
+  const hookSrc = readFileSync(new URL('./agent-loop-guard.js', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'), 'utf8');
+  assert.ok(
+    hookSrc.includes("'researcher'"),
+    "agent-loop-guard.js must include 'researcher' in EXEMPT_AGENTS",
+  );
 });
 
 test('strips forge: prefix for counter key', async (t) => {

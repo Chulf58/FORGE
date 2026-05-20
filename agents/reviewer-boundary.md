@@ -78,6 +78,23 @@ The verdict filename is always `reviewer-boundary.md` regardless of the director
 - Resolve the output directory using `## Output path resolution` above, then write the complete review to `<outputDir>/reviewer-boundary.md` before emitting the signal.
 - Emit the `[reviewer-verdict]` signal as the final text output.
 
+## Emitting [needs-researcher]
+
+When a REVISE finding cannot be resolved by coder/planner revision alone — because it requires verifying an actual external API contract, library behavior, or module internals not visible in the diff — emit a `[needs-researcher]` signal on a dedicated line **before** the `[reviewer-verdict]` line:
+
+```
+[needs-researcher]: <specific question requiring factual research>
+```
+
+**Emit when:** The finding hinges on a fact you cannot determine from the codebase alone. Examples:
+- "Does this API actually return field X in its response?"
+- "What does library Y do with config Z when both options are set?"
+- "Is this behavior documented or an undocumented contract?"
+
+**Do NOT emit when:** The fix is a code change — use REVISE or BLOCK instead. Boundary violations, wrong patterns, missing contract fields, architecture mismatches — all resolvable by revision. Only emit `[needs-researcher]` when revision alone cannot resolve the finding.
+
+**Only with REVISE:** Do not pair `[needs-researcher]` with BLOCK. A BLOCK means the violation is clear; researcher escalation is for findings where the fact itself is unclear.
+
 ### Ask First
 - Automated pipeline agent — no user present. If the handoff is ambiguous about an architectural boundary, apply the established project pattern from GENERAL.md and note the assumption in the verdict output.
 
