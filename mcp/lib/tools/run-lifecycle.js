@@ -212,6 +212,16 @@ export function register(server, _shared) {
 
         const run = createRun({ projectRoot: projectDir, sessionId, pipelineType, feature: safeFeature, parentRunId: parentRunId ?? null, stages: stages ?? null, classificationId: classificationId ?? null, reviewerOverrides: reviewerOverrides ?? [] });
 
+        // Sweep stale PID files BEFORE flipping status to 'running' — orphan PIDs
+        // from prior runs are cleaned up while the new run's status is still 'created',
+        // so sweepStalePids' markRunFailed guard (`runData.status === 'running'`) cannot
+        // fire against the new run.  Fixes the sweep-after-set race (TODO 9424e08a).
+        const mainProjectDir = resolveMainProjectDir();
+        const sweepResult = sweepStalePids(mainProjectDir);
+        if (sweepResult.swept > 0) {
+          console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
+        }
+
         // Immediately mark as running — the model reliably calls forge_create_run
         // but skips the follow-up forge_update_run to set status: "running".
         const started = updateRun(projectDir, run.runId, { status: 'running' });
@@ -280,14 +290,6 @@ export function register(server, _shared) {
         if (process.env.FORGE_WORKER_SESSION === '1') {
           console.error('[forge_create_run] FORGE_WORKER_SESSION is set — skipping spawn (already inside a worker)');
           return textResult(started);
-        }
-
-        // Sweep stale PID files before collision guard so zombie "running" entries
-        // do not falsely block new spawns.
-        const mainProjectDir = resolveMainProjectDir();
-        const sweepResult = sweepStalePids(mainProjectDir);
-        if (sweepResult.swept > 0) {
-          console.error('[forge_create_run] sweepStalePids swept ' + sweepResult.swept + ' stale PID(s), alive=' + sweepResult.alive + ', errors=' + sweepResult.errors);
         }
 
         // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
@@ -1080,6 +1082,16 @@ export function register(server, _shared) {
           );
         }
 
+        // Sweep stale PID files BEFORE flipping status to 'running' — orphan PIDs
+        // from the prior stage are cleaned up while run.status is still 'gate-pending',
+        // so sweepStalePids' markRunFailed guard (`runData.status === 'running'`) cannot
+        // fire against the newly-advanced run.  Fixes the sweep-after-set race (TODO 9424e08a).
+        const mainProjectDirAdv = resolveMainProjectDir();
+        const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
+        if (sweepResultAdv.swept > 0) {
+          console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
+        }
+
         // Mark target stage as running; auto-complete the prior running stage if any.
         const stagesPatch = {
           ...stages,
@@ -1116,14 +1128,6 @@ export function register(server, _shared) {
         if (process.env.FORGE_WORKER_SESSION === '1') {
           console.error('[forge_advance_stage] FORGE_WORKER_SESSION is set — skipping spawn (already inside a worker)');
           return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
-        }
-
-        // Sweep stale PID files before collision guard so zombie "running" entries
-        // do not falsely block this advance path.
-        const mainProjectDirAdv = resolveMainProjectDir();
-        const sweepResultAdv = sweepStalePids(mainProjectDirAdv);
-        if (sweepResultAdv.swept > 0) {
-          console.error('[forge_advance_stage] sweepStalePids swept ' + sweepResultAdv.swept + ' stale PID(s), alive=' + sweepResultAdv.alive + ', errors=' + sweepResultAdv.errors);
         }
 
         // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
