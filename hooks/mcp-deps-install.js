@@ -323,6 +323,35 @@ function resolveNpmTimeout() {
   return parseInt(process.env.FORGE_NPM_INSTALL_TIMEOUT_MS || '600000', 10);
 }
 
+/**
+ * Returns the name of the first declared direct dependency whose subtree is
+ * missing from node_modules, or null when every declared dep has a directory.
+ *
+ * Closes the partial-corruption gap that bit r-1a0dc217: node_modules existed
+ * (existsSync passed), the internal lockfile was fresher than package.json
+ * (mtime check passed), but @anthropic-ai/claude-agent-sdk's subtree had been
+ * selectively removed, so the worker died on ERR_MODULE_NOT_FOUND. The original
+ * three-branch check could not see this; this helper does.
+ *
+ * Fail-open on any read/parse error — returns null so the partial-corruption
+ * check never blocks the rest of the SessionStart hook.
+ */
+function findMissingDirectDep(packageJsonPath, nodeModulesPath) {
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+  const deps = pkg && pkg.dependencies ? Object.keys(pkg.dependencies) : [];
+  for (const depName of deps) {
+    if (!fs.existsSync(path.join(nodeModulesPath, depName))) {
+      return depName;
+    }
+  }
+  return null;
+}
+
 function _runNpmCatch(label, nodeModules, err) {
   console.error('[forge-mcp] Failed to install ' + label + ' dependencies: ' + err.message);
 }
@@ -387,6 +416,14 @@ async function main(rawInput) {
       }
     } else {
       needsInstall = true;
+    }
+
+    if (!needsInstall) {
+      const missing = findMissingDirectDep(packageJson, nodeModules);
+      if (missing) {
+        console.error('[forge-mcp] Partial node_modules corruption in ' + target.label + ': missing ' + missing + ' — reinstalling');
+        needsInstall = true;
+      }
     }
 
     if (!needsInstall) continue;
@@ -502,7 +539,7 @@ async function main(rawInput) {
 // Export pure helpers for regression-test access. Must come before the
 // require-main guard below so module.exports is populated even when this file
 // is imported (not invoked directly). Closes d9683d2a part A.
-module.exports = { resolveLiveConfigPath, resolveNpmTimeout, _runNpmCatch };
+module.exports = { resolveLiveConfigPath, resolveNpmTimeout, _runNpmCatch, findMissingDirectDep };
 
 // -- Stdin reader with timeout guard -----------------------------------------
 // Guard with require.main === module so unit tests can `require()` this file

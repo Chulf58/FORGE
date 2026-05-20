@@ -6,28 +6,47 @@ allowed-tools: "Read Write Glob Grep Agent"
 model: claude-sonnet-4-6
 ---
 
-## STEP 1 — Assess input and optional brainstormer (conductor)
+## STEP 1 — Brainstormer (always runs) + dispatch worker (conductor)
 
-Read the feature request below. Check these signals:
+Brainstormer **always runs** for pipeline work — it produces the `docs/brainstorms/<slug>.md` ground truth that downstream agents (planner, plan-skeptic) compare against. The choice is between **thin mode** (silent synthesis, no Q&A) and **full mode** (Q&A with the user).
 
-**Input is detailed when ANY of these are true:**
+### 1a. Detect mode
+
+Read the feature request below. Apply the **thin-mode trigger** — ANY of:
 - Input has numbered acceptance criteria (e.g. "(1) does X, (2) handles Y")
 - Input names specific file paths
 - Input has "Affected areas:" section
 - Input specifies the technical approach
 - Input is longer than 200 words with clear deliverables
 
-**Input is vague when:**
-- Input is short and lacks specifics
-- Input describes a goal without concrete requirements
-- Input uses exploratory language ("something like", "maybe", "make it")
+If ANY trigger fires → thin mode.
 
-### If input is detailed — dispatch worker directly
+Otherwise (short, exploratory, "something like / maybe / make it") → full mode.
 
-**Before creating the run**, call `forge_classify_risk` with:
-- `feature`: the short feature summary derived from the user's input
+### 1b. Invoke brainstormer in-session
+
+The brainstormer MUST run in the conductor session — full-mode Q&A needs interactive turns with the user, which workers cannot relay back.
+
+1. Use `forge_get_model_recommendation` with agent name `brainstormer` to get the model.
+2. Before invoking, write `.pipeline/dispatch-context.json` in the project root with:
+   ```json
+   { "runId": "<runId-if-known-else-omit>", "createdAt": "<now ISO>" }
+   ```
+3. **Derive the slug ONCE here** so the conductor and brainstormer agree on the doc path. Slug rule: lowercase the feature summary, replace spaces with hyphens, strip non-alphanumeric (keep hyphens), trim to ≤50 chars. The slug is path-safe (used for `docs/brainstorms/<slug>.md` and worktree branch names); the `feature` field passed to `forge_create_run` downstream keeps the original human-readable summary, NOT the slug.
+4. Invoke the **brainstormer** agent in-session via `Agent(subagent_type="brainstormer", model=<family>)`. Inject these signals into the prompt prefix:
+   - `[slug: <derived-slug>]` — brainstormer uses this verbatim, doesn't re-derive
+   - In **thin mode**: also prepend `[pipeline-mode: thin]`. Brainstormer synthesizes silently, writes `docs/brainstorms/<slug>.md`, and returns. No Q&A round.
+   - In **full mode**: also prepend `[pipeline-mode: full]`. Brainstormer classifies scope. Trivial-scope writes immediately; small/large emits `[questions]` for the user to answer, then writes on re-invocation with `[answers]`.
+5. After the brainstormer returns (or on any error — use try/finally), delete `.pipeline/dispatch-context.json`.
+
+If the brainstormer fails or produces no `docs/brainstorms/<slug>.md` (rare — e.g. agent crash), log `[plan] brainstormer did not produce brainstorm doc — continuing without ground truth` and proceed. Downstream agents handle the absent brainstorm by deriving intent from the feature heading.
+
+### 1c. Classify risk and present agent team
+
+After brainstormer completes, **call `forge_classify_risk`** with:
+- `feature`: a short summary derived from the brainstorm doc (preferred) or from the original user input
 - `filePaths`: `[]` (no files known at plan stage)
-- `forceReview`: `true` if the input contains the literal token `[force-review]`, otherwise `false`
+- `forceReview`: `true` if the original user input contained the literal token `[force-review]`, otherwise `false`
 
 Present the classification result to the user:
 ```
@@ -46,57 +65,7 @@ Agent team for this run:
 ```
 Waiting for approval — type 'go' or 'approve' to proceed, or describe changes to the team
 
-Call `forge_create_run` (only after user approves) with:
-- `sessionId`: your session ID (or `"unknown"` if unavailable)
-- `pipelineType`: `"plan"`
-- `feature`: a short summary derived from the user's input
-- `spawnWorker`: `true`
-- `useWorktree`: `true`
-- `classificationId`: the `classificationId` value from the `forge_classify_risk` result
-- `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
-- `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
-
-Report to the user:
-- Run ID: `<runId>`
-- Log file: `<logFile>` (tail with `tail -f <logFile>` to follow progress)
-- "Gate #1 will pause the worker. Use /forge:approve when ready."
-
-Exit — do not proceed to further steps.
-
-### If input is vague — brainstorm in-session first
-
-The brainstormer MUST run in the conductor session because it needs interactive Q&A with the user. Workers cannot relay questions back.
-
-1. Use `forge_get_model_recommendation` with agent name `brainstormer` to get the model.
-2. Before invoking the brainstormer agent, write `.pipeline/dispatch-context.json` in the project root with:
-   ```json
-   { "runId": "<runId-if-known-else-omit>", "createdAt": "<now ISO>" }
-   ```
-   Invoke the **brainstormer** agent in-session via `Agent(subagent_type="brainstormer", model=<family>)`. It emits `[questions]` for the user to answer, then writes a requirements doc to `docs/brainstorms/`.
-   After the brainstormer agent returns (or on any error — use try/finally), delete `.pipeline/dispatch-context.json`.
-3. After the brainstormer completes and the requirements doc exists, **call `forge_classify_risk`** with:
-   - `feature`: a short summary derived from the brainstorm doc
-   - `filePaths`: `[]`
-   - `forceReview`: `true` if the original user input contained `[force-review]`, otherwise `false`
-
-   Present the classification result to the user:
-   ```
-   Risk classification:
-     Risk level:        <riskLevel>
-     Triggered rules:   <advisories joined by ", " or "none">
-     Plan-stage review: <planStageReview>
-     Suggested reviewers: <reviewers joined by ", " or "none">
-   ```
-
-   Present the resolved agent team to the user before proceeding:
-   ```
-   Agent team for this run:
-     Core agents:  planner, gotcha-checker[, researcher — if research needed]
-     Reviewers:    <reviewers from forge_classify_risk, or "none">
-   ```
-   Waiting for approval — type 'go' or 'approve' to proceed, or describe changes to the team
-
-4. Dispatch the worker (only after user approves):
+### 1d. Dispatch the worker (only after user approves)
 
 Call `forge_create_run` with:
 - `sessionId`: your session ID (or `"unknown"` if unavailable)
@@ -140,6 +109,12 @@ Exit — do not proceed to further steps.
 
      > `[reviewer-output-dir: <worktreePath>/.pipeline/context/reviewer-output/]`
      > `[plan-path: <worktreePath>/docs/PLAN.md]`
+
+   - **For `plan-skeptic` only**, also prepend the planner-model signal so the cross-model verdict tag works:
+
+     > `[planner-model: <family>]`
+
+     Resolve `<family>` by calling `forge_get_model_recommendation({ agent: "planner" })` and using the returned model family (sonnet | opus | haiku). If the call errors or returns null, omit this line — plan-skeptic's own fallback path handles the missing signal.
 
    - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
 6. **REVISE-retry loop** — handle reviewer verdicts before writing gate1.

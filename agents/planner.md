@@ -362,6 +362,8 @@ When your invocation prompt begins with `[revision-mode: M]`, you are revising a
 
 2. **Read the REVISE feedback.** Reviewer verdict files are in `<worktreePath>/.pipeline/context/reviewer-output/`. Read every `*.md` file in that directory. Extract REVISE concerns and any `AC-<N>: NOT_MET` lines. If a `[failed-criteria: AC-X, AC-Y]` list is present in your prompt, use it as the authoritative list of failing criteria; focus your edits there.
 
+   **`AC-0: NOT_MET` is a plan-level finding** — it does NOT map to a specific task. It is emitted by `plan-skeptic` (and any future plan-stage reviewer that emits plan-wide concerns) when the issue spans the plan as a whole (e.g., intent drift, missing whole-of-plan failure handling, structural decomposition concerns). When you see `AC-0: NOT_MET` in failed-criteria: open the corresponding reviewer's verdict file, locate the matching `[FINDING:...]` block, read the `Concern:` and `Counter-proposal:` lines, and address the concern in the plan's `### Approach summary` section or via a `### Resolution` block (see step 3). Do NOT treat AC-0 as task #0 — there is no task #0.
+
 3. **Edit `docs/PLAN.md` surgically** to address each concern. Use one of these targeted edit patterns:
    - **Resolution section:** Append a `### Resolution <date> (<concern summary>)` block after the relevant task or under `### Approach summary`, documenting exactly how the concern is addressed.
    - **Direct AC edit:** Update the `Verify:` line or `Intent:` line of the specific failing task to satisfy the AC criterion.

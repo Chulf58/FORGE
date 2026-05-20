@@ -264,6 +264,14 @@ function dispatchForPlanStage(planContent) {
   const reviewerSet = new Set();
   const reasons = [];
 
+  // plan-skeptic ALWAYS runs at plan stage — semantic critic complements the
+  // structural gotcha-checker. Token cost (~$0.10–$0.20 per Opus run) is the
+  // budget trade for catching intent drift, AC misalignment, and over-engineering
+  // before implementation. The agent itself handles small-plan cases via its
+  // ≥1-bullet-for-1-2-task-plans Clear rule — no dispatch-level gating needed.
+  reviewerSet.add('plan-skeptic');
+  reasons.push('plan-stage: plan-skeptic always runs (semantic critic)');
+
   for (const [reviewer, keywords] of Object.entries(PLAN_REVIEWER_KEYWORDS)) {
     for (const keyword of keywords) {
       if (taskLines.some((line) => line.includes(keyword))) {

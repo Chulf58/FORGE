@@ -7,7 +7,7 @@ const { resolveProjectDir, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
-const CONDUCTOR_CONTEXT = [
+const CONDUCTOR_CONTEXT_BASE = [
   'FORGE conductor: this session is the control plane. It orchestrates pipelines and manages workflow.',
   '',
   'RULE: Do NOT use the Agent tool for ad-hoc work (no Explore, no general-purpose, no claude-code-guide). Use Read/Grep/Glob for quick lookups.',
@@ -19,6 +19,29 @@ const CONDUCTOR_CONTEXT = [
   'Gate approvals are conversational ("yes", "go", "approved").',
   'The observer TUI shows worker status — keep interruptions to one line.',
 ].join('\n');
+
+function loadSolutionsIndex(projectDir) {
+  try {
+    const idxPath = path.join(projectDir, 'docs', 'solutions', 'index.json');
+    const raw = fs.readFileSync(idxPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function formatSolutionsSummary(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return '';
+  const lines = ['KNOWLEDGE BASE (call forge_get_patterns for full content of any entry):'];
+  for (const entry of entries) {
+    const title = entry && typeof entry.title === 'string' ? entry.title : '(untitled)';
+    const tags = Array.isArray(entry && entry.tags) ? entry.tags : [];
+    const tagStr = tags.length > 0 ? ' [' + tags.join(', ') + ']' : '';
+    lines.push('- ' + title + tagStr);
+  }
+  return lines.join('\n');
+}
 
 async function main(rawInput) {
   let payload;
@@ -32,15 +55,22 @@ async function main(rawInput) {
   try { fs.accessSync(workerSession); process.exit(0); return; } catch (_) {}
   try { fs.accessSync(workerTask); process.exit(0); return; } catch (_) {}
 
+  const summary = formatSolutionsSummary(loadSolutionsIndex(projectDir));
+  const additionalContext = summary
+    ? CONDUCTOR_CONTEXT_BASE + '\n\n' + summary
+    : CONDUCTOR_CONTEXT_BASE;
+
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
-      additionalContext: CONDUCTOR_CONTEXT,
+      additionalContext,
     },
   }) + '\n');
 
   process.exit(0);
 }
+
+module.exports = { loadSolutionsIndex, formatSolutionsSummary };
 
 let inputData = '';
 const timer = setTimeout(() => {
