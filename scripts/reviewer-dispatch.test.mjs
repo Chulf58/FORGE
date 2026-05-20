@@ -289,6 +289,139 @@ index 1234567..abcdefg 100644
   );
 });
 
+// ============================================================================
+// PLAN-SKEPTIC INVARIANT TESTS (regression for TODO d1943604)
+// Verifies that plan-skeptic always runs at plan stage, even when reviewerOverrides
+// is set from a pre-run forge_classify_risk call that didn't include plan-skeptic.
+// ============================================================================
+
+/**
+ * Run reviewer-dispatch in plan-stage mode with a temp PLAN.md and optional run-id.
+ *
+ * @param {string} planContent - content of the temporary PLAN.md
+ * @param {string|null} runId - run ID to pass as --run-id (null = omit)
+ * @param {Object|null} runJsonContent - content of run.json (null = omit)
+ * @returns {{ stdout: Object, stderr: string, code: number }}
+ */
+function runDispatchForPlan(planContent, runId = null, runJsonContent = null) {
+  const planFile = join(tmpdir(), `rd-plan-${process.pid}-${Date.now()}.md`);
+  const tmpWorktree = runId ? join(tmpdir(), `rd-wt-${process.pid}-${Date.now()}`) : null;
+
+  try {
+    writeFileSync(planFile, planContent, 'utf8');
+
+    const args = [
+      join(process.cwd(), 'scripts', 'reviewer-dispatch.mjs'),
+      `--plan=${planFile}`,
+      '--stage=plan',
+    ];
+
+    if (runId && tmpWorktree && runJsonContent) {
+      const runDir = join(tmpWorktree, '.pipeline', 'runs', runId);
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, 'run.json'), JSON.stringify(runJsonContent, null, 2), 'utf8');
+      args.push(`--run-id=${runId}`);
+      args.push(`--worktree=${tmpWorktree}`);
+    }
+
+    const result = spawnSync(process.execPath, args, { encoding: 'utf8', cwd: process.cwd() });
+
+    if (result.error) throw result.error;
+
+    return {
+      stdout: JSON.parse(result.stdout),
+      stderr: result.stderr,
+      code: result.status,
+    };
+  } finally {
+    try { unlinkSync(planFile); } catch (_) { /* ignore */ }
+    if (tmpWorktree) {
+      try { rmSync(tmpWorktree, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+    }
+  }
+}
+
+// Minimal plan content with a task line (so dispatchForPlanStage has something to scan)
+const MINIMAL_PLAN = `## Active Plan
+
+### Feature: Test feature
+
+- [ ] 1. Do the thing
+  Intent: Fix the thing.
+  Verify: AC-1: WHEN done, the thing is fixed; oracle: test; observable: pass.
+`;
+
+// Case (f): plan stage, no reviewerOverrides — plan-skeptic always in output
+test('reviewer-dispatch: plan stage without reviewerOverrides always includes plan-skeptic', () => {
+  const result = runDispatchForPlan(MINIMAL_PLAN);
+
+  assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
+  assert.ok(
+    result.stdout.reviewers.includes('plan-skeptic'),
+    `Expected plan-skeptic in ${JSON.stringify(result.stdout.reviewers)} (no reviewerOverrides)`,
+  );
+});
+
+// Case (g): plan stage, reviewerOverrides=[reviewer-safety, reviewer-boundary] (the reproducer) —
+// plan-skeptic must still be added even though it is not in reviewerOverrides.
+// This is the regression test for TODO d1943604 / runs r-71b3e4e2, r-a75bc437.
+test('reviewer-dispatch: plan stage with reviewerOverrides=[safety,boundary] still includes plan-skeptic', () => {
+  const runId = 'r-test-plan-skeptic-override';
+  const runJson = { reviewerOverrides: ['reviewer-safety', 'reviewer-boundary'] };
+
+  const result = runDispatchForPlan(MINIMAL_PLAN, runId, runJson);
+
+  assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
+  assert.ok(
+    result.stdout.reviewers.includes('plan-skeptic'),
+    `plan-skeptic must be present even when reviewerOverrides=[safety,boundary]; got ${JSON.stringify(result.stdout.reviewers)}`,
+  );
+  // The overrides team must also still be present
+  assert.ok(
+    result.stdout.reviewers.includes('reviewer-safety'),
+    `reviewer-safety must be preserved; got ${JSON.stringify(result.stdout.reviewers)}`,
+  );
+  assert.ok(
+    result.stdout.reviewers.includes('reviewer-boundary'),
+    `reviewer-boundary must be preserved; got ${JSON.stringify(result.stdout.reviewers)}`,
+  );
+});
+
+// Case (h): plan stage, reviewerOverrides already includes plan-skeptic — no duplicate
+test('reviewer-dispatch: plan stage with reviewerOverrides that already has plan-skeptic produces no duplicate', () => {
+  const runId = 'r-test-plan-skeptic-already';
+  const runJson = { reviewerOverrides: ['plan-skeptic', 'reviewer-safety'] };
+
+  const result = runDispatchForPlan(MINIMAL_PLAN, runId, runJson);
+
+  assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
+  const planSkepticCount = result.stdout.reviewers.filter((r) => r === 'plan-skeptic').length;
+  assert.strictEqual(planSkepticCount, 1, `Expected exactly one plan-skeptic, got ${planSkepticCount}`);
+});
+
+// Case (i): implement stage, non-empty reviewerOverrides — plan-skeptic must NOT be injected
+test('reviewer-dispatch: implement stage with reviewerOverrides does NOT inject plan-skeptic', () => {
+  const runId = 'r-test-implement-no-skeptic';
+  const runJson = { reviewerOverrides: ['reviewer-safety', 'reviewer-boundary'] };
+  const cleanDiff = `diff --git a/README.md b/README.md
+index 1234567..abcdefg 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,4 @@
+ # My Project
++Updated readme.
+ This is a test.
+`;
+
+  const result = runDispatchWithRunId(runId, runJson, cleanDiff);
+
+  assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
+  assert.ok(
+    !result.stdout.reviewers.includes('plan-skeptic'),
+    `plan-skeptic must NOT be injected at implement stage; got ${JSON.stringify(result.stdout.reviewers)}`,
+  );
+});
+
 // Case (e): snapshot back-compat — SKIPPED for now (requires implementation)
 // TODO: This test requires the override path to be implemented before it can pass.
 // It verifies that calling without --run-id on a canonical diff produces the same output

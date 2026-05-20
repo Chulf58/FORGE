@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-05-20] Fix reviewer-dispatch plan-skeptic invariant
+
+- Fixed `reviewerOverrides` bypass in `scripts/reviewer-dispatch.mjs` dropping `plan-skeptic` from plan-stage dispatch
+- Added `effectiveOverrides` logic to inject `plan-skeptic` unconditionally at plan stage when absent from overrides
+- Added 4 regression tests in `scripts/reviewer-dispatch.test.mjs` covering the fix and boundary cases
+
 ## [2026-05-20] Conflict-detect in forge_add_learning (Gap 4c)
 
 - Added `detectConflict(projectDir, { type, title, tags })` to `mcp/lib/knowledge-store.js` — returns `{ slug, title }` when a near-duplicate exists, null otherwise
