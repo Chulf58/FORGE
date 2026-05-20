@@ -7,9 +7,10 @@ const { resolveProjectDir, STDIN_TIMEOUT_SHORT, findActiveRun } = require('./hoo
 
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
-// Documenter is always exempt — a plan+implement+apply cycle dispatches it
-// once per stage and must never be hard-stopped.
-const EXEMPT_AGENTS = new Set(['documenter']);
+// Documenter and researcher are always exempt — a plan+implement+apply cycle
+// dispatches documenter once per stage; researcher re-dispatches on BLOCK-retry
+// and must never be hard-stopped by the loop guard.
+const EXEMPT_AGENTS = new Set(['documenter', 'researcher']);
 
 // Cap dispatches per agent type per run. Set high enough to cover phased
 // implements (each phase dispatches 1 coder + ~2 reviewers) plus retry

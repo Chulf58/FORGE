@@ -95,6 +95,20 @@ test('exits 0 for documenter (exempt)', async (t) => {
   assert.equal(result.exitCode, 0, 'documenter should always be allowed');
 });
 
+test('exits 0 for researcher (exempt)', async (t) => {
+  const dir = await makeProjectDir();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await writeRun(dir, 'r-abc123');
+  await writeCounts(dir, 'r-abc123', { researcher: 15 });
+
+  const result = runHook({
+    tool_name: 'Agent',
+    tool_input: { subagent_type: 'forge:researcher' },
+    cwd: dir,
+  }, {}, dir);
+  assert.equal(result.exitCode, 0, 'researcher should always be allowed (exempt)');
+});
+
 test('exits 0 when no run-active.json (conductor session)', () => {
   const result = runHook({
     tool_name: 'Agent',
