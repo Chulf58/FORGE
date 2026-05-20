@@ -8,7 +8,7 @@
 // Behavioral tests (AC-2 through AC-6): import the module and exercise it —
 // these FAIL until the module is implemented.
 //
-// Run: node --test mcp/lib/learnings-extractor.test.mjs
+// Run: node --test mcp/lib/learnings-extractor-test.mjs
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
