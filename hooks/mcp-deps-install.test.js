@@ -77,3 +77,20 @@ test('findMissingDirectDep — returns null on unreadable package.json (fail-ope
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// ── Wave 2 gate: these tests fail before scanCacheVersions is implemented ───
+
+test('scanCacheVersions — exported by hooks/mcp-deps-install.js', () => {
+  assert.equal(typeof mod.scanCacheVersions, 'function',
+    'scanCacheVersions must be exported');
+});
+
+// AC-5a oracle: source must never match npm.*(install|ci).*claude-agent-sdk —
+// verifies no code path passes the SDK name as an npm install target.
+// Comments in source must not contain this pattern either (to keep oracle clean).
+test('AC-5a: no npm install invocation targets @anthropic-ai/claude-agent-sdk', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'mcp-deps-install.js'), 'utf8');
+  const match = src.match(/npm.*(install|ci).*claude-agent-sdk/);
+  assert.ok(!match,
+    'Source must not contain npm.*(install|ci).*claude-agent-sdk; found: ' + (match ? match[0] : ''));
+});

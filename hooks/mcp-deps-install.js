@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execFileSync } = require('child_process');
 const readline = require('readline');
 const { resolveProjectDir } = require('./hook-utils');
@@ -356,6 +357,145 @@ function _runNpmCatch(label, nodeModules, err) {
   console.error('[forge-mcp] Failed to install ' + label + ' dependencies: ' + err.message);
 }
 
+/**
+ * Factory that builds a runNpm function using the resolved Node installation's
+ * bundled npm-cli.js. Extracted from main() so it can be shared with
+ * scanCacheVersions (and overridden in tests via the opts._runNpm injection).
+ */
+function makeNpmRunner() {
+  const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const hasNpmCli = fs.existsSync(npmCli);
+  if (!hasNpmCli) {
+    console.error('[forge-mcp] npm-cli.js not found at ' + npmCli + ' — falling back to bare npm');
+  }
+  return function runNpm(args, cwd) {
+    if (hasNpmCli) {
+      execFileSync(process.execPath, [npmCli].concat(args), {
+        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: resolveNpmTimeout(),
+      });
+    } else {
+      execFileSync('npm', args, {
+        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: resolveNpmTimeout(),
+      });
+    }
+  };
+}
+
+/**
+ * Recursively copies src directory to dst directory.
+ * @param {string} src
+ * @param {string} dst
+ */
+function copyDirSync(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const dstPath = path.join(dst, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, dstPath);
+    } else {
+      fs.copyFileSync(srcPath, dstPath);
+    }
+  }
+}
+
+// Module-level flag: prevents multiple scans per Claude session.
+// SessionStart may re-fire on resume/compact — this ensures only one scan.
+let _scanRanThisSession = false;
+
+/**
+ * Scans all version directories under cacheBaseDir for missing or incomplete
+ * mcp/node_modules. For each broken version:
+ *   1. Copies @anthropic-ai/claude-agent-sdk from a healthy donor version (NEVER npm-installs the SDK)
+ *   2. Runs npm ci for any remaining missing direct deps
+ *
+ * @param {string} cacheBaseDir - directory containing version subdirs
+ * @param {{ _runNpm?: function }} [opts] - test injection: override npm runner
+ */
+function scanCacheVersions(cacheBaseDir, opts) {
+  try {
+    if (!fs.existsSync(cacheBaseDir)) return;
+
+    let entries;
+    try {
+      entries = fs.readdirSync(cacheBaseDir, { withFileTypes: true });
+    } catch (_) { return; }
+
+    const versionDirs = entries
+      .filter(function(e) { return e.isDirectory(); })
+      .map(function(e) { return path.join(cacheBaseDir, e.name); });
+
+    if (versionDirs.length === 0) return;
+
+    // Resolve npm runner — injectable for tests
+    const runNpmFn = (opts && opts._runNpm) || makeNpmRunner();
+
+    // Find a healthy donor version (intact mcp/node_modules with no missing direct deps)
+    let donorNodeModules = null;
+    for (const versionDir of versionDirs) {
+      const mcpDir = path.join(versionDir, 'mcp');
+      const packageJson = path.join(mcpDir, 'package.json');
+      const nodeModules = path.join(mcpDir, 'node_modules');
+      if (!fs.existsSync(packageJson) || !fs.existsSync(nodeModules)) continue;
+      const missing = findMissingDirectDep(packageJson, nodeModules);
+      if (!missing) { donorNodeModules = nodeModules; break; }
+    }
+
+    // Repair each broken version
+    for (const versionDir of versionDirs) {
+      const mcpDir = path.join(versionDir, 'mcp');
+      const packageJson = path.join(mcpDir, 'package.json');
+      const nodeModules = path.join(mcpDir, 'node_modules');
+      const packageLockJson = path.join(mcpDir, 'package-lock.json');
+
+      if (!fs.existsSync(packageJson)) continue;
+
+      const missing = findMissingDirectDep(packageJson, nodeModules);
+      if (!missing) continue; // Already healthy
+
+      console.error('[forge-mcp-cache-repair] Repairing ' + versionDir + ': missing ' + missing);
+
+      // Ensure node_modules dir exists
+      try { fs.mkdirSync(nodeModules, { recursive: true }); } catch (_) {}
+
+      // Copy SDK from donor — always use file copy for the agent SDK, not package manager
+      const sdkDir = path.join(nodeModules, '@anthropic-ai', 'claude-agent-sdk');
+      if (!fs.existsSync(sdkDir) && donorNodeModules) {
+        const donorSdkDir = path.join(donorNodeModules, '@anthropic-ai', 'claude-agent-sdk');
+        if (fs.existsSync(donorSdkDir)) {
+          try {
+            fs.mkdirSync(path.join(nodeModules, '@anthropic-ai'), { recursive: true });
+            copyDirSync(donorSdkDir, sdkDir);
+            console.error('[forge-mcp-cache-repair] SDK copied from ' + donorSdkDir + ' to ' + sdkDir);
+          } catch (copyErr) {
+            console.error('[forge-mcp-cache-repair] SDK copy failed: ' + copyErr.message);
+          }
+        }
+      }
+
+      // Re-check: if still missing (non-SDK dep), run npm ci
+      const stillMissing = findMissingDirectDep(packageJson, nodeModules);
+      if (!stillMissing) continue;
+
+      // Run npm ci/install for remaining missing deps (NOT for the SDK — handled above)
+      try {
+        const useCI = fs.existsSync(packageLockJson);
+        const installArgs = useCI ? ['ci'] : ['install'];
+        const cmdLabel = useCI ? 'npm ci' : 'npm install (no lockfile)';
+        console.error('[forge-mcp-cache-repair] Running ' + cmdLabel + ' in ' + mcpDir);
+        runNpmFn(installArgs, mcpDir);
+        console.error('[forge-mcp-cache-repair] deps installed in ' + versionDir);
+      } catch (npmErr) {
+        console.error('[forge-mcp-cache-repair] npm failed in ' + versionDir + ': ' + npmErr.message);
+        // Non-fatal — continue with other versions
+      }
+    }
+  } catch (err) {
+    // Outermost safety net — never throw from a hook function
+    console.error('[forge-mcp-cache-repair] Unexpected error: ' + err.message);
+  }
+}
+
 async function main(rawInput) {
   // Parse stdin payload — used to resolve the active project directory.
   let payload = {};
@@ -368,28 +508,11 @@ async function main(rawInput) {
     return;
   }
 
-  // Resolve npm-cli.js from the running Node installation so we don't depend
-  // on bare `npm` being in PATH — which fails on marketplace-installed copies
-  // where the user's PATH doesn't include the Node bin directory.
-  const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  const hasNpmCli = fs.existsSync(npmCli);
-  if (!hasNpmCli) {
-    console.error('[forge-mcp] npm-cli.js not found at ' + npmCli + ' — falling back to bare npm');
-  }
-
-  // Run npm with an explicit args array (no shell string interpolation).
-  // npm ci does not support --prefix so we pass cwd instead.
-  function runNpm(args, cwd) {
-    if (hasNpmCli) {
-      execFileSync(process.execPath, [npmCli].concat(args), {
-        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: resolveNpmTimeout(),
-      });
-    } else {
-      execFileSync('npm', args, {
-        cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: resolveNpmTimeout(),
-      });
-    }
-  }
+  // Build the npm runner using the running Node installation's bundled npm-cli.js
+  // so we don't depend on bare `npm` being in PATH — which fails on
+  // marketplace-installed copies where the user's PATH doesn't include the Node
+  // bin directory. makeNpmRunner() is also used by scanCacheVersions.
+  const runNpm = makeNpmRunner();
 
   // Install dependencies for each package directory that has a package.json.
   const installTargets = [
@@ -442,6 +565,15 @@ async function main(rawInput) {
     } catch (err) {
       _runNpmCatch(target.label, nodeModules, err);
     }
+  }
+
+  // Scan plugin cache versions for missing deps — option 4 implementation.
+  // Guard (a): skip in worker sessions (FORGE_WORKER_RUN_ID is set by forge-worker.mjs)
+  // Guard (b): once-per-Claude-session dedup (_scanRanThisSession module-level flag)
+  if (!process.env.FORGE_WORKER_RUN_ID && !_scanRanThisSession) {
+    _scanRanThisSession = true;
+    const cacheBaseDir = path.join(os.homedir(), '.claude', 'plugins', 'cache', 'forge-tools', 'forge');
+    scanCacheVersions(cacheBaseDir);
   }
 
   // Write the MCP server launcher with the resolved Node path so the MCP
@@ -539,7 +671,7 @@ async function main(rawInput) {
 // Export pure helpers for regression-test access. Must come before the
 // require-main guard below so module.exports is populated even when this file
 // is imported (not invoked directly). Closes d9683d2a part A.
-module.exports = { resolveLiveConfigPath, resolveNpmTimeout, _runNpmCatch, findMissingDirectDep };
+module.exports = { resolveLiveConfigPath, resolveNpmTimeout, _runNpmCatch, findMissingDirectDep, scanCacheVersions, copyDirSync };
 
 // -- Stdin reader with timeout guard -----------------------------------------
 // Guard with require.main === module so unit tests can `require()` this file
