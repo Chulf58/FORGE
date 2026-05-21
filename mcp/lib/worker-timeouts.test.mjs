@@ -13,6 +13,8 @@ const {
   GATE_POLL_TIMEOUT_DEFAULT_MS,
   parseGatePollTimeout,
   buildGatePollFailureReason,
+  ESCALATION_POLL_TIMEOUT_DEFAULT_MS,
+  parseEscalationTimeout,
 } = await import('./worker-timeouts.js');
 
 test('WORKER_TIMEOUT_MS is 60 minutes (3 600 000 ms)', () => {
@@ -63,4 +65,28 @@ test('buildGatePollFailureReason: does not say "60-minute limit"', () => {
 test('buildGatePollFailureReason: contains value derived from timeout', () => {
   const reason = buildGatePollFailureReason('gate2', 21_600_000, '2026-01-01T00:00:00.000Z');
   assert.match(reason, /21600000|360.?minute|6.?hour/i);
+});
+
+test('ESCALATION_POLL_TIMEOUT_DEFAULT_MS is 30 minutes (1 800 000 ms)', () => {
+  assert.strictEqual(ESCALATION_POLL_TIMEOUT_DEFAULT_MS, 1_800_000);
+});
+
+test('parseEscalationTimeout: undefined → 30-min default', () => {
+  assert.strictEqual(parseEscalationTimeout(undefined), 1_800_000);
+});
+
+test('parseEscalationTimeout: valid override', () => {
+  assert.strictEqual(parseEscalationTimeout('30000'), 30_000);
+});
+
+test('parseEscalationTimeout: NaN string → 30-min default', () => {
+  assert.strictEqual(parseEscalationTimeout('notanumber'), 1_800_000);
+});
+
+test('parseEscalationTimeout: zero → 30-min default', () => {
+  assert.strictEqual(parseEscalationTimeout('0'), 1_800_000);
+});
+
+test('parseEscalationTimeout: exactly 24 h → 30-min default (not strictly less)', () => {
+  assert.strictEqual(parseEscalationTimeout('86400000'), 1_800_000);
 });

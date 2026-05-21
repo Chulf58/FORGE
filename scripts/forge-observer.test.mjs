@@ -71,3 +71,28 @@ test("forge-observer applies red ANSI color to the Block detail row value", () =
   );
 });
 
+// ── Task 8: waiting-for-escalation badge + [response-needed] rendering ────────
+// Red bar until forge-observer.mjs handles waiting-for-escalation status and
+// renders the [response-needed] badge with forge_respond_to_escalation hint.
+
+test("forge-observer statusOf handles waiting-for-escalation status", () => {
+  assert.ok(
+    src.includes("waiting-for-escalation"),
+    "forge-observer.mjs statusOf() must handle run.status === 'waiting-for-escalation'",
+  );
+});
+
+test("forge-observer renders [response-needed] badge for responseRequested escalations", () => {
+  assert.ok(
+    src.includes("response-needed"),
+    "forge-observer.mjs must render a '[response-needed]' badge in detailRows when escalation has responseRequested: true",
+  );
+});
+
+test("forge-observer shows forge_respond_to_escalation hint for response-needed escalations", () => {
+  assert.ok(
+    src.includes("forge_respond_to_escalation"),
+    "forge-observer.mjs must include 'forge_respond_to_escalation' in the hint line for responseRequested escalations",
+  );
+});
+

@@ -51,3 +51,6 @@ hooks/agent-loop-guard.js
 # (including 'hook-utils.js has no _archived branch'). Test file lives in
 # scripts/ so tdd-guard resolveTestFile cannot locate it.
 hooks/hook-utils.js
+# escalation-reproducer is itself a test (self-asserting reproducer, red→green TDD artifact).
+# Naming convention is -reproducer.mjs, not -test.mjs; tdd-guard resolveTestFile cannot detect it.
+mcp/forge-worker-escalation-reproducer.mjs

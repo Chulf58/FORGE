@@ -4,12 +4,13 @@
 import { z } from 'zod';
 
 export const RunStatus = z.enum([
-  'created',     // run exists, not started
-  'running',     // pipeline actively executing
-  'gate-pending', // waiting for user approval at a gate
-  'completed',   // pipeline finished successfully
-  'failed',      // pipeline errored
-  'discarded',   // user discarded at a gate
+  'created',               // run exists, not started
+  'running',               // pipeline actively executing
+  'gate-pending',          // waiting for user approval at a gate
+  'waiting-for-escalation', // worker paused waiting for human response to forge_escalate
+  'completed',             // pipeline finished successfully
+  'failed',                // pipeline errored
+  'discarded',             // user discarded at a gate
 ]);
 
 export const GateState = z.object({

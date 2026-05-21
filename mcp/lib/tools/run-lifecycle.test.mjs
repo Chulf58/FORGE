@@ -16,7 +16,7 @@ test('run-lifecycle no longer persists classification.json (SPECS surface remove
 });
 
 // AC-6: run-lifecycle.js exports register(server, shared) that registers exactly
-// the 11 run-lifecycle tools.
+// the 12 run-lifecycle tools.
 
 const EXPECTED_TOOLS = [
   'forge_create_run',
@@ -30,6 +30,7 @@ const EXPECTED_TOOLS = [
   'forge_advance_stage',
   'forge_dashboard_state',
   'forge_kill_worker',
+  'forge_respond_to_escalation',
 ];
 
 test('run-lifecycle exports register function', async () => {
@@ -37,7 +38,7 @@ test('run-lifecycle exports register function', async () => {
   assert.equal(typeof mod.register, 'function', 'register must be a function');
 });
 
-test('register() registers exactly the 11 run-lifecycle tools', async () => {
+test('register() registers exactly the 12 run-lifecycle tools', async () => {
   const mod = await import('./run-lifecycle.js');
 
   const registered = [];
@@ -53,8 +54,35 @@ test('register() registers exactly the 11 run-lifecycle tools', async () => {
   assert.deepEqual(
     registered.sort(),
     EXPECTED_TOOLS.slice().sort(),
-    'registered tools must match exactly the 11 expected names',
+    'registered tools must match exactly the 12 expected names',
   );
+});
+
+test('forge_escalate handler: responseRequested field accepted in schema', async () => {
+  const mod = await import('./run-lifecycle.js');
+  const registered = {};
+  const fakeServer = {
+    registerTool: (name, schema, handler) => { registered[name] = { schema, handler }; },
+  };
+  mod.register(fakeServer, {});
+  assert.ok(registered['forge_escalate'], 'forge_escalate must be registered');
+  const schema = registered['forge_escalate'].schema.inputSchema;
+  // Zod parse must not throw when responseRequested, responseTimeoutMs, responseHints are absent
+  const result = schema.safeParse({ runId: 'r-abc12345', type: 'question', message: 'test?' });
+  assert.ok(result.success, 'forge_escalate schema must accept base fields without new fields: ' + JSON.stringify(result.error));
+  // Must accept the new optional fields
+  const result2 = schema.safeParse({ runId: 'r-abc12345', type: 'question', message: 'test?', responseRequested: true, responseTimeoutMs: 30000, responseHints: 'yes or no' });
+  assert.ok(result2.success, 'forge_escalate schema must accept new optional fields: ' + JSON.stringify(result2.error));
+});
+
+test('forge_respond_to_escalation: tool registered', async () => {
+  const mod = await import('./run-lifecycle.js');
+  const registered = {};
+  const fakeServer = {
+    registerTool: (name, _schema, _handler) => { registered[name] = true; },
+  };
+  mod.register(fakeServer, {});
+  assert.ok(registered['forge_respond_to_escalation'], 'forge_respond_to_escalation must be registered');
 });
 
 test('register() does not import from run-gate.js (safeguard)', async () => {

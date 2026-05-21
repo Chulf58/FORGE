@@ -244,7 +244,9 @@ function isLost(run) {
 }
 
 function statusOf(run) {
+  if (escalations[run.runId] && escalations[run.runId].responseRequested) return { dot: '⏳', color: 'yellow' };
   if (escalations[run.runId]) return { dot: '⚠', color: 'red' };
+  if (run.status === 'waiting-for-escalation') return { dot: '⏳', color: 'yellow' };
   if (isLost(run)) return { dot: '?', color: 'red' };
   if (run.actionNeeded) return { dot: '⏸', color: 'yellow' };
   if (run.status === 'running') return { dot: '●', color: 'green' };
@@ -660,7 +662,16 @@ function buildSessionsTab(cols) {
         if (merged.actionNeeded) detailRows.push(['Action', '⏸ ' + merged.actionNeeded]);
         if (isLost(merged)) detailRows.push(['Worker', '? LOST — heartbeat stale, press R to resume']);
         const esc = escalations[run.runId];
-        if (esc) detailRows.push(['Escalation', '⚠ ' + (esc.message || esc.type || 'needs attention')]);
+        if (esc && esc.responseRequested) {
+          detailRows.push(['Escalation', '[response-needed] ' + (esc.message || esc.type || 'needs attention')]);
+          detailRows.push(['Respond', 'forge_respond_to_escalation { runId, escalationId: "' + (esc.escalationId || '?') + '", response }']);
+        } else if (esc) {
+          detailRows.push(['Escalation', '⚠ ' + (esc.message || esc.type || 'needs attention')]);
+        }
+        if (merged.status === 'waiting-for-escalation' && !esc) {
+          detailRows.push(['Status', '[response-needed] waiting for escalation response']);
+          detailRows.push(['Respond', 'forge_respond_to_escalation { runId: "' + run.runId + '", escalationId, response }']);
+        }
       }
 
       const cardH = 5 + detailRows.length;

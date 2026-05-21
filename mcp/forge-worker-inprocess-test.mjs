@@ -1,7 +1,7 @@
 // mcp/forge-worker-inprocess-test.mjs
 // @covers mcp/forge-worker-mcp.mjs
 //
-// AC-3: all 38 forge_* tools registered by the in-process adapter.
+// AC-3: all 40 forge_* tools registered by the in-process adapter.
 // AC-8: per-tool { tool, durationMs } structured log emitted to stderr.
 //
 // Run: node mcp/forge-worker-inprocess-test.mjs
@@ -22,10 +22,11 @@ const EXPECTED_TOOLS = [
   'forge_get_model_recommendation', 'forge_call_external', 'forge_read_usage',
   'forge_reset_usage', 'forge_update_agent_model', 'forge_add_model',
   'forge_update_model', 'forge_list_models',
-  // run-lifecycle.js (11)
+  // run-lifecycle.js (12)
   'forge_create_run', 'forge_get_run', 'forge_list_runs', 'forge_update_run',
   'forge_classify_risk', 'forge_create_worktree', 'forge_escalate', 'forge_resume_run',
   'forge_advance_stage', 'forge_dashboard_state', 'forge_kill_worker',
+  'forge_respond_to_escalation',
   // knowledge.js (6)
   'forge_get_constraints', 'forge_get_patterns', 'forge_get_linked',
   'forge_add_learning', 'forge_read_criteria', 'forge_write_criteria',
@@ -48,7 +49,7 @@ assert.ok(
   'config must not have a command: field (old stdio entry must be removed)',
 );
 
-// AC-3: all 39 tools registered
+// AC-3: all 40 tools registered
 assert.deepStrictEqual(
   [...REGISTERED_TOOL_NAMES].sort(),
   [...EXPECTED_TOOLS].sort(),
@@ -56,8 +57,8 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(
   REGISTERED_TOOL_NAMES.length,
-  39,
-  `Expected 39 tools, got ${REGISTERED_TOOL_NAMES.length}`,
+  40,
+  `Expected 40 tools, got ${REGISTERED_TOOL_NAMES.length}`,
 );
 
 // AC-8: invoke a benign tool via TEST_ONLY_callHandler and assert stderr
@@ -111,5 +112,5 @@ assert.ok(
   `AC-8: durationMs must be a non-negative integer, got ${parsed.durationMs}`,
 );
 
-process.stderr.write('[inprocess-test] PASS — all 39 tools registered\n');
+process.stderr.write('[inprocess-test] PASS — all 40 tools registered\n');
 process.exit(0);

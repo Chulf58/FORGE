@@ -9,7 +9,7 @@ import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
 import { consumeGateApproval } from './lib/gate-helpers.js';
 import { evaluateBudget, proactiveInterruptStep } from './lib/proactive-interrupt.mjs';
 import buildInProcessMcpServer from './forge-worker-mcp.mjs';
-import { WORKER_TIMEOUT_MS, parseGatePollTimeout, buildGatePollFailureReason } from './lib/worker-timeouts.js';
+import { WORKER_TIMEOUT_MS, parseGatePollTimeout, buildGatePollFailureReason, parseEscalationTimeout } from './lib/worker-timeouts.js';
 
 // Context-budget monitoring constants — aligned with ctx-post-tool.js THRESHOLD_WARNING (35% remaining = 65% consumed).
 // Worker triggers bridge write at 70% consumed (30% remaining) so the subagent has ample lead time.
@@ -179,6 +179,7 @@ async function main() {
   //   WORKER_TIMEOUT_MS       — active pipeline budget (per phase, reset by per-phase pill)
   //   GATE_POLL_TIMEOUT_MS    — wait budget while gate is pending (human review time)
   const GATE_POLL_TIMEOUT_MS = parseGatePollTimeout(process.env.FORGE_WORKER_GATE_TIMEOUT_MS);
+  const ESCALATION_POLL_TIMEOUT_MS = parseEscalationTimeout(process.env.FORGE_WORKER_ESCALATION_TIMEOUT_MS);
   let workerTimedOut = false;
   let workerTimer = setTimeout(() => {
     workerTimedOut = true;
@@ -333,6 +334,76 @@ async function main() {
 
       // Check immediately in case the gate is already decided before we start watching
       checkGate();
+    });
+  }
+
+  /**
+   * Polls for an escalation response file matching <runId>-*.response.json
+   * in the escalations directory. Resolves with the parsed response object when
+   * found, 'timeout' on escalation-poll timeout, or 'discarded' on poison-pill.
+   *
+   * Fail-open: malformed JSON or missing required fields are logged via writeLog
+   * with the [escalation-response-malformed] prefix and treated as absent —
+   * polling continues rather than aborting the worker.
+   *
+   * @param {string} escDir - Path to the escalations directory (main project root).
+   * @returns {Promise<{escalationId: string, response: string}|'timeout'|'discarded'>}
+   */
+  function waitForEscalationResponse(escDir) {
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      function checkResponse() {
+        if (resolved) return;
+        if (workerTimedOut) {
+          resolved = true;
+          cleanup();
+          resolve('timeout');
+          return;
+        }
+        if (poisonPillDetected) {
+          resolved = true;
+          cleanup();
+          resolve('discarded');
+          return;
+        }
+        try {
+          const files = readdirSync(escDir);
+          const responseFile = files.find(
+            (f) => f.startsWith(runId + '-') && f.endsWith('.response.json'),
+          );
+          if (responseFile) {
+            const respPath = join(escDir, responseFile);
+            try {
+              const raw = readFileSync(respPath, 'utf-8');
+              const data = JSON.parse(raw);
+              if (!data || typeof data.escalationId !== 'string' || typeof data.response !== 'string') {
+                writeLog('[escalation-response-malformed] ' + respPath + ' — missing escalationId or response fields; continuing poll');
+                return; // fail-open: treat as absent, keep polling
+              }
+              try { unlinkSync(respPath); } catch (_) {}
+              resolved = true;
+              cleanup();
+              resolve({ escalationId: data.escalationId, response: data.response });
+            } catch (parseErr) {
+              writeLog('[escalation-response-malformed] ' + respPath + ' — ' + parseErr.message + '; continuing poll');
+              // fail-open: malformed JSON — keep polling
+            }
+          }
+        } catch (_) {
+          // escDir not yet created or unreadable — keep polling
+        }
+      }
+
+      let interval;
+      function cleanup() {
+        clearInterval(interval);
+      }
+
+      // Poll every 3 s (same cadence as gate-poll fallback interval)
+      interval = setInterval(checkResponse, 3000);
+      // Check immediately in case a response file is already present
+      checkResponse();
     });
   }
 
@@ -814,6 +885,55 @@ async function main() {
               const runObj = JSON.parse(raw);
               runObj.status = 'failed';
               runObj.failureReason = buildGatePollFailureReason(gateName, GATE_POLL_TIMEOUT_MS);
+              writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+            } catch (_) {
+              // fail-open: run.json update is best-effort
+            }
+          }
+          break;
+        }
+      } else if (runData && runData.status === 'waiting-for-escalation') {
+        // Use ESCALATION_POLL_TIMEOUT_MS so human response time does not count
+        // against the active-worker budget (WORKER_TIMEOUT_MS = 60 min).
+        resetWorkerTimer(ESCALATION_POLL_TIMEOUT_MS);
+        const escDir = join(resolvedMainProjectRoot, '.pipeline', 'escalations');
+        writeLog('[forge-worker] waiting-for-escalation detected for run ' + runId + ' escalation-poll-timeout=' + ESCALATION_POLL_TIMEOUT_MS + ' ms');
+
+        const responseResult = await waitForEscalationResponse(escDir);
+        writeLog('[forge-worker] escalation response result: ' + (typeof responseResult === 'object' ? responseResult.escalationId : responseResult));
+
+        if (typeof responseResult === 'object' && responseResult.response) {
+          // Flip run status back to running
+          try {
+            const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+            const raw = readFileSync(runPath, 'utf-8');
+            const runObj = JSON.parse(raw);
+            if (runObj.status === 'waiting-for-escalation') {
+              runObj.status = 'running';
+              runObj.updatedAt = new Date().toISOString();
+              writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+            }
+          } catch (_) {
+            // fail-open: run.json update is best-effort
+          }
+          // Inject response as user message
+          inputChannel.push({
+            type: 'user',
+            message: { role: 'user', content: 'Escalation response received (escalationId: ' + responseResult.escalationId + '): ' + responseResult.response },
+            parent_tool_use_id: null,
+          });
+          resetWorkerTimer(); // reset to 60-min active budget
+          writeLog('[forge-worker] injected escalation response for escalationId=' + responseResult.escalationId + ' — resuming');
+        } else {
+          writeLog('[forge-worker] escalation ' + responseResult + ' — stopping worker');
+          if (responseResult === 'timeout') {
+            try {
+              const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+              const raw = readFileSync(runPath, 'utf-8');
+              const runObj = JSON.parse(raw);
+              runObj.status = 'failed';
+              runObj.failureReason = 'worker timeout: escalation response not received within ' + ESCALATION_POLL_TIMEOUT_MS + ' ms at ' + new Date().toISOString();
+              runObj.updatedAt = new Date().toISOString();
               writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
             } catch (_) {
               // fail-open: run.json update is best-effort

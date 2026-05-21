@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-05-21] forge_escalate two-way response channel (TODO 7b479be9)
+
+- Extended `forge_escalate` into a request-response channel: workers call with `responseRequested: true`, pause in `waiting-for-escalation` state, resume once a human responds
+- Added new `forge_respond_to_escalation` MCP tool (tool #40); writes response file atomically via tmp+rename at `.pipeline/escalations/<runId>-<escalationId>.response.json`
+- Escalation file naming changed to `<runId>-<escalationId>.json` (supports multiple concurrent escalations per run)
+- Worker poll loop (`waitForEscalationResponse`) mirrors gate-poll pattern; fail-open on malformed JSON (`[escalation-response-malformed]` log); 30-min default timeout via `ESCALATION_POLL_TIMEOUT_DEFAULT_MS` (env: `FORGE_WORKER_ESCALATION_TIMEOUT_MS`, 24h hard cap)
+- `waiting-for-escalation` is sweep-safe: sweep only kills `status === 'running'` processes; added to `forge_resume_run` RESUMABLE set and all status enums
+- Observer renders `[response-needed]` badge and `forge_respond_to_escalation` hint line for `responseRequested: true` escalations; `statusOf()` returns ⏳ yellow dot for `waiting-for-escalation`
+- `packages/forge-core` `RunStatus` enum updated with `waiting-for-escalation`
+- Back-compat: `responseRequested: false` (default) is strict no-op — existing `forge_escalate` callers unaffected
+- TDD: red bar confirmed (4 failing test suites) before any implementation; 77/78 pass in regression (1 pre-existing failure in `checkpoint-detection-test.js`, also failing on main)
+
 ## [2026-05-21] Promote coder-scout + completeness-checker; delete dead archived agents (TODO c62ac8af)
 
 - Promoted `agents/coder-scout.md` and `agents/completeness-checker.md` from `agents/_archived/` to top-level — these were misplaced; both are referenced as default implement-stage agents per `skills/implement/SKILL.md`

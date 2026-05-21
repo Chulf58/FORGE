@@ -75,3 +75,42 @@ export function buildGatePollFailureReason(gateName, gatePollMs, timestamp) {
   const ts = timestamp || new Date().toISOString();
   return `worker timeout: ${gateName} gate poll exceeded ${gatePollMs} ms gate-poll limit at ${ts}`;
 }
+
+/**
+ * Default escalation-poll timeout — 30 minutes.
+ *
+ * Used when the worker is waiting for a human response to a forge_escalate
+ * call made with responseRequested: true. Shorter than the gate-poll timeout
+ * (6 h) because escalations expect faster turnaround than gate decisions.
+ * Overridable via the FORGE_WORKER_ESCALATION_TIMEOUT_MS env var.
+ */
+export const ESCALATION_POLL_TIMEOUT_DEFAULT_MS = 30 * 60 * 1000; // 1 800 000 ms
+
+/**
+ * Hard upper bound for FORGE_WORKER_ESCALATION_TIMEOUT_MS — 24 hours.
+ * Values at or above this limit are treated as misconfiguration and fall back
+ * to the 30-minute default.
+ */
+const ESCALATION_POLL_TIMEOUT_MAX_MS = 24 * 60 * 60 * 1000; // 86 400 000 ms
+
+/**
+ * Parses the FORGE_WORKER_ESCALATION_TIMEOUT_MS environment variable value.
+ *
+ * Validation rules (any failure silently falls back to the 30-min default):
+ *   - Must be parseable as a base-10 integer (parseInt(..., 10) not NaN)
+ *   - Must be a positive integer (> 0)
+ *   - Must be strictly less than 86 400 000 ms (24 h)
+ *
+ * @param {string|undefined|null} envValue - The raw env var value.
+ * @returns {number} Escalation-poll timeout in milliseconds.
+ */
+export function parseEscalationTimeout(envValue) {
+  if (envValue === undefined || envValue === null || envValue === '') {
+    return ESCALATION_POLL_TIMEOUT_DEFAULT_MS;
+  }
+  const parsed = parseInt(envValue, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= ESCALATION_POLL_TIMEOUT_MAX_MS) {
+    return ESCALATION_POLL_TIMEOUT_DEFAULT_MS;
+  }
+  return parsed;
+}

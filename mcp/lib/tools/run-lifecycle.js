@@ -445,12 +445,12 @@ export function register(server, _shared) {
       title: 'FORGE List Runs',
       description: 'Lists runs from the index, optionally filtered and field-projected. Use `filter` for the newer/ergonomic path with array-aware status/pipelineType matching; legacy flat `status`/`pipelineType` fields remain for backward compatibility but are superseded when `filter` is present. Use `fields` to slim each item to a subset of top-level keys; requesting a key not on the lightweight index entry triggers a full hydration via getRun.',
       inputSchema: z.object({
-        status: z.enum(['created', 'running', 'gate-pending', 'completed', 'failed', 'discarded']).optional().describe('Filter by run status (legacy — prefer `filter.status`, which accepts arrays). Ignored when `filter` is present.'),
+        status: z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded']).optional().describe('Filter by run status (legacy — prefer `filter.status`, which accepts arrays). Ignored when `filter` is present.'),
         pipelineType: z.string().optional().describe('Filter by pipeline type (legacy — prefer `filter.pipelineType`, which accepts arrays). Ignored when `filter` is present.'),
         filter: z.object({
           status: z.union([
-            z.enum(['created', 'running', 'gate-pending', 'completed', 'failed', 'discarded']),
-            z.array(z.enum(['created', 'running', 'gate-pending', 'completed', 'failed', 'discarded'])),
+            z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded']),
+            z.array(z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded'])),
           ]).optional().describe('Match status — single value or any-of array.'),
           pipelineType: z.union([
             z.string(),
@@ -541,7 +541,7 @@ export function register(server, _shared) {
       description: 'Patches a run with new field values. Automatically sets updatedAt and syncs the index.',
       inputSchema: z.object({
         runId: runIdSchema.describe('Run ID to update'),
-        status: z.enum(['created', 'running', 'gate-pending', 'completed', 'failed', 'discarded']).optional().describe('New status'),
+        status: z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded']).optional().describe('New status'),
         worktreePath: z.string().optional().describe('Worktree path if assigned'),
         branchName: z.string().optional().describe('Branch name if assigned'),
         gateState: z.object({
@@ -860,27 +860,90 @@ export function register(server, _shared) {
     'forge_escalate',
     {
       title: 'FORGE Escalate',
-      description: 'Signal that a worker is stuck or needs attention. Writes an escalation file to the MAIN project\'s .pipeline/escalations/ (not the worktree\'s) so the Observer TUI surfaces it. Use when hitting unexpected blockers, errors, or questions that can\'t be resolved autonomously.',
+      description: 'Signal that a worker is stuck or needs attention. Writes an escalation file to the MAIN project\'s .pipeline/escalations/ (not the worktree\'s) so the Observer TUI surfaces it. Use when hitting unexpected blockers, errors, or questions that can\'t be resolved autonomously. When responseRequested: true, the worker pauses in waiting-for-escalation state until forge_respond_to_escalation is called.',
       inputSchema: z.object({
         runId: runIdSchema.describe('Run ID to escalate'),
         type: z.enum(['blocker', 'error', 'question']).describe('Type of escalation'),
         message: z.string().min(1).max(500).describe('Short description of what went wrong or what\'s needed'),
+        responseRequested: z.boolean().optional().default(false).describe('When true, the worker pauses and waits for a human response via forge_respond_to_escalation before resuming. The response is injected as a user message.'),
+        responseTimeoutMs: z.number().int().positive().optional().describe('Override the default 30-minute escalation-poll timeout (in ms). Max 24 h. Stored in the escalation file for informational purposes.'),
+        responseHints: z.string().max(500).optional().describe('Optional hints for the human responder — valid options, expected format, context'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ runId, type, message }) => {
+    async ({ runId, type, message, responseRequested, responseTimeoutMs, responseHints }) => {
       try {
         const projectDir = resolveMainProjectDir();
         const escDir = join(projectDir, '.pipeline', 'escalations');
         if (!existsSync(escDir)) mkdirSync(escDir, { recursive: true });
-        const escFile = join(escDir, runId + '.json');
+        const escalationId = 'esc-' + randomBytes(4).toString('hex');
+        const escFile = join(escDir, runId + '-' + escalationId + '.json');
         const tmpFile = escFile + '.tmp';
-        const data = { runId, type, message, createdAt: new Date().toISOString() };
+        const data = {
+          runId,
+          escalationId,
+          type,
+          message,
+          responseRequested: responseRequested || false,
+          responseTimeoutMs: responseTimeoutMs || null,
+          responseHints: responseHints || null,
+          createdAt: new Date().toISOString(),
+        };
         writeFileSync(tmpFile, JSON.stringify(data, null, 2) + '\n', 'utf8');
         renameSync(tmpFile, escFile);
-        return textResult('Escalation filed for ' + runId + ': ' + type + ' — ' + message);
+
+        if (responseRequested) {
+          // Flip run status to waiting-for-escalation so the worker enters the escalation-poll branch.
+          // Reads run.json from the MAIN project dir — same root as the escalations dir.
+          try {
+            const runPath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
+            const raw = readFileSync(runPath, 'utf-8');
+            const runObj = JSON.parse(raw);
+            if (runObj.status === 'running') {
+              runObj.status = 'waiting-for-escalation';
+              runObj.updatedAt = new Date().toISOString();
+              writeJsonSafe(runPath, runObj);
+            }
+          } catch (err) {
+            console.error('[forge_escalate] failed to flip status to waiting-for-escalation: ' + err.message);
+            // fail-open: escalation file was already written; worker detects via run.json poll
+          }
+        }
+
+        return textResult({ escalationId, runId, type, message, responseRequested: responseRequested || false, filed: true });
       } catch (err) {
         return errorResult('forge_escalate failed: ' + err.message);
+      }
+    },
+  );
+
+  // -- Tool: forge_respond_to_escalation ----------------------------------------
+
+  server.registerTool(
+    'forge_respond_to_escalation',
+    {
+      title: 'FORGE Respond to Escalation',
+      description: 'Provide a human response to a worker escalation filed with responseRequested: true. The worker is paused in waiting-for-escalation state; calling this tool writes the response file atomically, which the worker detects and uses to resume. The response is injected as a user message into the worker session.',
+      inputSchema: z.object({
+        runId: runIdSchema.describe('Run ID of the escalation to respond to'),
+        escalationId: z.string().regex(/^esc-[a-f0-9]+$/, 'escalationId must match server-generated format /^esc-[a-f0-9]+$/').describe('Escalation ID returned by forge_escalate (e.g. esc-a1b2c3d4)'),
+        response: z.string().min(1).max(2000).describe('Your response — will be injected as a user message into the worker session'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    async ({ runId, escalationId, response }) => {
+      try {
+        const projectDir = resolveMainProjectDir();
+        const escDir = join(projectDir, '.pipeline', 'escalations');
+        if (!existsSync(escDir)) mkdirSync(escDir, { recursive: true });
+        const respFile = join(escDir, runId + '-' + escalationId + '.response.json');
+        const tmpFile = respFile + '.tmp';
+        const data = { runId, escalationId, response, respondedAt: new Date().toISOString() };
+        writeFileSync(tmpFile, JSON.stringify(data, null, 2) + '\n', 'utf8');
+        renameSync(tmpFile, respFile);
+        return textResult({ ok: true, runId, escalationId, responseWritten: true });
+      } catch (err) {
+        return errorResult('forge_respond_to_escalation failed: ' + err.message);
       }
     },
   );
@@ -921,7 +984,7 @@ export function register(server, _shared) {
         }
 
         // Precondition 2: status is non-terminal
-        const RESUMABLE = new Set(['running', 'gate-pending', 'created']);
+        const RESUMABLE = new Set(['running', 'gate-pending', 'created', 'waiting-for-escalation']);
         if (!RESUMABLE.has(run.status)) {
           return errorResult(
             'Run ' + normalizedId + ' is ' + run.status + '; resume only supports running, gate-pending, or created',
