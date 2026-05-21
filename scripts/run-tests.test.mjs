@@ -33,3 +33,21 @@ test('TEST_LOCATIONS includes mcp/lib/*-test.mjs discovery', () => {
   assert.match(src, pattern,
     'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib", suffix: "-test.mjs" }');
 });
+
+test('TEST_LOCATIONS includes mcp/lib/tools/*.test.mjs discovery', () => {
+  const src = readFileSync(RUN_TESTS_PATH, 'utf8');
+  // mcp/lib/tools/ tests (e.g. board.test.mjs) use .test.mjs suffix and must
+  // be auto-discovered to avoid silent skip.
+  const pattern = /\{\s*dir:\s*['"]mcp\/lib\/tools['"]\s*,\s*suffix:\s*['"]\.test\.mjs['"]\s*\}/;
+  assert.match(src, pattern,
+    'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib/tools", suffix: ".test.mjs" }');
+});
+
+test('TEST_LOCATIONS includes mcp/lib/orchestrator/*.test.mjs discovery', () => {
+  const src = readFileSync(RUN_TESTS_PATH, 'utf8');
+  // mcp/lib/orchestrator/ tests (e.g. plan-stage.test.mjs) use .test.mjs suffix
+  // and must be auto-discovered.
+  const pattern = /\{\s*dir:\s*['"]mcp\/lib\/orchestrator['"]\s*,\s*suffix:\s*['"]\.test\.mjs['"]\s*\}/;
+  assert.match(src, pattern,
+    'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib/orchestrator", suffix: ".test.mjs" }');
+});

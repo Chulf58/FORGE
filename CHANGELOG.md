@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-05-21] Thin orchestrator / dispatcher worker — plan-stage slice (r-32f638c1)
+
+- Added deterministic plan-stage state machine `runPlanStageOrchestrator(deps, runId, workDir)` with verdict-driven branching (APPROVED, REVISE, BLOCK) and max 2 revision passes before escalation
+- Created thin SDK wrapper `dispatchAgent({agentType, promptLines, workDir, pluginRoot, systemPromptPath, buildMcpServer})` to replace prose-following `query()` calls during plan stage
+- Added env toggle `FORGE_ORCHESTRATOR_PLAN=on` in `mcp/forge-worker.mjs` to route plan-stage workers through the deterministic orchestrator; toggle off by default, zero behavior change
+- gate-pending.json contract: includes `runId`, `gate`, `feature`, `status`, `plan` (absolute) on all three write sites (APPROVED, BLOCK with `blockedBy`, M=2 REVISE with `revisingUnresolved`) so `/forge:approve` can route to the run and observer can render the feature
+- Error path: orchestrator catch block reads existing run.json, merges with `{status: 'failed', failureReason}` via `mergeRun` before write — preserves `runId`/`stages`/`feature`/`orchestratorState` siblings rather than clobbering
+- TDD validation: 13/13 unit tests pass (9 ACs + 4 contract-shape/merge tests added during conductor salvage); regression suite 62/88 (26 pre-existing failures, 0 new); orchestrator tests correctly discovered by updated test runner
+
 ## [2026-05-21] MCP gate-precondition enforcement (r-43a94ce3)
 
 - Added opt-in `checkGatePreconditions` helper exported from `mcp/lib/tools/run-gate.js` — three env toggles (all default off): `FORGE_GATE_PRECONDITION_GATE1`, `FORGE_GATE_PRECONDITION_GATE2`, `FORGE_GATE_PRECONDITION_COMMIT`

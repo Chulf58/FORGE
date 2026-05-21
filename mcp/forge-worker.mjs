@@ -438,7 +438,104 @@ async function main() {
   process.env.CLAUDE_PROJECT_DIR = workDir;
   process.env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT = '300000';
 
+  // One-level merge for run.json objects — preserves orchestratorState sibling fields.
+  function mergeRunJson(current, patch) {
+    const merged = Object.assign({}, current, patch);
+    if (patch.orchestratorState != null || current.orchestratorState != null) {
+      merged.orchestratorState = Object.assign(
+        {}, current.orchestratorState ?? {}, patch.orchestratorState ?? {}
+      );
+    }
+    return merged;
+  }
+
   try {
+    // --- Deterministic orchestrator path (plan stage only) ---
+    if (process.env.FORGE_ORCHESTRATOR_PLAN === 'on' && pipelineType === 'plan') {
+      const { runPlanStageOrchestrator } = await import('./lib/orchestrator/plan-stage.mjs');
+      const { dispatchAgent } = await import('./lib/orchestrator/agent-dispatch.mjs');
+      const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
+
+      const orchDeps = {
+        dispatch: (agentType, promptLines) => dispatchAgent({
+          agentType, promptLines, workDir, pluginRoot,
+          systemPromptPath: CLAUDE_WORKER_PATH,
+          buildMcpServer,
+        }),
+        spawnScript: async (scriptPath, args) => {
+          const { spawn } = await import('node:child_process');
+          return new Promise((res, rej) => {
+            const child = spawn(process.execPath, [scriptPath, ...args], { cwd: workDir });
+            let out = '';
+            child.stdout.on('data', (d) => { out += d; });
+            child.on('close', (code) => res({ stdout: out, exitCode: code }));
+            child.on('error', rej);
+          });
+        },
+        readPlanMd: () => readFileSync(join(workDir, 'docs', 'PLAN.md'), 'utf-8'),
+        clearReviewerOutput: async () => {
+          const dir = join(workDir, '.pipeline', 'context', 'reviewer-output');
+          try {
+            for (const f of readdirSync(dir)) {
+              if (f.endsWith('.md')) unlinkSync(join(dir, f));
+            }
+          } catch (_) { /* dir absent — no-op */ }
+        },
+        readRunJson: (_path) => {
+          const p = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+          return JSON.parse(readFileSync(p, 'utf-8'));
+        },
+        writeRunJson: async (_path, data) => {
+          const p = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+          writeFileSync(p, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+        },
+        writeGateFile: async (_path, content) => {
+          writeFileSync(
+            join(workDir, '.pipeline', 'gate-pending.json'),
+            JSON.stringify(content, null, 2) + '\n', 'utf-8'
+          );
+        },
+        readReviewerOutput: async (reviewerOutputDir, reviewerName) => {
+          try {
+            const content = readFileSync(join(reviewerOutputDir, reviewerName + '.md'), 'utf-8');
+            const firstLine = content.split('\n')[0].toUpperCase();
+            if (firstLine.includes('BLOCK')) return { verdict: 'BLOCK' };
+            if (firstLine.includes('REVISE')) return { verdict: 'REVISE' };
+            return { verdict: 'APPROVED' };
+          } catch (_) {
+            return { verdict: 'APPROVED' };
+          }
+        },
+        writeLog,
+      };
+
+      try {
+        await runPlanStageOrchestrator(orchDeps, runId, workDir);
+      } catch (err) {
+        writeLog('[forge-worker] orchestrator error: ' + err.message);
+        exitCode = 1;
+      }
+
+      if (exitCode === 0) {
+        const gatePath = join(workDir, '.pipeline', 'gate-pending.json');
+        const decision = await waitForGateDecision(gatePath, 'gate1');
+        writeLog('[forge-worker] orchestrator gate1 decision: ' + decision);
+        if (decision === 'approved') {
+          consumeGateApproval(gatePath, 'gate1');
+          resetWorkerTimer();
+        } else if (decision === 'timeout') {
+          try {
+            const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+            const runObj = JSON.parse(readFileSync(runPath, 'utf-8'));
+            runObj.status = 'failed';
+            runObj.failureReason = buildGatePollFailureReason('gate1', GATE_POLL_TIMEOUT_MS);
+            writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+          } catch (_) { /* fail-open */ }
+          exitCode = 1;
+        }
+        // 'discarded' → worker exits cleanly with exitCode=0
+      }
+    } else {
     const stream = query({
       prompt: inputChannel,
       options: {
@@ -943,6 +1040,7 @@ async function main() {
         }
       }
     }
+    } // close orchestrator else — LLM prose path
 
     clearTimeout(workerTimer);
     writeLog('[forge-worker] completed run ' + runId);
