@@ -126,7 +126,7 @@ test('AC-3: researcher skipped when "### Research needed" heading absent', async
   mockDispatch.returns['gotcha-checker'] = { exitCode: 0, stdout: '{}', stderr: '' };
   mockDispatch.returns['reviewer-dispatch'] = {
     exitCode: 0,
-    stdout: JSON.stringify(['plan-skeptic']),
+    stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
     stderr: ''
   };
 
@@ -189,7 +189,7 @@ test('AC-4: researcher and gotcha-checker start before either ends (Promise.all 
     dispatch: mockDispatch.dispatch,
     spawnScript: async (script, args, opts) => ({
       exitCode: 0,
-      stdout: JSON.stringify(['plan-skeptic']),
+      stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
       stderr: ''
     }),
   };
@@ -240,7 +240,7 @@ test('AC-2 + AC-5: APPROVED verdict writes gate1 without revisingUnresolved/bloc
     dispatch: mockDispatch.dispatch,
     spawnScript: async (script, args, opts) => ({
       exitCode: 0,
-      stdout: JSON.stringify(['plan-skeptic']),
+      stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
       stderr: ''
     }),
     readReviewerOutput: async () => ({ verdict: 'APPROVED' }),
@@ -314,7 +314,7 @@ test('AC-5: REVISE M=0 — planReviseCount incremented and persisted before re-d
     dispatch: mockDispatch.dispatch,
     spawnScript: async (script, args, opts) => ({
       exitCode: 0,
-      stdout: JSON.stringify(['plan-skeptic']),
+      stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
       stderr: ''
     }),
     readReviewerOutput: async () => ({ verdict: 'REVISE' }),
@@ -381,7 +381,7 @@ test('AC-6: M=2 REVISE (after 2 revision passes) opens revisingUnresolved gate',
     dispatch: mockDispatch.dispatch,
     spawnScript: async (script, args, opts) => ({
       exitCode: 0,
-      stdout: JSON.stringify(['plan-skeptic']),
+      stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
       stderr: ''
     }),
     readReviewerOutput: async () => {
@@ -437,7 +437,7 @@ test('AC-7: BLOCK verdict opens blockedBy gate and does not re-dispatch planner'
     dispatch: mockDispatch.dispatch,
     spawnScript: async (script, args, opts) => ({
       exitCode: 0,
-      stdout: JSON.stringify(['plan-skeptic']),
+      stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
       stderr: ''
     }),
     readReviewerOutput: async () => ({ verdict: 'BLOCK' }),
@@ -497,7 +497,7 @@ test('AC-9: clearReviewerOutput called before reviewer-dispatch (spawnScript)', 
       callOrder.push({ step: 'spawnScript', script });
       return {
         exitCode: 0,
-        stdout: JSON.stringify(['plan-skeptic']),
+        stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
         stderr: '',
       };
     },
@@ -537,7 +537,7 @@ test('Gate1 contract: APPROVED gate-pending payload includes runId, feature, sta
   const deps = {
     ...fileOps,
     dispatch: mockDispatch.dispatch,
-    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify(['plan-skeptic']), stderr: '' }),
+    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }), stderr: '' }),
     readReviewerOutput: async () => ({ verdict: 'APPROVED' }),
   };
 
@@ -567,7 +567,7 @@ test('Gate1 BLOCK contract: blockedBy gate also includes runId, feature, status,
   const deps = {
     ...fileOps,
     dispatch: mockDispatch.dispatch,
-    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify(['plan-skeptic']), stderr: '' }),
+    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }), stderr: '' }),
     readReviewerOutput: async () => ({ verdict: 'BLOCK' }),
   };
 
@@ -597,7 +597,7 @@ test('Gate1 revisingUnresolved contract: M=2 gate also includes runId, feature, 
   const deps = {
     ...fileOps,
     dispatch: mockDispatch.dispatch,
-    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify(['plan-skeptic']), stderr: '' }),
+    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }), stderr: '' }),
     readReviewerOutput: async () => { reviseCount++; return { verdict: 'REVISE' }; },
   };
 
@@ -629,7 +629,7 @@ test('AC-8 strengthened: orchestrator error preserves runId/stages/feature via m
   const deps = {
     ...fileOps,
     dispatch: async () => { throw new Error('dispatch failed intentionally'); },
-    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify(['plan-skeptic']), stderr: '' }),
+    spawnScript: async () => ({ exitCode: 0, stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }), stderr: '' }),
   };
 
   try { await runPlanStageOrchestrator(deps, 'r-test', '/test/worktree'); } catch (_) {}
@@ -667,7 +667,7 @@ test('AC-8: orchestrator error marks run as failed with failureReason', async ()
     dispatch: errorDispatch,
     spawnScript: async (script, args, opts) => ({
       exitCode: 0,
-      stdout: JSON.stringify(['plan-skeptic']),
+      stdout: JSON.stringify({ reviewers: ['plan-skeptic'], reasons: ['test-fixture'] }),
       stderr: ''
     }),
   };

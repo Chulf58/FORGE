@@ -139,9 +139,12 @@ export async function runPlanStageOrchestrator(deps, runId, workDir) {
         ['--plan=PLAN.md', '--stage=plan', '--run-id=' + runId],
       );
 
+      // reviewer-dispatch.mjs returns JSON shape: { reviewers: [...], reasons: [...] }.
+      // Extract the reviewers array; fall back to [] on parse error or missing field.
       let reviewerList;
       try {
-        reviewerList = JSON.parse(stdout);
+        const parsed = JSON.parse(stdout);
+        reviewerList = Array.isArray(parsed?.reviewers) ? parsed.reviewers : [];
       } catch (_) {
         reviewerList = [];
       }
