@@ -562,14 +562,7 @@ export function register(server, _shared) {
           ])).default([]),
           status: z.enum(['pending', 'running', 'completed', 'skipped']).default('pending'),
         })).optional().describe("Stage entries to merge into the run's stages map — existing keys are preserved; new keys are added; provided keys are overwritten; completed/skipped stages cannot have status rolled back"),
-        agents: z.array(z.object({
-          agentId: z.string(),
-          agentType: z.string().nullable().default(null),
-          startedAt: z.number(),
-          completedAt: z.number().nullable().default(null),
-          durationMs: z.number().nullable().default(null),
-          outcome: z.string().nullable().default(null),
-        })).optional().describe("Agent dispatch records to merge into the run's agents array — entries are merged by agentId (upsert: insert if absent, last-write-wins on collision); existing records whose agentId is not in the payload are preserved; a null/absent stored agents array is initialised from this value"),
+        agents: z.never().optional().describe('NOT ACCEPTED — agent trail is managed by the hook layer; passing this field returns isError: true'),
         phases: z.array(z.object({
           index: z.number().int().describe('Phase index (0-based)'),
           label: z.string().describe('Phase label from plan heading'),
@@ -599,7 +592,6 @@ export function register(server, _shared) {
             const existing = existingStages[key];
             if (existing && terminalStatuses.has(existing.status) && incoming.status && incoming.status !== existing.status) {
               console.error(`[forge_update_run] WARN: backward stage transition blocked for "${key}": ${existing.status} -> ${incoming.status}`);
-              // Merge agents but preserve terminal status
               mergedStages[key] = { ...existing, ...incoming, status: existing.status };
             } else {
               mergedStages[key] = { ...existing, ...incoming };
@@ -627,26 +619,6 @@ export function register(server, _shared) {
           }
           // Reconstruct sorted array from map
           cleanPatch.phases = Array.from(phaseMap.values()).sort((a, b) => a.index - b.index);
-        }
-
-        // Agents merge: incoming agent records are merged by agentId (upsert).
-        // Last-write-wins on agentId collision. A null/absent existing agents
-        // array is initialised from the incoming value. Records with agentIds
-        // not in the incoming payload are preserved unchanged. Insertion order
-        // is preserved: existing records keep their position; new records
-        // append. Mirrors the stages and phases merge patterns above.
-        if (cleanPatch.agents !== undefined) {
-          const existingRunForAgents = getRun(projectDir, runId);
-          const existingAgents = (existingRunForAgents && Array.isArray(existingRunForAgents.agents)) ? existingRunForAgents.agents : [];
-          const agentMap = new Map();
-          for (const entry of existingAgents) {
-            agentMap.set(entry.agentId, entry);
-          }
-          for (const entry of cleanPatch.agents) {
-            const existing = agentMap.get(entry.agentId);
-            agentMap.set(entry.agentId, existing ? { ...existing, ...entry } : entry);
-          }
-          cleanPatch.agents = Array.from(agentMap.values());
         }
 
         // Gate-pending status guard: block transitions out of gate-pending to

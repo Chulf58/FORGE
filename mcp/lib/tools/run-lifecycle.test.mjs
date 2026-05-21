@@ -99,3 +99,51 @@ test('register() does not import from run-gate.js (safeguard)', async () => {
     'run-lifecycle.js must not import from run-gate.js',
   );
 });
+
+// AC-1 / AC-2: forge_update_run agents[] bypass guard
+// Step A (baseline proof): on unmodified code the schema ACCEPTS agents — this documents the
+// vulnerability. This test passes before the fix and is retained as a historical marker.
+// Step B (red bar / rejection guard): after the fix the schema MUST REJECT the agents field so
+// the MCP layer returns isError:true without reaching the handler.
+
+test('forge_update_run schema: Step B (red bar) — must reject agents field to close bypass (AC-1)', async () => {
+  const mod = await import('./run-lifecycle.js');
+  const registered = {};
+  const fakeServer = {
+    registerTool: (name, schema, handler) => { registered[name] = { schema, handler }; },
+  };
+  mod.register(fakeServer, {});
+
+  const schema = registered['forge_update_run'].schema.inputSchema;
+  // FAILS on unmodified code: schema currently accepts agents (bypass open).
+  // PASSES after Phase 2 removes agents (replaced by z.never().optional()).
+  const result = schema.safeParse({
+    runId: 'r-abc12345',
+    agents: [{ agentId: 'synthetic-1', agentType: 'coder', startedAt: 1000, outcome: 'completed' }],
+  });
+  assert.ok(
+    !result.success,
+    'forge_update_run schema must reject the agents field — synthetic agent-trail injection bypass must be closed',
+  );
+});
+
+test('forge_update_run schema: back-compat — calls without agents field succeed (AC-3)', async () => {
+  const mod = await import('./run-lifecycle.js');
+  const registered = {};
+  const fakeServer = {
+    registerTool: (name, schema, handler) => { registered[name] = { schema, handler }; },
+  };
+  mod.register(fakeServer, {});
+
+  const schema = registered['forge_update_run'].schema.inputSchema;
+  // Back-compat guard: calls that omit agents entirely must still parse successfully.
+  // Passes on unmodified code AND after the fix.
+  const result = schema.safeParse({
+    runId: 'r-abc12345',
+    status: 'running',
+  });
+  assert.ok(
+    result.success,
+    'forge_update_run schema must accept calls that do not include an agents field',
+  );
+});

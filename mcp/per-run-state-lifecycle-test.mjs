@@ -199,69 +199,28 @@ async function main() {
       }
     }
 
-    // ── Step 2b: forge_update_run agents merge-by-agentId ─────────────────
-    // Verifies upsert semantics: two non-overlapping calls produce both
-    // records; an overlapping agentId merges the matching record while
-    // preserving all others. Regression guard against wholesale-replace.
+    // ── Step 2b: forge_update_run agents rejection guard ──────────────────
+    // AC-4: forge_update_run must reject the agents field via isError:true.
+    // The hook layer (subagent-start.js) writes agent-trail entries directly
+    // to run-active.json — MCP callers must not be able to inject synthetic
+    // stamps that satisfy gate-precondition checks.
     if (!failure) {
-      // First call: insert agent-A.
-      parseToolResult(await callTool(client, 'forge_update_run', {
+      const agentInjectionResult = await callTool(client, 'forge_update_run', {
         runId,
         agents: [
-          { agentId: 'agent-A', agentType: 'coder', startedAt: 1000, completedAt: 2000, durationMs: 1000, outcome: 'completed' },
+          { agentId: 'synthetic-1', agentType: 'coder', startedAt: 1000, outcome: 'completed' },
         ],
-      }));
-
-      // Second call: insert agent-B (non-overlapping).
-      parseToolResult(await callTool(client, 'forge_update_run', {
-        runId,
-        agents: [
-          { agentId: 'agent-B', agentType: 'reviewer-safety', startedAt: 3000, completedAt: 4000, durationMs: 1000, outcome: 'completed' },
-        ],
-      }));
-
-      const runAfterTwo = readRunJson(projectDir, runId);
-      if (!runAfterTwo || !Array.isArray(runAfterTwo.agents)) {
-        failure = 'run.agents missing or not an array after two non-overlapping updates';
-      } else if (runAfterTwo.agents.length !== 2) {
-        failure = 'run.agents should contain 2 records after two non-overlapping updates, got: ' + runAfterTwo.agents.length;
+      });
+      if (!agentInjectionResult.isError) {
+        failure = 'forge_update_run with agents field must return isError:true to close bypass, but returned success';
       } else {
-        const ids = runAfterTwo.agents.map(a => a.agentId).sort();
-        if (ids[0] !== 'agent-A' || ids[1] !== 'agent-B') {
-          failure = 'run.agents should contain agent-A and agent-B, got: ' + ids.join(',');
-        }
-      }
-    }
-
-    if (!failure) {
-      // Third call: overlapping agentId — agent-A updated, agent-B preserved.
-      parseToolResult(await callTool(client, 'forge_update_run', {
-        runId,
-        agents: [
-          { agentId: 'agent-A', agentType: 'coder', startedAt: 1000, completedAt: 5000, durationMs: 4000, outcome: 'failed' },
-        ],
-      }));
-
-      const runAfterMerge = readRunJson(projectDir, runId);
-      if (!runAfterMerge || !Array.isArray(runAfterMerge.agents)) {
-        failure = 'run.agents missing after overlapping-agentId update';
-      } else if (runAfterMerge.agents.length !== 2) {
-        failure = 'run.agents should still contain 2 records after overlapping update (got wholesale-replace behaviour?), got: ' + runAfterMerge.agents.length;
-      } else {
-        const a = runAfterMerge.agents.find(x => x.agentId === 'agent-A');
-        const b = runAfterMerge.agents.find(x => x.agentId === 'agent-B');
-        if (!a) {
-          failure = 'agent-A missing after merge update';
-        } else if (a.outcome !== 'failed') {
-          failure = 'agent-A.outcome should be "failed" after merge, got: ' + a.outcome;
-        } else if (a.durationMs !== 4000) {
-          failure = 'agent-A.durationMs should be 4000 after merge, got: ' + a.durationMs;
-        } else if (!b) {
-          failure = 'agent-B should remain after overlapping update on agent-A (wholesale-replace regression)';
-        } else if (b.outcome !== 'completed') {
-          failure = 'agent-B.outcome should be unchanged ("completed"), got: ' + b.outcome;
+        // Verify run.json.agents is unchanged (no synthetic entry written).
+        const runAfterAttempt = readRunJson(projectDir, runId);
+        const agentsAfter = runAfterAttempt && runAfterAttempt.agents;
+        if (Array.isArray(agentsAfter) && agentsAfter.some(a => a.agentId === 'synthetic-1')) {
+          failure = 'forge_update_run returned isError but synthetic agent entry was still written to run.json';
         } else {
-          console.error('[per-run-state-lifecycle] step 2b PASS — agents merged by agentId (upsert + preserve)');
+          console.error('[per-run-state-lifecycle] step 2b PASS — forge_update_run rejects agents field (bypass closed)');
         }
       }
     }
