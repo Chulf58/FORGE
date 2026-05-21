@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { join } from 'node:path';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, readdirSync, unlinkSync } from 'node:fs';
+import { execFileSync as childExecFileSync } from 'node:child_process';
 import {
   runIdSchema,
   resolveProjectDir,
@@ -12,6 +13,115 @@ import {
   hasGateApprovalToken,
 } from './shared.js';
 import { getRun, listRuns, updateRun, getRunActivePath } from '../../../packages/forge-core/src/runs/index.js';
+
+/**
+ * Checks opt-in gate preconditions for forge_set_gate.
+ * All checks default off — behavior is unchanged unless the relevant env
+ * toggle is set to 'on'.
+ *
+ * @param {string} gate        - 'gate1' | 'gate2' | 'commit'
+ * @param {string} status      - gate status being written; non-'pending' → ok:true (guard)
+ * @param {object} runData     - { worktreePath, projectRoot, agents, createdAt }
+ * @param {object} [overrides] - { env, execFileSync } — injectable for testing
+ * @returns {{ ok: true } | { ok: false, message: string }}
+ */
+export function checkGatePreconditions(gate, status, runData, overrides = {}) {
+  // Guard: skip precondition logic for any status other than 'pending'.
+  if (status !== 'pending') return { ok: true };
+
+  const env = overrides.env ?? process.env;
+  const { worktreePath, projectRoot, agents = [], createdAt } = runData;
+
+  // Resolve reviewer-output dir path.
+  // worktreePath non-null → use worktree path; null → use projectRoot.
+  // A set-but-missing dir is treated as empty (not an error).
+  const reviewerOutputDir = worktreePath != null
+    ? join(worktreePath, '.pipeline', 'context', 'reviewer-output')
+    : join(projectRoot, '.pipeline', 'context', 'reviewer-output');
+
+  function hasReviewerOutput() {
+    try { return readdirSync(reviewerOutputDir).length > 0; } catch (_) { return false; }
+  }
+
+  // ---- gate1: require reviewers to have run ---------------------------------
+  if (gate === 'gate1') {
+    if (env.FORGE_GATE_PRECONDITION_GATE1 !== 'on') return { ok: true };
+
+    const hasReviewerAgent = agents.some(
+      a => typeof a.agentType === 'string' && a.agentType.startsWith('reviewer-'),
+    );
+    if (hasReviewerOutput() || hasReviewerAgent) return { ok: true };
+
+    return {
+      ok: false,
+      message: 'Gate 1 requires at least one reviewer to have run. ' +
+               'No reviewer output files found and no reviewer agent in the pipeline trail.',
+    };
+  }
+
+  // ---- gate2: require implementation to be present -------------------------
+  if (gate === 'gate2') {
+    if (env.FORGE_GATE_PRECONDITION_GATE2 !== 'on') return { ok: true };
+
+    // Condition 1: handoff.md exists (coder output)
+    const handoffPath = worktreePath != null
+      ? join(worktreePath, 'docs', 'context', 'handoff.md')
+      : join(projectRoot, 'docs', 'context', 'handoff.md');
+    if (existsSync(handoffPath)) return { ok: true };
+
+    // Condition 2: coder/debug/refactor agent with completed or partial outcome
+    const hasImplementer = agents.some(
+      a => (a.agentType === 'coder' || a.agentType === 'debug' || a.agentType === 'refactor') &&
+           (a.outcome === 'completed' || a.outcome === 'partial'),
+    );
+    if (hasImplementer) return { ok: true };
+
+    // Condition 3: reviewer-output has files (reviewers already ran)
+    if (hasReviewerOutput()) return { ok: true };
+
+    return {
+      ok: false,
+      message: 'Gate 2 requires implementation to be complete. ' +
+               'Missing handoff.md, no coder/debug/refactor agent completed, ' +
+               'and no reviewer output found.',
+    };
+  }
+
+  // ---- commit gate: require documenter or apply commit ----------------------
+  if (gate === 'commit') {
+    if (env.FORGE_GATE_PRECONDITION_COMMIT !== 'on') return { ok: true };
+
+    // Condition 1: documenter in agents trail
+    const hasDocumenter = agents.some(a => a.agentType === 'documenter');
+    if (hasDocumenter) return { ok: true };
+
+    // Condition 2: git log — has a feat(forge): commit since run.createdAt.
+    // Uses execFileSync with an args ARRAY only — no shell string interpolation.
+    // Fails-open on any error (git unavailable, invalid path, etc.).
+    const execFileSyncFn = overrides.execFileSync ?? childExecFileSync;
+    try {
+      const gitBinary = process.platform === 'win32' ? 'git.exe' : 'git';
+      const cwd = worktreePath ?? projectRoot;
+      const gitArgs = ['log', '--oneline', '--format=%s'];
+      if (createdAt) gitArgs.push(`--after=${createdAt}`);
+      const output = execFileSyncFn(gitBinary, gitArgs, { cwd, encoding: 'utf8' });
+      if (typeof output === 'string' && output.includes('feat(forge):')) return { ok: true };
+    } catch (_) {
+      // Git unavailable or error → fail-open (treat precondition as satisfied)
+      return { ok: true };
+    }
+
+    return {
+      ok: false,
+      message: 'Commit gate requires a documenter agent or apply commit. ' +
+               'No documenter found in pipeline trail and no feat(forge): ' +
+               'commit found since run was created.',
+    };
+  }
+
+  // Unknown gate — don't block
+  return { ok: true };
+}
 
 export function register(server, _shared) {
 
@@ -232,23 +342,37 @@ export function register(server, _shared) {
           if (best) resolvedRunId = best.runId;
         }
 
+        // Resolve target run once — used for precondition checks and worktree-aware
+        // gate path resolution below. Failures are silent; never block on lookup errors.
+        let _targetRun = null;
+        if (resolvedRunId) {
+          try { _targetRun = getRun(projectDir, resolvedRunId); } catch (_) {}
+        }
+
+        // --- Gate precondition check (opt-in; all toggles default off) -------
+        // checkGatePreconditions returns ok:true immediately when the relevant
+        // env toggle is absent (default behavior unchanged). When a toggle is
+        // on and the precondition fails, it returns { ok: false, message } and
+        // the gate write is rejected.  The helper itself guards non-pending
+        // statuses with an early return so approved/discarded paths are unaffected.
+        const _precondResult = checkGatePreconditions(gate, status, {
+          worktreePath: _targetRun?.worktreePath ?? null,
+          projectRoot: projectDir,
+          agents: _targetRun?.agents ?? [],
+          createdAt: _targetRun?.createdAt ?? null,
+        });
+        if (!_precondResult.ok) return errorResult(_precondResult.message);
+
         // Worktree-aware gate path resolution: for worktree-backed runs
         // (implement/debug/refactor), the worker polls
         // <worktreePath>/.pipeline/gate-pending.json. Default to main project root.
         // Gate path components are assembled via path.join from known bases only —
         // no user-controlled strings reach the filesystem call.
         let gatePath = join(check.pipelineDir, 'gate-pending.json');
-        if (resolvedRunId) {
-          try {
-            const targetRun = getRun(projectDir, resolvedRunId);
-            if (targetRun && targetRun.worktreePath) {
-              const wtPipelineDir = join(targetRun.worktreePath, '.pipeline');
-              if (existsSync(wtPipelineDir)) {
-                gatePath = join(wtPipelineDir, 'gate-pending.json');
-              }
-            }
-          } catch (_) {
-            // Fall back to project root — never block the gate operation on run lookup failure
+        if (_targetRun && _targetRun.worktreePath) {
+          const wtPipelineDir = join(_targetRun.worktreePath, '.pipeline');
+          if (existsSync(wtPipelineDir)) {
+            gatePath = join(wtPipelineDir, 'gate-pending.json');
           }
         }
 

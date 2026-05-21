@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-05-21] MCP gate-precondition enforcement (r-43a94ce3)
+
+- Added opt-in `checkGatePreconditions` helper exported from `mcp/lib/tools/run-gate.js` — three env toggles (all default off): `FORGE_GATE_PRECONDITION_GATE1`, `FORGE_GATE_PRECONDITION_GATE2`, `FORGE_GATE_PRECONDITION_COMMIT`
+- Gate1 toggle: rejects `forge_set_gate(gate1, pending)` when no reviewer-output files exist and no `reviewer-*` agent in the pipeline trail
+- Gate2 toggle: rejects when all three fail — missing handoff.md, no coder/debug/refactor agent with `completed`/`partial` outcome, and empty reviewer-output dir
+- Commit toggle: rejects when no `documenter` agent in trail and no `feat(forge):` git commit since `run.createdAt`; git check uses `execFileSync` with args array only (no shell interpolation); fails-open on git errors
+- Wired into `forge_set_gate` handler before gate write; status guard inside helper returns `ok:true` for any non-`pending` status (approved, discarded, future values)
+- Worktree path resolution: non-null `worktreePath` → worktree-relative paths; null → projectRoot; missing dirs treated as empty
+- TDD: 32 new tests in `mcp/lib/tools/run-gate-preconditions.test.mjs`; regression suite `run-gate.test.mjs` 2/2 passes
+- All toggles off by default — zero behavior change unless explicitly enabled
+
 ## [2026-05-21] forge_escalate two-way response channel (TODO 7b479be9)
 
 - Extended `forge_escalate` into a request-response channel: workers call with `responseRequested: true`, pause in `waiting-for-escalation` state, resume once a human responds
