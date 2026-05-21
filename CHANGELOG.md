@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-05-20] Auto-capture learnings post-apply (Gap 2)
+
+- Added `agents/learnings-extractor.md` — deterministic post-apply agent that captures outcome-keyed learnings to `docs/solutions/` (approved/blocked/debug_resolved branches)
+- Wired into `skills/apply/SKILL.md` Step 3.4a between documenter (3.3) and post-apply lifecycle (3.4b)
+- Non-blocking on failure; mainProjectRoot-targeted; honors `detectConflict` to skip near-duplicates; sanitizes user-supplied strings before YAML/markdown injection
+- Phase-split TDD: failing tests (Phase 1) → implementation (Phase 2) → regression green (Phase 3)
+- Note: apply documenter did not write this entry at merge time (60-min safety valve killed the apply worker — TODO a484a9b2); backfilled manually
+
 ## [2026-05-20] Fix reviewer-dispatch plan-skeptic invariant
 
 - Fixed `reviewerOverrides` bypass in `scripts/reviewer-dispatch.mjs` dropping `plan-skeptic` from plan-stage dispatch

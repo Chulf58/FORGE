@@ -26,9 +26,9 @@ const EXPECTED_TOOLS = [
   'forge_create_run', 'forge_get_run', 'forge_list_runs', 'forge_update_run',
   'forge_classify_risk', 'forge_create_worktree', 'forge_escalate', 'forge_resume_run',
   'forge_advance_stage', 'forge_dashboard_state', 'forge_kill_worker',
-  // knowledge.js (5)
-  'forge_get_constraints', 'forge_get_patterns', 'forge_add_learning',
-  'forge_read_criteria', 'forge_write_criteria',
+  // knowledge.js (6)
+  'forge_get_constraints', 'forge_get_patterns', 'forge_get_linked',
+  'forge_add_learning', 'forge_read_criteria', 'forge_write_criteria',
 ];
 
 // Import adapter — will fail until forge-worker-mcp.mjs is created.
@@ -48,7 +48,7 @@ assert.ok(
   'config must not have a command: field (old stdio entry must be removed)',
 );
 
-// AC-3: all 38 tools registered
+// AC-3: all 39 tools registered
 assert.deepStrictEqual(
   [...REGISTERED_TOOL_NAMES].sort(),
   [...EXPECTED_TOOLS].sort(),
@@ -56,8 +56,8 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(
   REGISTERED_TOOL_NAMES.length,
-  38,
-  `Expected 38 tools, got ${REGISTERED_TOOL_NAMES.length}`,
+  39,
+  `Expected 39 tools, got ${REGISTERED_TOOL_NAMES.length}`,
 );
 
 // AC-8: invoke a benign tool via TEST_ONLY_callHandler and assert stderr
@@ -111,5 +111,5 @@ assert.ok(
   `AC-8: durationMs must be a non-negative integer, got ${parsed.durationMs}`,
 );
 
-process.stderr.write('[inprocess-test] PASS — all 38 tools registered\n');
+process.stderr.write('[inprocess-test] PASS — all 39 tools registered\n');
 process.exit(0);
