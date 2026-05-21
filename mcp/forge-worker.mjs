@@ -198,9 +198,12 @@ async function main() {
   function resetWorkerTimer(timeoutMs = WORKER_TIMEOUT_MS) {
     clearTimeout(workerTimer);
     workerTimedOut = false;
+    const setAt = Date.now();
+    writeLog('[forge-worker] [timer-reset] timeoutMs=' + timeoutMs + ' set-at=' + setAt);
     workerTimer = setTimeout(() => {
       workerTimedOut = true;
-      writeLog('[forge-worker] timeout reached (' + timeoutMs + ' ms) — aborting');
+      const elapsed = Date.now() - setAt;
+      writeLog('[forge-worker] timeout reached (' + timeoutMs + ' ms) — aborting elapsed-since-set=' + elapsed);
     }, timeoutMs);
     workerTimer.unref();
   }
@@ -399,6 +402,7 @@ async function main() {
     });
 
     let gateHandled = false;
+    let gateFileConsumed = false; // set after consumeGateApproval to block re-entry on stale run.json
 
     // Checkpoint re-dispatch tracking. Keyed by normalized agent type.
     // Cap: 2 re-dispatches per agent type per worker lifetime (= per run).
@@ -749,12 +753,13 @@ async function main() {
         }
       }
 
-      if (gateHandled) continue;
+      if (gateHandled || gateFileConsumed) continue;
 
       const runData = readRunData();
       if (runData && runData.status === 'gate-pending' &&
           runData.gateState && runData.gateState.status === 'pending') {
         gateHandled = true;
+        gateFileConsumed = false; // entering a new gate — reset consumed flag
         // Use GATE_POLL_TIMEOUT_MS (6 h default) so human review time does not
         // count against the active-worker budget (WORKER_TIMEOUT_MS = 60 min).
         resetWorkerTimer(GATE_POLL_TIMEOUT_MS);
@@ -784,6 +789,7 @@ async function main() {
 
         if (decision === 'approved') {
           gateHandled = false; // allow detecting the next gate after resuming
+          gateFileConsumed = true; // block re-entry on stale run.json until conductor writes fresh status
           const resumeMsg = gateName === 'gate2'
             ? 'Gate 2 approved. Continue with /forge:apply steps in this session: run documenter, lifecycle cleanup, then write a commit gate.'
             : 'approved';
