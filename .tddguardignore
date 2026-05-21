@@ -46,3 +46,8 @@ hooks/observer-autosplit.js
 # Test file is hooks/agent-loop-guard-test.mjs (hyphen convention);
 # tdd-guard resolveTestFile only detects .test.mjs convention.
 hooks/agent-loop-guard.js
+# c62ac8af rectified inline fix 2026-05-21 — red bar confirmed: node --test
+# scripts/archived-agent-cleanup-test.mjs exits 1, 6/6 tests failing
+# (including 'hook-utils.js has no _archived branch'). Test file lives in
+# scripts/ so tdd-guard resolveTestFile cannot locate it.
+hooks/hook-utils.js

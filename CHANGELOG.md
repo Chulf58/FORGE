@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-05-21] Promote coder-scout + completeness-checker; delete dead archived agents (TODO c62ac8af)
+
+- Promoted `agents/coder-scout.md` and `agents/completeness-checker.md` from `agents/_archived/` to top-level — these were misplaced; both are referenced as default implement-stage agents per `skills/implement/SKILL.md`
+- Deleted 9 truly-dead archived agents: agent-optimizer, cleanup, implementer-triage, integrity-checker, regression-risk, researcher-triage, reviewer-style, reviewer-triage, tool-call-auditor
+- Removed now-empty `agents/_archived/` directory
+- Removed dead `_archived` fallback branch from `hooks/hook-utils.js:161-171`
+- Added `.pipeline/agent-roles.json` entries for coder-scout (allowedPaths) and completeness-checker (readonly:true); cleaned up 6 stale entries for deleted agents
+- Bumped plugin version 0.5.11 → 0.5.12 so plugin cache picks up the changes on next `/plugin` + `/reload-plugins`
+- New regression test `scripts/archived-agent-cleanup-test.mjs` (6 assertions; red bar verified before fix, green bar verified after; regression suite 78/78 pass)
+- Root cause: the worker LLM dispatching `forge:_archived:coder-scout` (witnessed r-e82c8161:588) was NOT drift — it was correctly resolving the only available coder-scout. The bug was a placement issue, not an exposure issue. Took 3 attempts to diagnose correctly (r-f107f3ea + r-2537968e both discarded with wrong fix direction).
+
 ## [2026-05-21] Fix 60-min WORKER_TIMEOUT_MS reset-after-approval bug (TODO a484a9b2)
 
 - Fixed gate-block re-entry race in `mcp/forge-worker.mjs` that cancelled the fresh 60-min timer set on gate2 approval — after approval, `gateHandled = false` allowed the next for-await iteration to re-enter the gate-detection block on a stale `run.json` read and call `resetWorkerTimer(GATE_POLL_TIMEOUT_MS)`, replacing the fresh 60-min timer with a 6h gate-poll timer

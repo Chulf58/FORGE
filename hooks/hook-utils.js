@@ -158,17 +158,6 @@ function getForgeAgentSet() {
     const agentsDir = path.join(pluginRoot, 'agents');
     const entries = require('fs').readdirSync(agentsDir);
     const names = entries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));
-    // Also include agents/_archived/ — archived agents can still be spawned
-    // as fallbacks (e.g. completeness-checker when the deterministic script
-    // exits non-zero) and must remain trackable by the hook system.
-    const archivedDir = path.join(agentsDir, '_archived');
-    try {
-      const archivedEntries = require('fs').readdirSync(archivedDir);
-      const archivedNames = archivedEntries.filter(n => n.endsWith('.md')).map(n => n.slice(0, -3));
-      names.push(...archivedNames);
-    } catch (_) {
-      // _archived dir absent or unreadable — proceed with main agents only
-    }
     if (names.length === 0) { _forgeAgents = null; return _forgeAgents; }
     _forgeAgents = new Set(names);
     return _forgeAgents;
