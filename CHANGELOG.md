@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-05-21] Fix 60-min WORKER_TIMEOUT_MS reset-after-approval bug (TODO a484a9b2)
+
+- Fixed gate-block re-entry race in `mcp/forge-worker.mjs` that cancelled the fresh 60-min timer set on gate2 approval — after approval, `gateHandled = false` allowed the next for-await iteration to re-enter the gate-detection block on a stale `run.json` read and call `resetWorkerTimer(GATE_POLL_TIMEOUT_MS)`, replacing the fresh 60-min timer with a 6h gate-poll timer
+- Added `gateFileConsumed` boolean guard: set to `true` after `consumeGateApproval()`; checked alongside `gateHandled` in the loop continue condition; reset to `false` when a new gate is first detected — blocks re-entry regardless of `run.json` staleness
+- Added `[timer-reset]` diagnostic logging to `resetWorkerTimer` with `set-at` epoch ms and `elapsed-since-set` in the fired-callback log line — enables post-mortem verification that the 60-min budget was actually delivered
+- Added `mcp/forge-worker-reset-reproducer.mjs` — self-contained TDD reproducer (no forge-worker.mjs import) with injectable fake timer controller; confirms red→green TDD cycle for the cancellation-by-overwrite scenario
+- TDD: Phase 1 red bar confirmed (overwrite cancels 60-min callback → `AssertionError`); Phase 2 green bar confirmed (exit 0); all existing timeout tests pass unmodified
+
 ## [2026-05-20] Auto-capture learnings post-apply (Gap 2)
 
 - Added `agents/learnings-extractor.md` — deterministic post-apply agent that captures outcome-keyed learnings to `docs/solutions/` (approved/blocked/debug_resolved branches)
