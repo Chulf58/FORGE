@@ -18,8 +18,8 @@ import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { Client } from '../../../mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from '../../../mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import { Client } from './node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
+import { StdioClientTransport } from './node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // __dirname = <worktreeRoot>/mcp; one level up = worktree root

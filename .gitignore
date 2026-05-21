@@ -40,7 +40,6 @@ out
 # End-user projects create their own via /forge:init.
 .pipeline/board.json
 .pipeline/modules.json
-.pipeline/agent-roles.json
 docs/PLAN.md
 docs/PLAN-archive.md
 docs/CHANGELOG.md

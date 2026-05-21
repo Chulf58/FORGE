@@ -20,8 +20,8 @@ test('resetPillPath uses worktreePath as base (not projectRoot)', () => {
 });
 
 test('resetPillPath and workerLogPath differ when worktreePath !== projectRoot', () => {
-  const projectRoot = '/project';
-  const worktreePath = '/project/.worktrees/r-abc123';
+  const projectRoot = join('/', 'project');
+  const worktreePath = join(projectRoot, '.worktrees', 'r-abc123');
   const runId = 'r-abc123';
   // reset-pill is in worktree
   assert.ok(resetPillPath(worktreePath, runId).startsWith(worktreePath));
@@ -31,7 +31,7 @@ test('resetPillPath and workerLogPath differ when worktreePath !== projectRoot',
 });
 
 test('non-worktree runs: all paths under same root', () => {
-  const projectRoot = '/project';
+  const projectRoot = join('/', 'project');
   const runId = 'r-abc123';
   // When workDir === projectRoot (non-worktree), resetPillPath should also be under projectRoot
   const reset = resetPillPath(projectRoot, runId);
