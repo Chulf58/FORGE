@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-05-21] forge_update_run agents[] schema gap fix (r-a2feb708)
+
+- Closed gate-precondition bypass: `forge_update_run` now rejects the `agents[]` field via `z.never().optional()` in the Zod schema — MCP SDK returns `{ isError: true }` for any call that includes agents
+- Removed 19-line agents merge handler block from the `forge_update_run` handler; agent trail is managed exclusively by the hook layer (`subagent-start.js`)
+- Added unit test `forge_update_run schema: Step B (red bar)` to `mcp/lib/tools/run-lifecycle.test.mjs` (TDD red-bar confirmed before fix)
+- Converted `per-run-state-lifecycle-test.mjs` step 2b from agents-upsert assertion to rejection assertion
+- All regression oracles green: 8/8 unit tests, 4/4 integration steps, 40/40 server-registration
+
 ## [2026-05-21] Thin orchestrator / dispatcher worker — plan-stage slice (r-32f638c1)
 
 - Added deterministic plan-stage state machine `runPlanStageOrchestrator(deps, runId, workDir)` with verdict-driven branching (APPROVED, REVISE, BLOCK) and max 2 revision passes before escalation
