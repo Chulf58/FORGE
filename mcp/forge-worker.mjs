@@ -451,7 +451,9 @@ async function main() {
 
   try {
     // --- Deterministic orchestrator path (plan stage only) ---
-    if (process.env.FORGE_ORCHESTRATOR_PLAN === 'on' && pipelineType === 'plan') {
+    // Default ON: any value other than the literal 'off' enables the orchestrator.
+    // Escape hatch: set FORGE_ORCHESTRATOR_PLAN=off to fall through to the LLM-prose path.
+    if (process.env.FORGE_ORCHESTRATOR_PLAN !== 'off' && pipelineType === 'plan') {
       const { runPlanStageOrchestrator } = await import('./lib/orchestrator/plan-stage.mjs');
       const { dispatchAgent } = await import('./lib/orchestrator/agent-dispatch.mjs');
       const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
