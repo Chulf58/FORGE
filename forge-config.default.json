@@ -203,7 +203,7 @@
     "planner": {
       "requiredCapabilities": ["reasoning", "analysis"]
     },
-    "plan-skeptic": {
+    "technical-skeptic": {
       "requiredCapabilities": ["reasoning", "analysis", "agentic"],
       "allowedVendors": ["anthropic"]
     },
