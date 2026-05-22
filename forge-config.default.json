@@ -158,9 +158,6 @@
     "architect": {
       "requiredCapabilities": ["reasoning", "analysis"]
     },
-    "brainstormer": {
-      "requiredCapabilities": ["reasoning"]
-    },
     "cleanup": {
       "requiredCapabilities": ["code"]
     },
