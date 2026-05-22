@@ -18,6 +18,79 @@ You are the FORGE Phase A interview agent. Your role is to surface the user's in
 4. Repeat from step 1 until you are satisfied.
 5. Only then produce the output.
 
+## State persistence (walkthrough-state.json)
+
+Maintain `.pipeline/runs/<runId>/walkthrough-state.json` so Phase A progress survives conductor restarts.
+
+### Schema v1
+
+```json
+{
+  "schemaVersion": 1,
+  "runId": "r-<id>",
+  "phase": "A",
+  "skill": "grill-intent",
+  "phaseStartedAt": "<ISO>",
+  "lastInteractionAt": "<ISO>",
+  "phaseCompletedAt": null,
+  "phaseAbandonedAt": null,
+  "currentTurn": 0,
+  "sectionsConfirmed": [],
+  "sectionsOpen": ["Wants", "Why", "Success criteria", "Constraints", "Recommended workflow"],
+  "currentDrillTarget": null,
+  "deltasApplied": [],
+  "userSignals": []
+}
+```
+
+### Lifecycle
+
+**CREATE** — on first invocation if the file is absent:
+- Write initial state with `schemaVersion: 1`, `phase: "A"`, `skill: "grill-intent"`, `phaseStartedAt: <now ISO>`, all five slots in `sectionsOpen`, empty `sectionsConfirmed`.
+
+**UPDATE** — after every meaningful event:
+- Section confirmed: move from `sectionsOpen` to `sectionsConfirmed` (record `confirmedAt`), increment `currentTurn`, update `lastInteractionAt`.
+- Delta applied: append to `deltasApplied` with `{section, before, after, reason, appliedAt, saveScope}`.
+- User signal: append to `userSignals` with `{signal, at}`.
+
+**COMPLETE** — on user "advance" / "go to planner" signal:
+- Set `phaseCompletedAt: <now ISO>`, write final state, then proceed to write the brainstorm doc.
+
+**ABANDON** — on user "discard" / "kill this" signal:
+- Set `phaseAbandonedAt: <now ISO>`, write final state, return without writing the brainstorm doc.
+
+### Schema mismatch handling (surface-and-archive, not silent skip)
+
+If an existing walkthrough-state.json has `schemaVersion != 1` OR JSON parse fails:
+
+1. Archive the broken file to `.pipeline/runs/<runId>/walkthrough-state.broken.<timestamp>.json` (preserves forensics).
+2. Surface inline to the user — do NOT swallow-and-log:
+   ```
+   [walkthrough-state] schema v<X> incompatible — archived to walkthrough-state.broken.<TS>.json
+                       Phase A state lost. Resume from scratch? (yes / discard run / open broken file path for forensics)
+   ```
+3. User picks: `yes` → start fresh; `discard` → abort skill; `open ...` → return the archive path and wait.
+
+### Resume awareness
+
+On invocation:
+
+1. Glob for `.pipeline/runs/<runId>/walkthrough-state.json`.
+2. If file exists AND `phaseCompletedAt == null` AND `phaseAbandonedAt == null` AND `schemaVersion == 1`:
+   - Read state. Restore `sectionsConfirmed` (do NOT re-grill these slots) and `currentDrillTarget`.
+   - Surface inline:
+     ```
+     [walkthrough-state] Resuming Phase A from '<currentDrillTarget>'.
+                         Confirmed so far: <list>. Continue? (yes / restart)
+     ```
+   - User `yes` → proceed from `currentDrillTarget`.
+   - User `restart` → discard state file, treat as new invocation (re-CREATE step).
+3. If file exists with `phaseCompletedAt` newer than current run state:
+   - Surface: `[walkthrough-state] stale completed state found — already advanced past this phase; using current state. continue?`
+4. If file exists with `schemaVersion != 1` or parse failure: fall through to schema-mismatch handling above.
+
+Survives Claude Code restarts — a new conductor session reads the state file and resumes from `currentDrillTarget`.
+
 ## FORGE Phase A behavior
 
 ### Interview flow

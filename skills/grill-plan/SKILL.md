@@ -18,6 +18,81 @@ You are the FORGE Phase C plan-walkthrough agent. Your role is to walk the user 
 4. Repeat from step 1 until you are satisfied.
 5. Only then produce the output.
 
+## State persistence (walkthrough-state.json)
+
+Maintain `.pipeline/runs/<runId>/walkthrough-state.json` so Phase C progress survives conductor restarts.
+
+### Schema v1
+
+```json
+{
+  "schemaVersion": 1,
+  "runId": "r-<id>",
+  "phase": "C",
+  "skill": "grill-plan",
+  "phaseStartedAt": "<ISO>",
+  "lastInteractionAt": "<ISO>",
+  "phaseCompletedAt": null,
+  "phaseAbandonedAt": null,
+  "currentTurn": 0,
+  "sectionsConfirmed": [],
+  "sectionsOpen": [],
+  "currentDrillTarget": null,
+  "deltasApplied": [],
+  "userSignals": []
+}
+```
+
+The `sectionsOpen` array is populated during Step 1 (Read context) with the plan's task groups — typically the `#### Phase N` headings found in `docs/PLAN.md`. Each entry is a string like `"Phase 1 — <title>"`.
+
+### Lifecycle
+
+**CREATE** — on first invocation if the file is absent:
+- After Step 1 reads PLAN.md and identifies task groups, write initial state with `schemaVersion: 1`, `phase: "C"`, `skill: "grill-plan"`, `phaseStartedAt: <now ISO>`, all identified task groups in `sectionsOpen`, empty `sectionsConfirmed`.
+
+**UPDATE** — after every meaningful event:
+- Task group confirmed: move from `sectionsOpen` to `sectionsConfirmed` (record `confirmedAt`), increment `currentTurn`, update `lastInteractionAt`.
+- Plan delta applied (inline PLAN.md edit per Step 4): append to `deltasApplied` with `{section, before, after, reason, appliedAt, saveScope}`. The `saveScope` field uses values per Phase C category mapping: `project-wide` for AC-shape / Verify-line / test-shape / decomposition patterns; `feature-only` for specific task content; null for pure inline wording.
+- User signal: append to `userSignals` with `{signal, at}`.
+
+**COMPLETE** — on user "advance" / "approve" signal:
+- Set `phaseCompletedAt: <now ISO>`, write final state, then append the Walkthrough deltas section to PLAN.md (Step 5) and return.
+
+**ABANDON** — on user "discard" / "kill this" signal:
+- Set `phaseAbandonedAt: <now ISO>`, write final state, return without appending the Walkthrough deltas section.
+
+### Schema mismatch handling (surface-and-archive, not silent skip)
+
+If an existing walkthrough-state.json has `schemaVersion != 1` OR JSON parse fails:
+
+1. Archive the broken file to `.pipeline/runs/<runId>/walkthrough-state.broken.<timestamp>.json` (preserves forensics).
+2. Surface inline to the user — do NOT swallow-and-log:
+   ```
+   [walkthrough-state] schema v<X> incompatible — archived to walkthrough-state.broken.<TS>.json
+                       Phase C state lost. Resume from scratch? (yes / discard run / open broken file path for forensics)
+   ```
+3. User picks: `yes` → start fresh (re-read PLAN.md, re-populate sectionsOpen); `discard` → abort skill; `open ...` → return the archive path and wait.
+
+### Resume awareness
+
+On invocation:
+
+1. Glob for `.pipeline/runs/<runId>/walkthrough-state.json`.
+2. If file exists AND `phaseCompletedAt == null` AND `phaseAbandonedAt == null` AND `schemaVersion == 1`:
+   - Read state. Restore `sectionsConfirmed` (do NOT re-walk those task groups), `sectionsOpen` (remaining work), and `currentDrillTarget`.
+   - Surface inline:
+     ```
+     [walkthrough-state] Resuming Phase C from '<currentDrillTarget>'.
+                         Confirmed so far: <list>. <N> task groups remaining. Continue? (yes / restart)
+     ```
+   - User `yes` → proceed from `currentDrillTarget`.
+   - User `restart` → discard state file, treat as new invocation (re-CREATE step including PLAN.md re-read).
+3. If file exists with `phaseCompletedAt` newer than current run state:
+   - Surface: `[walkthrough-state] stale completed state found — already advanced past Phase C; using current state. continue?`
+4. If file exists with `schemaVersion != 1` or parse failure: fall through to schema-mismatch handling above.
+
+Survives Claude Code restarts — a new conductor session reads the state file and resumes mid-walkthrough.
+
 ## FORGE Phase C behavior
 
 ### Step 1 — Read context
