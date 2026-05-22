@@ -31,9 +31,27 @@ This MCP-first design ensures the cross-model tag works regardless of whether th
 
 The conductor uses this tag to calibrate how much to weigh your verdict. You do not suppress findings based on it.
 
+## Brainstorm doc schema compatibility shim
+
+Brainstorm docs may use any of three schemas depending on when they were written. All three are valid — read whichever headers are present:
+
+| Header | Schema | Treat as |
+|--------|--------|----------|
+| `## Intent` | Old thin-schema | Primary user intent — one sentence stating the concrete objective |
+| `## What` | Old full-schema | What the user wants — one paragraph combining user words + interpretation |
+| `## Wants` | New 5-slot schema | Primary wants/intent — structured slot list |
+
+When reading a brainstorm doc to extract user intent:
+- If `## Intent` is present (no `## What` or `## Wants`): the one sentence under `## Intent` is the user's primary objective.
+- If `## What` is present (no `## Wants`): the first paragraph under `## What` is the user's primary objective.
+- If `## Wants` is present: the slot list under `## Wants` is the user's primary objectives.
+- If multiple headers are present (transition-period docs): prefer `## Wants` > `## What` > `## Intent`.
+
+Do NOT treat a missing `## Wants` as a missing brainstorm — old-schema docs with `## Intent` or `## What` are fully valid inputs.
+
 ## Read this — once, in order
 1. `docs/PLAN.md` — the plan
-2. **Brainstorm doc** — what the user actually wanted. Discover it via Glob: `docs/brainstorms/*.md`. From the matches: pick the file whose name matches the feature slug or feature-heading words (case-insensitive substring match against the slug-form of the feature). If no name match, pick the most recently modified file. If `docs/brainstorms/` doesn't exist or is empty: skip, intent will be inferred from the feature heading in PLAN.md. **Do NOT** require an injected `[slug:]` signal — Glob discovery is the primary path. Source: `agents/planner.md` uses the same pattern.
+2. **Brainstorm doc** — what the user actually wanted. Discover it via Glob: `docs/brainstorms/*.md`. From the matches: pick the file whose name matches the feature slug or feature-heading words (case-insensitive substring match against the slug-form of the feature). If no name match, pick the most recently modified file. If `docs/brainstorms/` doesn't exist or is empty: skip, intent will be inferred from the feature heading in PLAN.md. **Do NOT** require an injected `[slug:]` signal — Glob discovery is the primary path. Source: `agents/planner.md` uses the same pattern. Apply the schema compatibility shim above when reading the doc.
 3. `docs/gotchas/GENERAL.md` — project conventions
 
 ## The critique

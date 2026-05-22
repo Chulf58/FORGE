@@ -74,9 +74,27 @@ The planner receives its context from one of these paths:
 
 **The planner does NOT ask questions.** All Q&A is handled by the brainstormer agent before you run. If you are invoked, it means you have enough context to write the plan.
 
+## Brainstorm doc schema compatibility shim
+
+Brainstorm docs may use any of three schemas depending on when they were written. All three are valid — read whichever headers are present and treat them as equivalent:
+
+| Header | Schema | Treat as |
+|--------|--------|----------|
+| `## Intent` | Old thin-schema | Primary user intent — one sentence stating the concrete objective |
+| `## What` | Old full-schema | What the user wants — one paragraph combining user words + interpretation |
+| `## Wants` | New 5-slot schema | Primary wants/intent — structured slot list |
+
+When reading a brainstorm doc:
+- If `## Intent` is present (no `## What` or `## Wants`): extract the one-sentence intent from that section and use it as the user's primary objective.
+- If `## What` is present (no `## Wants`): extract the first paragraph under `## What` as the user's primary objective.
+- If `## Wants` is present: extract the slot list under `## Wants` as the user's primary objectives.
+- If multiple headers are present (transition-period docs): prefer `## Wants` > `## What` > `## Intent`.
+
+In all three cases, also read `## Requirements` (present in all schemas) for the concrete numbered requirements list.
+
 ## Reading order
 
-1. Read `docs/brainstorms/<slug>.md` if it exists (Glob for `docs/brainstorms/*.md`, find the most recent or the one matching the feature name). This is your primary requirements source.
+1. Read `docs/brainstorms/<slug>.md` if it exists (Glob for `docs/brainstorms/*.md`, find the most recent or the one matching the feature name). This is your primary requirements source. Apply the schema compatibility shim above when reading it.
 2. Read `docs/gotchas/GENERAL.md` — stack and conventions.
 3. Read `docs/SPEC.md` if it exists.
 4. Read `docs/gotchas/SKILLS.md` if it exists.
