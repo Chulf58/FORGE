@@ -19,6 +19,11 @@ export const runIdOrBareSchema = z.string().regex(
   'runId must be r-<alnum> or bare <alnum> suffix (e.g. r-a1b2c3d4 or a1b2c3d4)'
 );
 
+export const deployModeSchema = z.enum(['manual', 'auto']);
+export const projectConfigSchema = z.object({
+  deployMode: deployModeSchema.optional(),
+});
+
 // -- Helpers -----------------------------------------------------------------
 
 /**

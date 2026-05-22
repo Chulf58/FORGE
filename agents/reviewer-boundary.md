@@ -29,7 +29,6 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
   - No two tasks in the same wave modify the same file.
   - The plan doesn't introduce architecture violations per GENERAL.md boundaries.
 - Skip all handoff-specific checklist items (contract completeness, type correctness, persistence) — those apply to code, not a plan.
-- Skip knowledge enforcement (below) — it applies only to implement-stage.
 - Emit `APPROVED` if the plan's structure is sound, `REVISE` for ordering issues, `BLOCK` only for severe architecture violations.
 - Still emit the `[reviewer-verdict]` signal at the end.
 
@@ -37,7 +36,7 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 
 Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.
 
-## Knowledge enforcement — implement-stage only
+## Knowledge enforcement
 
 Before starting your review, search for relevant past solutions:
 

@@ -15,6 +15,8 @@
 //   { "reviewers": ["reviewer-safety", "reviewer-boundary"], "reasons": [...], "classifiedBy": "diff"|"handoff" }
 
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { classifyHandoff, classifyDiff } from './lean-risk-classify.mjs';
 
@@ -255,7 +257,20 @@ function dispatchForImplementStage(handoffContent, forceReview, pipeline, diffCo
   return result;
 }
 
-function dispatchForPlanStage(planContent) {
+function runWaveCollisionCheck(planPath) {
+  if (!planPath) return { collisions: [] };
+  const scriptPath = new URL('../scripts/wave-collision-check.mjs', import.meta.url).pathname;
+  // On Windows, pathname starts with /C:/... — strip leading slash
+  const normalizedScript = process.platform === 'win32' ? scriptPath.replace(/^\//, '') : scriptPath;
+  if (!existsSync(normalizedScript)) return { collisions: [] };
+  const result = spawnSync(process.execPath, [normalizedScript, `--plan=${planPath}`], { encoding: 'utf8' });
+  if (result.status !== 0 && result.stdout) {
+    return { collisions: result.stdout.trim().split('\n').filter(Boolean) };
+  }
+  return { collisions: [] };
+}
+
+function dispatchForPlanStage(planContent, planPath) {
   const taskLines = planContent
     .split('\n')
     .filter((l) => /^\s*-\s*\[ \]/.test(l))
@@ -263,6 +278,12 @@ function dispatchForPlanStage(planContent) {
 
   const reviewerSet = new Set();
   const reasons = [];
+
+  // Task 15 — wave-collision pre-pass (advisory, non-blocking)
+  const wccResult = runWaveCollisionCheck(planPath);
+  for (const collision of wccResult.collisions) {
+    reasons.push(`wave-collision: ${collision}`);
+  }
 
   // technical-skeptic ALWAYS runs at plan stage — semantic critic complements the
   // structural gotcha-checker. Token cost (~$0.10–$0.20 per Opus run) is the
@@ -294,6 +315,19 @@ function dispatchForPlanStage(planContent) {
   if (hasTestAndKeyword) {
     reviewerSet.add('reviewer-tests');
     reasons.push('plan-task contains "test" + suppression keyword → reviewer-tests');
+  }
+
+  // Task 16 — reviewer-safety surface-gating: skip when no sensitive surface present
+  if (reviewerSet.has('reviewer-safety')) {
+    const sensitiveKeywords = ['auth', 'token', 'password', 'secret', 'credentials', 'exec', 'spawn', 'network', 'fs.write'];
+    const sensitivePaths = ['bin/', 'hooks/', 'mcp/'];
+    const lc = planContent.toLowerCase();
+    const hasSensitiveKeyword = sensitiveKeywords.some(kw => lc.includes(kw));
+    const hasSensitivePath = sensitivePaths.some(p => lc.includes(p));
+    if (!hasSensitiveKeyword && !hasSensitivePath) {
+      reviewerSet.delete('reviewer-safety');
+      reasons.push('reviewer-safety gated out: no sensitive surface keywords or paths detected');
+    }
   }
 
   return { reviewers: Array.from(reviewerSet).sort(), reasons };
@@ -465,7 +499,7 @@ if (isMainModule()) {
   }
 
   const classifiedFallbackResult = stage === 'plan'
-    ? dispatchForPlanStage(content)
+    ? dispatchForPlanStage(content, filePath)
     : dispatchForImplementStage(content, forceReview, pipeline);
 
   // Apply reviewerOverrides bypass on handoff/plan path too (task 2 + task 3)
