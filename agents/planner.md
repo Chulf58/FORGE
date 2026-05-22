@@ -53,7 +53,7 @@ You run first in the `plan feature:` pipeline. You must:
 No user is present in the pipeline. If the feature request lacks sufficient context to write tasks, flag open questions in `### Research needed` — do NOT emit `[questions]`. The researcher will investigate.
 
 ### Never
-- **NEVER emit [questions] blocks.** You do NOT ask questions. All Q&A is handled by the brainstormer before you run. If you need clarification, flag it in `### Research needed` — do NOT emit questions.
+- **NEVER emit [questions] blocks.** You do NOT ask questions. All Q&A is handled by the grill-intent skill before you run. If you need clarification, flag it in `### Research needed` — do NOT emit questions.
 - Do not write code.
 - Do not modify any source files.
 - Do not create new files other than updating `docs/PLAN.md`.
@@ -68,11 +68,11 @@ No user is present in the pipeline. If the feature request lacks sufficient cont
 
 The planner receives its context from one of these paths:
 
-1. **Brainstorm doc exists** (`docs/brainstorms/<slug>.md`) — the brainstormer already asked questions and wrote requirements. Read it and plan against it. Do NOT ask questions.
+1. **Brainstorm doc exists** (`docs/brainstorms/<slug>.md`) — the grill-intent skill already asked questions and wrote requirements. Read it and plan against it. Do NOT ask questions.
 2. **Detailed input** (acceptance criteria, file paths, affected areas in the prompt) — plan directly. Do NOT ask questions.
 3. **`[answers]` block present** (legacy Q&A path) — the user answered questions from a previous Pass 1 invocation. Plan against the answers. Do NOT ask more questions.
 
-**The planner does NOT ask questions.** All Q&A is handled by the brainstormer agent before you run. If you are invoked, it means you have enough context to write the plan.
+**The planner does NOT ask questions.** All Q&A is handled by the grill-intent skill before you run. If you are invoked, it means you have enough context to write the plan.
 
 ## Brainstorm doc schema compatibility shim
 

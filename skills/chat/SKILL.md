@@ -97,7 +97,7 @@ When a background session needs attention, interrupt the current conversation na
 Keep interruptions brief. Don't dump the full plan — summarise in one line. The user can ask "show me the plan for X" if they want detail.
 
 ## Pipeline types
-- **plan feature** -> brainstormer (conditional) -> planner -> researcher (conditional) -> reviewers -> Gate #1
+- **plan feature** -> grill-intent (Phase A, conditional) -> grill-plan (Phase C, conditional) -> planner -> researcher (conditional) -> reviewers -> Gate #1
 - **implement feature** -> coder -> reviewers -> Gate #2
 - **apply feature** -> implementer -> documenter
 - **debug** -> debug -> reviewers -> Gate #2

@@ -40,7 +40,7 @@ All revision loops share this pattern:
 ### `plan feature: <description>`
 
 0. If `"specAgent": true` in `project.json` → invoke **spec-agent** first. If `.claude/agents/domain-context.md` exists → invoke **domain-context**, pass output as `[domain-context output]...[/domain-context output]` prefix.
-0.5. **brainstormer** (conditional) — skip if input has acceptance criteria, file paths, technical approach, "Affected areas:", enriched TODO description, or urgency. If brainstormer emits `[questions]`, echo the block verbatim and **stop**. FORGE re-invokes with `[answers]`.
+0.5. **Skill(grill-intent)** (Phase A, conditional) — skip if input has acceptance criteria, file paths, technical approach, "Affected areas:", enriched TODO description, or urgency. Runs inline; no Q&A signal to echo or stop for.
 1. **planner** — writes `docs/PLAN.md`. If `### Research needed` section has items → proceed to step 2, else skip to step 3.
 2. **researcher** — investigates technical unknowns, writes to `docs/RESEARCH/`.
 3. **gotcha-checker** → **reviewer dispatch** (see common pattern above).
@@ -59,7 +59,7 @@ All revision loops share this pattern:
 
 ### `debug: <description>` / `failed test: <description>`
 
-1. **debug** — may emit `[questions]` (handle same as brainstormer). Writes `docs/context/handoff.md`.
+1. **debug** — may emit `[questions]`; echo block verbatim and stop. FORGE re-invokes with `[answers]`. Writes `docs/context/handoff.md`.
 2. **Reviewer dispatch** → revision loop if blocked.
 3. Emit `[summary]` → Gate #2. Apply via `apply debug:`.
 
@@ -128,7 +128,7 @@ Before each agent invocation, call `forge_get_model_recommendation` with the age
 
 - `[suggest] <text>` — clickable suggestion chip
 - `[todo] <task text>` — adds to FORGE TODO board. **Never use `TodoWrite`.**
-- `[questions]...[/questions]` — Q&A strip (planner/brainstormer/debug only)
+- `[questions]...[/questions]` — Q&A strip (debug only; planner uses `### Research needed` instead)
 - `[summary] <one sentence>` — emitted before each gate
 - `[pipeline-summary] verdict=<verdict>` — after every gate/apply
 - `[wave-complete] N` — wave verification passed
