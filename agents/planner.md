@@ -47,7 +47,10 @@ You run first in the `plan feature:` pipeline. You must:
 - Write `docs/PLAN.md` using the Write tool only; never use Bash to write this file.
 - Emit one `[todo]` line per numbered task added in the current run.
 - Write `docs/PLAN.md` exactly once per session.
-- Before calling Write on `docs/PLAN.md`, verify that the absolute path you are writing to contains `.worktrees/<runId>/` — the plan must live inside the worktree, never in the main project root. If the resolved absolute path does not contain a `.worktrees/` segment, stop and report the path error rather than writing.
+- Before calling Write on `docs/PLAN.md`, verify the absolute write path. **Two valid patterns:**
+  - **Worktree pipeline (legacy / spawnWorker:true):** the absolute path MUST contain `.worktrees/<runId>/`. If invoked under this pattern and the path lacks the `.worktrees/` segment, stop and report the path error.
+  - **In-session pipeline (new / spawnWorker:false):** the absolute path is `<projectRoot>/docs/PLAN.md` (main repo) when the run has `worktreePath: null`. This is allowed when the invocation prompt does NOT contain a `[worktree:` signal AND `forge_get_run` confirms `worktreePath` is null.
+  - When both signals point to the same target, proceed. When they conflict (e.g. `[worktree:` signal present but run has null `worktreePath`), stop and report the inconsistency rather than guessing.
 
 ### Ask First
 No user is present in the pipeline. If the feature request lacks sufficient context to write tasks, flag open questions in `### Research needed` — do NOT emit `[questions]`. The researcher will investigate.
@@ -396,7 +399,7 @@ When your invocation prompt begins with `[revision-mode: M]`, you are revising a
 
 1. **Read the `[revision-mode: M]` signal** from your prompt. M is the pass number (1 or 2). This is a retry pass — the plan was already written but reviewers requested changes.
 
-2. **Read the REVISE feedback.** Reviewer verdict files are in `<worktreePath>/.pipeline/context/reviewer-output/`. Read every `*.md` file in that directory. Extract REVISE concerns and any `AC-<N>: NOT_MET` lines. If a `[failed-criteria: AC-X, AC-Y]` list is present in your prompt, use it as the authoritative list of failing criteria; focus your edits there.
+2. **Read the REVISE feedback.** Reviewer verdict files are at `<worktreePath>/.pipeline/context/reviewer-output/` under the legacy worktree pipeline (spawnWorker:true), OR at `.pipeline/context/reviewer-output/` (main-repo relative) under the new in-session pipeline (spawnWorker:false). Resolve which pattern applies by checking `forge_get_run` — if `worktreePath` is null, use the main-repo path; otherwise use the worktree path. Read every `*.md` file in the resolved directory. Extract REVISE concerns and any `AC-<N>: NOT_MET` lines. If a `[failed-criteria: AC-X, AC-Y]` list is present in your prompt, use it as the authoritative list of failing criteria; focus your edits there.
 
    **`AC-0: NOT_MET` is a plan-level finding** — it does NOT map to a specific task. It is emitted by `plan-skeptic` (and any future plan-stage reviewer that emits plan-wide concerns) when the issue spans the plan as a whole (e.g., intent drift, missing whole-of-plan failure handling, structural decomposition concerns). When you see `AC-0: NOT_MET` in failed-criteria: open the corresponding reviewer's verdict file, locate the matching `[FINDING:...]` block, read the `Concern:` and `Counter-proposal:` lines, and address the concern in the plan's `### Approach summary` section or via a `### Resolution` block (see step 3). Do NOT treat AC-0 as task #0 — there is no task #0.
 
