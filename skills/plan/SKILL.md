@@ -184,6 +184,12 @@ Increment M (AFTER dialogue round, BEFORE planner re-invocation).
 
 Write gate file first, then update the run (run status change triggers observer, so the file must exist first):
 
+**Plan-extractor dispatch (before gate1 suspends):**
+After writing the gate1 file, dispatch `plan-extractor` via Agent tool call with the runId injected:
+- Pass `[run-id: <runId>]` as the first line of the agent's prompt so plan-extractor can read `brainstormSlug` from run state via `forge_get_run`
+- The agent runs asynchronously — do not await its completion; gate1 is written and `forge_update_run` proceeds immediately after dispatch
+- If plan-extractor fails or times out, gate1 remains open; conductor handles the missing proposals file per the "Post-gate1 knowledge proposals" section below
+
 **Clean gate1 (APPROVED or M=0):** Write `.pipeline/gate-pending.json`: `{"runId":"<runId>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"docs/PLAN.md"}`. Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>"}`.
 
 **BLOCK gate1:** Write `.pipeline/gate-pending.json`: `{"runId":"<runId>","gate":"gate1","feature":"<feature name>","status":"pending","plan":"docs/PLAN.md","blockedBy":{"reviewer":"<reviewer name>","reason":"<first line of the violation>"}}`. Call `forge_update_run` with the `runId`, `status: "gate-pending"`, and `gateState: {"gate":"gate1","status":"pending","feature":"<feature name>","createdAt":"<now ISO>","blockedBy":{"reviewer":"<reviewer name>","reason":"<first line of the violation>"}}`. Log the block reason. The run is NOT marked failed — observer surfaces the BLOCK reason via the `blockedBy` gateState field for conductor decision. Reviewer output remains at `.pipeline/context/reviewer-output/` for conductor inspection.
@@ -193,6 +199,49 @@ Write gate file first, then update the run (run status change triggers observer,
 Present the plan summary to the user; include the path `docs/PLAN.md`. If `revisingUnresolved` is true, also display: "Note: Reviewers requested changes that were not fully resolved after 2 planner revision passes. Review the REVISE feedback in `.pipeline/context/reviewer-output/` before approving."
 
 Ask user to type /forge:approve or /forge:discard — the implement worker will start automatically on approval.
+
+### Post-gate1 knowledge proposals (conductor, after gate1 is pending)
+
+This is CONDUCTOR-side work. It runs in-session immediately after gate1 opens, before the user reviews the plan. `brainstormSlug` is stored in run state by the grill-intent skill (Phase A) — plan-extractor reads it from there via `forge_get_run`.
+
+Read `.pipeline/runs/<runId>/plan-extractor-proposals.json`.
+
+**If file is missing, malformed, or has an empty `candidates` array:** Surface inline to the user:
+
+```
+[plan-extractor] proposals file unavailable — knowledge base capture SKIPPED for this run.
+                 Apply-stage learnings-extractor will still run later if implement completes.
+                 Continue to gate1 finalization? (yes / retry plan-extractor / discard run)
+```
+
+User picks:
+- `yes` → proceed to gate1 finalize (ask user to type /forge:approve or /forge:discard as normal)
+- `retry` → re-dispatch plan-extractor once with the same `[run-id: <runId>]` signal; wait for it to complete; re-read the proposals file; if still missing/empty, treat as `yes` and log `[plan-extractor] retry produced no candidates — continuing`
+- `discard` → call `forge_kill_run` with the runId and stop
+
+**If file exists with one or more candidates:** Present each candidate one at a time:
+
+```
+[plan-extractor] Candidate <id> (type: <type>)
+Title: <title>
+<body>
+Source: <sourceSection>
+
+Add to knowledge base? (yes / no / edit)
+```
+
+User response handling per candidate:
+- `yes` → call `forge_add_learning` with `type: <type>`, `title: <title>`, `content: <body>`
+- `no` → skip this candidate
+- `edit` → user provides revised title and/or body text; **strip newlines** (`\n`, `\r`) from both before calling `forge_add_learning` with the sanitized content
+
+After all candidates are processed, summarize:
+
+```
+[plan-extractor] <N> learnings added to knowledge base.
+```
+
+where `<N>` is the count of candidates for which `forge_add_learning` was called. Then proceed to gate1 finalization.
 
 ## Feature request
 $ARGUMENTS

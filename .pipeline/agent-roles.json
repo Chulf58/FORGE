@@ -24,5 +24,6 @@
   "implementer":          { "allowedPaths": ["src/**", "electron/**", "templates/**", ".claude/**", ".pipeline/**", "docs/**", "config/**", "tests/**", "data/**", "scripts/**", "public/**", "assets/**", "*.config.*", "package.json", "tsconfig.json", ".gitignore"] },
   "architect":            { "allowedPaths": ["docs/ARCHITECTURE.md", "docs/PIPELINE-ARCHITECTURE.md", "docs/gotchas/**", "docs/DECISIONS.md", "docs/RESEARCH/**", ".pipeline/modules.json"] },
   "nyquist-auditor":      { "allowedPaths": ["docs/tests/**"] },
-  "skills-generator":     { "allowedPaths": ["docs/gotchas/SKILLS.md", "templates/**/docs/gotchas/SKILLS.md"] }
+  "skills-generator":     { "allowedPaths": ["docs/gotchas/SKILLS.md", "templates/**/docs/gotchas/SKILLS.md"] },
+  "plan-extractor":       { "allowedPaths": [".pipeline/runs/**"] }
 }
