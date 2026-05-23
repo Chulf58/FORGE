@@ -430,6 +430,20 @@ export function register(server, _shared) {
       try {
         const projectDir = resolveProjectDir();
         const run = getRun(projectDir, runId);
+        // Merge loop-guard sidecar if present — exposes block event data to
+        // observer and conductor without modifying run.json (sidecar pattern).
+        if (run) {
+          const sidecarPath = join(projectDir, '.pipeline', 'runs', runId, 'loop-guard-blocked.json');
+          if (existsSync(sidecarPath)) {
+            try {
+              const raw = readFileSync(sidecarPath, 'utf-8');
+              const sidecarData = JSON.parse(raw);
+              if (sidecarData && typeof sidecarData.agentType === 'string' && typeof sidecarData.blockedAt === 'string') {
+                run.loopGuardEvent = sidecarData;
+              }
+            } catch (_) { /* malformed sidecar — omit field, don't throw */ }
+          }
+        }
         return textResult(run);
       } catch (err) {
         return errorResult('forge_get_run failed: ' + err.message);
@@ -445,12 +459,12 @@ export function register(server, _shared) {
       title: 'FORGE List Runs',
       description: 'Lists runs from the index, optionally filtered and field-projected. Use `filter` for the newer/ergonomic path with array-aware status/pipelineType matching; legacy flat `status`/`pipelineType` fields remain for backward compatibility but are superseded when `filter` is present. Use `fields` to slim each item to a subset of top-level keys; requesting a key not on the lightweight index entry triggers a full hydration via getRun.',
       inputSchema: z.object({
-        status: z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded']).optional().describe('Filter by run status (legacy — prefer `filter.status`, which accepts arrays). Ignored when `filter` is present.'),
+        status: z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'loop-guard-pending', 'completed', 'failed', 'discarded']).optional().describe('Filter by run status (legacy — prefer `filter.status`, which accepts arrays). Ignored when `filter` is present.'),
         pipelineType: z.string().optional().describe('Filter by pipeline type (legacy — prefer `filter.pipelineType`, which accepts arrays). Ignored when `filter` is present.'),
         filter: z.object({
           status: z.union([
-            z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded']),
-            z.array(z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded'])),
+            z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'loop-guard-pending', 'completed', 'failed', 'discarded']),
+            z.array(z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'loop-guard-pending', 'completed', 'failed', 'discarded'])),
           ]).optional().describe('Match status — single value or any-of array.'),
           pipelineType: z.union([
             z.string(),
@@ -541,7 +555,7 @@ export function register(server, _shared) {
       description: 'Patches a run with new field values. Automatically sets updatedAt and syncs the index.',
       inputSchema: z.object({
         runId: runIdSchema.describe('Run ID to update'),
-        status: z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'completed', 'failed', 'discarded']).optional().describe('New status'),
+        status: z.enum(['created', 'running', 'gate-pending', 'waiting-for-escalation', 'loop-guard-pending', 'completed', 'failed', 'discarded']).optional().describe('New status'),
         worktreePath: z.string().optional().describe('Worktree path if assigned'),
         branchName: z.string().optional().describe('Branch name if assigned'),
         gateState: z.object({

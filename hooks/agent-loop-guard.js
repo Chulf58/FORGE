@@ -114,6 +114,23 @@ async function main(rawInput) {
   const safeRunId = runId.replace(/[\r\n]/g, ' ').trim();
 
   if (priorCount >= MAX_DISPATCHES_PER_AGENT_PER_RUN) {
+    // Write sidecar BEFORE calling deny() so the worker's poll loop can detect
+    // the block and flip status to 'loop-guard-pending'. Use atomic tmp+rename
+    // for concurrency safety (hook and MCP server both write to .pipeline/).
+    const sidecarPath = path.join(projectDir, '.pipeline', 'runs', runId, 'loop-guard-blocked.json');
+    const sidecarData = JSON.stringify({
+      agentType: normalizedType,
+      blockedAt: new Date().toISOString(),
+      dispatchCount: priorCount,
+      runId,
+    }, null, 2);
+    try {
+      const tmpPath = sidecarPath + '.tmp.' + process.pid;
+      fs.writeFileSync(tmpPath, sidecarData, 'utf8');
+      fs.renameSync(tmpPath, sidecarPath);
+    } catch (sidecarErr) {
+      process.stderr.write('[forge-loop-guard] sidecar write failed (non-fatal): ' + sidecarErr.message + '\n');
+    }
     // Hard-stop: dispatch count has reached the configured cap.
     deny(
       '[forge-stuck] HARD STOP: Agent ' + safeType +

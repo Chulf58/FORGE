@@ -407,6 +407,53 @@ async function main() {
     });
   }
 
+  /**
+   * Polls for a loop-guard sidecar file to be ABSENT (deleted by the hook
+   * after the user resolves the blocked state). Resolves with:
+   *   'cleared'   — sidecar file is gone (normal resume path)
+   *   'timeout'   — gate-poll timeout fired while waiting
+   *   'discarded' — poison-pill detected
+   *
+   * @param {string} sidecarPath - Path to the loop-guard-blocked.json sidecar file.
+   * @returns {Promise<'cleared'|'timeout'|'discarded'>}
+   */
+  function waitForLoopGuardClear(sidecarPath) {
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      function checkSidecar() {
+        if (resolved) return;
+        if (workerTimedOut) {
+          resolved = true;
+          cleanup();
+          resolve('timeout');
+          return;
+        }
+        if (poisonPillDetected) {
+          resolved = true;
+          cleanup();
+          resolve('discarded');
+          return;
+        }
+        if (!existsSync(sidecarPath)) {
+          resolved = true;
+          cleanup();
+          resolve('cleared');
+        }
+      }
+
+      let interval;
+      function cleanup() {
+        clearInterval(interval);
+        try { unwatchFile(sidecarPath); } catch (_) {}
+      }
+
+      interval = setInterval(checkSidecar, 3000);
+      watchFile(sidecarPath, { interval: 1000 }, checkSidecar);
+      checkSidecar();
+    });
+  }
+
   // Debounce tracking for terminal-status poll — updated each time readRunData()
   // is called in the per-message loop. Initialised to 0 so the first message
   // always triggers a check (Date.now() - 0 >> 500).
@@ -924,6 +971,37 @@ async function main() {
       if (gateHandled || gateFileConsumed) continue;
 
       const runData = readRunData();
+
+      // Check for loop-guard sidecar — fires when hook writes sidecar on cap-fire
+      const loopGuardSidecarPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'loop-guard-blocked.json');
+      let loopGuardDetected = false;
+      if (runData && runData.status === 'running' && existsSync(loopGuardSidecarPath)) {
+        let sidecarValid = false;
+        try {
+          const raw = readFileSync(loopGuardSidecarPath, 'utf-8');
+          const sidecarData = JSON.parse(raw);
+          sidecarValid = sidecarData &&
+            typeof sidecarData.agentType === 'string' &&
+            typeof sidecarData.blockedAt === 'string' &&
+            sidecarData.runId === runId;
+        } catch (_) { /* malformed */ }
+        if (sidecarValid) {
+          try {
+            const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+            const raw = readFileSync(runPath, 'utf-8');
+            const runObj = JSON.parse(raw);
+            if (runObj.status === 'running') {
+              runObj.status = 'loop-guard-pending';
+              runObj.updatedAt = new Date().toISOString();
+              writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+            }
+          } catch (_) {}
+          loopGuardDetected = true;
+        } else {
+          writeLog('[forge-worker] loop-guard sidecar malformed — ignoring');
+        }
+      }
+
       if (runData && runData.status === 'gate-pending' &&
           runData.gateState && runData.gateState.status === 'pending') {
         gateHandled = true;
@@ -1035,6 +1113,46 @@ async function main() {
             } catch (_) {
               // fail-open: run.json update is best-effort
             }
+          }
+          break;
+        }
+      } else if (loopGuardDetected || (runData && runData.status === 'loop-guard-pending')) {
+        resetWorkerTimer(GATE_POLL_TIMEOUT_MS);
+        writeLog('[forge-worker] loop-guard-pending detected for run ' + runId + ' gate-poll-timeout=' + GATE_POLL_TIMEOUT_MS + ' ms');
+
+        const clearResult = await waitForLoopGuardClear(loopGuardSidecarPath);
+        writeLog('[forge-worker] loop-guard clear result: ' + clearResult);
+
+        if (clearResult === 'cleared') {
+          try {
+            const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+            const raw = readFileSync(runPath, 'utf-8');
+            const runObj = JSON.parse(raw);
+            if (runObj.status === 'loop-guard-pending') {
+              runObj.status = 'running';
+              runObj.updatedAt = new Date().toISOString();
+              writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+            }
+          } catch (_) {}
+          inputChannel.push({
+            type: 'user',
+            message: { role: 'user', content: '[forge-worker] loop-guard cleared — resuming' },
+            parent_tool_use_id: null,
+          });
+          resetWorkerTimer();
+          writeLog('[forge-worker] loop-guard cleared — resuming');
+        } else {
+          writeLog('[forge-worker] loop-guard ' + clearResult + ' — stopping worker');
+          if (clearResult === 'timeout') {
+            try {
+              const runPath = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+              const raw = readFileSync(runPath, 'utf-8');
+              const runObj = JSON.parse(raw);
+              runObj.status = 'failed';
+              runObj.failureReason = buildGatePollFailureReason('loop-guard', GATE_POLL_TIMEOUT_MS);
+              runObj.updatedAt = new Date().toISOString();
+              writeFileSync(runPath, JSON.stringify(runObj, null, 2) + '\n', 'utf-8');
+            } catch (_) {}
           }
           break;
         }

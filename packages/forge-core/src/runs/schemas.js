@@ -8,6 +8,7 @@ export const RunStatus = z.enum([
   'running',               // pipeline actively executing
   'gate-pending',          // waiting for user approval at a gate
   'waiting-for-escalation', // worker paused waiting for human response to forge_escalate
+  'loop-guard-pending',    // agent dispatch cap hit — waiting for /forge:unblock
   'completed',             // pipeline finished successfully
   'failed',                // pipeline errored
   'discarded',             // user discarded at a gate
@@ -98,6 +99,14 @@ export const Run = z.object({
   // ## Phase N — <label> headings. Null for single-phase (non-partitioned) features.
   phases: z.array(PhaseEntry).nullable().default(null),
   acknowledged: z.boolean().default(false),
+  // Populated when loop-guard fires — merged from the sidecar file by forge_get_run.
+  // Absent on all runs that have never hit the dispatch cap.
+  loopGuardEvent: z.object({
+    agentType: z.string(),
+    blockedAt: z.string(),
+    dispatchCount: z.number(),
+    runId: z.string(),
+  }).nullable().optional(),
 });
 
 // Index entry — lightweight pointer stored in runs/index.json

@@ -228,6 +228,57 @@ async function cleanupStaleSingleton(projectDir) {
   }
 }
 
+/**
+ * Emits a stderr alert for any active run with a loop-guard-blocked.json sidecar.
+ *
+ * Enumerates .pipeline/runs/<runId>/loop-guard-blocked.json sidecars. For each
+ * found, writes a conductor-visible alert to stderr so the operator knows a run
+ * is blocked and how to unblock it.
+ *
+ * Fail-open: any error → return false, no throw. Best-effort, not essential.
+ */
+async function emitLoopGuardAlertIfAny(projectDir) {
+  try {
+    const runsDir = path.join(projectDir, '.pipeline', 'runs');
+    let runDirs;
+    try {
+      runDirs = await fs.promises.readdir(runsDir);
+    } catch (_) {
+      return false; // No runs directory — nothing to do.
+    }
+    let emitted = false;
+    for (const runId of runDirs) {
+      if (!/^r-[a-zA-Z0-9]+$/.test(runId)) continue;
+      const sidecarPath = path.join(runsDir, runId, 'loop-guard-blocked.json');
+      try {
+        await fs.promises.access(sidecarPath);
+      } catch (_) {
+        continue; // No sidecar for this run.
+      }
+      let sidecar;
+      try {
+        const raw = await fs.promises.readFile(sidecarPath, 'utf8');
+        sidecar = JSON.parse(raw);
+      } catch (_) {
+        continue; // Malformed sidecar — skip.
+      }
+      if (!sidecar || typeof sidecar.agentType !== 'string') continue;
+      const agentType = sidecar.agentType;
+      const dispatchCount = typeof sidecar.dispatchCount === 'number' ? sidecar.dispatchCount : '?';
+      const blockedAt = typeof sidecar.blockedAt === 'string' ? sidecar.blockedAt : '?';
+      process.stderr.write(
+        '[forge-loop-guard] Run ' + runId + ' is LOOP-GUARD BLOCKED: agent ' + agentType +
+        ' reached dispatch cap (' + dispatchCount + ' dispatches) at ' + blockedAt +
+        '. Run /forge:unblock ' + runId + ' to resume.\n'
+      );
+      emitted = true;
+    }
+    return emitted;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function main(rawInput) {
   let payload;
   try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
@@ -241,6 +292,7 @@ async function main(rawInput) {
   await cleanupStaleDispatchContext(projectDir);
   await cleanupStaleSingleton(projectDir);
   await emitStaleUnitNoticeIfAny(projectDir, payload);
+  await emitLoopGuardAlertIfAny(projectDir);
 
   // Clean stale worker-session marker from prior sessions. If this is a worker,
   // worker-task-inject.js (runs later in the SessionStart chain) will recreate it.
@@ -297,5 +349,5 @@ rl.on('close', () => {
   main(inputData || '{}').catch(() => process.exit(0));
 });
 
-// Exported for testability (AC-4 — dispatch-context-test.js).
-module.exports = { cleanupStaleDispatchContext };
+// Exported for testability (AC-4 — dispatch-context-test.js; AC-6 — loop-guard-session-alert-test.mjs).
+module.exports = { cleanupStaleDispatchContext, emitLoopGuardAlertIfAny };

@@ -250,6 +250,7 @@ function statusOf(run) {
   if (isLost(run)) return { dot: '?', color: 'red' };
   if (run.actionNeeded) return { dot: '⏸', color: 'yellow' };
   if (run.status === 'running') return { dot: '●', color: 'green' };
+  if (run.status === 'loop-guard-pending') return { dot: '⏸', color: 'yellow' };
   if (run.status === 'gate-pending') return { dot: '!', color: 'yellow' };
   if (run.status === 'failed') return { dot: '✕', color: 'red' };
   if (run.status === 'discarded') return { dot: '○', color: 'red' };
@@ -320,6 +321,11 @@ function runProgress(run) {
   if (run.actionNeeded) {
     return { bar: renderBar(config.totalStages, config.totalStages), label: run.actionNeeded };
   }
+  if (run.status === 'loop-guard-pending') {
+    const evt = run.loopGuardEvent;
+    const lgLabel = evt ? 'loop-guard: ' + evt.agentType + ' (' + evt.dispatchCount + ')' : 'loop-guard blocked';
+    return { bar: renderBar(config.totalStages, config.totalStages), label: lgLabel };
+  }
   if (run.status === 'gate-pending' && run.gateState) {
     const gate = run.gateState.gate;
     const stepInfo = config.steps[gate] || { stage: config.totalStages };
@@ -354,6 +360,7 @@ function animIcon(run, frame) {
   if (run.actionNeeded) return ANIM.attention[frame % ANIM.attention.length];
   if (run.status === 'running') return ANIM.running[frame % ANIM.running.length];
   if (run.status === 'gate-pending') return ANIM.gate[frame % ANIM.gate.length];
+  if (run.status === 'loop-guard-pending') return ANIM.gate[frame % ANIM.gate.length];
   if (run.status === 'failed' || run.status === 'discarded') return ANIM.failed[0];
   return ANIM.done[0];
 }
@@ -498,8 +505,8 @@ async function refresh() {
     notes = loadNotes(PROJECT_DIR);
     escalations = loadEscalations(PROJECT_DIR);
 
-    const gates = (state.activeRuns || []).filter(r => r.status === 'gate-pending');
-    const active = (state.activeRuns || []).filter(r => r.status !== 'gate-pending');
+    const gates = (state.activeRuns || []).filter(r => r.status === 'gate-pending' || r.status === 'loop-guard-pending');
+    const active = (state.activeRuns || []).filter(r => r.status !== 'gate-pending' && r.status !== 'loop-guard-pending');
 
     const unackResearch = (state.recentCompleted || [])
       .map(r => loadFullRun(PROJECT_DIR, r.runId) || r)
@@ -671,6 +678,14 @@ function buildSessionsTab(cols) {
         if (merged.status === 'waiting-for-escalation' && !esc) {
           detailRows.push(['Status', '[response-needed] waiting for escalation response']);
           detailRows.push(['Respond', 'forge_respond_to_escalation { runId: "' + run.runId + '", escalationId, response }']);
+        }
+        if (merged.status === 'loop-guard-pending') {
+          const evt = merged.loopGuardEvent;
+          if (evt) {
+            detailRows.push(['Loop-guard', evt.agentType + ' × ' + evt.dispatchCount + ' dispatches — /forge:unblock ' + run.runId]);
+          } else {
+            detailRows.push(['Loop-guard', 'agent dispatch cap reached — /forge:unblock ' + run.runId]);
+          }
         }
       }
 
