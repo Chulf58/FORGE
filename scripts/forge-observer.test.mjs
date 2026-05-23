@@ -96,3 +96,57 @@ test("forge-observer shows forge_respond_to_escalation hint for response-needed 
   );
 });
 
+// ── AC-5: loop-guard-pending yellow card rendering ───────────────────────────
+// Red bar until forge-observer.mjs handles loop-guard-pending status.
+
+test("forge-observer statusOf maps loop-guard-pending to yellow dot ⏸", () => {
+  assert.ok(
+    src.includes("loop-guard-pending") && src.includes("dot: '⏸'"),
+    "forge-observer.mjs statusOf() must map status 'loop-guard-pending' to { dot: '⏸', color: 'yellow' }",
+  );
+});
+
+test("forge-observer animIcon uses ANIM.gate for loop-guard-pending", () => {
+  assert.ok(
+    src.includes("loop-guard-pending") && src.includes("ANIM.gate"),
+    "forge-observer.mjs animIcon() must use ANIM.gate frames for loop-guard-pending status",
+  );
+});
+
+test("forge-observer detail rows show Loop-guard label for loop-guard-pending", () => {
+  assert.ok(
+    src.includes("'Loop-guard'"),
+    "forge-observer.mjs must push a 'Loop-guard' detail row for loop-guard-pending runs",
+  );
+});
+
+test("forge-observer detail row includes /forge:unblock hint", () => {
+  assert.ok(
+    src.includes("/forge:unblock"),
+    "forge-observer.mjs detail row must include '/forge:unblock <runId>' hint",
+  );
+});
+
+test("forge-observer active/gates filter includes loop-guard-pending in gates bucket", () => {
+  assert.ok(
+    src.includes("loop-guard-pending") &&
+    (src.includes("r.status === 'loop-guard-pending'") || src.includes("r.status==='loop-guard-pending'")),
+    "forge-observer.mjs gates filter must include loop-guard-pending alongside gate-pending",
+  );
+});
+
+// Regression: gate-pending rendering still present (no cross-contamination)
+test("forge-observer gate-pending rendering still present (regression)", () => {
+  assert.ok(
+    src.includes("gate-pending"),
+    "forge-observer.mjs must still handle gate-pending status (regression guard)",
+  );
+});
+
+test("forge-observer runProgress handles loop-guard-pending case", () => {
+  assert.ok(
+    src.includes("loop-guard-pending") && src.includes("loop-guard"),
+    "forge-observer.mjs runProgress() must handle loop-guard-pending with a progress bar + label",
+  );
+});
+

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-05-23] agent-loop-guard observability + unblock flow
+
+- Added `loop-guard-pending` status to run lifecycle: hook writes sidecar on cap-fire, worker polls for deletion, skill deletes sidecar to unblock
+- Hook (`agent-loop-guard.js`) writes atomic `loop-guard-blocked.json` sidecar before deny() to signal worker; worker detects and sets `loop-guard-pending` status
+- MCP `forge_get_run` merges sidecar state into response; observer renders yellow ⏸ dot + "loop-guard-pending" badge in gates section (like gate-pending)
+- Session alert writes to stderr when `waitForLoopGuardClear()` detects sidecar (conductor sees inline); `/forge:unblock` skill deletes sidecar file, worker resumes autonomously on poll-cycle detection
+
 ## [2026-05-21] forge_update_run agents[] schema gap fix (r-a2feb708)
 
 - Closed gate-precondition bypass: `forge_update_run` now rejects the `agents[]` field via `z.never().optional()` in the Zod schema — MCP SDK returns `{ isError: true }` for any call that includes agents
