@@ -95,6 +95,20 @@ When reading a brainstorm doc:
 
 In all three cases, also read `## Requirements` (present in all schemas) for the concrete numbered requirements list.
 
+### Source attribution (newer schema)
+
+Brainstorm docs written under the source-attribution discipline (see CLAUDE.md) separate user-stated content from conductor-proposed content:
+
+- `## User-stated criteria` (or `## Requirements` in older docs) — REQUIREMENTS. Treat every line as binding; the plan must address each.
+- `## Conductor proposals (need user confirmation)` — UNCONFIRMED suggestions. Each line is marked `[unconfirmed]`. Do NOT plan against them as if they were requirements. Instead:
+  1. Skip them when shaping the plan's required tasks.
+  2. List each unconfirmed proposal at the bottom of the plan under a new section `### Unconfirmed proposals from brainstorm` so the grill-plan walkthrough surfaces them to the user.
+  3. The user decides during grill-plan whether to convert each one to a requirement or drop it.
+
+Same split applies to constraints — read `## User-stated constraints` as binding, `## Conductor-proposed constraints` as open questions.
+
+If the brainstorm uses the older single-section schema (just `## Success criteria` and `## Constraints` with no User-stated / Conductor-proposed split), treat the entire content as user-stated for backward compatibility.
+
 ## Reading order
 
 1. Read `docs/brainstorms/<slug>.md` if it exists (Glob for `docs/brainstorms/*.md`, find the most recent or the one matching the feature name). This is your primary requirements source. Apply the schema compatibility shim above when reading it.

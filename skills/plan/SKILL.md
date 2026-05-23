@@ -124,6 +124,8 @@ Determine which reviewers to invoke via the deterministic dispatcher script.
 
 - Dispatch exactly the reviewers listed in `reviewers[]`. Use `forge_get_model_recommendation` for each. Pass `[plan-stage review]` prefix in each reviewer's prompt. No reviewer-triage agent.
 
+- **Dispatch reviewers in PARALLEL with `run_in_background: true`.** Every reviewer Agent call MUST pass `run_in_background: true` so all reviewers run truly concurrently and the conductor regains control immediately after dispatch. Without this, dispatches serialize — wasting the multi-reviewer parallelism. After dispatch, the conductor proceeds to Phase E processing. The conductor MUST wait for ALL background reviewers to complete (via task-notification events) before reading verdicts in Phase E. Do not advance to Phase E mtime-checks until every dispatched reviewer's task-notification has fired (either with a verdict file written or a truncated status). Evidence: r-a45d9be6 (2026-05-22) — first plan run to use parallel reviewer dispatch; 4 reviewers ran concurrently in ~67s, would have serialized to ~270s otherwise.
+
 ### Phase E — Per-finding dialogue (REVISE loop)
 
 Track a revision counter `M` (starts at 0). Maximum iterations: 2. When M >= 2 and REVISE is still unresolved, gate1 OPENS with a `revisingUnresolved: true` marker — the conductor can fix PLAN.md inline before approving gate1.
@@ -219,29 +221,23 @@ User picks:
 - `retry` → re-dispatch plan-extractor once with the same `[run-id: <runId>]` signal; wait for it to complete; re-read the proposals file; if still missing/empty, treat as `yes` and log `[plan-extractor] retry produced no candidates — continuing`
 - `discard` → call `forge_kill_run` with the runId and stop
 
-**If file exists with one or more candidates:** Present each candidate one at a time:
+**If file exists with one or more candidates: auto-accept all (no per-candidate user interaction).**
+
+For each candidate in the proposals file, the conductor calls `forge_add_learning` directly with `type: <type>`, `title: <title>`, `content: <body>`. No surfacing, no yes/no/edit dialogue, no per-candidate user wait.
+
+**Conflict-detect handling** — `forge_add_learning` may return `{conflict: true, slug: <existing-slug>}` indicating a similar existing entry. Retry policy:
+1. Retry ONCE with a more distinctive title — append a disambiguator drawn from the candidate's most distinctive tag or sub-topic (e.g., original "Brainstorm attribution" + tag "phase-c" → retry title "Brainstorm source attribution — separate user-stated from conductor-proposed").
+2. If the retry also conflicts, log `[plan-extractor] candidate <id> skipped — conflict-detect persistent` and move on. Do NOT retry further; do NOT surface to user mid-loop.
+
+After ALL candidates are processed (accepted, conflict-skipped, or errored), emit a single summary line:
 
 ```
-[plan-extractor] Candidate <id> (type: <type>)
-Title: <title>
-<body>
-Source: <sourceSection>
-
-Add to knowledge base? (yes / no / edit)
+[plan-extractor] <accepted> learnings added, <skipped> skipped due to conflict, <total> candidates processed.
 ```
 
-User response handling per candidate:
-- `yes` → call `forge_add_learning` with `type: <type>`, `title: <title>`, `content: <body>`
-- `no` → skip this candidate
-- `edit` → user provides revised title and/or body text; **strip newlines** (`\n`, `\r`) from both before calling `forge_add_learning` with the sanitized content
+Then proceed to gate1 finalization. The user reviews the additions in the morning (or post-loop) via `forge_get_patterns` / `docs/solutions/` if they want to audit — but mid-loop user interaction is no longer required.
 
-After all candidates are processed, summarize:
-
-```
-[plan-extractor] <N> learnings added to knowledge base.
-```
-
-where `<N>` is the count of candidates for which `forge_add_learning` was called. Then proceed to gate1 finalization.
+**Rationale for auto-accept (trade-off):** Speed prioritized over per-candidate nuance. Edits like the r-a45d9be6 p4 case (plan-extractor framed conductor discipline as user discipline, needed correction) will ship with the original framing unless the user later edits the saved entry. Acceptable cost given the user's typical accept rate is >80% in manual mode (r-a45d9be6: 4 yes + 1 edit + 0 no = 100% acceptance).
 
 ## Feature request
 $ARGUMENTS

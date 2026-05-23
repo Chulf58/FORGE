@@ -105,20 +105,67 @@ Write to `docs/brainstorms/<slug>.md`:
 
 ```markdown
 ## Wants
-<what the user wants — 1-3 sentences>
+<what the user wants — 1-3 sentences, drawn from user statements only>
 
 ## Why
-<motivation — 1-2 sentences>
+<motivation — 1-2 sentences, drawn from user statements only>
 
-## Success criteria
-<what "done" looks like — numbered list>
+## User-stated criteria
+<what "done" looks like — numbered list. EVERY item must trace to a verbatim or
+paraphrased user statement. If you cannot cite the user said it, move the item
+to "Conductor proposals" below.>
 
-## Constraints
-<restrictions / out-of-scope items>
+## Conductor proposals (need user confirmation)
+<numbered list of items the conductor inferred or recommended that the user
+did NOT explicitly confirm. Each item marked with `[unconfirmed]`. Empty list
+is fine — write "None." if no proposals.>
+
+## User-stated constraints
+<restrictions / out-of-scope items, user statements only>
+
+## Conductor-proposed constraints (need user confirmation)
+<conductor-inferred constraints, marked `[unconfirmed]`. Empty list is fine.>
 
 ## Recommended workflow
 <inline | pipeline — see deployMode guidance below>
 ```
+
+### Pre-write attribution check (REQUIRED before writing the doc)
+
+Before calling Write on the brainstorm, the conductor MUST:
+
+1. Compile the draft `## User-stated criteria` from user statements (verbatim
+   or paraphrased — paraphrase is fine, attribution is the point).
+2. Compile the draft `## Conductor proposals` from anything the conductor
+   inferred or recommended that the user did not explicitly confirm. This
+   includes: options the conductor offered where the user accepted ONE of
+   multiple options (the unaccepted options are NOT confirmed).
+3. Present BOTH lists to the user inline:
+
+   ```
+   [grill-intent] About to write brainstorm. Review attribution:
+
+   User-stated criteria (drawn from your statements):
+     1. <item>
+     2. <item>
+     ...
+
+   Conductor proposals (I suggested, you did NOT explicitly confirm):
+     [unconfirmed] 1. <item>
+     [unconfirmed] 2. <item>
+     ...
+
+   For each conductor proposal, reply 'accept N', 'reject N', or 'modify N'.
+   Reply 'write' to write the doc as-is (proposals remain unconfirmed).
+   ```
+
+4. Apply the user's accept/reject/modify decisions:
+   - `accept N` → move item N from `## Conductor proposals` to `## User-stated criteria` (drop `[unconfirmed]` marker)
+   - `reject N` → drop item N entirely
+   - `modify N <new text>` → update item N text, keep in `## Conductor proposals` until accepted in a later round
+5. After all decisions applied, write the brainstorm doc.
+
+This step is non-negotiable. Skipping it produces the failure mode that gave rise to this discipline (see CLAUDE.md "Source attribution discipline").
 
 ### deployMode recommendation
 

@@ -12,6 +12,37 @@ Before editing any file, read it first. Before modifying a function, grep for al
 
 Before claiming anything about this codebase's state, history, what exists, or what happened — cite a file:line from a Read/Grep done THIS turn, or say "I don't know, checking" and call the tool. No "appears to", "likely", "probably", "I assume", "seems to have been". If you lack tool-call evidence this turn, you don't know — verify or disclaim.
 
+## Acknowledgement discipline — no bare "noted"
+
+Do not write "noted", "got it", "OK I'll do that", "remembered", "saved", or any similar acknowledgement that implies action has been taken — UNLESS the action has actually been taken THIS turn (cited via a tool call or file edit).
+
+Verbal acknowledgement without action is misleading: it leaves the user with the impression that the request was handled when nothing was persisted. If the user asks you to remember a preference, persist it via the appropriate mechanism:
+
+- Project-wide preference → file a TODO via `forge_add_todo` or edit the relevant skill/agent file
+- Behavioral rule for future sessions → save to auto-memory or edit CLAUDE.md
+- Inline run-only context → state explicitly: "I'll keep this in mind for this run, but it's not persisted — file as TODO?"
+
+If you cannot act on the request right now, say so explicitly with the reason and offer a concrete persistence path.
+
+Why: hit during pilot run r-a45d9be6 (2026-05-22) — conductor said "noted" about a Phase D parallelism preference but made no actual change; user caught the empty acknowledgement the next turn.
+
+## Source attribution discipline — no synthesis-without-attribution
+
+When writing a brainstorm doc, plan, or any artifact that captures user intent, NEVER fold a conductor recommendation into the artifact as if the user stated it. Two distinct categories must remain distinct in every artifact that flows downstream to other agents:
+
+- **User-stated** — the user said it, paraphrased or verbatim. The user can be quoted.
+- **Conductor proposal** — the conductor inferred or recommended it; the user did NOT explicitly confirm it.
+
+Concretely:
+
+1. Brainstorm docs MUST use the two-section schema: `## User-stated criteria` and `## Conductor proposals (need user confirmation)`. Same for `## Constraints` if applicable. The grill-intent skill enforces this format.
+2. Before writing the brainstorm doc to disk, grill-intent must present every conductor proposal to the user and require an explicit accept/reject signal. Proposals the user does NOT confirm go into `## Conductor proposals` with a `[unconfirmed]` marker; the planner sees them but treats them as open questions, not requirements.
+3. When the conductor includes its own recommendation in a reply to the user (e.g., "I'd recommend (b)..."), and the user's next message answers something OTHER than that recommendation, the conductor MUST NOT treat the recommendation as silently accepted. If the user replied to one of multiple options offered, only that one is accepted.
+
+Why: hit during pilot run r-a45d9be6 (2026-05-22) — conductor offered options (a) and (b) for the loop-guard kill path; user accepted (a) ("explicit ack with one keyword"); conductor baked (b) ("kill path with `loop-guard exhausted` failure reason") into the brainstorm anyway as Success criterion #8. The user caught it in Phase C grill-plan walkthrough when asked to refine something they had never said. Result: hours of design conversation grew brainstorm content the user never agreed to.
+
+How to apply: every line of `## Success criteria` and `## Constraints` in a brainstorm must trace to either a verbatim user statement OR a conductor proposal flagged as such. If you can't cite the user statement, the line belongs in `## Conductor proposals`, not in user-stated criteria.
+
 ## TDD discipline
 
 When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), you MUST build it test-first:

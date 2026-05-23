@@ -1,7 +1,7 @@
 ---
 name: gotcha-checker
 description: "Checks plans against known pitfalls. Use when: validating a plan against project conventions, checking for common failure modes."
-model: claude-haiku-4-5-20251001
+model: claude-sonnet-4-6
 tools:
   - Read
   - Glob
