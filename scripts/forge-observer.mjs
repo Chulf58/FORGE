@@ -14,9 +14,44 @@ import { execSync, spawn } from 'node:child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = resolve(__dirname, '..');
 
-if (!process.stdout.isTTY) {
+const _preflightOnly = process.argv.includes('--preflight-only');
+
+if (!process.stdout.isTTY && !_preflightOnly) {
   process.stderr.write('[forge-observer] stdout is not a TTY — observer requires a real terminal.\n');
   process.exit(0);
+}
+
+// ── Preflight: self-heal packages/forge-core deps before importing schemas ──
+// Runs before terminal-kit / dashboard-state imports so a missing or ghost dep
+// (e.g. packages/forge-core/node_modules/zod) is reinstalled rather than
+// causing a "Cannot find package" crash at import time.
+{
+  const _req = createRequire(import.meta.url);
+  const { runPreflight, makeNpmRunner } = _req('./lib/preflight.cjs');
+  const _forgeCoreDir = join(PLUGIN_ROOT, 'packages', 'forge-core');
+  // Use the bundled npm-cli.js pattern from preflight.cjs — observer must not
+  // require bare `npm` on PATH, because the standalone launch path runs without
+  // the SessionStart hook having fired, so the user's shell may not have the
+  // Node bin directory on PATH.
+  const _result = runPreflight(_forgeCoreDir, makeNpmRunner());
+  if (_preflightOnly) {
+    if (_result.depName !== null) {
+      process.stderr.write('[observer-preflight] detected missing dep: ' + _result.depName + '\n');
+      if (_result.error) {
+        // runPreflight already wrote the dep+path+npm-install message to stderr
+        process.stderr.write('[observer-preflight] npm install failed — see above for manual fix command\n');
+      } else {
+        process.stderr.write('[observer-preflight] ' + _result.depName + ' reinstalled in ' + _forgeCoreDir + '\n');
+      }
+    } else {
+      process.stderr.write('[observer-preflight] all deps healthy in ' + _forgeCoreDir + '\n');
+    }
+    process.exit(0);
+  }
+  if (_result.error) {
+    // runPreflight already wrote the informative message (dep name, path, npm install)
+    process.exit(1);
+  }
 }
 
 const mcpRequire = createRequire(join(PLUGIN_ROOT, 'mcp', 'package.json'));

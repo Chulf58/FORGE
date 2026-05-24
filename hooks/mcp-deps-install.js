@@ -5,6 +5,8 @@
 // the plugin root directory. Runs npm install only when node_modules
 // is missing or package.json is newer than the lockfile.
 
+const { findMissingDirectDep } = require('../scripts/lib/preflight.cjs');
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -324,40 +326,9 @@ function resolveNpmTimeout() {
   return parseInt(process.env.FORGE_NPM_INSTALL_TIMEOUT_MS || '600000', 10);
 }
 
-/**
- * Returns the name of the first declared direct dependency whose subtree is
- * missing from node_modules, or null when every declared dep has a directory.
- *
- * Closes the partial-corruption gap that bit r-1a0dc217: node_modules existed
- * (existsSync passed), the internal lockfile was fresher than package.json
- * (mtime check passed), but @anthropic-ai/claude-agent-sdk's subtree had been
- * selectively removed, so the worker died on ERR_MODULE_NOT_FOUND. The original
- * three-branch check could not see this; this helper does.
- *
- * Fail-open on any read/parse error — returns null so the partial-corruption
- * check never blocks the rest of the SessionStart hook.
- */
-function findMissingDirectDep(packageJsonPath, nodeModulesPath) {
-  let pkg;
-  try {
-    pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-  } catch (_) {
-    return null;
-  }
-  const deps = pkg && pkg.dependencies ? Object.keys(pkg.dependencies) : [];
-  for (const depName of deps) {
-    const depDir = path.join(nodeModulesPath, depName);
-    // Check both: (a) directory exists and (b) has a package.json inside it.
-    // A ghost directory (created by a partial npm install interrupted by EPERM or
-    // network failure on Windows) will pass the existsSync(dir) check but lack
-    // package.json — Node.js would then throw "Cannot find package" at import time.
-    // Closes TODO 6e7e7f34 regression on packages/forge-core/node_modules/zod.
-    if (!fs.existsSync(depDir) || !fs.existsSync(path.join(depDir, 'package.json'))) {
-      return depName;
-    }
-  }
-  return null;
-}
+// findMissingDirectDep is imported from scripts/lib/preflight.cjs at the top of
+// this file. It is re-exported below so existing tests that import it via this
+// module continue to work.
 
 function _runNpmCatch(label, nodeModules, err) {
   console.error('[forge-mcp] Failed to install ' + label + ' dependencies: ' + err.message);
