@@ -346,7 +346,13 @@ function findMissingDirectDep(packageJsonPath, nodeModulesPath) {
   }
   const deps = pkg && pkg.dependencies ? Object.keys(pkg.dependencies) : [];
   for (const depName of deps) {
-    if (!fs.existsSync(path.join(nodeModulesPath, depName))) {
+    const depDir = path.join(nodeModulesPath, depName);
+    // Check both: (a) directory exists and (b) has a package.json inside it.
+    // A ghost directory (created by a partial npm install interrupted by EPERM or
+    // network failure on Windows) will pass the existsSync(dir) check but lack
+    // package.json — Node.js would then throw "Cannot find package" at import time.
+    // Closes TODO 6e7e7f34 regression on packages/forge-core/node_modules/zod.
+    if (!fs.existsSync(depDir) || !fs.existsSync(path.join(depDir, 'package.json'))) {
       return depName;
     }
   }

@@ -35,12 +35,14 @@ test('scanCacheVersions — copies SDK from healthy version to broken version wi
     const v1Mcp = path.join(v1, 'mcp');
     const v2Mcp = path.join(v2, 'mcp');
 
-    // v1: healthy — has node_modules with SDK
-    fs.mkdirSync(path.join(v1Mcp, 'node_modules', '@anthropic-ai', 'claude-agent-sdk'), { recursive: true });
-    fs.writeFileSync(
-      path.join(v1Mcp, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'index.js'),
-      '// stub sdk\n'
-    );
+    // v1: healthy — has node_modules with SDK (including package.json inside the SDK dir)
+    const v1SdkDir = path.join(v1Mcp, 'node_modules', '@anthropic-ai', 'claude-agent-sdk');
+    fs.mkdirSync(v1SdkDir, { recursive: true });
+    fs.writeFileSync(path.join(v1SdkDir, 'index.js'), '// stub sdk\n');
+    // package.json is required inside the dep directory: findMissingDirectDep now checks
+    // both existsSync(dir) AND existsSync(dir/package.json) to detect ghost directories.
+    fs.writeFileSync(path.join(v1SdkDir, 'package.json'),
+      JSON.stringify({ name: '@anthropic-ai/claude-agent-sdk', version: '1.0.0' }));
     fs.writeFileSync(
       path.join(v1Mcp, 'package.json'),
       JSON.stringify({ dependencies: { '@anthropic-ai/claude-agent-sdk': '^1.0.0' } })
@@ -89,8 +91,11 @@ test('scanCacheVersions — no-op when all versions are healthy', () => {
     const v1 = path.join(tmpBase, '0.5.5');
     const v1Mcp = path.join(v1, 'mcp');
 
-    // v1: healthy
-    fs.mkdirSync(path.join(v1Mcp, 'node_modules', '@anthropic-ai', 'claude-agent-sdk'), { recursive: true });
+    // v1: healthy — SDK directory must include package.json to be considered valid
+    const v1SdkDir = path.join(v1Mcp, 'node_modules', '@anthropic-ai', 'claude-agent-sdk');
+    fs.mkdirSync(v1SdkDir, { recursive: true });
+    fs.writeFileSync(path.join(v1SdkDir, 'package.json'),
+      JSON.stringify({ name: '@anthropic-ai/claude-agent-sdk', version: '1.0.0' }));
     fs.writeFileSync(path.join(v1Mcp, 'package.json'),
       JSON.stringify({ dependencies: { '@anthropic-ai/claude-agent-sdk': '^1.0.0' } }));
 

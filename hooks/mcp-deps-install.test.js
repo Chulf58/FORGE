@@ -34,16 +34,21 @@ test('findMissingDirectDep — exported', () => {
     'findMissingDirectDep must be exported so partial-corruption detection is testable');
 });
 
-test('findMissingDirectDep — returns null when every direct dep has a directory', () => {
+test('findMissingDirectDep — returns null when every direct dep has a directory with package.json', () => {
   const tmp = makeTmp();
   try {
     const pkgPath = path.join(tmp, 'package.json');
     const nmDir = path.join(tmp, 'node_modules');
     fs.writeFileSync(pkgPath, JSON.stringify({ dependencies: { 'foo': '^1.0.0', '@scope/bar': '^2.0.0' } }));
-    fs.mkdirSync(path.join(nmDir, 'foo'), { recursive: true });
-    fs.mkdirSync(path.join(nmDir, '@scope', 'bar'), { recursive: true });
+    // Each dep must have a package.json inside — bare directories are NOT considered valid
+    const fooDir = path.join(nmDir, 'foo');
+    const barDir = path.join(nmDir, '@scope', 'bar');
+    fs.mkdirSync(fooDir, { recursive: true });
+    fs.mkdirSync(barDir, { recursive: true });
+    fs.writeFileSync(path.join(fooDir, 'package.json'), JSON.stringify({ name: 'foo', version: '1.0.0' }));
+    fs.writeFileSync(path.join(barDir, 'package.json'), JSON.stringify({ name: '@scope/bar', version: '2.0.0' }));
     assert.equal(mod.findMissingDirectDep(pkgPath, nmDir), null,
-      'returns null when all declared deps are present in node_modules');
+      'returns null when all declared deps have a directory with package.json');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -55,7 +60,10 @@ test('findMissingDirectDep — returns missing dep name when one subtree is gone
     const pkgPath = path.join(tmp, 'package.json');
     const nmDir = path.join(tmp, 'node_modules');
     fs.writeFileSync(pkgPath, JSON.stringify({ dependencies: { 'foo': '^1.0.0', '@anthropic-ai/claude-agent-sdk': '^0.2.0' } }));
-    fs.mkdirSync(path.join(nmDir, 'foo'), { recursive: true });
+    // foo has a valid directory + package.json — it's healthy
+    const fooDir = path.join(nmDir, 'foo');
+    fs.mkdirSync(fooDir, { recursive: true });
+    fs.writeFileSync(path.join(fooDir, 'package.json'), JSON.stringify({ name: 'foo', version: '1.0.0' }));
     // @anthropic-ai/claude-agent-sdk dir is deliberately absent — mirrors the
     // r-1a0dc217 incident where node_modules existed but the SDK subtree was gone.
     assert.equal(mod.findMissingDirectDep(pkgPath, nmDir), '@anthropic-ai/claude-agent-sdk',
@@ -73,6 +81,27 @@ test('findMissingDirectDep — returns null on unreadable package.json (fail-ope
     const result = mod.findMissingDirectDep(path.join(tmp, 'missing.json'), nmDir);
     assert.equal(result, null,
       'fail-open on read errors — partial-corruption check must not block hook progress');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Regression test for TODO 6e7e7f34: hook failed to repair packages/forge-core/node_modules/zod
+// when the zod/ DIRECTORY existed but was empty (no package.json inside).
+// Root cause: findMissingDirectDep only checked fs.existsSync(dir) — not package validity.
+// A ghost directory (created by a partial npm install interrupted by EPERM or network) would
+// pass the existsSync check, so needsInstall stayed false, and zod was never reinstalled.
+// The MCP server then failed with "Cannot find package 'zod'" because Node.js requires
+// node_modules/zod/package.json to resolve the package.
+test('findMissingDirectDep — returns dep name when dep directory exists but has no package.json (ghost directory)', () => {
+  const tmp = makeTmp();
+  try {
+    const pkgPath = path.join(tmp, 'package.json');
+    const nmDir = path.join(tmp, 'node_modules');
+    fs.writeFileSync(pkgPath, JSON.stringify({ dependencies: { 'zod': '^3.25.0' } }));
+    fs.mkdirSync(path.join(nmDir, 'zod'), { recursive: true }); // directory exists but is EMPTY — no package.json
+    assert.equal(mod.findMissingDirectDep(pkgPath, nmDir), 'zod',
+      'returns dep name when directory exists but has no package.json — ghost directory must trigger reinstall');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
