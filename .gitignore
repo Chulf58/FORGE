@@ -38,8 +38,9 @@ out
 
 # Plugin development state — NOT distributed to end users.
 # End-user projects create their own via /forge:init.
-.pipeline/board.json
+.pipeline/board.json*
 .pipeline/modules.json
+.pipeline/conductor-scratchpad-*.md
 docs/PLAN.md
 docs/PLAN-archive.md
 docs/CHANGELOG.md
