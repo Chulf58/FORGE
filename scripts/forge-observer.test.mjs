@@ -150,3 +150,18 @@ test("forge-observer runProgress handles loop-guard-pending case", () => {
   );
 });
 
+// Preflight must use the bundled npm-cli.js pattern (makeNpmRunner from
+// scripts/lib/preflight.cjs) — not execSync('npm ...'). The observer's
+// standalone launch path runs outside the SessionStart hook lifecycle, so
+// bare `npm` may not be on PATH. Brainstorm constraint for observer-preflight.
+test("forge-observer preflight uses makeNpmRunner, not execSync(['npm']...)", () => {
+  assert.ok(
+    src.includes("makeNpmRunner()"),
+    "forge-observer preflight must call makeNpmRunner() from preflight.cjs",
+  );
+  assert.ok(
+    !src.includes("execSync(['npm']"),
+    "forge-observer preflight must not use execSync(['npm']...) — bare npm requires PATH",
+  );
+});
+
