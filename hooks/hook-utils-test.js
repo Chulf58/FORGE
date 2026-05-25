@@ -3,6 +3,7 @@
 // Run: node hooks/hook-utils-test.js
 
 const path = require('path');
+const fs = require('fs');
 const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
 
 let passed = 0;
@@ -20,6 +21,28 @@ function assert(condition, label) {
 
 const actual = process.cwd();
 
+// `expectedRoot` is what resolveProjectDir SHOULD return when given a valid,
+// matching payload.cwd (or no payload). It mirrors the resolver's promotion
+// rules: if cwd has no `.git` directory but an ancestor does (monorepo subdir
+// case from TODO 250553e5), expectedRoot is that ancestor; otherwise it's the
+// cwd itself. Computed inline here so the test stays decoupled from the
+// resolver's internal helpers.
+const expectedRoot = (() => {
+  let dir = path.resolve(actual);
+  const root = path.parse(dir).root;
+  for (let depth = 0; depth < 10; depth++) {
+    try {
+      const stat = fs.statSync(path.join(dir, '.git'));
+      if (stat.isDirectory()) return dir;
+    } catch (_) { /* keep walking */ }
+    if (dir === root) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return actual;
+})();
+
 // Capture stderr to verify warning messages without polluting test output
 const stderrLines = [];
 const origStderr = process.stderr.write.bind(process.stderr);
@@ -32,58 +55,57 @@ function lastStderr() { return stderrLines[stderrLines.length - 1] || ''; }
 
 console.log('\n── hook-utils-test.js ───────────────────────────────────────────────────');
 
-// 1. Matching absolute cwd is accepted; worktree suffix stripped when present
+// 1. Matching absolute cwd is accepted; worktree suffix stripped when present;
+//    monorepo subdir promoted to project root.
 {
   const result = resolveProjectDir({ cwd: actual });
-  // If running from a worktree, result is the project root (parent of .worktrees/r-<id>)
-  // If running from a non-worktree, result is actual (unchanged)
   const wtMatch = actual.replace(/[/\\]+$/, '').match(/^(.+)[/\\]\.worktrees[/\\]r-[a-zA-Z0-9]+$/i);
-  const expected = wtMatch ? path.normalize(wtMatch[1]) : actual;
-  assert(result === expected, 'matching absolute cwd: returns project root (strips worktree suffix if present)');
+  const expected = wtMatch ? path.normalize(wtMatch[1]) : expectedRoot;
+  assert(result === expected, 'matching absolute cwd: returns project root (strips worktree suffix or promotes monorepo subdir)');
 }
 
-// 2. Missing cwd falls back to process.cwd() silently
+// 2. Missing cwd falls back to process.cwd() silently (then monorepo-promoted)
 {
   const before = stderrLines.length;
   const result = resolveProjectDir({});
-  assert(result === actual, 'missing cwd: falls back to process.cwd()');
+  assert(result === expectedRoot, 'missing cwd: falls back to process.cwd() (monorepo-promoted)');
   assert(stderrLines.length === before, 'missing cwd: no stderr warning emitted');
 }
 
-// 3. Non-absolute cwd falls back with warning
+// 3. Non-absolute cwd falls back with warning (then monorepo-promoted)
 {
   const result = resolveProjectDir({ cwd: 'relative/path' });
-  assert(result === actual, 'non-absolute cwd: falls back to process.cwd()');
+  assert(result === expectedRoot, 'non-absolute cwd: falls back to process.cwd() (monorepo-promoted)');
   assert(lastStderr().includes('not absolute'), 'non-absolute cwd: stderr warning emitted');
 }
 
-// 4. Mismatched absolute cwd falls back with warning
+// 4. Mismatched absolute cwd falls back with warning (then monorepo-promoted)
 {
   const result = resolveProjectDir({ cwd: '/tmp/attacker-controlled' });
-  assert(result === actual, 'mismatched cwd: falls back to process.cwd()');
+  assert(result === expectedRoot, 'mismatched cwd: falls back to process.cwd() (monorepo-promoted)');
   assert(lastStderr().includes('mismatch'), 'mismatched cwd: stderr warning mentions mismatch');
 }
 
-// 5. Non-string cwd falls back silently
+// 5. Non-string cwd falls back silently (then monorepo-promoted)
 {
   const before = stderrLines.length;
   const result = resolveProjectDir({ cwd: 42 });
-  assert(result === actual, 'non-string cwd: falls back to process.cwd()');
+  assert(result === expectedRoot, 'non-string cwd: falls back to process.cwd() (monorepo-promoted)');
   assert(stderrLines.length === before, 'non-string cwd: no stderr warning');
 }
 
-// 6. Null payload falls back silently
+// 6. Null payload falls back silently (then monorepo-promoted)
 {
   const before = stderrLines.length;
   const result = resolveProjectDir(null);
-  assert(result === actual, 'null payload: falls back to process.cwd()');
+  assert(result === expectedRoot, 'null payload: falls back to process.cwd() (monorepo-promoted)');
   assert(stderrLines.length === before, 'null payload: no stderr warning');
 }
 
-// 7. Path traversal attempt rejected
+// 7. Path traversal attempt rejected (then monorepo-promoted)
 {
   const result = resolveProjectDir({ cwd: actual + '/../../../etc' });
-  assert(result === actual, 'path traversal attempt: falls back to process.cwd()');
+  assert(result === expectedRoot, 'path traversal attempt: falls back to process.cwd() (monorepo-promoted)');
   assert(lastStderr().includes('mismatch'), 'path traversal attempt: stderr warning emitted');
 }
 

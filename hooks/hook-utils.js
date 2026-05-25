@@ -1,6 +1,46 @@
 'use strict';
 
 const path = require('path');
+const fsForRoot = require('fs');
+
+// Marker cap: how many parent levels to walk before giving up the search.
+// 10 is generous (deepest realistic monorepo subdir is ~4-5 levels).
+const MONOREPO_WALK_MAX_DEPTH = 10;
+
+/**
+ * Walks up from `startDir` looking for a `.git` directory (the true repo root).
+ *
+ * `.git` as a DIRECTORY = real git repo root.
+ * `.git` as a FILE = git worktree (handled by the worktree-suffix logic in
+ * resolveProjectDir, not this helper).
+ *
+ * Returns the first ancestor (inclusive of startDir) containing a `.git`
+ * directory, or null when no marker is found within MONOREPO_WALK_MAX_DEPTH.
+ * Never throws.
+ *
+ * This closes the bug where the conductor session cwd is a monorepo subdir
+ * (e.g. `packages/forge-core`) and the hook would otherwise write
+ * `.pipeline/action-approved.json` into the subdir's pipeline dir while the
+ * MCP server reads it from the project root — see TODO 250553e5.
+ */
+function findMonorepoRoot(startDir) {
+  let dir = path.resolve(startDir);
+  const fsRoot = path.parse(dir).root;
+  for (let depth = 0; depth < MONOREPO_WALK_MAX_DEPTH; depth++) {
+    const gitPath = path.join(dir, '.git');
+    try {
+      const stat = fsForRoot.statSync(gitPath);
+      if (stat.isDirectory()) return dir;
+    } catch (_) {
+      // ENOENT or other — keep walking
+    }
+    if (dir === fsRoot) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
 
 /**
  * Resolves the safe project directory from a hook stdin payload.
@@ -16,9 +56,18 @@ const path = require('path');
  * On any violation: falls back to process.cwd() and emits a stderr warning.
  * Never throws or returns an untrusted path.
  *
+ * Monorepo handling: after validation, if the resolved cwd is a subdirectory
+ * with no `.git` directory of its own but an ancestor `.git` directory exists
+ * within MONOREPO_WALK_MAX_DEPTH levels, the ancestor is returned. This makes
+ * the resolver agree with `mcp/lib/tools/shared.js:resolveProjectDir` when the
+ * conductor session is launched from a monorepo subdir like
+ * `<repo>/packages/forge-core` (TODO 250553e5). Returns the validated cwd
+ * unchanged when no ancestor `.git` is found.
+ *
  * @param {object} payload - parsed hook stdin payload
  * @returns {string} safe project directory — equals process.cwd() for non-worktree sessions,
- *   or the main project root when process.cwd() is inside a .worktrees/r-<id> subdirectory.
+ *   the main project root when process.cwd() is inside a .worktrees/r-<id> subdirectory,
+ *   or the monorepo project root when process.cwd() is inside a workspace subdir.
  */
 function resolveProjectDir(payload) {
   const actual = process.cwd();
@@ -26,34 +75,39 @@ function resolveProjectDir(payload) {
     ? payload.cwd.trim()
     : '';
 
-  if (!fromPayload) return actual;
-
-  if (!path.isAbsolute(fromPayload)) {
+  let resolved;
+  if (!fromPayload) {
+    resolved = actual;
+  } else if (!path.isAbsolute(fromPayload)) {
     console.error(
       '[forge-hook] payload.cwd is not absolute ("' + fromPayload +
       '") — falling back to process.cwd()'
     );
-    return actual;
-  }
-
-  if (fromPayload !== actual) {
+    resolved = actual;
+  } else if (fromPayload !== actual) {
     console.error(
       '[forge-hook] payload.cwd mismatch: received "' + fromPayload +
       '", expected "' + actual + '" — falling back to process.cwd()'
     );
-    return actual;
+    resolved = actual;
+  } else {
+    // FORGE worktrees live at <projectRoot>/.worktrees/r-[a-zA-Z0-9]+
+    // When a hook fires inside a worktree session, process.cwd() and payload.cwd
+    // both equal the worktree path — the validation above passes but the result
+    // is wrong. Strip the suffix so all callers receive the main project root,
+    // which is where .pipeline/ state always lives.
+    const normalized = fromPayload.replace(/[/\\]+$/, '');
+    const wtMatch = normalized.match(/^(.+)[/\\]\.worktrees[/\\]r-[a-zA-Z0-9]+$/i);
+    if (wtMatch) return path.normalize(wtMatch[1]);
+    resolved = fromPayload;
   }
 
-  // FORGE worktrees live at <projectRoot>/.worktrees/r-[a-zA-Z0-9]+
-  // When a hook fires inside a worktree session, process.cwd() and payload.cwd
-  // both equal the worktree path — the validation above passes but the result
-  // is wrong. Strip the suffix so all callers receive the main project root,
-  // which is where .pipeline/ state always lives.
-  const normalized = fromPayload.replace(/[/\\]+$/, '');
-  const wtMatch = normalized.match(/^(.+)[/\\]\.worktrees[/\\]r-[a-zA-Z0-9]+$/i);
-  if (wtMatch) return path.normalize(wtMatch[1]);
-
-  return fromPayload;
+  // Monorepo subdir promotion: if the resolved cwd has no `.git` directory of
+  // its own but an ancestor does, return the ancestor. Safe no-op when cwd IS
+  // the project root (findMonorepoRoot returns cwd itself).
+  const monorepoRoot = findMonorepoRoot(resolved);
+  if (monorepoRoot && monorepoRoot !== resolved) return monorepoRoot;
+  return resolved;
 }
 
 /**

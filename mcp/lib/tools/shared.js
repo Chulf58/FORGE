@@ -1,6 +1,40 @@
-import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync, statSync } from 'node:fs';
+import { join, resolve, dirname, parse as parsePath } from 'node:path';
 import { z } from 'zod';
+
+// Marker cap: how many parent levels to walk before giving up the monorepo
+// root search. Mirrors hooks/hook-utils.js so both resolvers agree.
+const MONOREPO_WALK_MAX_DEPTH = 10;
+
+/**
+ * Walks up from `startDir` looking for a `.git` DIRECTORY (real repo root).
+ * `.git` as a FILE = git worktree (handled separately by the gitdir branch in
+ * resolveProjectDir). Returns the first ancestor (inclusive of startDir)
+ * with a `.git` directory, or null when not found within
+ * MONOREPO_WALK_MAX_DEPTH. Never throws.
+ *
+ * Mirrors `hooks/hook-utils.js:findMonorepoRoot`. Closes TODO 250553e5 — the
+ * conductor running from a monorepo subdir (e.g. `packages/forge-core`)
+ * formerly caused hook and MCP server to resolve to different paths.
+ */
+function findMonorepoRoot(startDir) {
+  let dir = resolve(startDir);
+  const fsRoot = parsePath(dir).root;
+  for (let depth = 0; depth < MONOREPO_WALK_MAX_DEPTH; depth++) {
+    const gitPath = join(dir, '.git');
+    try {
+      const stat = statSync(gitPath);
+      if (stat.isDirectory()) return dir;
+    } catch (_) {
+      // ENOENT or other — keep walking
+    }
+    if (dir === fsRoot) break;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
 
 // -- Shared Zod schemas ------------------------------------------------------
 
@@ -64,6 +98,13 @@ export function resolveProjectDir() {
       console.error('[forge-mcp] .git read failed: ' + err.message);
     }
   }
+
+  // Monorepo subdir promotion: if cwd has no `.git` directory of its own
+  // but an ancestor does, return the ancestor. Safe no-op when cwd IS the
+  // project root (findMonorepoRoot returns cwd itself). Mirrors the same
+  // step in hooks/hook-utils.js — closes TODO 250553e5.
+  const monorepoRoot = findMonorepoRoot(cwdOrEnv);
+  if (monorepoRoot && monorepoRoot !== cwdOrEnv) return monorepoRoot;
   return cwdOrEnv;
 }
 
