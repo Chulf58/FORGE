@@ -114,6 +114,8 @@ After reading the plan, assess whether the next implementation slice needs narro
 
 ## STEP 2c — Phase detection (conditional per-phase execution)
 
+<!-- phase-loop-entry-required -->
+
 After reading the plan (Step 2), scan the active feature section in `<worktreePath>/docs/PLAN.md` for phase headings. Match any heading level (`##`, `###`, or `####`) with the pattern `Phase <number>` followed by an optional label after a dash/em-dash (e.g. `#### Phase 1 — Citation grounding`). The canonical level is `####` (H4, nesting inside `### Feature:`), but accept H2-H4 for backward compatibility with older plans.
 
 **If one or more phase headings are found:**
@@ -123,7 +125,7 @@ After reading the plan (Step 2), scan the active feature section in `<worktreePa
    - `label`: the full heading text (e.g. `Phase 1 — Citation grounding`)
    - `taskLines`: the `- [ ]` task lines between this heading and the next phase heading (or feature section end)
 
-2. Initialise the run phases array by calling `forge_update_run` with:
+2. **HARD PRECONDITION — before any coder/test-author/coder-scout dispatch in this run:** initialise the run phases array by calling `forge_update_run` with:
    ```
    phases: [
      { index: 0, label: "Phase 1 — <label>", status: "pending" },
@@ -132,7 +134,11 @@ After reading the plan (Step 2), scan the active feature section in `<worktreePa
    ]
    ```
 
+   This call is your structural commitment to the Phase Execution Loop. If you dispatch a coder (or test-author, or coder-scout) before this `forge_update_run` call, you have drifted out of the loop — STOP and write the phases array first. Verify by calling `forge_get_run` after the write: the returned `phases[]` array MUST be non-empty before you proceed to step 3.
+
 3. Execute the **Phase Execution Loop** (below) instead of the single-pass Steps 2b–5c. After the loop, proceed to the completeness-checker (Step 3.3) and then Gate #2 (Step 6).
+
+**FORBIDDEN PARTITION FRAMING:** Do NOT invent your own "Wave K of N", "Batch K of N", or any other partitioning that bundles multiple plan phases into a single coder dispatch. The plan headings (Phase 1, Phase 2, ...) are the unit of dispatch. Phase-internal "wave N" descriptors (e.g. `#### Phase 3 — eval-from-run graduation helper (wave 2, MUST precede bulk)`) are descriptive labels — they do NOT authorize merging phases. One heading = one coder dispatch with `[phase-scope: <heading text>]` prepend. See `CLAUDE-WORKER.md` "Phase scoping discipline" and `docs/solutions/sdk-aborted-streaming-leaves-worker-dead-with-no-failurereason-harness-missing-outermost-catch.md`.
 
 **If NO phase headings are found:** skip this step. Proceed to Step 2b — the single-pass flow is the default and remains unchanged.
 
@@ -144,7 +150,11 @@ For each phase in index order:
 Call `forge_update_run` with `phases: [{ index: <N>, label: "<label>", status: "running" }]`.
 
 **b. Run Steps 2b through 5c scoped to this phase only:**
-Execute the scoping check (Step 2b), then the test-author wave (Step 3.0 below), then coder-scout (Step 3.1), coder (Step 3.2), test stage (Step 3.2b), reviewer dispatch (Step 3.4), reviewers (Step 3.5), and verdict handling (Steps 5b-5c) exactly as written in their respective sections below, with one modification: **scope every coder and implementation-architect prompt to this phase's task lines only.** Prepend the following to the coder prompt:
+Execute the scoping check (Step 2b), then the test-author wave (Step 3.0 below), then coder-scout (Step 3.1), coder (Step 3.2), test stage (Step 3.2b), reviewer dispatch (Step 3.4), reviewers (Step 3.5), and verdict handling (Steps 5b-5c) exactly as written in their respective sections below, with one modification: **scope every coder and implementation-architect prompt to this phase's task lines only.**
+
+<!-- phase-loop-prepend-coder: [phase-scope: <label>] -->
+
+Prepend the following to the coder prompt EXACTLY (and to the implementation-architect prompt, if dispatched). The bracketed `[phase-scope: <label>]` token is a machine-detectable marker — the coder's HARD PRECONDITION (`agents/coder.md` top) refuses to write files if this token is absent from its prompt:
 
 > `[phase-scope: <label>]` Only implement the following tasks from the plan — do NOT implement tasks from other phases:
 >
@@ -206,6 +216,8 @@ The coder-scout, reviewer dispatch, test stage, and reviewers operate on the sam
 Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer-output/` (delete all files in the directory) so reviewer verdicts from the previous phase do not bleed into the next. Verdict bodies have already been persisted in step 5b-pre, so they survive this clear. Reset the revision counter `N` to 0 and the test counter `T` to 0 for each new phase.
 
 **After the loop completes** (all phases done — BLOCK and REVISE-unresolved verdicts exit the worker before reaching here): proceed to the completeness-checker (Step 3.3 — run once against the full plan, not per-phase) and then Gate #2 (Step 6).
+
+<!-- phase-loop-exit -->
 
 
 ## STEP 3 — Run coder pipeline

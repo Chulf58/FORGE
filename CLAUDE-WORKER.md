@@ -26,6 +26,23 @@ For non-enforcement work, pragmatic TDD vs. direct fix is a judgment call — se
 
 Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` — research catalogues 11 failure modes; §3.2 documents Red+Green collapse as the second-most-common; §4.1 names hook-enforced TDD as the strongest single intervention.
 
+## Phase scoping discipline — one coder per plan phase, never invent wave partitions
+
+When `docs/PLAN.md` contains H2-H4 headings matching `^#{2,4} Phase \d` (the implement skill's Step 2c regex), the worker MUST dispatch exactly ONE coder per phase, scoped via `[phase-scope: <label>]` prepended to the coder's prompt. The Phase Execution Loop in `skills/implement/SKILL.md` Step 2c is the canonical sequence — follow it literally. Do not invent your own "Wave K of N" or any other partition that bundles multiple phase headings into a single coder dispatch.
+
+Concretely:
+
+1. After Step 2c phase detection, BEFORE dispatching the first coder, call `forge_update_run({ runId, phases: [...] })` with one entry per phase heading (index, label, status: "pending"). The presence of a non-empty `phases[]` array on the run record is your structural commitment to running the loop. If you skip this call and dispatch a coder anyway, you have drifted — STOP and call it.
+2. Each coder prompt MUST start with `[phase-scope: <label>]` where `<label>` is the exact heading text of ONE phase. Never combine two phase labels into one prepend.
+3. Between phases: commit the phase's work per-file, clear `.pipeline/context/reviewer-output/`, write the reset-pill at `<worktreePath>/.pipeline/worker-reset/<runId>` to refresh the safety-valve timer, reset revision counter `N` to 0.
+4. The "wave N" descriptors that may appear inside phase labels (e.g. "Phase 3 — eval-from-run graduation helper (wave 2, MUST precede bulk)") are descriptive only — they do NOT authorize you to merge phases. The HEADING is the unit of dispatch.
+
+**Why:** a single coder session accumulating work across multiple phases bloats context, trips the SDK's proactive-interrupt checkpoint mechanism, and races into the `aborted_streaming` failure surface. When that happens the worker exits without writing a `failureReason`, the run stays at `status: "running"` indefinitely, and the conductor only learns of the death from the generic SessionStart notice on the next session. The Phase Execution Loop, when followed, naturally caps each coder's scope to one phase with a fresh agent session — the protection against context overflow IS the loop, not the model.
+
+**How to apply:** any time you read PLAN.md and find 2+ `Phase <N>` headings, you are in the Phase Execution Loop branch. Confirm via the initial `forge_update_run({phases:[...]})` call before any coder dispatch. If you ever find yourself drafting a prompt like "Wave 1 of 4. Implement Tasks 9, 10, and 18" — STOP and re-read Step 2c. That framing is the drift signature documented in `docs/solutions/sdk-aborted-streaming-leaves-worker-dead-with-no-failurereason-harness-missing-outermost-catch.md`.
+
+**Origin:** 2026-05-25 r-4776c645 (FORGE drift detection layer plan) — worker dispatched 4 "Wave K of 4" coders covering 10 plan phases; Wave 3 alone bundled 5 tasks; context bloated to ~143K tokens by message 717; SDK fired proactive interrupts on coder-scout + coder + reviewer-boundary + reviewer-safety; stream aborted three times; run stayed `status: "running"` with `failureReason: null` until manual recovery the next session.
+
 ## Tool efficiency
 
 Use dedicated tools over Bash: `Read` not `cat`, `Glob` not `find`, `Grep` not `grep`, `Edit` not `sed`. Prefer `forge_*` MCP tools for pipeline state; fall back to direct file reads if MCP unavailable. `hooks/bash-guard.js` enforces this as a backstop.
