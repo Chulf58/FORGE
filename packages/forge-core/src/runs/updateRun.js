@@ -66,15 +66,23 @@ export function updateRun(projectRoot, runId, patch) {
   }
 
   // Phases merge — by index. Last-write-wins on collision; result sorted by index.
+  // Sentinel: patch.phases === null clears the entire phases array. Used by
+  // forge_advance_stage so a new stage's phases don't collide by-index with the
+  // prior stage's (TODO: observer 6/6 surfaced because plan-stage Phase A/B/C
+  // and implement-stage Phase 1/2/3 both want index 0).
   if (patch.phases !== undefined) {
-    const existing = Array.isArray(raw.phases) ? raw.phases : [];
-    const map = new Map();
-    for (const entry of existing) map.set(entry.index, entry);
-    for (const entry of patch.phases) {
-      const prev = map.get(entry.index);
-      map.set(entry.index, prev ? { ...prev, ...entry } : entry);
+    if (patch.phases === null) {
+      merged.phases = [];
+    } else {
+      const existing = Array.isArray(raw.phases) ? raw.phases : [];
+      const map = new Map();
+      for (const entry of existing) map.set(entry.index, entry);
+      for (const entry of patch.phases) {
+        const prev = map.get(entry.index);
+        map.set(entry.index, prev ? { ...prev, ...entry } : entry);
+      }
+      merged.phases = Array.from(map.values()).sort((a, b) => a.index - b.index);
     }
-    merged.phases = Array.from(map.values()).sort((a, b) => a.index - b.index);
   }
 
   const run = Run.parse(merged);

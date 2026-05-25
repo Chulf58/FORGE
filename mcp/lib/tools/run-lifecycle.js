@@ -1149,7 +1149,12 @@ export function register(server, _shared) {
         if (runningStage) {
           stagesPatch[runningStage[0]] = { ...runningStage[1], status: 'completed' };
         }
-        const updatedRun = updateRun(projectDir, runId, { stages: stagesPatch, status: 'running' });
+        // Clear phases on stage transition so the new stage's worker can populate
+        // its own phase entries without colliding by-index with the prior stage's
+        // (e.g. plan-stage Phase A at index 0 vs implement-stage Phase 1 at index 0).
+        // Observer rendered "6/6 phases" for an implementing run because the plan
+        // stage's completed phases were still in phases[].
+        const updatedRun = updateRun(projectDir, runId, { stages: stagesPatch, status: 'running', phases: null });
 
         // Refresh per-run active file stages so subagent hooks see the updated allowlist.
         // Note: forge_update_run does not touch run-active files by design; only

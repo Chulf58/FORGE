@@ -269,6 +269,44 @@ test('phases: result sorted by index', () => {
   });
 });
 
+test('phases: null sentinel clears existing phases array', () => {
+  withTempProject((dir) => {
+    seedRun(dir, 'r-ppp-clear', {
+      phases: [
+        { index: 0, label: 'Phase A — user interview', status: 'completed' },
+        { index: 1, label: 'Phase B — planner', status: 'completed' },
+        { index: 2, label: 'Phase C — plan walkthrough', status: 'completed' },
+      ],
+    });
+    updateRun(dir, 'r-ppp-clear', { phases: null });
+    const after = readRun(dir, 'r-ppp-clear');
+    assert.equal(after.phases.length, 0, 'phases array should be empty after null-sentinel clear');
+  });
+});
+
+test('phases: null clear lets a new stage repopulate without by-index collisions', () => {
+  withTempProject((dir) => {
+    seedRun(dir, 'r-stage-transition', {
+      phases: [
+        { index: 0, label: 'Phase A — user interview', status: 'completed' },
+        { index: 1, label: 'Phase B — planner', status: 'completed' },
+      ],
+    });
+    // Simulate forge_advance_stage: clear then let next stage populate.
+    updateRun(dir, 'r-stage-transition', { phases: null });
+    updateRun(dir, 'r-stage-transition', {
+      phases: [
+        { index: 0, label: 'Phase 1 — Eval infrastructure', status: 'pending' },
+        { index: 1, label: 'Phase 2 — Behavior graders', status: 'pending' },
+      ],
+    });
+    const after = readRun(dir, 'r-stage-transition');
+    assert.equal(after.phases.length, 2);
+    assert.equal(after.phases[0].label, 'Phase 1 — Eval infrastructure', 'no remnant of plan-stage Phase A at index 0');
+    assert.equal(after.phases[1].label, 'Phase 2 — Behavior graders');
+  });
+});
+
 // ─── other fields shallow-replace as before ─────────────────────────
 
 test('non-merge fields: status replaces', () => {
