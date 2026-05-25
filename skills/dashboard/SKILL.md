@@ -3,6 +3,7 @@ name: forge:dashboard
 description: "Show all FORGE runs and board state at a glance. Use when: user asks 'what's running', wants a control-plane overview, checks pending gates, or wants to see recent completions + top TODOs."
 allowed-tools: "Read Glob Bash"
 ---
+<!-- skill-linter:ignore file-paths scripts/forge-wrapper-proto.mjs -->
 
 Show a compact registry-backed snapshot of the current FORGE state.
 

@@ -5,6 +5,7 @@ argument-hint: "[what you want to build]"
 allowed-tools: "Read Write Glob Grep Bash"
 model: claude-sonnet-4-6
 ---
+<!-- skill-linter:ignore file-paths scripts/sanitize-slug.mjs -->
 
 ## Skip-loop guard
 
