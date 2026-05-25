@@ -6,6 +6,12 @@ allowed-tools: "Read Write Glob Grep Bash"
 model: claude-sonnet-4-6
 ---
 
+## Skip-loop guard
+
+When the argument contains `[user-prefilled]` on its own line, the skill MUST skip the Pocock interview loop and proceed directly to plan writing. This token signals that the conductor already captured user intent through a prior interview and pre-filled the slots. Do NOT re-interview the user.
+
+Only skip when `[user-prefilled]` is present — never unilaterally.
+
 <!-- Pocock interview loop — vendored under MIT license from https://github.com/mattpocock/skills/blob/main/LICENSE — verbatim use permitted -->
 
 You are the FORGE Phase A interview agent. Your role is to surface the user's intent, motivation, and success criteria before planning begins — producing a structured brainstorm doc that the plan skill can use as its foundation.

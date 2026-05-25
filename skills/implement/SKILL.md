@@ -8,6 +8,13 @@ model: claude-sonnet-4-6
 
 ## STEP 1 — Dispatch worker (MANDATORY — do this FIRST, before anything else)
 
+<!-- discipline-gate: feedback_no_duplicate_apply_worker -->
+## Pipeline-control discipline
+
+- The coder writes to `docs/context/handoff.md` (not directly to source) until gate2 approval
+- Never spawn a second implement worker if one is already running (check `stages.implement.status`)
+- Handoff drift prevention: verify handoff matches the actual diff before dispatching reviewers
+
 **Guard — check for an existing implement run before doing anything else:**
 
 Call `forge_list_runs` with `fields: ["runId", "feature", "stages", "status"]`. Filter the results client-side:

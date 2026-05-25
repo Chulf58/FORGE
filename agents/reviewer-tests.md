@@ -29,6 +29,14 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with o
 - Emit `APPROVED` if no test-weakening patterns are introduced by the plan, `REVISE` for minor concerns, `BLOCK` only if the plan explicitly describes deleting or disabling tests.
 - Still emit the `[reviewer-verdict]` signal at the end.
 
+**STRUCTURAL OVERRIDE — in plan-stage mode, the ONLY sections below that apply are:**
+- `## Output path resolution`
+- `## Permissions`
+- `## Output format` (verdict + signal only — skip the checklist body)
+- `## Output protocol`
+
+Skip all other sections entirely when in plan-stage mode.
+
 ## Reading discipline — read each file ONCE, write output ONCE
 
 **maxTurns: 1 — complete all work in a single turn.**

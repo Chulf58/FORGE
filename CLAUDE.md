@@ -43,6 +43,26 @@ Why: hit during pilot run r-a45d9be6 (2026-05-22) — conductor offered options 
 
 How to apply: every line of `## Success criteria` and `## Constraints` in a brainstorm must trace to either a verbatim user statement OR a conductor proposal flagged as such. If you can't cite the user statement, the line belongs in `## Conductor proposals`, not in user-stated criteria.
 
+## Intent-capture skill invocation discipline
+
+When invoking a skill whose purpose is to capture USER intent — `forge:grill-intent`, `forge:grill-plan`, `forge:debug` Step 0, or any future Phase A / interview-style skill — the conductor MUST pass only the user's verbatim words as the skill argument. Do NOT paraphrase. Do NOT inject content from TODOs, prior conversations, conductor inference, or repackaging. The user's exact phrasing (however minimal) is the input.
+
+This is distinct from pre-filling worker task briefs, agent prompts, TODO bodies, or learning content — those are conductor-authored by design. The discipline applies ONLY to surfaces designed to capture what the user actually wants.
+
+If the user's verbatim input is minimal (e.g., "pick option 2"), pass that minimal input. The skill's Pocock loop will fill the gap by asking questions. Resist the urge to "help" by pre-stuffing the slots — that produces the failure mode documented in `docs/solutions/forge-debug-pipeline-lacks-the-lightweight-bug-intent-capture-that-plan-pipeline-has-via-phase-a.md` and the analogous gap in grill-intent filed under the skill-feedback lane.
+
+**Allowed exception — `[user-prefilled]` token:** the conductor may pass `[user-prefilled]` on its own line in the skill argument ONLY when the user explicitly typed or pasted `[user-prefilled]` in their actual message to the conductor. The conductor MUST NOT add this token unilaterally — that would re-create the failure mode.
+
+Intent-capture surfaces in scope (current):
+
+- `skills/grill-intent/SKILL.md` (Phase A interview)
+- `skills/grill-plan/SKILL.md` (Phase C walkthrough)
+- `skills/debug/SKILL.md` Step 0 (bug intent)
+
+When you add a new intent-capture skill, add it to this list AND wire its skip-loop guard to honor the `[user-prefilled]` token convention.
+
+Why: 2026-05-25 conductor session — same conductor that added Step 0 to /forge:debug to prevent unilateral framing skipped grill-intent's Pocock loop within the next hour by passing a brainstorm-pre-filled argument from TODO 65c1ad5f. Two discipline gates (skip-loop guard + pre-write attribution check) both failed because prose discipline gets ignored under "this is obvious, let me skip ahead" pressure. This rule is the upstream gate before the skill ever runs.
+
 ## TDD discipline
 
 When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), you MUST build it test-first:

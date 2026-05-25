@@ -6,6 +6,10 @@ allowed-tools: "Read Write Glob Grep Bash Agent"
 model: claude-sonnet-4-6
 ---
 
+## STEP 0 — Invocation discipline
+
+**Step 0 invocation discipline:** when dispatching this skill, pass ONLY the user's verbatim bug description — do not paraphrase or inject conductor inference.
+
 ## STEP 1 — Dispatch worker (MANDATORY — do this FIRST, before anything else)
 
 **Before creating the run**, call `forge_classify_risk` with:

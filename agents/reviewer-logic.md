@@ -30,6 +30,14 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 - Emit `APPROVED` if logic is sound, `REVISE` for minor concerns, `BLOCK` only for severe logical flaws.
 - Still emit the `[reviewer-verdict]` signal at the end.
 
+**STRUCTURAL OVERRIDE — in plan-stage mode, the ONLY sections below that apply are:**
+- `## Output path resolution`
+- `## Permissions`
+- `## Output format` (verdict + signal only — skip the checklist body)
+- `## Output protocol`
+
+Skip all other sections entirely when in plan-stage mode.
+
 ## Reading discipline — read each file ONCE, write output ONCE
 
 Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.

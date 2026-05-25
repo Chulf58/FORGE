@@ -8,6 +8,12 @@ model: claude-sonnet-4-6
 
 ## STEP 1 — Phase A: user interview + classify risk + create run (conductor)
 
+<!-- discipline-gate: feedback_present_and_wait_sop -->
+## Pipeline-control discipline
+
+- MANDATORY SOP before forge_create_run: present classification + agent team → wait for literal "approve" (`feedback_present_and_wait_sop`)
+- Do NOT create a run until user explicitly types "approve" — no other word qualifies
+
 ### Phase A — User interview (grill-intent Skill)
 
 1. **Knowledge pre-load:** Before invoking the grill-intent skill, call:
