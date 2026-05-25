@@ -135,3 +135,26 @@ test('TODO 3d6b7587: mcp-deps-install.js uses npm install, never npm ci', () => 
     'installArgs must not be set to [\'ci\']; found: ' + (ciArgsMatch ? ciArgsMatch[0] : '') +
     '. Use [\'install\'] always — see TODO 3d6b7587.');
 });
+
+// Launcher generator must target bin/forge-mcp-bootstrap.cjs so the bootstrap
+// shim runs FIRST (self-heals mcp/node_modules) before spawning mcp/server.js.
+// Pointing the launcher directly at mcp/server.js bypasses self-heal and
+// leaves the timing-gap that .gitignore lines 8-26 + the "node_modules SDK
+// silently removed" solution doc describe.
+test('launcher generator points at bin/forge-mcp-bootstrap.cjs (not mcp/server.js)', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'mcp-deps-install.js'), 'utf8');
+  // The generator must reference the bootstrap file when building launcherContent.
+  assert.ok(
+    /forge-mcp-bootstrap\.cjs/.test(src),
+    'mcp-deps-install.js must reference forge-mcp-bootstrap.cjs in the launcher generator',
+  );
+  // And the launcherContent assignment must use the bootstrap path, not the
+  // server.js path. We detect this by checking that there's no line where
+  // launcherContent is built directly from a 'mcp/server.js' join.
+  const directServerPathInLauncher = /launcherContent\s*=\s*[^;]*serverPath/.test(src) &&
+    /const\s+serverPath\s*=\s*path\.join\([^)]*['"]server\.js['"]\)/.test(src);
+  assert.ok(
+    !directServerPathInLauncher,
+    'launcherContent must not interpolate serverPath (mcp/server.js) directly — use bootstrapPath',
+  );
+});

@@ -1,2 +1,2 @@
 @echo off
-node "%~dp0..\mcp\server.js" %*
+node "%~dp0forge-mcp-bootstrap.cjs" %*

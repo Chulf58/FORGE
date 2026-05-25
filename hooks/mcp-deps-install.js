@@ -558,9 +558,14 @@ async function main(rawInput) {
   // Write the MCP server launcher with the resolved Node path so the MCP
   // spawner doesn't need bare `node` on the system PATH. The .cmd wrapper
   // uses the absolute path to the Node binary that is running this hook.
+  //
+  // The .cmd points at bin/forge-mcp-bootstrap.cjs (NOT mcp/server.js directly).
+  // The bootstrap shim runs first to self-heal mcp/node_modules when missing —
+  // closing the timing gap where /reload-plugins respawns the MCP server without
+  // firing SessionStart, leaving a freshly-fetched cache version unhealed.
   const launcherPath = path.join(pluginRoot, 'bin', 'forge-mcp-server.cmd');
-  const serverPath = path.join(pluginRoot, 'mcp', 'server.js');
-  const launcherContent = '@echo off\r\n"' + process.execPath + '" "' + serverPath + '" %*\r\n';
+  const bootstrapPath = path.join(pluginRoot, 'bin', 'forge-mcp-bootstrap.cjs');
+  const launcherContent = '@echo off\r\n"' + process.execPath + '" "' + bootstrapPath + '" %*\r\n';
   try {
     fs.writeFileSync(launcherPath, launcherContent, 'utf8');
     console.error('[forge-mcp] Wrote MCP launcher: ' + launcherPath);
