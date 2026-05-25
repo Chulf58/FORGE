@@ -51,3 +51,13 @@ test('TEST_LOCATIONS includes mcp/lib/orchestrator/*.test.mjs discovery', () => 
   assert.match(src, pattern,
     'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib/orchestrator", suffix: ".test.mjs" }');
 });
+
+test('TEST_LOCATIONS includes scripts/*.test.mjs discovery', () => {
+  const src = readFileSync(RUN_TESTS_PATH, 'utf8');
+  // Layer (i) eval tests (eval-agent-prompts.test.mjs, eval-scheduled-freshness.test.mjs,
+  // eval-from-run.test.mjs) use .test.mjs suffix under scripts/ and must be
+  // auto-discovered. Without this entry they are silently skipped by the runner.
+  const pattern = /\{\s*dir:\s*['"]scripts['"]\s*,\s*suffix:\s*['"]\.test\.mjs['"]\s*\}/;
+  assert.match(src, pattern,
+    'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "scripts", suffix: ".test.mjs" }');
+});
