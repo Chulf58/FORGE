@@ -1,0 +1,8 @@
+{
+  "agent": "reviewer-performance",
+  "name": "reviewer-performance-checks-hotpath",
+  "description": "Reviewer-performance flags blocking I/O, memory leaks, unscalable patterns",
+  "expected_signals": ["APPROVED", "BLOCK", "REVISE"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

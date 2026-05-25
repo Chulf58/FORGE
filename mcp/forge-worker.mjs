@@ -1181,6 +1181,34 @@ async function main() {
     } catch (_) {
       // Cleanup must never block exit — swallow any unexpected error.
     }
+    // Task 17a — Watchdog stamp: if the worker exits without a failureReason in run.json,
+    // write a sidecar so forge_get_run can surface the silent-exit (catches r-468be1b4).
+    // Uses the sidecar pattern (writes watchdog-stamp.json, never modifies run.json directly)
+    // per concurrent-write discipline. writeLog uses writeLog() not console.error().
+    try {
+      const runDir = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId);
+      const runJsonPath = join(runDir, 'run.json');
+      const watchdogStampPath = join(runDir, 'watchdog-stamp.json');
+      if (existsSync(runJsonPath)) {
+        const raw = readFileSync(runJsonPath, 'utf-8');
+        const runData = JSON.parse(raw);
+        if (!runData.failureReason) {
+          writeFileSync(
+            watchdogStampPath,
+            JSON.stringify({
+              failureReason: 'worker-exited-without-reason',
+              status: 'failed',
+              stampedAt: new Date().toISOString(),
+            }, null, 2) + '\n',
+            'utf-8',
+          );
+          writeLog('[forge-worker] watchdog-stamp: silent exit detected, wrote watchdog-stamp.json for ' + runId);
+        }
+      }
+    } catch (stampErr) {
+      // Must not block exit
+      writeLog('[forge-worker] watchdog-stamp: failed: ' + (stampErr && stampErr.message));
+    }
     inputChannel.close();
     try { closeSync(logFd); } catch (_) {}
     try { unwatchFile(pillPath); } catch (_) {}

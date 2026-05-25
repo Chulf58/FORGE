@@ -1,0 +1,8 @@
+{
+  "agent": "refactor",
+  "name": "refactor-restructures-code",
+  "description": "Refactor agent restructures existing code for clarity and maintainability",
+  "expected_signals": ["## Changes", "refactored"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

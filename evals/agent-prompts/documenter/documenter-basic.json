@@ -1,0 +1,8 @@
+{
+  "agent": "documenter",
+  "name": "documenter-updates-changelog",
+  "description": "Documenter updates CHANGELOG and ARCHITECTURE after implementation completes",
+  "expected_signals": ["CHANGELOG", "## "],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

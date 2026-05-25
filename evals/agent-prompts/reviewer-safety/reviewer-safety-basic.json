@@ -1,0 +1,8 @@
+{
+  "agent": "reviewer-safety",
+  "name": "reviewer-safety-checks-security",
+  "description": "Reviewer-safety checks for injection risks, secret leakage, input validation",
+  "expected_signals": ["APPROVED", "BLOCK", "REVISE"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

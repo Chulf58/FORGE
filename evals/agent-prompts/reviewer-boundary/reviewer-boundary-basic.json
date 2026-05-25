@@ -1,0 +1,8 @@
+{
+  "agent": "reviewer-boundary",
+  "name": "reviewer-boundary-checks-changeset",
+  "description": "Reviewer-boundary checks architecture boundaries, type contracts, module isolation",
+  "expected_signals": ["APPROVED", "BLOCK", "REVISE"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

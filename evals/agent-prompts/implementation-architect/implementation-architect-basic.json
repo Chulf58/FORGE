@@ -1,0 +1,8 @@
+{
+  "agent": "implementation-architect",
+  "name": "impl-architect-narrows-scope",
+  "description": "Implementation-architect narrows broad plan to smallest safe implementation slice",
+  "expected_signals": ["## Scope", "## Finding"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

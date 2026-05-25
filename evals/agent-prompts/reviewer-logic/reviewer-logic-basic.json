@@ -1,0 +1,8 @@
+{
+  "agent": "reviewer-logic",
+  "name": "reviewer-logic-checks-state",
+  "description": "Reviewer-logic checks state mutations, async flows, conditional chains for bugs",
+  "expected_signals": ["APPROVED", "BLOCK", "REVISE"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

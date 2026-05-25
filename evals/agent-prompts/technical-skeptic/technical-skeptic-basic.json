@@ -1,0 +1,8 @@
+{
+  "agent": "technical-skeptic",
+  "name": "technical-skeptic-critiques-plan",
+  "description": "Technical-skeptic pushes back on technical quality before Gate 1 approval",
+  "expected_signals": ["## Finding", "BLOCK", "REVISE"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

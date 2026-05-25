@@ -443,6 +443,25 @@ export function register(server, _shared) {
               }
             } catch (_) { /* malformed sidecar — omit field, don't throw */ }
           }
+          // Merge watchdog-stamp sidecar if present — surfaces silent-exit failureReason
+          // set by Task 17a (worker-side stamp) to all consumers. Sidecar values do NOT
+          // override run.json's non-null failureReason (idempotent — explicit beats implicit).
+          const watchdogStampPath = join(projectDir, '.pipeline', 'runs', runId, 'watchdog-stamp.json');
+          if (existsSync(watchdogStampPath)) {
+            try {
+              const raw = readFileSync(watchdogStampPath, 'utf-8');
+              const stampData = JSON.parse(raw);
+              if (stampData && typeof stampData.failureReason === 'string') {
+                // Only merge if run.json doesn't already have an explicit failureReason
+                if (!run.failureReason) {
+                  run.failureReason = stampData.failureReason;
+                }
+                if (!run.status || run.status === 'running') {
+                  run.status = stampData.status || 'failed';
+                }
+              }
+            } catch (_) { /* malformed sidecar — omit, don't throw */ }
+          }
         }
         return textResult(run);
       } catch (err) {

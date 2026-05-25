@@ -1,0 +1,8 @@
+{
+  "agent": "researcher",
+  "name": "researcher-investigates-unknown",
+  "description": "Researcher investigates a technical unknown and writes findings to docs/RESEARCH/",
+  "expected_signals": ["## Findings", "## Summary"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

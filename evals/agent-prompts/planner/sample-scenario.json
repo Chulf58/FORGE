@@ -1,0 +1,9 @@
+{
+  "agent": "planner",
+  "name": "plan-feature-basic",
+  "description": "Planner produces a PLAN.md with numbered tasks for a feature request",
+  "prompt_snapshot": "Add user authentication to the web app",
+  "expected_signals": ["[todo]", "Verify:", "AC-"],
+  "expected_artifacts": ["docs/PLAN.md"],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

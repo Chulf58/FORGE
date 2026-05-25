@@ -1,0 +1,3 @@
+# NO-COVERAGE: forge:red-team
+
+**Reason:** The red-team agent performs adversarial security analysis (vulnerability analysis, trust boundary violations, privilege escalation paths) and is invoked exclusively via `/forge:ideate`. It is not part of standard plan/implement/apply pipeline cycles. Exercising it requires a realistic codebase fixture large enough to trigger meaningful security findings, plus a harness to distinguish security-finding signals from normal output. Designing such a fixture without introducing actual vulnerable code into the repo is non-trivial. Coverage deferred to a follow-up task.
