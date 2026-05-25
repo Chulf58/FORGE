@@ -118,6 +118,9 @@ docs/audit-log.jsonl
 .pipeline/forge-observer.cmd
 .pipeline/context/test-author-output.json
 
+# Eval scheduled-run reports — runtime data, not source. .gitkeep tracks the dir.
+evals/scheduled-runs/*.json
+
 # Per-session agent scratch (operational, not committed)
 docs/context/*-status.json
 docs/context/reviewer-output/

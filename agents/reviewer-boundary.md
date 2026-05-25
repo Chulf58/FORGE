@@ -32,6 +32,24 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 - Emit `APPROVED` if the plan's structure is sound, `REVISE` for ordering issues, `BLOCK` only for severe architecture violations.
 - Still emit the `[reviewer-verdict]` signal at the end.
 
+**STRUCTURAL OVERRIDE — in plan-stage mode, the ONLY sections below that apply are:**
+- `## Output path resolution`
+- `## Permissions`
+- `## Output format` (verdict + signal only — skip the checklist body)
+- `## Output protocol`
+
+Skip all other sections entirely when in plan-stage mode.
+
+## Eval regression gate (when agents/*.md files are in the changeset)
+
+When the changeset includes modifications to `agents/*.md` files:
+1. Run `node scripts/eval-agent-prompts.mjs --compare-baseline` from the project root
+2. If the command exits non-zero (regression detected), emit `BLOCK` with a finding citing the failing agent(s) from the `regressions` array in the JSON output
+3. If the command exits 0 (no regressions), proceed with normal review
+4. If `evals/baseline.json` does not exist yet, skip this check and note it in your review output
+
+**Trigger is narrow:** ONLY invoke this check when `agents/*.md` files are in the changeset. Indirect agent-affecting changes (hook edits, MCP tool edits) are caught by the scheduled backstop (`node scripts/eval-agent-prompts.mjs --scheduled` via `hooks/post-merge-eval.sh`), not this reviewer gate. No false positives on changesets that do not touch agent prompt files.
+
 ## Reading discipline — read each file ONCE, write output ONCE
 
 Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.
