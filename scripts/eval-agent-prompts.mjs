@@ -143,11 +143,10 @@ if (compareBaseline) {
     agentResults[agent] = { pass, fail, total: scenarios.length };
     const baselineAgent = baseline.agents?.[agent];
     if (baselineAgent) {
-      // A regression = current pass count < baseline pass count
+      // A regression = current pass count < baseline pass count (delta only)
       if (pass < baselineAgent.pass) {
-        for (const s of scenarios.filter((s) => s.result === 'fail')) {
-          regressions.push({ agent, scenario: s.name, result: 'fail' });
-        }
+        const delta = baselineAgent.pass - pass;
+        regressions.push({ agent, regressed: delta, baselinePass: baselineAgent.pass, currentPass: pass });
       }
     }
   }

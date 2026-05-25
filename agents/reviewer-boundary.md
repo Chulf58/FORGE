@@ -40,15 +40,19 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 
 Skip all other sections entirely when in plan-stage mode.
 
-## Eval regression gate (when agents/*.md files are in the changeset)
+## Eval regression gate
 
-When the changeset includes modifications to `agents/*.md` files:
+**FIRST, before reading any other section:** Check if `agents/*.md` files appear in the diff at `docs/context/git-diff.txt` (look for `+++ b/agents/` lines matching `agents/*.md`). If yes, set a mental flag: `RUN_EVAL_GATE=true`. If no, **skip the eval gate entirely** — do not run the eval command, do not emit eval-gate findings.
+
+**STRUCTURAL OVERRIDE — this flag check is mandatory before any other review work. If `RUN_EVAL_GATE=false`, skip the remainder of this section and proceed to `## Reading discipline`.**
+
+When `RUN_EVAL_GATE=true`:
 1. Run `node scripts/eval-agent-prompts.mjs --compare-baseline` from the project root
-2. If the command exits non-zero (regression detected), emit `BLOCK` with a finding citing the failing agent(s) from the `regressions` array in the JSON output
+2. If the command exits non-zero (regression detected), emit `BLOCK` with a finding citing the failing agent(s) from the `regressions` array in the JSON output — each entry describes `agent` and `regressed` (scenario count that transitioned from pass to fail)
 3. If the command exits 0 (no regressions), proceed with normal review
 4. If `evals/baseline.json` does not exist yet, skip this check and note it in your review output
 
-**Trigger is narrow:** ONLY invoke this check when `agents/*.md` files are in the changeset. Indirect agent-affecting changes (hook edits, MCP tool edits) are caught by the scheduled backstop (`node scripts/eval-agent-prompts.mjs --scheduled` via `hooks/post-merge-eval.sh`), not this reviewer gate. No false positives on changesets that do not touch agent prompt files.
+**Trigger is narrow:** Indirect agent-affecting changes (hook edits, MCP tool edits) are caught by the scheduled backstop (`node scripts/eval-agent-prompts.mjs --scheduled` via `hooks/post-merge-eval.sh`), not this reviewer gate. No false positives on changesets that do not touch agent prompt files.
 
 ## Reading discipline — read each file ONCE, write output ONCE
 
