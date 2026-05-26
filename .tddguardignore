@@ -1,69 +1,40 @@
-# Phase 2 implementation — test files exist as covers-parser-test.mjs (hyphen convention)
-# but tdd-guard resolveTestFile only detects .test.mjs convention.
-# Red bar was verified in Phase 1 (exit code 1 confirmed in test-author-output.json).
-scripts/covers-parser.mjs
-scripts/covers-map.mjs
-scripts/covers-verify.mjs
+# tdd-guard exemptions — each line exempts a source file from the red-bar-first requirement.
+#
+# As of TODO eb424159 (2026-05-26) tdd-guard resolveTestFile resolves BOTH the dot form
+# (<name>.test.{js,mjs}) AND the hyphen form (<name>-test.{js,mjs}) at adjacent / tests/ /
+# __tests__/ locations. Entries that existed SOLELY because a hyphen-named test couldn't be
+# paired were removed in that cleanup (covers-parser/map/verify, wiring-verify,
+# apply-context-inject, plan-revise-loop, worker-task-inject, doc-size-guard) — their tests
+# now pair and those files are TDD-gated again.
+#
+# Remaining entries are kept for reasons resolveTestFile still cannot handle.
+
+# --- No name-matched test (resolveTestFile derives the test name from the source basename) ---
 scripts/covers-backfill.mjs
-scripts/wiring-verify.mjs
-hooks/apply-context-inject.js
 mcp/forge-worker.mjs
-# Slice 1 wave 2 — red bar verified via findings-contract-test.mjs (exit 1, 11/12 tests failing).
-# tdd-guard resolves lean-risk-classify.test.mjs which is green (unrelated existing tests).
-# The failing tests for this change are in scripts/findings-contract-test.mjs (hyphen convention).
+
+# --- Test name does not match the source basename (real red bar lives in a differently-named test) ---
+# lean-risk-classify / reviewer-dispatch → scripts/findings-contract-test.mjs
 scripts/lean-risk-classify.mjs
 scripts/reviewer-dispatch.mjs
-# Phase 1 wave 1 — red bar verified via plan-revise-loop-test.mjs (exit 1, ERR_MODULE_NOT_FOUND).
-# tdd-guard resolveTestFile only detects .test.mjs convention, not -test.mjs (hyphen convention).
-scripts/plan-revise-loop.mjs
-# 2-line launcher shim — no logic; full path baked by mcp-deps-install.js on SessionStart.
-bin/forge-mcp-server.cmd
-# taskBrief injection 2026-05-15 — failing tests verified in hooks/worker-task-inject-test.mjs
-# (hyphen convention; tdd-guard resolveTestFile only detects .test.mjs convention).
-hooks/worker-task-inject.js
-# Phase 6 merge port 2026-05-15 — taskBrief moved from mcp/server.js to
-# mcp/lib/tools/run-lifecycle.js as part of conflict resolution for the
-# server.js split refactor. Failing test already exists in mcp/server.test.mjs
-# Test 3 (asserts taskBrief flows from forge_create_run to worker-task JSON).
-# TDD-guard resolves run-lifecycle.test.mjs (green); the actual taskBrief
-# regression test is one directory up at mcp/server.test.mjs.
+# run-lifecycle → mcp/server.test.mjs (taskBrief flow test, one directory up)
 mcp/lib/tools/run-lifecycle.js
-# CLAUDE.md swap whitelist 2026-05-17 — failing tests verified in scripts/forge-worktree-preflight-test.mjs
-# (hyphen convention; tdd-guard resolveTestFile only detects .test.mjs convention).
-# Red bar confirmed: exit code 1, 5/5 tests failing before Wave 2 implementation.
+# forge-worktree → scripts/forge-worktree-preflight-test.mjs (CLAUDE.md swap whitelist)
 bin/forge-worktree.js
-# observer-autosplit TDD wave 1 — test-observer-autosplit.mjs IS the test file.
-# Named with test- prefix (not -test suffix), so TEST_FILE_RE doesn't match it.
-# guard ignores it so wave 1 test edits proceed; wave 2 hook edits are gated by
-# the failing tests once wave 1 is confirmed red.
-scripts/test-observer-autosplit.mjs
-# observer-autosplit wave 2 — red bar confirmed: node scripts/test-observer-autosplit.mjs
-# exits 1 (Test 6 fails). Test file lives in scripts/ not adjacent to hooks/,
-# so resolveTestFile cannot locate it. Red bar manually verified before this entry.
-hooks/observer-autosplit.js
-# researcher-exempt wave 2 — red bar confirmed: node scripts/run-tests.mjs exits 1,
-# 'exits 0 for researcher (exempt)' fails with actual=2, expected=0.
-# Test file is hooks/agent-loop-guard-test.mjs (hyphen convention);
-# tdd-guard resolveTestFile only detects .test.mjs convention.
-hooks/agent-loop-guard.js
-# c62ac8af rectified inline fix 2026-05-21 — red bar confirmed: node --test
-# scripts/archived-agent-cleanup-test.mjs exits 1, 6/6 tests failing
-# (including 'hook-utils.js has no _archived branch'). Test file lives in
-# scripts/ so tdd-guard resolveTestFile cannot locate it.
+# hook-utils → scripts/archived-agent-cleanup-test.mjs (c62ac8af inline fix)
 hooks/hook-utils.js
-# escalation-reproducer is itself a test (self-asserting reproducer, red→green TDD artifact).
-# Naming convention is -reproducer.mjs, not -test.mjs; tdd-guard resolveTestFile cannot detect it.
+
+# --- 2-line launcher shim — no logic; full path baked by mcp-deps-install.js on SessionStart ---
+bin/forge-mcp-server.cmd
+
+# --- Non-standard test naming (test- prefix / -reproducer suffix / .sh) that resolveTestFile can't pair ---
+scripts/test-observer-autosplit.mjs
+hooks/observer-autosplit.js
 mcp/forge-worker-escalation-reproducer.mjs
-# Task 21b — pre-commit test-presence hook + test harness (.sh files).
-# tdd-guard resolveTestFile only detects .test.mjs convention; .sh files have no JS test wrapper.
-# Test harness is pre-commit-test-presence-test.sh (self-asserting bash tests, 3 branches).
-# The -test.sh suffix is a test file but isTestFile() only matches -test.mjs via TEST_FILE_RE.
 scripts/pre-commit-test-presence.sh
 scripts/pre-commit-test-presence-test.sh
-# 2026-05-26 — FORGE-REFERENCE.md warning-string correction (cosmetic message change, no logic).
-# doc-size-guard's test is doc-size-guard-test.js (hyphen); tdd-guard resolveTestFile only
-# detects .test.mjs convention so it can't pair it (until TODO eb424159 lands). A regression
-# test for the corrected wording lives in doc-size-guard-test.js (Case 5).
-# NOTE: knowledge.js intentionally NOT exempted — it has a working dot-form test
-# (mcp/lib/tools/knowledge.test.mjs), so it stays TDD-gated for future logic changes.
-hooks/doc-size-guard.js
+
+# --- agent-loop-guard has BOTH agent-loop-guard.test.mjs (dot) and agent-loop-guard-test.mjs
+# (hyphen); the hyphen test is currently failing (pre-existing, unrelated to eb424159). Kept
+# exempt until that test is fixed so the guard doesn't gate on an ambiguous/broken pair. ---
+hooks/agent-loop-guard.js
