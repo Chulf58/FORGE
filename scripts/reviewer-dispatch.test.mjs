@@ -290,9 +290,9 @@ index 1234567..abcdefg 100644
 });
 
 // ============================================================================
-// PLAN-SKEPTIC INVARIANT TESTS (regression for TODO d1943604)
-// Verifies that plan-skeptic always runs at plan stage, even when reviewerOverrides
-// is set from a pre-run forge_classify_risk call that didn't include plan-skeptic.
+// TECHNICAL-SKEPTIC INVARIANT TESTS (regression for TODO d1943604)
+// Verifies that technical-skeptic always runs at plan stage, even when reviewerOverrides
+// is set from a pre-run forge_classify_risk call that didn't include technical-skeptic.
 // ============================================================================
 
 /**
@@ -351,30 +351,30 @@ const MINIMAL_PLAN = `## Active Plan
   Verify: AC-1: WHEN done, the thing is fixed; oracle: test; observable: pass.
 `;
 
-// Case (f): plan stage, no reviewerOverrides — plan-skeptic always in output
-test('reviewer-dispatch: plan stage without reviewerOverrides always includes plan-skeptic', () => {
+// Case (f): plan stage, no reviewerOverrides — technical-skeptic always in output
+test('reviewer-dispatch: plan stage without reviewerOverrides always includes technical-skeptic', () => {
   const result = runDispatchForPlan(MINIMAL_PLAN);
 
   assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
   assert.ok(
-    result.stdout.reviewers.includes('plan-skeptic'),
-    `Expected plan-skeptic in ${JSON.stringify(result.stdout.reviewers)} (no reviewerOverrides)`,
+    result.stdout.reviewers.includes('technical-skeptic'),
+    `Expected technical-skeptic in ${JSON.stringify(result.stdout.reviewers)} (no reviewerOverrides)`,
   );
 });
 
 // Case (g): plan stage, reviewerOverrides=[reviewer-safety, reviewer-boundary] (the reproducer) —
-// plan-skeptic must still be added even though it is not in reviewerOverrides.
+// technical-skeptic must still be added even though it is not in reviewerOverrides.
 // This is the regression test for TODO d1943604 / runs r-71b3e4e2, r-a75bc437.
-test('reviewer-dispatch: plan stage with reviewerOverrides=[safety,boundary] still includes plan-skeptic', () => {
-  const runId = 'r-test-plan-skeptic-override';
+test('reviewer-dispatch: plan stage with reviewerOverrides=[safety,boundary] still includes technical-skeptic', () => {
+  const runId = 'r-test-technical-skeptic-override';
   const runJson = { reviewerOverrides: ['reviewer-safety', 'reviewer-boundary'] };
 
   const result = runDispatchForPlan(MINIMAL_PLAN, runId, runJson);
 
   assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
   assert.ok(
-    result.stdout.reviewers.includes('plan-skeptic'),
-    `plan-skeptic must be present even when reviewerOverrides=[safety,boundary]; got ${JSON.stringify(result.stdout.reviewers)}`,
+    result.stdout.reviewers.includes('technical-skeptic'),
+    `technical-skeptic must be present even when reviewerOverrides=[safety,boundary]; got ${JSON.stringify(result.stdout.reviewers)}`,
   );
   // The overrides team must also still be present
   assert.ok(
@@ -387,20 +387,20 @@ test('reviewer-dispatch: plan stage with reviewerOverrides=[safety,boundary] sti
   );
 });
 
-// Case (h): plan stage, reviewerOverrides already includes plan-skeptic — no duplicate
-test('reviewer-dispatch: plan stage with reviewerOverrides that already has plan-skeptic produces no duplicate', () => {
-  const runId = 'r-test-plan-skeptic-already';
-  const runJson = { reviewerOverrides: ['plan-skeptic', 'reviewer-safety'] };
+// Case (h): plan stage, reviewerOverrides already includes technical-skeptic — no duplicate
+test('reviewer-dispatch: plan stage with reviewerOverrides that already has technical-skeptic produces no duplicate', () => {
+  const runId = 'r-test-technical-skeptic-already';
+  const runJson = { reviewerOverrides: ['technical-skeptic', 'reviewer-safety'] };
 
   const result = runDispatchForPlan(MINIMAL_PLAN, runId, runJson);
 
   assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
-  const planSkepticCount = result.stdout.reviewers.filter((r) => r === 'plan-skeptic').length;
-  assert.strictEqual(planSkepticCount, 1, `Expected exactly one plan-skeptic, got ${planSkepticCount}`);
+  const planSkepticCount = result.stdout.reviewers.filter((r) => r === 'technical-skeptic').length;
+  assert.strictEqual(planSkepticCount, 1, `Expected exactly one technical-skeptic, got ${planSkepticCount}`);
 });
 
-// Case (i): implement stage, non-empty reviewerOverrides — plan-skeptic must NOT be injected
-test('reviewer-dispatch: implement stage with reviewerOverrides does NOT inject plan-skeptic', () => {
+// Case (i): implement stage, non-empty reviewerOverrides — technical-skeptic must NOT be injected
+test('reviewer-dispatch: implement stage with reviewerOverrides does NOT inject technical-skeptic', () => {
   const runId = 'r-test-implement-no-skeptic';
   const runJson = { reviewerOverrides: ['reviewer-safety', 'reviewer-boundary'] };
   const cleanDiff = `diff --git a/README.md b/README.md
@@ -417,8 +417,8 @@ index 1234567..abcdefg 100644
 
   assert.strictEqual(result.code, 0, `Expected exit 0, got ${result.code}. stderr: ${result.stderr}`);
   assert.ok(
-    !result.stdout.reviewers.includes('plan-skeptic'),
-    `plan-skeptic must NOT be injected at implement stage; got ${JSON.stringify(result.stdout.reviewers)}`,
+    !result.stdout.reviewers.includes('technical-skeptic'),
+    `technical-skeptic must NOT be injected at implement stage; got ${JSON.stringify(result.stdout.reviewers)}`,
   );
 });
 
