@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] FORGE drift detection layer — 4-layer bundled scope
+
+- Agent Eval Framework: 25 agent prompt fixtures, signal/file/verdict-letter graders, baseline.json delta tracking, eval-from-run graduation, reviewer-boundary regression gate
+- Worker Watchdog + Conductor Discipline Gates: watchdog-stamp sidecar, STRUCTURAL OVERRIDE pattern in all 5 reviewer templates, HTML discipline markers in apply/debug/grill-intent/grill-plan/implement/plan skills
+- Skill Linter + Pre-commit Test-coverage Hook: skill-linter.mjs reference validation, pre-commit-test-presence.sh commit-time enforcement, .tddguardignore exclusion
+
 ## [2026-05-23] agent-loop-guard observability + unblock flow
 
 - Added `loop-guard-pending` status to run lifecycle: hook writes sidecar on cap-fire, worker polls for deletion, skill deletes sidecar to unblock
