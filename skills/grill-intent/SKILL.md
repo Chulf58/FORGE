@@ -97,7 +97,15 @@ Survives Claude Code restarts — a new conductor session reads the state file a
 
 Run the Pocock loop (above) against the user's initial request. Typical interviews complete in 2–4 exchanges. Stop when you have enough to fill all five slots of the brainstorm schema.
 
-If the user's initial input already answers all five slots clearly, skip the loop and write the doc immediately.
+**Skip-loop guard — Pocock loop runs by default.** Skip the loop ONLY when ALL of these hold:
+
+1. The skill's argument contains the literal token `[user-prefilled]` on its own line.
+2. That token came from the USER's actual message to the conductor — NOT added by the conductor. Per CLAUDE.md "Intent-capture skill invocation discipline", the conductor MUST NOT add this token unilaterally. If the user did not type or paste `[user-prefilled]`, run the loop.
+3. The argument body genuinely answers all 5 slots in user-voice phrasing.
+
+If ANY condition fails, run the Pocock loop. A verbose argument from the conductor is NOT sufficient — it looks identical to a verbose user-written argument from the skill's perspective, so the `[user-prefilled]` token is the only structural disambiguator.
+
+**Anti-pattern to avoid:** copying TODO body content into the skill argument and treating the slots as "user-stated". TODOs were written by past sessions; the current user has not re-confirmed them. Default to grilling.
 
 ### Brainstorm doc schema
 
@@ -131,6 +139,8 @@ is fine — write "None." if no proposals.>
 ```
 
 ### Pre-write attribution check (REQUIRED before writing the doc)
+
+**This check runs regardless of whether the Pocock loop was skipped.** If you reached the brainstorm-write step via the skip-loop guard, this check is your ONLY remaining attribution safety net — perform it before any Write call. There are no other gates downstream.
 
 Before calling Write on the brainstorm, the conductor MUST:
 

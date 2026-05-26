@@ -18,7 +18,9 @@ const EXEMPT_AGENTS = new Set(['documenter', 'researcher']);
 // Raised from 2 → 15 after r-2329c669 hit the cap mid-Phase-2 of a
 // 4-phase implement; 4-phase × ~3 dispatches per agent type / phase
 // fits comfortably under 15.
-const MAX_DISPATCHES_PER_AGENT_PER_RUN = 15;
+// Raised from 15 → 25 after r-4776c645 hit the cap at Phase 9 of a
+// 10-phase implement; 10-phase × ~2-3 dispatches per type needs ~25.
+const MAX_DISPATCHES_PER_AGENT_PER_RUN = 25;
 
 function exitOk() {
   process.exit(0);

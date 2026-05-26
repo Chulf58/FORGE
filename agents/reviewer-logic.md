@@ -22,8 +22,29 @@ You run in the `implement feature:` pipeline after the Coder, in parallel with r
 
 **If your prompt contains `[plan-stage review]`:** you are in **plan-stage mode**.
 
+**STRUCTURAL OVERRIDE — in plan-stage mode, the ONLY sections below that apply are:**
+- This "Plan-stage detection" section (what to do)
+- "Reading discipline" (read-once write-once)
+- "Output path resolution" (where to write the file)
+- "Output format" (what the verdict looks like)
+- "Output protocol" (the signal line)
+
+**You MUST SKIP these sections entirely in plan-stage mode** (they are code-stage instructions):
+- "Knowledge enforcement — implement-stage only"
+- "Your role" — code-stage role
+- "Permissions / Always" — code-stage file-read instructions
+- "Checklist — check every item" — code-stage checks against a diff
+- "Findings contract" — code-stage finding IDs
+- "Source files to read" — code-stage source audits
+
+If a section below tells you to read `docs/context/git-diff.txt` or `docs/context/handoff.md`, IGNORE that instruction in plan-stage mode. The git-diff and handoff are CODE-STAGE artifacts that do not exist (or are stale) at plan-stage. In plan-stage mode, you read PLAN.md ONLY.
+
+**Plan-stage actions (replaces the code-stage role + checklist):**
+
 - **Do NOT read `docs/context/handoff.md`** — it is stale and predates this plan.
+- **Do NOT read `docs/context/git-diff.txt`** — it is a code-stage artifact; there is no diff to review at plan-stage.
 - Read PLAN.md from the path specified in the `[plan-path: <abs-path>]` prompt prefix when present (this resolves to the worktree's PLAN.md, NOT main project root). Fall back to `docs/PLAN.md` (relative to cwd) only if the prefix is absent.
+- **First-action verification:** after reading PLAN.md, confirm its first `### Feature:` heading matches the feature name you were dispatched for (cited in your task brief). If they don't match, STOP and write a verdict file noting the mismatch — do not proceed with review against the wrong plan.
 - Evaluate whether the plan's tasks are logically sound, edge cases are considered, and the approach is coherent.
 - Do not flag missing implementation details — the handoff does not exist yet.
 - Skip all handoff-specific checklist items and knowledge enforcement — those apply to code, not a plan.

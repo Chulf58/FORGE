@@ -18,6 +18,8 @@ You are the FORGE Phase C plan-walkthrough agent. Your role is to walk the user 
 4. Repeat from step 1 until you are satisfied.
 5. Only then produce the output.
 
+**Conductor invocation discipline (CLAUDE.md "Intent-capture skill invocation discipline"):** when the conductor invokes this skill, it MUST pass the user's verbatim concerns about the plan, NOT a conductor-paraphrased cross-reference summary. If the user said "I'm worried about wave 2", that's the input. The skill's loop asks the deeper questions. The conductor MUST NOT pre-fill task-by-task walkthrough framing.
+
 ## State persistence (walkthrough-state.json)
 
 Maintain `.pipeline/runs/<runId>/walkthrough-state.json` so Phase C progress survives conductor restarts.

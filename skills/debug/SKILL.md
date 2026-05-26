@@ -6,7 +6,31 @@ allowed-tools: "Read Write Glob Grep Bash Agent"
 model: claude-sonnet-4-6
 ---
 
-## STEP 1 — Dispatch worker (MANDATORY — do this FIRST, before anything else)
+## STEP 0 — Bug intent (one question, with skip)
+
+Before classifying or dispatching, ask the user ONE question to capture their expected behavior. This single question — not a multi-turn interview — gives the debug worker the user's framing instead of yours.
+
+**Conductor invocation discipline (CLAUDE.md "Intent-capture skill invocation discipline"):** Step 0 is an intent-capture surface. The conductor MUST NOT pre-fill the user's expected behavior into the worker brief based on TODO content or conductor inference — ask the user, then quote them verbatim. The `skip` keyword is the user's escape, not the conductor's.
+
+Ask verbatim:
+
+> Before I dispatch the debug worker — how was this supposed to work? Type `skip` if you've already described the expected behavior in the bug report, or describe it in one or two sentences.
+
+Branches:
+
+- **User replies `skip`** — proceed to Step 1 with `$ARGUMENTS` as-is. No brief addition.
+- **User describes expected behavior** — capture their answer VERBATIM. When you call `forge_create_run` in Step 1, include their answer (with the literal user wording) in the `taskBrief` parameter under a heading `## User-stated expected behavior`. This text gets injected into the worker's SessionStart prompt so the debug agent diagnoses against user reality.
+- **User's answer reveals ambiguity** (you genuinely cannot tell what they want fixed) — ask ONE follow-up clarifying question. Maximum 2 turns total in Step 0.
+
+Hard limits:
+
+- DO NOT extend this into a multi-turn Pocock-style interview. The plan skill has grill-intent for that. Debug is meant to be lower-ceremony.
+- DO NOT skip Step 0 because you think you already know the bug. Even when you think you do, the user's wording often reveals something the conductor missed.
+- If `$ARGUMENTS` already contains a clear "expected behavior" statement (e.g., "the hook should reinstall zod but didn't"), still ask once — confirms the framing.
+
+Cost when answers are concrete: one turn (`skip`) or two turns (one-sentence reply + your acknowledgement). Friction is intentional but bounded.
+
+## STEP 1 — Dispatch worker
 
 **Before creating the run**, call `forge_classify_risk` with:
 - `feature`: the short bug summary from `$ARGUMENTS`
