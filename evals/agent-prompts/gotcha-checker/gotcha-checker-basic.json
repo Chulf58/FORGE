@@ -1,0 +1,8 @@
+{
+  "agent": "gotcha-checker",
+  "name": "gotcha-checker-validates-plan",
+  "description": "Gotcha-checker validates a plan against known pitfalls and project conventions",
+  "expected_signals": ["## Gotcha", "WARNING"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

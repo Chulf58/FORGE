@@ -1,0 +1,8 @@
+{
+  "agent": "test-author",
+  "name": "test-author-writes-failing-tests",
+  "description": "Test-author writes failing test files for TDD wave-split (red bar before implementation)",
+  "expected_signals": ["FAIL", "[test-author]", "exit 1"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

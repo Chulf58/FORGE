@@ -1,0 +1,8 @@
+{
+  "agent": "coder-scout",
+  "name": "scout-identifies-files",
+  "description": "Coder-scout identifies source files and writes handoff with new/modified file lists",
+  "expected_signals": ["### New files", "### Modified files"],
+  "expected_artifacts": ["docs/context/handoff.md"],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

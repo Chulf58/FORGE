@@ -1,0 +1,130 @@
+{
+  "updatedAt": "2026-05-25T22:26:22.163Z",
+  "agents": {
+    "architect": {
+      "pass": 0,
+      "fail": 0,
+      "total": 0
+    },
+    "coder": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "coder-scout": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "completeness-checker": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "compound-refresh": {
+      "pass": 0,
+      "fail": 0,
+      "total": 0
+    },
+    "critic": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "debug": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "documenter": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "gotcha-checker": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "implementation-architect": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "learnings-extractor": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "plan-extractor": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "planner": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "red-team": {
+      "pass": 0,
+      "fail": 0,
+      "total": 0
+    },
+    "refactor": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "researcher": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "reviewer-boundary": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "reviewer-logic": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "reviewer-performance": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "reviewer-safety": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "reviewer-tests": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "skills-generator": {
+      "pass": 0,
+      "fail": 0,
+      "total": 0
+    },
+    "supervisor": {
+      "pass": 0,
+      "fail": 0,
+      "total": 0
+    },
+    "technical-skeptic": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "test-author": {
+      "pass": 1,
+      "fail": 0,
+      "total": 1
+    }
+  }
+}

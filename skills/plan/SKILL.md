@@ -8,6 +8,12 @@ model: claude-sonnet-4-6
 
 ## STEP 1 — Phase A: user interview + classify risk + create run (conductor)
 
+<!-- discipline-gate: feedback_present_and_wait_sop -->
+## Pipeline-control discipline
+
+- MANDATORY SOP before forge_create_run: present classification + agent team → wait for literal "approve" (`feedback_present_and_wait_sop`)
+- Do NOT create a run until user explicitly types "approve" — no other word qualifies
+
 ### Phase A — User interview (grill-intent Skill)
 
 1. **Knowledge pre-load:** Before invoking the grill-intent skill, call:
@@ -219,7 +225,7 @@ Read `.pipeline/runs/<runId>/plan-extractor-proposals.json`.
 User picks:
 - `yes` → proceed to gate1 finalize (ask user to type /forge:approve or /forge:discard as normal)
 - `retry` → re-dispatch plan-extractor once with the same `[run-id: <runId>]` signal; wait for it to complete; re-read the proposals file; if still missing/empty, treat as `yes` and log `[plan-extractor] retry produced no candidates — continuing`
-- `discard` → call `forge_kill_run` with the runId and stop
+- `discard` → call `forge_update_run` with `{ runId, status: 'discarded' }` and stop
 
 **If file exists with one or more candidates: auto-accept all (no per-candidate user interaction).**
 

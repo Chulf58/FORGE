@@ -1,0 +1,8 @@
+{
+  "agent": "critic",
+  "name": "critic-adversarial-analysis",
+  "description": "Critic performs adversarial analysis identifying improvement opportunities",
+  "expected_signals": ["## Finding", "improvement"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "learnings-extractor",
+  "name": "learnings-extractor-records-outcome",
+  "description": "Learnings-extractor records outcome-keyed learning from handoff and reviewer verdicts",
+  "expected_signals": ["learning", "knowledge"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

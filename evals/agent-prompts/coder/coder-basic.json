@@ -1,0 +1,8 @@
+{
+  "agent": "coder",
+  "name": "coder-implements-feature",
+  "description": "Coder implements a planned feature and writes handoff.md with files summary",
+  "expected_signals": ["docs/context/handoff.md", "## Files"],
+  "expected_artifacts": ["docs/context/handoff.md"],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

@@ -14,6 +14,15 @@ model: claude-sonnet-4-6
 
 ## STEP 1 — Verify gate and dispatch worker (MANDATORY — do this FIRST)
 
+<!-- discipline-gate: feedback_conductor_handles_commits -->
+<!-- discipline-gate: feedback_run_completion_timing -->
+<!-- discipline-gate: feedback_no_duplicate_apply_worker -->
+## Pipeline-control discipline
+
+- Conductor always handles commits; never wait for worker (`feedback_conductor_handles_commits`)
+- Never mark runs completed until commit+merge is confirmed (`feedback_run_completion_timing`)
+- After gate2 approval the existing worker resumes — never spawn a second worker (`feedback_no_duplicate_apply_worker`)
+
 ### 1a. Verify this is manual recovery (MANDATORY — check BEFORE anything else)
 
 **The normal flow does NOT use /forge:apply.** After gate2 approval, the existing worker resumes automatically and handles apply (documenter, lifecycle, commit gate). The conductor just waits for the commit gate and then runs /forge:approve.

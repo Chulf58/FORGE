@@ -30,7 +30,7 @@ Hard limits:
 
 Cost when answers are concrete: one turn (`skip`) or two turns (one-sentence reply + your acknowledgement). Friction is intentional but bounded.
 
-## STEP 1 — Dispatch worker
+## STEP 1 — Dispatch worker (MANDATORY — do this FIRST, before anything else)
 
 **Before creating the run**, call `forge_classify_risk` with:
 - `feature`: the short bug summary from `$ARGUMENTS`

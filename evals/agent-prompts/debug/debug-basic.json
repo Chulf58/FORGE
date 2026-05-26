@@ -1,0 +1,8 @@
+{
+  "agent": "debug",
+  "name": "debug-diagnoses-bug",
+  "description": "Debug agent diagnoses a bug and writes a fix plan with root cause",
+  "expected_signals": ["## Root cause", "## Fix"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

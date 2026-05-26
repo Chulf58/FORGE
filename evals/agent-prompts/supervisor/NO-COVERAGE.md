@@ -1,0 +1,3 @@
+# NO-COVERAGE: forge:supervisor
+
+**Reason:** The supervisor agent is invoked exclusively via `forge_call_external` to route prompts to an external Gemini model. The FORGE eval runner operates within the Anthropic Claude environment and cannot invoke Gemini at test time. Additionally, the supervisor's deterministic behaviour depends on the external model's response, making reproducible signal extraction infeasible without a Gemini fixture harness. Coverage is deferred pending completion of the playwright work that will enable non-Anthropic model routing (follow-up TODO 1037a796). At that point, a Gemini-mock fixture can be added and this NO-COVERAGE marker replaced with a STRONG scenario.

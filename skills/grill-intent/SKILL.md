@@ -5,6 +5,13 @@ argument-hint: "[what you want to build]"
 allowed-tools: "Read Write Glob Grep Bash"
 model: claude-sonnet-4-6
 ---
+<!-- skill-linter:ignore file-paths scripts/sanitize-slug.mjs -->
+
+## Skip-loop guard
+
+When the argument contains `[user-prefilled]` on its own line, the skill MUST skip the Pocock interview loop and proceed directly to plan writing. This token signals that the conductor already captured user intent through a prior interview and pre-filled the slots. Do NOT re-interview the user.
+
+Only skip when `[user-prefilled]` is present — never unilaterally.
 
 <!-- Pocock interview loop — vendored under MIT license from https://github.com/mattpocock/skills/blob/main/LICENSE — verbatim use permitted -->
 

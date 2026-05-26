@@ -1,0 +1,3 @@
+# NO-COVERAGE: forge:compound-refresh
+
+**Reason:** The compound-refresh agent is triggered exclusively by the `/forge:refresh` skill, which runs knowledge-base maintenance (de-duplication, archiving stale solutions). This agent is not part of any standard plan/implement/apply pipeline cycle and is invoked manually. Exercising it in the eval runner requires a populated `docs/solutions/` fixture with synthetic stale entries and a simulated refresh invocation — a specialized fixture harness not present at first ship. Coverage deferred to a follow-up task that adds a refresh-simulation fixture to the eval infrastructure.

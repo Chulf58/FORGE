@@ -4,6 +4,7 @@
 // Discovers tests by convention:
 //   hooks/*-test.js    (CommonJS, no deps beyond Node built-ins)
 //   mcp/*-test.mjs     (ESM, may require mcp/node_modules)
+//   scripts/*.test.mjs (ESM, layer eval tests e.g. eval-agent-prompts.test.mjs)
 //
 // Runs each file sequentially via `node <path>` from the repo root.
 // Each test's own stdout/stderr is inherited so live output stays visible.
@@ -26,6 +27,7 @@ const TEST_LOCATIONS = [
   { dir: 'mcp',      suffix: '-test.mjs' },
   { dir: 'mcp/lib',  suffix: '-test.mjs' },
   { dir: 'scripts',  suffix: '-test.mjs' },
+  { dir: 'scripts',  suffix: '.test.mjs' },
   { dir: 'mcp/lib/tools',        suffix: '.test.mjs' },
   { dir: 'mcp/lib/orchestrator', suffix: '.test.mjs' },
 ];

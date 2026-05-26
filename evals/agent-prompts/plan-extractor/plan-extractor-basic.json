@@ -1,0 +1,8 @@
+{
+  "agent": "plan-extractor",
+  "name": "plan-extractor-proposes-learnings",
+  "description": "Plan-extractor reads brainstorm doc and proposes up to 5 new learnings for conductor",
+  "expected_signals": ["## Proposal", "learning"],
+  "expected_artifacts": [],
+  "metadata": { "source": "hand-authored", "createdAt": "2026-05-25" }
+}

@@ -54,6 +54,28 @@ If a section below tells you to read `docs/context/git-diff.txt` or `docs/contex
 - Emit `APPROVED` if the plan's structure is sound, `REVISE` for ordering issues, `BLOCK` only for severe architecture violations.
 - Still emit the `[reviewer-verdict]` signal at the end.
 
+**STRUCTURAL OVERRIDE — in plan-stage mode, the ONLY sections below that apply are:**
+- `## Output path resolution`
+- `## Permissions`
+- `## Output format` (verdict + signal only — skip the checklist body)
+- `## Output protocol`
+
+Skip all other sections entirely when in plan-stage mode.
+
+## Eval regression gate
+
+**FIRST, before reading any other section:** Check if `agents/*.md` files appear in the diff at `docs/context/git-diff.txt` (look for `+++ b/agents/` lines matching `agents/*.md`). If yes, set a mental flag: `RUN_EVAL_GATE=true`. If no, **skip the eval gate entirely** — do not run the eval command, do not emit eval-gate findings.
+
+**STRUCTURAL OVERRIDE — this flag check is mandatory before any other review work. If `RUN_EVAL_GATE=false`, skip the remainder of this section and proceed to `## Reading discipline`.**
+
+When `RUN_EVAL_GATE=true`:
+1. Run `node scripts/eval-agent-prompts.mjs --compare-baseline` from the project root
+2. If the command exits non-zero (regression detected), emit `BLOCK` with a finding citing the failing agent(s) from the `regressions` array in the JSON output — each entry describes `agent` and `regressed` (scenario count that transitioned from pass to fail)
+3. If the command exits 0 (no regressions), proceed with normal review
+4. If `evals/baseline.json` does not exist yet, skip this check and note it in your review output
+
+**Trigger is narrow:** Indirect agent-affecting changes (hook edits, MCP tool edits) are caught by the scheduled backstop (`node scripts/eval-agent-prompts.mjs --scheduled` via `hooks/post-merge-eval.sh`), not this reviewer gate. No false positives on changesets that do not touch agent prompt files.
+
 ## Reading discipline — read each file ONCE, write output ONCE
 
 Read your input files exactly once at the start. Do NOT re-read them during analysis. Write your verdict output file exactly once at the end — do not write partial results and overwrite them. You have the content in context after the first read.

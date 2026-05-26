@@ -54,3 +54,9 @@ hooks/hook-utils.js
 # escalation-reproducer is itself a test (self-asserting reproducer, red→green TDD artifact).
 # Naming convention is -reproducer.mjs, not -test.mjs; tdd-guard resolveTestFile cannot detect it.
 mcp/forge-worker-escalation-reproducer.mjs
+# Task 21b — pre-commit test-presence hook + test harness (.sh files).
+# tdd-guard resolveTestFile only detects .test.mjs convention; .sh files have no JS test wrapper.
+# Test harness is pre-commit-test-presence-test.sh (self-asserting bash tests, 3 branches).
+# The -test.sh suffix is a test file but isTestFile() only matches -test.mjs via TEST_FILE_RE.
+scripts/pre-commit-test-presence.sh
+scripts/pre-commit-test-presence-test.sh
