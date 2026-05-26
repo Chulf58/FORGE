@@ -218,7 +218,7 @@ export function register(server, _shared) {
           const messages = [`Gotcha "${safeTitle}" appended to docs/gotchas/GENERAL.md and indexed in docs/solutions/.`];
           if (lineCount > 200) {
             messages.push(
-              `⚠ GENERAL.md is now ${lineCount} lines (threshold: 200). Consider promoting some gotchas to FORGE-REFERENCE.md.`,
+              `⚠ GENERAL.md is now ${lineCount} lines (threshold: 200). Consider splitting topic sections into docs/gotchas/<topic>.md (retrieval-backed) or trimming stale entries via /forge:refresh.`,
             );
           }
           return { content: [{ type: 'text', text: messages.join('\n') }] };

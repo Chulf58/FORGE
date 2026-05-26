@@ -60,3 +60,10 @@ mcp/forge-worker-escalation-reproducer.mjs
 # The -test.sh suffix is a test file but isTestFile() only matches -test.mjs via TEST_FILE_RE.
 scripts/pre-commit-test-presence.sh
 scripts/pre-commit-test-presence-test.sh
+# 2026-05-26 — FORGE-REFERENCE.md warning-string correction (cosmetic message change, no logic).
+# doc-size-guard's test is doc-size-guard-test.js (hyphen); tdd-guard resolveTestFile only
+# detects .test.mjs convention so it can't pair it. knowledge.js has knowledge.test.mjs (dot,
+# green). A regression test for the corrected wording lives in doc-size-guard-test.js (Case 5).
+# Root-cause fix for the chronic hyphen-resolution gap is tracked as a separate TODO.
+hooks/doc-size-guard.js
+mcp/lib/tools/knowledge.js
