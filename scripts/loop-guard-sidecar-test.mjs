@@ -34,7 +34,8 @@ if (!src.includes('sidecarPath') && !src.includes('sidecar')) {
   fail('hooks/agent-loop-guard.js does not contain sidecar write logic');
 }
 
-// Integration test: invoke the hook with priorCount >= 15 via childProcess
+// Integration test: invoke the hook with priorCount >= 25 (the current cap,
+// MAX_DISPATCHES_PER_AGENT_PER_RUN in hooks/agent-loop-guard.js) via childProcess
 // and verify the sidecar file is written before deny fires.
 
 async function runIntegrationTest() {
@@ -44,12 +45,12 @@ async function runIntegrationTest() {
   const runsDir = join(projectDir, '.pipeline', 'runs', runId);
   const sidecarPath = join(runsDir, 'loop-guard-blocked.json');
 
-  // Setup: create countsDir + runDir, write count file with 15 dispatches
+  // Setup: create countsDir + runDir, write count file at the cap (25 dispatches)
   await fsPromises.mkdir(countsDir, { recursive: true });
   await fsPromises.mkdir(runsDir, { recursive: true });
   await fsPromises.writeFile(
     join(countsDir, runId + '.json'),
-    JSON.stringify({ coder: 15 }),
+    JSON.stringify({ coder: 25 }),
     'utf8',
   );
 

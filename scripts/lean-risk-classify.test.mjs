@@ -288,13 +288,13 @@ test('LEAN: risk-surface path (hook script) -> reviewers dispatched', () => {
   const r = classifyHandoff({ handoffContent: HANDOFF_RISK_PATH_HOOK });
   assert.equal(r.skipReviewers, false);
   assert.deepEqual(r.reasons, ['risk-surface-match']);
-  assert.ok(r.triggeredRules.some((t) => t.startsWith('hook-script:')));
+  assert.ok(r.triggeredRules.some((t) => t.rule === 'hook-script'));
 });
 
 test('LEAN: risk-surface path (mcp tool) -> reviewers dispatched', () => {
   const r = classifyHandoff({ handoffContent: HANDOFF_RISK_PATH_MCP });
   assert.equal(r.skipReviewers, false);
-  assert.ok(r.triggeredRules.some((t) => t.startsWith('mcp-tool:')));
+  assert.ok(r.triggeredRules.some((t) => t.rule === 'mcp-tool'));
 });
 
 test('LEAN: blockers present -> reviewers dispatched', () => {
@@ -329,19 +329,19 @@ test('LEAN: verification section missing -> reviewers dispatched', () => {
 test('LEAN: shell spawn in code content -> reviewers dispatched', () => {
   const r = classifyHandoff({ handoffContent: HANDOFF_RISK_CONTENT_SHELL });
   assert.equal(r.skipReviewers, false);
-  assert.ok(r.triggeredRules.some((t) => t.startsWith('shell-spawn:')));
+  assert.ok(r.triggeredRules.some((t) => t.rule === 'shell-spawn'));
 });
 
 test('LEAN: fetch / network boundary in code content -> reviewers dispatched', () => {
   const r = classifyHandoff({ handoffContent: HANDOFF_RISK_CONTENT_FETCH });
   assert.equal(r.skipReviewers, false);
-  assert.ok(r.triggeredRules.some((t) => t.startsWith('network-boundary:')));
+  assert.ok(r.triggeredRules.some((t) => t.rule === 'network-boundary'));
 });
 
 test('LEAN: secret/token env var in code content -> reviewers dispatched', () => {
   const r = classifyHandoff({ handoffContent: HANDOFF_RISK_CONTENT_SECRET });
   assert.equal(r.skipReviewers, false);
-  assert.ok(r.triggeredRules.some((t) => t.startsWith('auth-crypto-secrets:')));
+  assert.ok(r.triggeredRules.some((t) => t.rule === 'auth-crypto-secrets'));
 });
 
 test('LEAN: fs write confined to .pipeline/ is not a risk match', () => {

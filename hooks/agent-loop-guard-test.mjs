@@ -146,13 +146,15 @@ test('exits 0 on second dispatch (count 1 → 2)', async (t) => {
   assert.equal(result.exitCode, 0, 'second dispatch should be allowed');
 });
 
-test('exits 2 and denies at the cap (count >= 15)', async (t) => {
+test('exits 2 and denies at the cap (count >= 25)', async (t) => {
   const dir = await makeProjectDir();
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  // Cap raised 2 → 15 in commit 9aa0dca3. Pre-write count=15 to trigger deny
-  // on the next dispatch attempt.
+  // Cap is MAX_DISPATCHES_PER_AGENT_PER_RUN = 25 (raised 2 → 15 → 25; latest bump
+  // after r-4776c645 hit the cap at Phase 9, per agent-loop-guard.js:18-21).
+  // Pre-write count=25 so the next dispatch attempt is at the cap and is denied.
+  // If the source cap changes again, update this value to match.
   await writeRun(dir, 'r-abc123');
-  await writeCounts(dir, 'r-abc123', { coder: 15 });
+  await writeCounts(dir, 'r-abc123', { coder: 25 });
 
   const result = runHook({
     tool_name: 'Agent',
@@ -169,7 +171,7 @@ test('deny message includes agent type and run id', async (t) => {
   const dir = await makeProjectDir();
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   await writeRun(dir, 'r-abc123');
-  await writeCounts(dir, 'r-abc123', { planner: 15 });
+  await writeCounts(dir, 'r-abc123', { planner: 25 });
 
   const result = runHook({
     tool_name: 'Agent',
