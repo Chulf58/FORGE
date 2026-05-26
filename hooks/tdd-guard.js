@@ -84,10 +84,17 @@ function isIgnored(filePath, cwd) {
 }
 
 /**
- * Resolve the test file for a given source file, using the deterministic order:
- *   1. Adjacent: <dir>/<name>.test.js or <dir>/<name>.test.mjs
- *   2. Sibling tests dir: <projectRoot>/tests/<name>.test.js or .test.mjs
- *   3. <dir>/__tests__/<name>.test.js or .test.mjs
+ * Resolve the test file for a given source file. Both naming conventions are
+ * accepted at each location — dot form (<name>.test.{js,mjs}) AND hyphen form
+ * (<name>-test.{js,mjs}). CLAUDE.md documents the hyphen form as valid and
+ * isTestFile() (TEST_FILE_RE) recognizes it; resolveTestFile must too, otherwise
+ * source files whose only test is hyphen-named are treated as "no test file found"
+ * and forced into .tddguardignore (which fully disables TDD for them).
+ *
+ * Deterministic search order:
+ *   1. Adjacent:        <dir>/<name>.test.{js,mjs}        and <dir>/<name>-test.{js,mjs}
+ *   2. Sibling tests/:  <cwd>/tests/<name>.test.{js,mjs}  and <cwd>/tests/<name>-test.{js,mjs}
+ *   3. __tests__/:      <dir>/__tests__/<name>.test.{js,mjs} and <dir>/__tests__/<name>-test.{js,mjs}
  * Returns the first path that exists on disk, or null.
  * @param {string} filePath  - absolute source path
  * @param {string} cwd       - project root
@@ -100,10 +107,16 @@ function resolveTestFile(filePath, cwd) {
   const candidates = [
     path.join(dir, `${name}.test.js`),
     path.join(dir, `${name}.test.mjs`),
+    path.join(dir, `${name}-test.js`),
+    path.join(dir, `${name}-test.mjs`),
     path.join(cwd, 'tests', `${name}.test.js`),
     path.join(cwd, 'tests', `${name}.test.mjs`),
+    path.join(cwd, 'tests', `${name}-test.js`),
+    path.join(cwd, 'tests', `${name}-test.mjs`),
     path.join(dir, '__tests__', `${name}.test.js`),
     path.join(dir, '__tests__', `${name}.test.mjs`),
+    path.join(dir, '__tests__', `${name}-test.js`),
+    path.join(dir, '__tests__', `${name}-test.mjs`),
   ];
 
   for (const candidate of candidates) {

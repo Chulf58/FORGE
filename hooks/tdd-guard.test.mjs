@@ -355,3 +355,50 @@ test('(14) tddGuard: true keeps guard enforced — no test file → block', asyn
     await removeTempProject(dir);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test case (15): resolves HYPHEN-form test files (<name>-test.{js,mjs}), not only dot-form
+// Regression for the chronic resolveTestFile gap (TODO eb424159): resolveTestFile only
+// checked <name>.test.{js,mjs}, never <name>-test.{js,mjs}, despite CLAUDE.md documenting
+// the hyphen form as valid and isTestFile() recognizing it. A source file whose only test
+// was hyphen-named got "no test file found" → forced a .tddguardignore entry that fully
+// disabled TDD for that file. ~15 such band-aids accumulated in .tddguardignore.
+// ---------------------------------------------------------------------------
+test('(15) resolves adjacent hyphen test (<name>-test.mjs) and allows when it is red', async () => {
+  const dir = await makeTempProject({
+    'hooks/widget.js': '// source',
+    // Hyphen-named test with a failing assertion → node --test exits non-zero (red bar)
+    'hooks/widget-test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('failing', () => { assert.equal(1, 2, 'intentionally failing'); });
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'widget.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must ALLOW (exitCode 0): the hyphen-named test exists and is red.
+    // Against the dot-only resolveTestFile this returns 2 ("no test file found") → FAILS (red bar).
+    assert.equal(result.exitCode, 0, 'should resolve <name>-test.mjs and allow when it is red');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
+
+test('(16) resolves adjacent hyphen test in .js form (<name>-test.js)', async () => {
+  const dir = await makeTempProject({
+    'hooks/gadget.js': '// source',
+    // CommonJS hyphen test that throws → exits non-zero (red bar)
+    'hooks/gadget-test.js': `
+const assert = require('node:assert');
+assert.equal(1, 2, 'intentionally failing');
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'gadget.js'), dir);
+    const result = await runGuard(payload, {});
+    assert.equal(result.exitCode, 0, 'should resolve <name>-test.js and allow when it is red');
+  } finally {
+    await removeTempProject(dir);
+  }
+});
