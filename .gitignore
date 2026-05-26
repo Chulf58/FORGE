@@ -1,29 +1,38 @@
+# node_modules — all directories ignored except the SDK vendored below.
+#
+# Why mcp/node_modules/@anthropic-ai/claude-agent-sdk/ IS tracked:
+# The git worktree merge cascade (bin/forge-worktree.js:41-43) silently
+# deletes this directory from main's working tree after each merge.
+# After commit 76f0b6b1 untracked mcp/node_modules entirely, the
+# restoreAccidentalDeletions() guard became blind to the deletion, causing
+# repeated ERR_MODULE_NOT_FOUND worker failures. Tracking these 15 files
+# (3.9 MB) makes restoreAccidentalDeletions() effective again as a side effect.
+#
+# Why claude-agent-sdk-win32-x64/ is NOT tracked:
+# 243 MB / 4 files — exceeds the GitHub 100 MB per-blob limit. Cannot be
+# committed without LFS or an alternative hosting strategy.
+#
+# Why sdk/ is NOT tracked:
+# That package is not the one the merge cascade silently deletes. Only
+# claude-agent-sdk/ is the missing import in the worker error log.
+#
+# TODO 83079dea (Path B) — root-cause cascade fix: extend forge-worktree.js
+# restoreAccidentalDeletions() to detect and restore from plugin cache without
+# requiring git-tracking. When Path B ships, the vendoring below becomes
+# belt-and-suspenders rather than load-bearing and the !exception lines can
+# be removed.
 node_modules
+!mcp/node_modules/
+mcp/node_modules/*
+!mcp/node_modules/@anthropic-ai/
+mcp/node_modules/@anthropic-ai/*
+!mcp/node_modules/@anthropic-ai/claude-agent-sdk/
 
 # Local-only git backup folders — created when swapping .git directories.
 # Contain pack files that may exceed GitHub's 100 MB blob limit; never push.
 .git-nemlig-backup/
 .git-original/
 
-# mcp/node_modules is no longer committed — hooks/mcp-deps-install.js runs
-# `npm install` on SessionStart to populate it. Two historical incidents
-# shaped the current setup:
-#
-# 1. Pre-76f0b6b1 (TODO 0233f9c8): files WERE committed (pruned, ~6 MB) as an
-#    offline-fallback. Git worktree merge cascades deleted random tracked
-#    node_modules files in main, breaking subsequent worker spawns. Fix:
-#    untrack mcp/node_modules entirely. First-boot now requires network.
-#
-# 2. Post-untrack (TODO 3d6b7587, 2026-05-20): The SessionStart hook previously
-#    ran `npm ci`, which DELETES node_modules before reinstalling. On Windows,
-#    when another process (worker, MCP server) holds open file handles to
-#    anything in mcp/node_modules, the unlink syscall fails with EPERM
-#    partway through. The deletion partially completes, the install never
-#    finishes, and random packages (most often @anthropic-ai/claude-agent-sdk)
-#    disappear. Fix: switched to `npm install` (incremental — never wipes the
-#    tree) at hooks/mcp-deps-install.js. Recovery for already-corrupted
-#    state: copy from plugin cache (docs/solutions/mcp-node-modules-sdk-
-#    silently-removed-by-merge-cascade-recovery-from-plugin-cache.md).
 dist
 out
 .DS_Store
