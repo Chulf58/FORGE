@@ -221,7 +221,7 @@ When the user mentions a project-wide pattern during the interview — for examp
 - "we always use Y for Z"
 - "the rule here is..."
 
-Call `forge_add_learning` with `type: 'gotcha'` immediately, before writing the brainstorm doc. This preserves institutional knowledge in the compound knowledge base so future agents benefit.
+Call `forge_add_learning` with `type: 'gotcha'`, `trigger: '<the "when X" condition — e.g. "when using Y in context Z">'`, and `sourceEvidence: '<provenance: current run ID or the user's exact words>'` immediately, before writing the brainstorm doc. This preserves institutional knowledge in the compound knowledge base so future agents benefit.
 
 ### Slug validation (REQUIRED before writing the doc)
 

@@ -61,3 +61,22 @@ test('TEST_LOCATIONS includes scripts/*.test.mjs discovery', () => {
   assert.match(src, pattern,
     'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "scripts", suffix: ".test.mjs" }');
 });
+
+test('TEST_LOCATIONS includes mcp/lib/tools/*-test.mjs discovery', () => {
+  const src = readFileSync(RUN_TESTS_PATH, 'utf8');
+  // mcp/lib/tools/ also hosts hyphen-form test files (e.g. knowledge-test.mjs —
+  // the forge_add_learning quality-gate tests). Without a -test.mjs entry for
+  // this dir they are silently skipped: the gate's tests would not run in the
+  // regression suite (vacuous AC). Closes the r-96a26ae5 coverage gap.
+  const pattern = /\{\s*dir:\s*['"]mcp\/lib\/tools['"]\s*,\s*suffix:\s*['"]-test\.mjs['"]\s*\}/;
+  assert.match(src, pattern,
+    'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib/tools", suffix: "-test.mjs" }');
+});
+
+test('TEST_LOCATIONS includes mcp/lib/orchestrator/*-test.mjs discovery', () => {
+  const src = readFileSync(RUN_TESTS_PATH, 'utf8');
+  // Consistency: orchestrator dir should also discover hyphen-form test files.
+  const pattern = /\{\s*dir:\s*['"]mcp\/lib\/orchestrator['"]\s*,\s*suffix:\s*['"]-test\.mjs['"]\s*\}/;
+  assert.match(src, pattern,
+    'scripts/run-tests.mjs:TEST_LOCATIONS must include { dir: "mcp/lib/orchestrator", suffix: "-test.mjs" }');
+});

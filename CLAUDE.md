@@ -2,6 +2,14 @@
 
 These rules apply when `.pipeline/worker-task.json` exists — i.e., this is a worker session executing a pipeline task.
 
+## Attention-first principle
+
+Human attention is the scarcest resource in this system. Every gate, pause, or escalation consumes a unit of that resource. Judgment lives inline — in this file, in agents, in skills — where it is read and monitored every session, not in a separate document that agents skip. Every stop must change an outcome: if pausing does not alter a decision or prevent a mistake, it is ceremony and must be removed.
+
+This principle governs design choices across FORGE: gates are added only where they block structurally incomplete inputs, not where they surface style preferences; inline rules are preferred over external decision logs; no preamble or acknowledgement text is emitted unless it carries information that changes the reader's next action.
+
+See `docs/DECISIONS.md` for the dated rationale behind this redesign.
+
 ## Change philosophy
 
 Choose the smallest safe implementation that solves the stated problem. No speculative abstractions. No unrelated cleanup. Prefer existing patterns in the codebase over new structure. Keep the patch easy to justify against unnecessary complexity, hidden side effects, and scope creep.
@@ -144,6 +152,10 @@ The plugin does NOT modify project files on install. Projects get their pipeline
 ### Working on this plugin
 
 Edit files directly — no build step, no compilation. Agent changes take effect on next invocation (no restart needed). Hook and command changes require restarting the Claude Code session.
+
+### Knowledge write-back — required fields
+
+Any conductor-side call to `forge_add_learning` MUST include `trigger` (the "when X, do Y" condition) and `sourceEvidence` (provenance string, e.g. `"run r-XXXX"` or `"GENERAL.md line 47"`). Passing these values only inside the `content`/`body` prose is NOT sufficient — they must be top-level fields.
 
 ### Stack rules and gotchas
 

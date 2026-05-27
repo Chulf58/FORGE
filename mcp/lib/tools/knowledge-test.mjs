@@ -102,6 +102,8 @@ async function main() {
         title: 'Test gotcha section',
         content: 'This is a test gotcha body.',
         tags: ['test'],
+        trigger: 'When testing gotcha persistence',
+        sourceEvidence: 'knowledge-test.mjs test 3',
       });
       const textBlock = (addResult.content || []).find(c => c.type === 'text');
       if (!textBlock || !textBlock.text.includes('Test gotcha section')) {
@@ -123,6 +125,8 @@ async function main() {
         title: 'Test verifiedAt solution',
         content: 'Regression guard body.',
         tags: ['test'],
+        trigger: 'When testing solution verifiedAt',
+        sourceEvidence: 'knowledge-test.mjs test 4',
       });
       const ISO_8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
       const indexRaw = readFileSync(join(projectDir, 'docs', 'solutions', 'index.json'), 'utf8');
@@ -196,6 +200,68 @@ async function main() {
       } else {
         console.error('[knowledge-test] test 7 PASS — deferred criterion creates board TODO');
       }
+    }
+
+    // ── Gate block: forge_add_learning must reject incomplete payloads ──
+    // This block runs independently of the preceding tests.
+    // It tests that forge_add_learning rejects payloads missing required fields.
+    // The CURRENT implementation does NOT validate these fields, so the assertions
+    // will fail (expected behavior for phase 1 red bar).
+    let gateFailure = null;
+    try {
+      // Gate test 1: missing trigger field
+      const gateTest1 = await callTool(client, 'forge_add_learning', {
+        type: 'gotcha',
+        title: 'Gate test — missing trigger',
+        content: 'body',
+        tags: [],
+        sourceEvidence: 'run r-test',
+        // note: trigger field intentionally omitted
+      });
+      if (!gateTest1.isError) {
+        gateFailure = 'gate test 1: missing trigger field — expected isError=true, got isError=' + gateTest1.isError;
+      }
+
+      // Gate test 2: missing sourceEvidence field
+      if (!gateFailure) {
+        const gateTest2 = await callTool(client, 'forge_add_learning', {
+          type: 'gotcha',
+          title: 'Gate test — missing sourceEvidence',
+          content: 'body',
+          tags: [],
+          trigger: 'When X happens',
+          // note: sourceEvidence field intentionally omitted
+        });
+        if (!gateTest2.isError) {
+          gateFailure = 'gate test 2: missing sourceEvidence field — expected isError=true, got isError=' + gateTest2.isError;
+        }
+      }
+
+      // Gate test 3: missing type field
+      if (!gateFailure) {
+        const gateTest3 = await callTool(client, 'forge_add_learning', {
+          title: 'Gate test — missing type',
+          content: 'body',
+          tags: [],
+          trigger: 'When X happens',
+          sourceEvidence: 'run r-test',
+          // note: type field intentionally omitted
+        });
+        if (!gateTest3.isError) {
+          gateFailure = 'gate test 3: missing type field — expected isError=true, got isError=' + gateTest3.isError;
+        }
+      }
+
+      if (gateFailure) {
+        console.error('[knowledge-test] gate: FAIL');
+        process.exit(1);
+      } else {
+        console.error('[knowledge-test] gate: PASS');
+      }
+    } catch (gateErr) {
+      console.error('[knowledge-test] gate: FAIL');
+      console.error('Gate error: ' + (gateErr && gateErr.message || String(gateErr)));
+      process.exit(1);
     }
 
     if (!failure) {

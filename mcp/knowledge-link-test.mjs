@@ -102,6 +102,8 @@ async function main() {
         title: 'Test Solution Pattern',
         content: 'This is a test solution for linking validation.',
         tags: ['test', 'pattern'],
+        trigger: 'When testing knowledge link validation',
+        sourceEvidence: 'knowledge-link-test.mjs setup',
       }),
     );
     console.error('[knowledge-link-test] Setup: created solution doc');
@@ -178,6 +180,8 @@ async function main() {
           content: 'This solution references a note that does not exist.',
           tags: ['test'],
           sourceNotes: ['n-nonexistent'],
+          trigger: 'When testing dead note link rejection',
+          sourceEvidence: 'knowledge-link-test.mjs AC-3',
         });
 
         if (!deadLinkLearning.isError) {
@@ -262,6 +266,8 @@ async function main() {
             content: 'This solution references the note above.',
             tags: ['test'],
             sourceNotes: [noteId],
+            trigger: 'When testing reciprocal note-to-knowledge links',
+            sourceEvidence: 'knowledge-link-test.mjs AC-5',
           }),
         );
 

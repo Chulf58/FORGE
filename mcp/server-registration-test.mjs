@@ -128,6 +128,27 @@ async function main() {
       }
     }
 
+    // Check 4: forge_add_learning schema includes required fields trigger and sourceEvidence
+    if (!failure) {
+      const addLearningTool = (result.tools || []).find(t => t.name === 'forge_add_learning');
+      if (!addLearningTool) {
+        failure = 'forge_add_learning tool not found in registered tools';
+      } else {
+        const schema = addLearningTool.inputSchema || {};
+        const props = (schema.properties) || {};
+        const required = Array.isArray(schema.required) ? schema.required : [];
+        if (!props.trigger) {
+          failure = 'forge_add_learning schema missing "trigger" field';
+        } else if (!props.sourceEvidence) {
+          failure = 'forge_add_learning schema missing "sourceEvidence" field';
+        } else if (!required.includes('trigger')) {
+          failure = 'forge_add_learning schema: "trigger" is not listed as required';
+        } else if (!required.includes('sourceEvidence')) {
+          failure = 'forge_add_learning schema: "sourceEvidence" is not listed as required';
+        }
+      }
+    }
+
     if (!failure) {
       console.error('[server-registration-test] PASS — all ' + expectedNames.length + ' tools registered');
     }

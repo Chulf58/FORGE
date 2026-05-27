@@ -32,4 +32,4 @@ Before finalizing your work, verify:
 
 ## Write-back
 
-If you discover a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result — skip write-back during MCP fallback to prevent duplicates.
+If you discover a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', trigger: '<when X, do Y — the condition under which this pitfall applies>', sourceEvidence: '<provenance: run ID, file:line, or URL>', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result — skip write-back during MCP fallback to prevent duplicates.

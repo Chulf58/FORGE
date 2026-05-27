@@ -229,7 +229,7 @@ User picks:
 
 **If file exists with one or more candidates: auto-accept all (no per-candidate user interaction).**
 
-For each candidate in the proposals file, the conductor calls `forge_add_learning` directly with `type: <type>`, `title: <title>`, `content: <body>`. No surfacing, no yes/no/edit dialogue, no per-candidate user wait.
+For each candidate in the proposals file, the conductor calls `forge_add_learning` directly with `type: <type>`, `title: <title>`, `content: <body>`, `trigger: <candidate.trigger>`, `sourceEvidence: <candidate.sourceEvidence>`. No surfacing, no yes/no/edit dialogue, no per-candidate user wait.
 
 **Conflict-detect handling** — `forge_add_learning` may return `{conflict: true, slug: <existing-slug>}` indicating a similar existing entry. Retry policy:
 1. Retry ONCE with a more distinctive title — append a disambiguator drawn from the candidate's most distinctive tag or sub-topic (e.g., original "Brainstorm attribution" + tag "phase-c" → retry title "Brainstorm source attribution — separate user-stated from conductor-proposed").

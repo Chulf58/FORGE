@@ -1,8 +1,8 @@
 ---
 name: plan-extractor
-description: "Post-gate1 knowledge sweep agent. Reads brainstorm doc + PLAN.md, de-duplicates against existing knowledge base, proposes up to 5 new learnings for conductor confirmation. Lightweight — haiku model, 8 turns max."
-model: claude-haiku-4-5-20251001
-maxTurns: 8
+description: "Post-gate1 knowledge sweep agent. Reads brainstorm doc + PLAN.md, de-duplicates against existing knowledge base, proposes up to 5 new learnings for conductor confirmation. Sonnet model, 15 turns max (upgraded from haiku/8 — truncated before writing proposals on large briefs)."
+model: claude-sonnet-4-6
+maxTurns: 15
 tools:
   - Read
   - Glob
@@ -79,6 +79,8 @@ Write proposals to `.pipeline/runs/<runId>/plan-extractor-proposals.json` using 
       "type": "gotcha|solution",
       "title": "...",
       "body": "...",
+      "trigger": "...",
+      "sourceEvidence": "...",
       "sourceSection": "brainstorm|plan"
     }
   ]
@@ -90,6 +92,8 @@ Field rules:
 - `type`: one of `"gotcha"`, `"solution"` — must match the `forge_add_learning` type enum exactly (`gotcha` = append to GENERAL.md; `solution` = new solution doc)
 - `title`: ≤ 12 words, imperative or descriptive, no trailing period
 - `body`: 2–5 sentences; include the "why" and any observable consequence; strip newlines (`\n`, `\r`) from user-supplied text before including
+- `trigger`: the "when X, do Y" condition under which this learning applies — one sentence describing the trigger scenario (required; derive from the brainstorm or plan context)
+- `sourceEvidence`: provenance string for the learning — use the run ID (e.g. `"run r-XXXX"`) plus the section name (e.g. `"brainstorm § Constraints"` or `"PLAN.md § Approach summary"`) so the conductor can cite origin when accepting
 - `sourceSection`: `"brainstorm"` if the insight came from the brainstorm doc; `"plan"` if from PLAN.md; `"both"` if both sources support it
 
 If no candidates survive de-duplication, write:

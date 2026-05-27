@@ -142,11 +142,13 @@ export function register(server, _shared) {
         title: z.string().min(1).describe('Section heading for gotcha, or document title for solution.'),
         content: z.string().min(1).describe('Body content. For gotcha: markdown prose. For solution: full document body (without frontmatter).'),
         tags: z.array(z.string()).describe('Tags for indexing and future search.'),
+        trigger: z.string().min(1).describe('The condition under which this learning applies (e.g. "When deploying to prod"). Required.'),
+        sourceEvidence: z.string().min(1).describe('Provenance string — where this was observed (e.g. "run r-XXXX", "GENERAL.md line 47"). Required.'),
         sourceNotes: z.array(z.string()).optional().describe('Optional note IDs from .pipeline/notes.json that this learning entry was derived from. Each ID must exist; dead links are rejected.'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async ({ type, title, content, tags, sourceNotes }) => {
+    async ({ type, title, content, tags, trigger, sourceEvidence, sourceNotes }) => {
       try {
         const projectDir = resolveProjectDir();
 
@@ -160,6 +162,30 @@ export function register(server, _shared) {
         const safeTags = Array.isArray(tags)
           ? tags.map((t) => String(t).replace(/[\r\n]/g, ' ').trim())
           : [];
+
+        // Quality gate — reject structurally incomplete payloads before any write.
+        // Sanitize rejectedContent and sourceEvidence here (not caller-side) so
+        // neither can carry unescaped control characters downstream.
+        if (!trigger || typeof trigger !== 'string') {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify({
+              error: 'forge_add_learning: missing required field: trigger',
+              rejectedContent: safeContent,
+            }) }],
+          };
+        }
+        if (!sourceEvidence || typeof sourceEvidence !== 'string') {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify({
+              error: 'forge_add_learning: missing required field: sourceEvidence',
+              rejectedContent: safeContent,
+            }) }],
+          };
+        }
+        // eslint-disable-next-line no-control-regex
+        const safeSourceEvidence = sourceEvidence.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
         // Validate sourceNotes against .pipeline/notes.json when provided
         const check = requirePipeline(projectDir);

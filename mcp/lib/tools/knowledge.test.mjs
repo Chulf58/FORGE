@@ -90,6 +90,8 @@ test('forge_add_learning returns conflict signal for type "solution" when near-d
       title: 'Worker gate timeout race',
       content: 'Some content about the same thing.',
       tags: ['worker', 'race'],
+      trigger: 'When a new worker stage starts',
+      sourceEvidence: 'knowledge.test.mjs conflict-solution test',
     });
 
     // The handler should return a conflict signal — NOT write a new doc
@@ -102,6 +104,75 @@ test('forge_add_learning returns conflict signal for type "solution" when near-d
     assert.ok(parsed.slug, 'slug must be present in conflict response');
     assert.ok(parsed.title, 'title must be present in conflict response');
     assert.ok(!result.isError, 'conflict response must not have isError: true — must be MCP-valid textResult');
+  } finally {
+    if (origProjectDir === undefined) {
+      delete process.env.CLAUDE_PROJECT_DIR;
+    } else {
+      process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+    }
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Gate enforcement tests (red bar — gate not yet implemented in knowledge.js)
+// These tests assert that forge_add_learning rejects payloads missing trigger
+// or sourceEvidence. They FAIL before Task 26 is implemented.
+// ---------------------------------------------------------------------------
+
+test('forge_add_learning rejects payload missing trigger field (gate enforcement)', async () => {
+  const projectDir = makeConflictProjectDir();
+  const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  try {
+    // Create minimal GENERAL.md and solutions index so handler can proceed past early checks
+    writeFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), '# GENERAL\n', 'utf8');
+    writeFileSync(join(projectDir, 'docs', 'solutions', 'index.json'), '[]', 'utf8');
+    process.env.CLAUDE_PROJECT_DIR = projectDir;
+
+    const handler = await getAddLearningHandler();
+
+    // Payload is valid except trigger is absent
+    const result = await handler({
+      type: 'gotcha',
+      title: 'Gate test — missing trigger',
+      content: 'body',
+      tags: [],
+      sourceEvidence: 'run r-test',
+      // trigger intentionally omitted
+    });
+
+    assert.strictEqual(result.isError, true, 'expected isError=true when trigger is missing');
+  } finally {
+    if (origProjectDir === undefined) {
+      delete process.env.CLAUDE_PROJECT_DIR;
+    } else {
+      process.env.CLAUDE_PROJECT_DIR = origProjectDir;
+    }
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+test('forge_add_learning rejects payload missing sourceEvidence field (gate enforcement)', async () => {
+  const projectDir = makeConflictProjectDir();
+  const origProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  try {
+    writeFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), '# GENERAL\n', 'utf8');
+    writeFileSync(join(projectDir, 'docs', 'solutions', 'index.json'), '[]', 'utf8');
+    process.env.CLAUDE_PROJECT_DIR = projectDir;
+
+    const handler = await getAddLearningHandler();
+
+    // Payload is valid except sourceEvidence is absent
+    const result = await handler({
+      type: 'gotcha',
+      title: 'Gate test — missing sourceEvidence',
+      content: 'body',
+      tags: [],
+      trigger: 'When X happens',
+      // sourceEvidence intentionally omitted
+    });
+
+    assert.strictEqual(result.isError, true, 'expected isError=true when sourceEvidence is missing');
   } finally {
     if (origProjectDir === undefined) {
       delete process.env.CLAUDE_PROJECT_DIR;
@@ -144,6 +215,8 @@ failed before the new worker registers its own PID.
       title: 'Worker gate poll timeout',
       content: 'Same issue described again.',
       tags: ['worker', 'gate'],
+      trigger: 'When a prior stage worker exits after setting the gate',
+      sourceEvidence: 'knowledge.test.mjs conflict-gotcha test',
     });
 
     // The handler should return a conflict signal — NOT append to GENERAL.md

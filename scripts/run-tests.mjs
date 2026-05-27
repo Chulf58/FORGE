@@ -30,6 +30,8 @@ const TEST_LOCATIONS = [
   { dir: 'scripts',  suffix: '.test.mjs' },
   { dir: 'mcp/lib/tools',        suffix: '.test.mjs' },
   { dir: 'mcp/lib/orchestrator', suffix: '.test.mjs' },
+  { dir: 'mcp/lib/tools',        suffix: '-test.mjs' },
+  { dir: 'mcp/lib/orchestrator', suffix: '-test.mjs' },
 ];
 
 function discover() {

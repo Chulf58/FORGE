@@ -57,6 +57,8 @@ Call `forge_add_learning` with:
   "outcome": "<outcome>",
   "title": "<sanitized title>",
   "body": "<handoff body, optionally with verdict summaries appended>",
+  "trigger": "<when X, do Y — the condition under which this learning applies, derived from the handoff context>",
+  "sourceEvidence": "<provenance: run ID from run.json, e.g. 'run r-XXXX'>",
   "projectDir": "<mainProjectRoot>"
 }
 ```
