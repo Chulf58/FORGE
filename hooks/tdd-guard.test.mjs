@@ -449,3 +449,35 @@ test('failing', () => { assert.equal(1, 2, 'intentionally failing'); });
     await removeTempProject(dir);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test case (18): non-source extensions (.json, .yaml, etc.) bypass the guard
+// Regression for a band-aid the Phase-2 Task-8 audit-trigger retirement coder
+// added: it needed to edit hooks/hooks.json (a JSON config file in a guarded
+// directory) and was blocked by the guard's "no test file found" rule, so it
+// added `hooks/hooks.json` to .tddguardignore — the same anti-pattern we just
+// retired for descriptor-form tests. JSON/YAML/markdown/etc. config files in
+// hooks/, bin/, scripts/, mcp/ have no executable logic to unit-test; the
+// guard should skip them based on extension, not require a .tddguardignore
+// entry per config file.
+// ---------------------------------------------------------------------------
+test('(18) allows Write to non-source extensions (e.g. .json config) regardless of paired-test presence', async () => {
+  const dir = await makeTempProject({
+    'hooks/foo.json': '{"key": "value"}',
+    // No paired test — JSON has no executable logic to unit-test.
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'foo.json'), dir);
+    const result = await runGuard(payload, {});
+    // Must ALLOW (exit 0): non-{js,mjs,cjs} files should bypass the guard.
+    // Currently blocks (exit 2, "no test file found") — the gap that forced
+    // a `hooks/hooks.json` band-aid in .tddguardignore after the Task-8 retirement.
+    assert.equal(
+      result.exitCode,
+      0,
+      'should allow Write to non-source extensions (.json/.yaml/.md/etc.) without requiring a paired test',
+    );
+  } finally {
+    await removeTempProject(dir);
+  }
+});

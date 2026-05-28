@@ -53,6 +53,11 @@ function isGuardedSourceFile(filePath, cwd) {
   const rel = path.relative(cwd, filePath);
   // Reject absolute-path escapes and parent traversal
   if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  // Only guard SOURCE extensions — non-source files (.json/.yaml/.md/etc.) under a
+  // guarded dir are config/data with no executable logic to unit-test; require no
+  // paired test and bypass the guard. (Closes the gap that forced a .tddguardignore
+  // band-aid for `hooks/hooks.json` during the Phase-2 Task-8 audit-trigger retirement.)
+  if (!/\.[cm]?js$/.test(filePath)) return false;
   const topDir = rel.split(/[\\/]/)[0];
   return GUARDED_DIRS.includes(topDir);
 }
