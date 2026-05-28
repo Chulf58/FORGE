@@ -24,6 +24,14 @@ const { STDIN_TIMEOUT_LONG } = require('./hook-utils');
 // Dirs that tdd-guard covers (narrower than workflow-guard which EXCLUDES these).
 const GUARDED_DIRS = ['hooks', 'bin', 'scripts', 'mcp'];
 
+// Per-candidate-test runtime cap for runNodeTest. Raised from 2000ms to 10000ms
+// after the Phase-2 audit-trigger/CLAUDE-WORKER retirement work hit silent
+// fail-opens on slow subprocess-based tests (e.g. hooks/worker-task-inject-test.mjs
+// ~3s, scripts/reviewer-dispatch.test.mjs ~4.6s — the latter was previously
+// exempted in .tddguardignore for exactly this reason). 10s is generous enough
+// to cover real-world hook/script test suites without unbounded hook latency.
+const RUN_NODE_TEST_TIMEOUT_MS = 10000;
+
 // Patterns that identify test files by name.
 const TEST_FILE_RE = /(?:\.test\.[cm]?js|\.test\.mjs|-test\.[cm]?js|-test\.mjs)$/;
 
@@ -205,7 +213,7 @@ function runNodeTest(testFile, spawnImpl) {
     const timer = setTimeout(() => {
       try { child.kill && child.kill(); } catch { /* ignore kill errors */ }
       finish('TIMEOUT');
-    }, 2000);
+    }, RUN_NODE_TEST_TIMEOUT_MS);
 
     child.on('close', (code) => {
       clearTimeout(timer);
@@ -356,6 +364,10 @@ if (require.main === module) {
   }
 
   function handleResult(result) {
+    // Always surface non-empty stderr — including the fail-open warnings from
+    // TIMEOUT and SPAWN_ERROR paths, which used to be silently swallowed on
+    // exit 0 and confused both conductor and coder dispatches.
+    if (result.stderr) console.error(result.stderr);
     if (result.exitCode === 2) {
       process.stdout.write(
         JSON.stringify({
@@ -366,7 +378,6 @@ if (require.main === module) {
           },
         }) + '\n'
       );
-      console.error(result.stderr);
       process.exit(2);
     } else {
       process.exit(0);

@@ -16,12 +16,6 @@ mcp/forge-worker.mjs
 # --- Test name does not match the source basename (real red bar lives in a differently-named test) ---
 # lean-risk-classify → scripts/findings-contract-test.mjs
 scripts/lean-risk-classify.mjs
-# reviewer-dispatch — reviewer-dispatch.test.mjs IS name-matched + green and resolves,
-# BUT it spawns a subprocess per case (~4.6s total) and exceeds tdd-guard's 2s runNodeTest
-# timeout (hooks/tdd-guard.js:153-156), so the guard fails open regardless. Un-exempting
-# would only produce a hollow gate, so it stays exempt until the timeout limitation is
-# addressed (tracked by TODO — raise/configure the runNodeTest timeout for slow tests).
-scripts/reviewer-dispatch.mjs
 # run-lifecycle → mcp/server.test.mjs (taskBrief flow test, one directory up)
 mcp/lib/tools/run-lifecycle.js
 # forge-worktree → scripts/forge-worktree-preflight-test.mjs (CLAUDE.md swap whitelist)

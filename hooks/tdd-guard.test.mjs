@@ -481,3 +481,46 @@ test('(18) allows Write to non-source extensions (e.g. .json config) regardless 
     await removeTempProject(dir);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test case (19): runNodeTest timeout is generous enough that real-world slow
+// tests complete without triggering the silent fail-open path.
+// Regression for the documented gap at .tddguardignore:19-23 — `scripts/reviewer-dispatch.mjs`
+// is exempted because its paired test takes ~4.6s and exceeds the 2000ms cap
+// at hooks/tdd-guard.js:169, so the guard fails open silently. Same gap hit
+// the Phase-2 Task-9 audit-trigger/CLAUDE-WORKER retirement coders: slow tests
+// (e.g. hooks/worker-task-inject-test.mjs takes ~3s) silently failed open,
+// producing confusing behavior. Raising the cap closes the gap.
+// ---------------------------------------------------------------------------
+test('(19) does not silently TIMEOUT-fail-open on a real-world slow test (~3s)', async () => {
+  const dir = await makeTempProject({
+    'hooks/widget.js': '// source',
+    // ~3-second test with a failing assertion — should complete + exit non-zero
+    // (a real red bar) once the timeout is generous enough.
+    'hooks/widget-test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('slow failing', async () => {
+  await new Promise(r => setTimeout(r, 3000));
+  assert.equal(1, 2, 'intentionally failing after ~3s sleep');
+});
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'widget.js'), dir);
+    const result = await runGuard(payload, {});
+    // The test exits non-zero (red bar), so the guard ALLOWS — exit 0 is fine.
+    assert.equal(result.exitCode, 0, 'should allow when the resolved test eventually fails');
+    // CRITICAL: the allow must come from "test ran + failed", NOT from "test runner timed out".
+    // Before the fix (2000ms cap < 3000ms test), result.stderr contains "timed out — failing open"
+    // and the allow is a silent fail-open. After raising the cap, the test completes, runNodeTest
+    // returns the real non-zero exit code, and no timeout warning is produced.
+    assert.doesNotMatch(
+      result.stderr || '',
+      /timed out/i,
+      'allow must come from a real failing test, not from a silent TIMEOUT fail-open',
+    );
+  } finally {
+    await removeTempProject(dir);
+  }
+});
