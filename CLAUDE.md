@@ -160,3 +160,9 @@ Any conductor-side call to `forge_add_learning` MUST include `trigger` (the "whe
 ### Stack rules and gotchas
 
 @docs/gotchas/GENERAL.md
+
+### Coder dispatch discipline
+
+Always run `forge:coder-scout` before `forge:coder`, whether via `/forge:implement` or via an inline Agent-tool dispatch. The scout's output (`.pipeline/context/scout.json` for skill runs, or an explicit `[scout-output:` block in the inline-dispatch prompt) is a precondition — coder MUST NOT be dispatched without it.
+
+Rationale (run `r-4a09697c`, 2026-05-27): rediscovery-truncation pattern — retirement coders burned 38 tool_uses on consumer-set grep before any edits, then hit context limits with no code written. Scout-first prevents this by pre-mapping file scope so the coder starts editing immediately.

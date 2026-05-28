@@ -67,6 +67,10 @@ export async function dispatchAgent({
   // Default: model: 'claude-sonnet-4-6' — overridden when frontmatter.model is set.
   const agentModel = frontmatter.model || 'claude-sonnet-4-6';
 
+  // Parse maxTurns from frontmatter — only propagate when declared as a positive integer.
+  // OMIT the field entirely when absent/invalid so the SDK default still applies.
+  const agentMaxTurns = Number.parseInt(frontmatter.maxTurns, 10);
+
   // systemPromptPath (CLAUDE-WORKER.md) kept in signature for caller compatibility.
   // Legacy callers that pass systemPromptPath can do: readFileSync(systemPromptPath, 'utf-8')
   // but the authoritative systemPrompt now comes from the agent file body, not CLAUDE-WORKER.md.
@@ -82,6 +86,7 @@ export async function dispatchAgent({
     plugins: [{ type: 'local', path: pluginRoot }],
     mcpServers: { 'forge-pipeline': buildMcpServer(workDir) },
     cwd: workDir,
+    ...(Number.isInteger(agentMaxTurns) && agentMaxTurns > 0 ? { maxTurns: agentMaxTurns } : {}),
   });
 
   // Drain the stream fully
