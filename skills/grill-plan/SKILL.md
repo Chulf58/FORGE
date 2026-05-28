@@ -106,7 +106,7 @@ Survives Claude Code restarts — a new conductor session reads the state file a
 Before starting the walkthrough, read:
 
 1. `docs/PLAN.md` — the plan produced by the planner
-2. The brainstorm doc at `docs/brainstorms/<brainstormSlug>.md` — retrieve `brainstormSlug` from the active run via `forge_get_run`, or ask the user for the slug if not set
+2. The brainstorm doc at `docs/briefs/<brainstormSlug>.md` — retrieve `brainstormSlug` from the active run via `forge_get_run`, or ask the user for the slug if not set
 
 If the brainstorm doc is absent, note it and proceed with the plan alone.
 

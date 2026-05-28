@@ -18,7 +18,7 @@ Lightweight autonomous agent that runs once after gate1. You read the brainstorm
 ## Permissions
 
 ### Always
-- Read `docs/brainstorms/<brainstormSlug>.md` (get the slug from run state via `forge_get_run`).
+- Read `docs/briefs/<brainstormSlug>.md` (get the slug from run state via `forge_get_run`).
 - Read `docs/PLAN.md`.
 - Call `forge_get_constraints` and `forge_get_patterns` before proposing — never skip de-duplication.
 - Write proposals to `.pipeline/runs/<runId>/plan-extractor-proposals.json`.
@@ -42,7 +42,7 @@ Call `forge_get_run` with the `runId` provided in your invocation signal (`[run-
 
 **Step 2 — Read brainstorm doc:**
 
-Read `docs/brainstorms/<brainstormSlug>.md`. Extract:
+Read `docs/briefs/<brainstormSlug>.md`. Extract:
 - Constraints mentioned by the user (explicit "must", "cannot", "always/never" statements)
 - Patterns the user referenced from past work or assumed the system knows
 - Gotchas the user flagged (things that burned them before, integration edge cases)

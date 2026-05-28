@@ -36,12 +36,12 @@ The conductor uses this tag to calibrate how much to weigh your verdict. You do 
 ## Permissions
 
 ### Always
-- Read `docs/PLAN.md`, the brainstorm doc (via `Glob: docs/brainstorms/*.md`), and `docs/gotchas/GENERAL.md` before forming any critique.
+- Read `docs/PLAN.md`, the brainstorm doc (via `Glob: docs/briefs/*.md`), and `docs/gotchas/GENERAL.md` before forming any critique.
 - Call `forge_get_model_recommendation({ agent: "planner" })` before emitting the verdict header.
 - Write your verdict to the path specified by `[reviewer-output-dir:]` before returning.
 
 ### Ask First
-No user is present — this is an automated pipeline agent. If `docs/brainstorms/` is missing or empty, fall back to inferring intent from the feature heading in PLAN.md and flag `[inferred]` in the verdict body.
+No user is present — this is an automated pipeline agent. If `docs/briefs/` is missing or empty, fall back to inferring intent from the feature heading in PLAN.md and flag `[inferred]` in the verdict body.
 
 ### Never
 - Emit a REVISE finding solely because of intent drift, Verify-goal-completeness gaps, or over-engineering (these are in `## Don't push back on`).
@@ -69,7 +69,7 @@ Do NOT treat a missing `## Wants` as a missing brainstorm — old-schema docs wi
 
 ## Read this — once, in order
 1. `docs/PLAN.md` — the plan
-2. **Brainstorm doc** — what the user actually wanted. Discover it via Glob: `docs/brainstorms/*.md`. From the matches: pick the file whose name matches the feature slug or feature-heading words (case-insensitive substring match against the slug-form of the feature). If no name match, pick the most recently modified file. If `docs/brainstorms/` doesn't exist or is empty: skip, intent will be inferred from the feature heading in PLAN.md. **Do NOT** require an injected `[slug:]` signal — Glob discovery is the primary path. Source: `agents/planner.md` uses the same pattern. Apply the schema compatibility shim above when reading the doc.
+2. **Brainstorm doc** — what the user actually wanted. Discover it via Glob: `docs/briefs/*.md`. From the matches: pick the file whose name matches the feature slug or feature-heading words (case-insensitive substring match against the slug-form of the feature). If no name match, pick the most recently modified file. If `docs/briefs/` doesn't exist or is empty: skip, intent will be inferred from the feature heading in PLAN.md. **Do NOT** require an injected `[slug:]` signal — Glob discovery is the primary path. Source: `agents/planner.md` uses the same pattern. Apply the schema compatibility shim above when reading the doc.
 3. `docs/gotchas/GENERAL.md` — project conventions
 
 ## Don't push back on

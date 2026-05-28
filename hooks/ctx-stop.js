@@ -91,6 +91,37 @@ async function main(rawInput) {
     }
   } catch (_) { /* file missing — skip */ }
 
+  // Check 5: queue inline-capture of substantive inline work for gated learning extraction.
+  // Uses payload.cwd directly (when it is an absolute path) so that test harnesses that
+  // spawn the hook from a different cwd still resolve marker/handoff paths correctly.
+  // In production Claude Code sets process.cwd() to the project root so payload.cwd
+  // always matches — the effective projectDir is identical either way.
+  try {
+    const rawCwd = payload && typeof payload.cwd === 'string' && path.isAbsolute(payload.cwd)
+      ? payload.cwd
+      : projectDir;
+    const check5PipelineDir = path.join(rawCwd, '.pipeline');
+    const handoffPath = path.join(rawCwd, 'docs', 'context', 'handoff.md');
+    const stat = await fs.promises.stat(handoffPath);
+    const isFresh = (now - stat.mtimeMs) < STALE_THRESHOLD_MS;
+    if (stat.size > 100 && isFresh) {
+      const markerPath = path.join(check5PipelineDir, 'inline-capture-pending.json');
+      let alreadyQueued = false;
+      try { await fs.promises.access(markerPath); alreadyQueued = true; } catch (_) {}
+      if (!alreadyQueued) {
+        await fs.promises.mkdir(check5PipelineDir, { recursive: true });
+        const marker = {
+          requestedAt: new Date(now).toISOString(),
+          source: 'ctx-stop',
+          reason: 'substantive inline work detected (fresh handoff.md) — extract a learning via forge_add_learning (quality gate)',
+          handoffPath: 'docs/context/handoff.md',
+        };
+        await fs.promises.writeFile(markerPath, JSON.stringify(marker, null, 2), 'utf8');
+        warnings.push('Inline work queued for learning extraction (.pipeline/inline-capture-pending.json) — run learnings-extractor through the gate.');
+      }
+    }
+  } catch (_) { /* no handoff — skip */ }
+
   if (warnings.length === 0) {
     exitWithContext('');
     return;

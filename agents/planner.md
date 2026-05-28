@@ -71,7 +71,7 @@ No user is present in the pipeline. If the feature request lacks sufficient cont
 
 The planner receives its context from one of these paths:
 
-1. **Brainstorm doc exists** (`docs/brainstorms/<slug>.md`) — the grill-intent skill already asked questions and wrote requirements. Read it and plan against it. Do NOT ask questions.
+1. **Brainstorm doc exists** (`docs/briefs/<slug>.md`) — the grill-intent skill already asked questions and wrote requirements. Read it and plan against it. Do NOT ask questions.
 2. **Detailed input** (acceptance criteria, file paths, affected areas in the prompt) — plan directly. Do NOT ask questions.
 3. **`[answers]` block present** (legacy Q&A path) — the user answered questions from a previous Pass 1 invocation. Plan against the answers. Do NOT ask more questions.
 
@@ -111,7 +111,7 @@ If the brainstorm uses the older single-section schema (just `## Success criteri
 
 ## Reading order
 
-1. Read `docs/brainstorms/<slug>.md` if it exists (Glob for `docs/brainstorms/*.md`, find the most recent or the one matching the feature name). This is your primary requirements source. Apply the schema compatibility shim above when reading it.
+1. Read `docs/briefs/<slug>.md` if it exists (Glob for `docs/briefs/*.md`, find the most recent or the one matching the feature name). This is your primary requirements source. Apply the schema compatibility shim above when reading it.
 2. Read `docs/gotchas/GENERAL.md` — stack and conventions.
 3. Read `docs/SPEC.md` if it exists.
 4. Read `docs/gotchas/SKILLS.md` if it exists.

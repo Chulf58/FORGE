@@ -114,9 +114,24 @@ If ANY condition fails, run the Pocock loop. A verbose argument from the conduct
 
 **Anti-pattern to avoid:** copying TODO body content into the skill argument and treating the slots as "user-stated". TODOs were written by past sessions; the current user has not re-confirmed them. Default to grilling.
 
-### Brainstorm doc schema
+### Grounded blast-radius grill (read the knowledge store + blast zone)
 
-Write to `docs/brainstorms/<slug>.md`:
+The grill is the first reader of compound knowledge. Ground every question in what already exists — never ask generic questions you could answer by reading:
+
+1. Read `.pipeline/modules.json` (if present) and the actual blast-zone files the request touches, so questions are about THIS codebase, not generic.
+2. Query the knowledge store with keywords from the request and surface kind-tagged findings to challenge or sharpen the shape:
+   - `forge_get_constraints` → gotchas (`kind: 'gotcha'`)
+   - `forge_get_patterns` → past solutions (`kind: 'solution'`)
+   - the decisions reader (`searchDecisionsIndex` over `docs/decisions-index.json`, `kind: 'decision'`) — if the request would REVERSE a logged decision, surface it as "you'd be reversing the [date] decision: <title>", not a silent pass.
+3. Depth self-scales to the real blast zone — a one-file change needs a light touch; a cross-cutting change needs a deep read. No separate gate.
+
+### Mode is a silent internal lens — never an opening question
+
+Do NOT open the interview by asking the user to classify their own request (e.g. "do you have a shape in mind, or are we figuring out the shape?"). Infer the mode SILENTLY from the request + the live dialogue, and adapt — challenge a clear shape, draw out an unclear one, stress-test a pitch — shifting fluidly as the shape reveals itself. Open on the substance. (See the grill-discipline gotcha in `docs/gotchas/conductor-discipline.md`.)
+
+### Feature-brief schema
+
+Write to `docs/briefs/<slug>.md`:
 
 ```markdown
 ## Wants
@@ -124,6 +139,15 @@ Write to `docs/brainstorms/<slug>.md`:
 
 ## Why
 <motivation — 1-2 sentences, drawn from user statements only>
+
+## Blast radius
+<the files / modules / subsystems this touches — grounded in modules.json + the blast-zone reads from the grounded grill above>
+
+## Incidental scope
+<adjacent things that will be touched as a consequence — or "None.">
+
+## Out-of-scope (REQUIRED — never leave empty)
+<explicit non-goals that bound the work. If the user gave none, propose and confirm — do not leave this blank.>
 
 ## User-stated criteria
 <what "done" looks like — numbered list. EVERY item must trace to a verbatim or
@@ -225,7 +249,7 @@ Call `forge_add_learning` with `type: 'gotcha'`, `trigger: '<the "when X" condit
 
 ### Slug validation (REQUIRED before writing the doc)
 
-Before writing to `docs/brainstorms/<slug>.md`, validate the slug:
+Before writing to `docs/briefs/<slug>.md`, validate the slug:
 
 1. Run via Bash: `node scripts/sanitize-slug.mjs --slug='<slug>'`
 2. If exit 0: slug is valid — proceed to write the doc.
@@ -241,20 +265,19 @@ Note: `scripts/sanitize-slug.mjs` is the authoritative validation script. If it 
 
 ### Run state update
 
-After writing the brainstorm doc successfully, call `forge_update_run` with the `brainstormSlug` field to store the slug in the active run's state:
+After writing the brief doc successfully, persist the slug so downstream skills (plan, grill-plan, plan-extractor) can locate it without re-deriving it:
 
-```json
-{ "brainstormSlug": "<slug>" }
-```
+- **If an active run exists:** call `forge_update_run` with the `brainstormSlug` field — `{ "brainstormSlug": "<slug>" }`.
+- **If no run exists yet** (run creation is deferred to the plan skill's STEP 2 — the grill runs before the run is created): write the slug to the known context path `.pipeline/context/brief-slug.txt` (plain text, the slug only). The plan skill's STEP 2 reads this file after `forge_create_run` and back-fills `brainstormSlug` into the new run's state.
 
-This allows downstream skills (plan, grill-plan) to locate the brainstorm doc without re-deriving the slug.
+Either path makes the slug recoverable downstream; never silently drop it.
 
 ### Output
 
 When the brainstorm doc is written and run state is updated, emit:
 
 ```
-[grill-intent] brainstorm written → docs/brainstorms/<slug>.md
+[grill-intent] brainstorm written → docs/briefs/<slug>.md
 ```
 
 Do not emit any other summary text. The plan skill reads the doc directly.

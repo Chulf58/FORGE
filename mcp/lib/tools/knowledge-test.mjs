@@ -202,6 +202,35 @@ async function main() {
       }
     }
 
+    // ── Test 8: mergeEvidenceOnConflict appends evidence into the EXISTING entry ──
+    // seed() wrote a "## Hook scripts" section; a learning whose title overlaps it is
+    // detected as a conflict. With mergeEvidenceOnConflict:true the new sourceEvidence must
+    // be merged INTO that existing section (no content dropped, no duplicate heading).
+    if (!failure) {
+      const mergeRes = await callTool(client, 'forge_add_learning', {
+        type: 'gotcha',
+        title: 'Hook scripts stderr usage',
+        content: 'Always use stderr for user-visible hook messages.',
+        tags: ['hooks'],
+        trigger: 'When writing a hook',
+        sourceEvidence: 'run r-MERGE-XYZ',
+        mergeEvidenceOnConflict: true,
+      });
+      const generalMd = readFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), 'utf8');
+      const headingCount = (generalMd.match(/^## Hook scripts$/gm) || []).length;
+      if (mergeRes.isError) {
+        failure = 'test 8 merge: tool returned isError — ' + JSON.stringify(mergeRes.content);
+      } else if (!generalMd.includes('run r-MERGE-XYZ')) {
+        failure = 'test 8 merge: new evidence was not appended into the existing section';
+      } else if (!generalMd.includes('Use stderr for user-visible messages.')) {
+        failure = 'test 8 merge: existing section content was dropped';
+      } else if (headingCount !== 1) {
+        failure = 'test 8 merge: duplicate "## Hook scripts" heading (expected 1, got ' + headingCount + ')';
+      } else {
+        console.error('[knowledge-test] test 8 PASS — mergeEvidenceOnConflict merged evidence');
+      }
+    }
+
     // ── Gate block: forge_add_learning must reject incomplete payloads ──
     // This block runs independently of the preceding tests.
     // It tests that forge_add_learning rejects payloads missing required fields.

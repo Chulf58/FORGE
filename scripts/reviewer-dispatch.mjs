@@ -333,6 +333,84 @@ function dispatchForPlanStage(planContent, planPath) {
   return { reviewers: Array.from(reviewerSet).sort(), reasons };
 }
 
+// --- Per-phase parallel plan review (Task 29) --------------------------------
+// Mirrors hooks/agent-loop-guard.js MAX_DISPATCHES_PER_AGENT_PER_RUN. When a plan has
+// phases, reviewers are dispatched PER PHASE (concurrently) — each phase-scoped reviewer
+// gets the full plan outline as context but critiques only its phase. gotcha-checker runs
+// ONCE over the whole plan (holistic cross-phase backstop). The cap is generous (25), so a
+// multi-phase review fits comfortably within the per-run loop-guard budget.
+export const MAX_REVIEWER_DISPATCHES_PER_RUN = 25;
+
+const PHASE_HEADING_RE = /^####\s+Phase\s+(\d+)\s*(?:[—-]\s*(.*))?$/;
+
+/** Compute the phase-scoped reviewer set from one phase's (lowercased) task lines. */
+function phaseScopedReviewers(phaseTaskLines) {
+  const reviewerSet = new Set();
+  const reasons = [];
+  for (const [reviewer, keywords] of Object.entries(PLAN_REVIEWER_KEYWORDS)) {
+    for (const keyword of keywords) {
+      if (phaseTaskLines.some((line) => line.includes(keyword))) {
+        reviewerSet.add(reviewer);
+        reasons.push(`keyword "${keyword}" → ${reviewer}`);
+        break;
+      }
+    }
+  }
+  return { reviewers: Array.from(reviewerSet).sort(), reasons };
+}
+
+/**
+ * Split a phased plan into per-phase reviewer sets.
+ *
+ * @param {string} planContent
+ * @param {{cap?: number}} [opts]
+ * @returns {{ perPhase: {phaseIndex:number, phaseTitle:string, reviewers:string[], reasons:string[]}[],
+ *            gotchaChecker: {scope:'whole-plan'}, totalDispatches:number, cap:number, withinCap:boolean }}
+ */
+export function dispatchPerPhase(planContent, opts = {}) {
+  const cap = typeof opts.cap === 'number' ? opts.cap : MAX_REVIEWER_DISPATCHES_PER_RUN;
+  const lines = (planContent || '').split('\n');
+
+  const phases = [];
+  let current = null;
+  for (const line of lines) {
+    const m = PHASE_HEADING_RE.exec(line);
+    if (m) {
+      current = { phaseIndex: Number(m[1]), phaseTitle: (m[2] || '').trim(), taskLines: [] };
+      phases.push(current);
+      continue;
+    }
+    if (current && /^\s*-\s*\[[ x]\]/.test(line)) {
+      current.taskLines.push(line.toLowerCase());
+    }
+  }
+
+  const perPhase = phases.map((p) => {
+    const scoped = phaseScopedReviewers(p.taskLines);
+    // technical-skeptic runs per phase (semantic critic complements the structural gotcha-checker).
+    const reviewers = scoped.reviewers.includes('technical-skeptic')
+      ? scoped.reviewers
+      : [...scoped.reviewers, 'technical-skeptic'].sort();
+    return {
+      phaseIndex: p.phaseIndex,
+      phaseTitle: p.phaseTitle,
+      reviewers,
+      reasons: [...scoped.reasons, 'plan-stage: technical-skeptic per-phase semantic critic'],
+    };
+  });
+
+  // +1 for the single whole-plan gotcha-checker pass.
+  const totalDispatches = perPhase.reduce((sum, p) => sum + p.reviewers.length, 0) + 1;
+
+  return {
+    perPhase,
+    gotchaChecker: { scope: 'whole-plan' },
+    totalDispatches,
+    cap,
+    withinCap: totalDispatches <= cap,
+  };
+}
+
 // --- CLI ---------------------------------------------------------------------
 function isMainModule() {
   const scriptPath = process.argv[1];

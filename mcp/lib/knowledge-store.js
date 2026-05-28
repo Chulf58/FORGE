@@ -175,7 +175,7 @@ export function searchConstraints(projectDir, keyword) {
       const headingLower = section.heading.toLowerCase();
       const contentLower = section.content.toLowerCase();
       if (headingLower.includes(needle) || contentLower.includes(needle)) {
-        matches.push(section);
+        matches.push({ ...section, kind: 'gotcha' });
       }
     }
     if (matches.length >= 5) break;
@@ -260,7 +260,7 @@ export function searchPatterns(projectDir, keyword, tags) {
       // fail-open: summary stays empty
     }
 
-    results.push({ title: entry.title, file: entry.file, summary });
+    results.push({ title: entry.title, file: entry.file, summary, kind: 'solution' });
   }
 
   return results;
@@ -374,6 +374,79 @@ export function detectConflict(projectDir, { type, title, tags }) {
   }
 
   return null;
+}
+
+/**
+ * Append new evidence to an existing gotcha section in docs/gotchas/GENERAL.md,
+ * without dropping existing content or creating a duplicate heading.
+ *
+ * Quality gate: sourceEvidence must be a non-empty, non-whitespace string.
+ * Write is atomic (tmp + rename).
+ *
+ * @param {string} projectDir
+ * @param {{ type: 'gotcha' | 'solution', title: string, sourceEvidence: string }} options
+ * @returns {{ merged: boolean, title?: string }}
+ */
+export function appendEvidence(projectDir, { type, title, sourceEvidence }) {
+  // Quality gate: reject empty/whitespace sourceEvidence
+  if (!sourceEvidence || typeof sourceEvidence !== 'string' || sourceEvidence.trim().length === 0) {
+    return { merged: false };
+  }
+
+  // Only gotcha path is implemented; solution is a thin stub
+  if (type !== 'gotcha') {
+    return { merged: false };
+  }
+
+  if (!title || typeof title !== 'string') return { merged: false };
+
+  // eslint-disable-next-line no-control-regex
+  const safeEvidence = sourceEvidence.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  const generalMdPath = join(resolve(projectDir), 'docs', 'gotchas', 'GENERAL.md');
+  let text;
+  try {
+    text = readFileSync(generalMdPath, 'utf8');
+  } catch {
+    return { merged: false };
+  }
+
+  const lines = text.split('\n');
+  const sectionHeadingRe = /^#{2,3} (.+)$/;
+
+  // Find the section whose heading (after '## '/'### ') === title
+  let sectionStart = -1;
+  let sectionEnd = lines.length; // default: end of file
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = sectionHeadingRe.exec(lines[i]);
+    if (m) {
+      const headingText = m[1].trim();
+      if (sectionStart === -1 && headingText === title) {
+        sectionStart = i;
+      } else if (sectionStart !== -1) {
+        // Next heading marks end of section
+        sectionEnd = i;
+        break;
+      }
+    }
+  }
+
+  if (sectionStart === -1) {
+    // Section not found — do not create it
+    return { merged: false };
+  }
+
+  // Insert evidence line before section end (before next heading or EOF).
+  // Find the last non-empty line in the section body to place evidence after it.
+  const evidenceLine = `\n_Additional evidence: ${safeEvidence}_`;
+  const beforeSection = lines.slice(0, sectionEnd);
+  const afterSection = lines.slice(sectionEnd);
+
+  const updated = beforeSection.join('\n') + evidenceLine + '\n' + afterSection.join('\n');
+
+  atomicWrite(generalMdPath, updated);
+  return { merged: true, title };
 }
 
 /**

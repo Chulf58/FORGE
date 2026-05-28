@@ -22,6 +22,8 @@ mcp/lib/tools/run-lifecycle.js
 bin/forge-worktree.js
 # hook-utils → scripts/archived-agent-cleanup-test.mjs (c62ac8af inline fix)
 hooks/hook-utils.js
+# decisions-index → mcp/lib/tools/knowledge-kind-test.mjs (kind field parity test, Phase 5 Task 21)
+mcp/lib/decisions-index.mjs
 
 # --- 2-line launcher shim — no logic; full path baked by mcp-deps-install.js on SessionStart ---
 bin/forge-mcp-server.cmd

@@ -55,6 +55,7 @@ docs/PLAN-archive.md
 docs/CHANGELOG.md
 docs/ARCHITECTURE.md
 docs/DECISIONS.md
+docs/decisions-index.json
 docs/VISION.md
 docs/RECOVERY-POINTS.md
 docs/FORGE-OVERVIEW.md
@@ -87,6 +88,7 @@ docs/token-audit-*.md
 .pipeline/notes.json
 .pipeline/project.json
 docs/brainstorms/
+docs/briefs/
 docs/context/critic-wiring-gaps.json
 docs/context/findings.json
 docs/context/ideator-findings-*.json
@@ -94,13 +96,17 @@ docs/context/red-team-findings-*.json
 docs/context/baseline-test.txt
 docs/context/plan-diff.txt
 docs/context/plan-test.txt
-docs/gotchas/GENERAL.md
+# This-project gotcha content (GENERAL.md + split topic files + index) — NOT distributed.
+# The plugin ships the machinery (readers/verifier); each project keeps its own content,
+# scaffolded fresh via /forge:init from scaffolds/. Mirrors docs/solutions/ being ignored.
+docs/gotchas/
 
 # Pipeline runtime state (per-project, not plugin source)
 .worktrees/
 .pipeline/run-active.json
 .pipeline/run-active.json.tmp.*
 .pipeline/gate-pending.json
+.pipeline/inline-capture-pending.json
 .pipeline/.worker-session
 .pipeline/worker-task*.json
 .pipeline/worker-done/

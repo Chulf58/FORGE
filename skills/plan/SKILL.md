@@ -6,13 +6,13 @@ allowed-tools: "Read Write Glob Grep Agent"
 model: claude-sonnet-4-6
 ---
 
-## STEP 1 — Phase A: user interview + classify risk + create run (conductor)
+## STEP 1 — Phase A: user interview + classify risk (conductor)
 
 <!-- discipline-gate: feedback_present_and_wait_sop -->
 ## Pipeline-control discipline
 
-- MANDATORY SOP before forge_create_run: present classification + agent team → wait for literal "approve" (`feedback_present_and_wait_sop`)
-- Do NOT create a run until user explicitly types "approve" — no other word qualifies
+- Run creation is DEFERRED to STEP 2 (cc1b0ea9): the grill (Phase A) and risk classification run WITHOUT a run record, and NO upfront "approve" is required to begin the grill — lower friction. The human present-and-wait checkpoint is **gate1** (STEP 2 / Gate #1), where the `feedback_present_and_wait_sop` discipline applies: the user reviews the plan and types the literal "approve" (no other word qualifies) before the implement spawn proceeds.
+- The risk classification + agent team are still PRESENTED to the user after the grill (informational), but the conductor does NOT block on an approval keyword to create the run — it proceeds into planning and surfaces the decision at gate1.
 
 ### Phase A — User interview (grill-intent Skill)
 
@@ -21,14 +21,13 @@ model: claude-sonnet-4-6
    - `forge_get_patterns` with module/file names mentioned in the feature description
    These results give the grill-intent skill and planner access to project-specific constraints without re-deriving them.
 
-2. **Track Phase A start:** Call `forge_update_run` with `phases[{index:0, label:"Phase A — user interview", status:"running"}]`.
-   (If no runId exists yet, skip this call — it happens before `forge_create_run`. The phase update after creation uses the resolved runId.)
+2. **Track Phase A start:** Phase A runs before the run exists (creation is deferred to STEP 2), so there is no runId to write phase state to yet — skip phase-tracking here. STEP 2 records phase progress once the run is created.
 
 3. **Invoke grill-intent:** Invoke `Skill(grill-intent)` with the feature description as the argument. Do NOT prepend any `[pipeline-mode:]` signal — the grill-intent skill manages its own flow and Q&A with the user.
 
    The grill-intent skill:
    - Conducts a structured user interview about intent, constraints, and acceptance criteria
-   - Writes `docs/brainstorms/<slug>.md` (the ground-truth brainstorm doc)
+   - Writes `docs/briefs/<slug>.md` (the ground-truth brainstorm doc)
    - Stores `brainstormSlug` in run state automatically (or writes it to a known context path)
 
    If grill-intent fails or produces no brainstorm doc (rare — agent crash), log `[plan] grill-intent did not produce brainstorm doc — continuing without ground truth` and proceed. Downstream agents derive intent from the feature heading.
@@ -57,34 +56,40 @@ Agent team for this run:
   Core agents:  planner, gotcha-checker[, researcher — if research needed]
   Reviewers:    <reviewers from forge_classify_risk, or "none">
 ```
-Waiting for approval — type 'approve' to proceed, or describe changes to the team
+(Informational — no approval keyword needed here. The conductor proceeds directly into STEP 2 planning; the human checkpoint is gate1. If the user wants to change the team, they can say so now.) Carry the `classificationId` and the `reviewers` array forward to STEP 2's run-creation step.
 
-### 1d. Create run and proceed to STEP 2 (only after user approves)
+### 1d. Proceed to STEP 2 (run creation deferred)
 
-Call `forge_create_run` with:
-- `sessionId`: your session ID (or `"unknown"` if unavailable)
-- `pipelineType`: `"plan"`
-- `feature`: a short summary derived from the brainstorm doc
-- `spawnWorker`: `false`
-- `classificationId`: the `classificationId` value from the `forge_classify_risk` result
-- `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
-- `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
+Run creation has moved to the START of STEP 2 (deferred — no run record needed for the grill/classification). After presenting the classification + team, proceed **directly** to STEP 2 in this same conductor session — do NOT exit and do NOT wait for an approval keyword.
 
-Report to the user:
-- Run ID: `<runId>`
-- "Proceeding directly to planner pipeline in this session."
+## Transition messaging
 
-**Note on token budget:** The full conductor-session plan pipeline (Phase B through gate1) consumes approximately 10K tokens per reviewer dispatch for a 20-task plan. Measure actual usage on the first pilot run and tune if needed.
-
-After run creation, proceed **directly** to STEP 2 in this same conductor session — do NOT exit.
+Reserve the word "approve" for gate1 / gate2 / commit only. Smooth the inter-phase transitions (Phase A→B→C→D→E) with a SINGLE progress indicator line per transition — e.g. `[plan] Phase B → C (planner done, starting walkthrough)`. Do NOT prompt the user between phases; break silence only when input is actually required (a grill question, a Phase-E finding, or a gate decision). One progress indicator, no ceremony (brief #10).
 
 ## STEP 2 — Planner pipeline (conductor session)
 
 All phases below run in the **conductor session** — there is no separate worker process for plan runs.
 
+### 2a. Create the run (deferred from Phase A)
+
+Now create the run — the grill + classification are done and the conductor is committing to the plan pipeline. Call `forge_create_run` with:
+- `sessionId`: your session ID (or `"unknown"` if unavailable)
+- `pipelineType`: `"plan"`
+- `feature`: a short summary derived from the brief doc
+- `spawnWorker`: `false`
+- `classificationId`: the `classificationId` carried forward from STEP 1's `forge_classify_risk`
+- `reviewerOverrides`: the `reviewers` array carried forward from STEP 1's `forge_classify_risk`
+- `stages`: `{ "plan": { "agents": ["planner"], "status": "pending" } }`
+
+**Back-fill `brainstormSlug`.** Because the grill (Phase A) ran before the run existed, grill-intent wrote the slug to a context path. After `forge_create_run` returns, if the new run's `brainstormSlug` is unset, read `.pipeline/context/brief-slug.txt` and call `forge_update_run({ runId, brainstormSlug: <slug> })` so Phase C (grill-plan) and plan-extractor can locate the brief via run state. If the context file is absent, log `[plan] no brief-slug to back-fill — continuing` and proceed.
+
+Report to the user: Run ID `<runId>`, "Proceeding directly to planner pipeline in this session."
+
+**Note on token budget:** The full conductor-session plan pipeline (Phase B through gate1) consumes approximately 10K tokens per reviewer dispatch for a 20-task plan. Measure actual usage on the first pilot run and tune if needed.
+
 **Before dispatching agents:**
 
-1. Call `forge_get_run` with the `runId` from Step 1d. Extract `stages.plan.agents` — this is the list of agents to dispatch for the plan stage.
+1. Call `forge_get_run` with the `runId` from Step 2a. Extract `stages.plan.agents` — this is the list of agents to dispatch for the plan stage.
 2. Dispatch exactly the agents listed in `stages.plan.agents`.
 
 ### Phase B — Planner + researcher + gotcha-checker
@@ -110,6 +115,8 @@ NOTE: Phase C runs in the CONDUCTOR session, not a worker.
 3. After the skill returns, call `forge_update_run` with `phases[{index:2, status:"completed"}]`
 
 ### Phase D — Reviewer dispatch
+
+**Per-phase PARALLEL review (multi-phase plans).** When `docs/PLAN.md` has 2+ `#### Phase N` sections, call `dispatchPerPhase` in `scripts/reviewer-dispatch.mjs` to emit ONE phase-scoped reviewer set PER phase and dispatch them concurrently (one set per phase, not a single pass over the whole plan). Each per-phase reviewer receives the FULL plan outline as context but critiques ONLY its phase — and a "missing X" finding MUST check the full outline first: if X is scheduled in a later phase it is sequenced, not missing. `gotcha-checker` runs ONCE over the whole plan (a single whole-plan holistic cross-phase backstop), never per phase. REVISE findings aggregate back to the single planner; only changed phases re-review. The total dispatch count stays within the per-run loop-guard cap (`MAX_REVIEWER_DISPATCHES_PER_RUN = 25`). Single-phase plans use the whole-plan dispatch described below.
 
 Determine which reviewers to invoke via the deterministic dispatcher script.
 
