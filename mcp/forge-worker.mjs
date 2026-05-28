@@ -582,6 +582,81 @@ async function main() {
         }
         // 'discarded' → worker exits cleanly with exitCode=0
       }
+
+    // --- Deterministic orchestrator path (implement+apply stage) ---
+    } else if (process.env.FORGE_ORCHESTRATOR_IMPLEMENT === 'on' && pipelineType === 'implement') {
+      // TODO(phase2-wiring): gate2 poll + resume are not yet wired here.
+      // The implement orchestrator uses the exit-and-resume defer-gate pattern:
+      // it writes gate2 then returns — the worker exits, re-spawned on approval.
+      // For the initial wiring, we call runImplementStageOrchestrator and then
+      // return (no gate-poll await needed — the function already returns at gate2).
+      const { runImplementStageOrchestrator } = await import('./lib/orchestrator/implement-stage.mjs');
+      const { dispatchAgent } = await import('./lib/orchestrator/agent-dispatch.mjs');
+      const { buildInjectedKnowledge } = await import('./lib/orchestrator/knowledge-inject.mjs');
+      const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
+
+      const orchDeps = {
+        dispatch: (agentType, promptLines) => dispatchAgent({
+          agentType, promptLines, workDir, pluginRoot,
+          systemPromptPath: CLAUDE_WORKER_PATH,
+          buildMcpServer,
+        }),
+        spawnScript: async (scriptPath, args) => {
+          const { spawn } = await import('node:child_process');
+          return new Promise((res, rej) => {
+            const child = spawn(process.execPath, [scriptPath, ...args], { cwd: workDir });
+            let out = '';
+            child.stdout.on('data', (d) => { out += d; });
+            child.on('close', (code) => res({ stdout: out, exitCode: code }));
+            child.on('error', rej);
+          });
+        },
+        clearReviewerOutput: async () => {
+          const dir = join(workDir, '.pipeline', 'context', 'reviewer-output');
+          try {
+            for (const f of readdirSync(dir)) {
+              if (f.endsWith('.md')) unlinkSync(join(dir, f));
+            }
+          } catch (_) { /* dir absent — no-op */ }
+        },
+        readRunJson: (_path) => {
+          const p = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+          return JSON.parse(readFileSync(p, 'utf-8'));
+        },
+        writeRunJson: async (_path, data) => {
+          const p = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId, 'run.json');
+          writeFileSync(p, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+        },
+        writeGateFile: async (_path, content) => {
+          writeFileSync(
+            join(workDir, '.pipeline', 'gate-pending.json'),
+            JSON.stringify(content, null, 2) + '\n', 'utf-8'
+          );
+        },
+        readReviewerOutput: async (outputDir, reviewerName) => {
+          try {
+            const content = readFileSync(join(outputDir, reviewerName + '.md'), 'utf-8');
+            const firstLine = content.split('\n')[0].toUpperCase();
+            if (firstLine.includes('BLOCK')) return { verdict: 'BLOCK' };
+            if (firstLine.includes('REVISE')) return { verdict: 'REVISE' };
+            return { verdict: 'APPROVED' };
+          } catch (_) {
+            return { verdict: 'APPROVED' };
+          }
+        },
+        buildInjectedKnowledge,
+        writeLog,
+      };
+
+      try {
+        await runImplementStageOrchestrator(orchDeps, runId, workDir);
+      } catch (err) {
+        writeLog('[forge-worker] implement orchestrator error: ' + err.message);
+        exitCode = 1;
+      }
+      // Implement orchestrator writes gate2 and returns — worker exits here.
+      // On /forge:approve, the worker is re-spawned and the orchestrator resumes
+      // from orchestratorState.phase='apply' (defer-gate pattern).
     } else {
     const stream = query({
       prompt: inputChannel,
