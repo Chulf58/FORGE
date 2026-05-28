@@ -68,9 +68,7 @@ Before reading source files, check if this problem has been seen before:
 
 2. **Signal log:** Use Grep to search `.pipeline/signal-log.jsonl` (if it exists) for the affected file names or error keywords. Look at the last 5 matching entries — they may show when the problem started or what run introduced it.
 
-3. **Audit log:** Use Grep to search `docs/audit-log.jsonl` (if it exists) for repeated patterns involving the affected files. A REPEATED-READ or BLIND-WRITE on the buggy file may indicate the root cause.
-
-If any matches are found, note them before tracing — they narrow the search. If no matches, proceed to tracing with no history context. Do not spend more than 3 tool calls on this step.
+If any matches are found, note them before tracing — they narrow the search. If no matches, proceed to tracing with no history context. Do not spend more than 2 tool calls on this step.
 
 ## Debugging approach
 
