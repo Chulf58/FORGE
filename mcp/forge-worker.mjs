@@ -20,9 +20,6 @@ const BUDGET_AUTOCOMPACT_FACTOR = 0.835; // mirrors ctx-session-start.js
 const BUDGET_DEBOUNCE_MS = 30_000;      // write bridge at most once per 30 s per agent
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-// Path to CLAUDE-WORKER.md — supplies explicit worker system prompt to query().
-// Defined at module level so it is resolved once at startup and shared by query().
-const CLAUDE_WORKER_PATH = join(pluginRoot, 'CLAUDE-WORKER.md');
 
 /**
  * Mirrors mcp/server.js resolveMainProjectDir logic.
@@ -506,7 +503,6 @@ async function main() {
       const orchDeps = {
         dispatch: (agentType, promptLines) => dispatchAgent({
           agentType, promptLines, workDir, pluginRoot,
-          systemPromptPath: CLAUDE_WORKER_PATH,
           buildMcpServer,
         }),
         spawnScript: async (scriptPath, args) => {
@@ -598,7 +594,6 @@ async function main() {
       const orchDeps = {
         dispatch: (agentType, promptLines) => dispatchAgent({
           agentType, promptLines, workDir, pluginRoot,
-          systemPromptPath: CLAUDE_WORKER_PATH,
           buildMcpServer,
         }),
         spawnScript: async (scriptPath, args) => {
@@ -666,24 +661,18 @@ async function main() {
         // Without an explicit model, the worker inherits the conductor session
         // model (often Opus 4.7) — expensive AND prone to over-thinking in
         // ambiguous states (cf. r-4addeb03 hang, 2026-05-16). Drop to Haiku
-        // after TODOs 1db279a1 (BLOCK handling) and the CLAUDE-WORKER.md
-        // loading bug land — at that point the worker has near-zero judgment
-        // moments and Haiku is sufficient.
+        // after TODO 1db279a1 (BLOCK handling) lands — at that point the worker
+        // has near-zero judgment moments and Haiku is sufficient.
         model: 'claude-sonnet-4-6',
         cwd: workDir,
         persistSession: true,
         maxTurns: 200,
         permissionMode: 'bypassPermissions',
-        // Disable automatic CLAUDE.md loading so neither the worktree CLAUDE.md
-        // nor any parent-directory CLAUDE.md leaks conductor instructions into the
-        // worker session. settingSources: [] is the only way to suppress CLAUDE.md
-        // injection — systemPrompt alone does not prevent it (they are orthogonal).
+        // Disable automatic CLAUDE.md loading so no parent-directory CLAUDE.md
+        // leaks conductor instructions into the worker session. settingSources: []
+        // is the only way to suppress CLAUDE.md injection — systemPrompt alone
+        // does not prevent it (they are orthogonal).
         settingSources: [],
-        // Supply CLAUDE-WORKER.md explicitly as the worker system prompt.
-        // This is robust to both root-cause hypotheses (swap failure OR external
-        // CLAUDE.md leak) — regardless of which path brings the wrong content,
-        // settingSources: [] suppresses it and systemPrompt provides the correct one.
-        systemPrompt: readFileSync(CLAUDE_WORKER_PATH, 'utf-8'),
         plugins: [{ type: 'local', path: pluginRoot }],
         mcpServers: {
           'forge-pipeline': buildInProcessMcpServer(workDir),
@@ -957,8 +946,8 @@ async function main() {
         // inside it for the [0.70, 0.85) band; for >=0.85 it returns interrupt:true and
         // this body invokes proactiveInterruptStep with the references it needs
         // (stream, inputChannel, checkpointResumeCounts) which handleBudgetUsage lacks.
-        // The reactive checkpoint handler (lines ~518–594) is unchanged — see CLAUDE-WORKER.md
-        // and docs/PLAN.md "Worker-side proactive context-budget interrupt" task 5(f).
+        // The reactive checkpoint handler (lines ~518–594) is unchanged — see
+        // docs/PLAN.md "Worker-side proactive context-budget interrupt" task 5(f).
         let budgetDirective = { interrupt: false };
         try {
           budgetDirective = await handleBudgetUsage(u);
