@@ -402,3 +402,50 @@ assert.equal(1, 2, 'intentionally failing');
     await removeTempProject(dir);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test case (17): resolves DESCRIPTOR-form tests (<name>-<descriptor>-test.{js,mjs}
+// or <name>-<descriptor>.test.{js,mjs}) when multiple candidates exist, and allows
+// when ANY matching test is red.
+// Regression for the .tddguardignore band-aid added by Phase 3 Task 13 for
+// mcp/lib/orchestrator/implement-stage.mjs: the source had TWO test files —
+// implement-stage.test.mjs (dot form, green AC-4/5/6/7) AND
+// implement-stage-inject-test.mjs (descriptor form, with the failing AC-13 red bar).
+// resolveTestFile found the dot form first, ran it green, and blocked the edit;
+// the descriptor form was never considered as a candidate. Result: a
+// .tddguardignore entry for implement-stage.mjs — the same anti-pattern that
+// commit dbad50a6 retired. The proper fix is to recognize descriptor-form test
+// names AND allow when ANY of the candidates has a failing test.
+// ---------------------------------------------------------------------------
+test('(17) allows Write when multiple matching tests exist and ANY has a failing test (descriptor-form)', async () => {
+  const dir = await makeTempProject({
+    'hooks/widget.js': '// source',
+    // Dot-form sibling test — PASSING (green).
+    'hooks/widget.test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('passing', () => { assert.ok(true); });
+`,
+    // Descriptor-hyphen sibling test — FAILING (red bar exists among the candidate set).
+    'hooks/widget-inject-test.mjs': `
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+test('failing', () => { assert.equal(1, 2, 'intentionally failing'); });
+`,
+  });
+  try {
+    const payload = writePayload(path.join(dir, 'hooks', 'widget.js'), dir);
+    const result = await runGuard(payload, {});
+    // Must ALLOW (exit 0): the descriptor-form widget-inject-test.mjs is red, so a paired
+    // failing test exists for widget.js even though widget.test.mjs is green.
+    // Currently this blocks (exit 2) because resolveTestFile finds only widget.test.mjs (green)
+    // — that block is the gap the .tddguardignore band-aid worked around.
+    assert.equal(
+      result.exitCode,
+      0,
+      'should recognize descriptor-form tests (<name>-<descriptor>-test.mjs) and allow when ANY matching test is red',
+    );
+  } finally {
+    await removeTempProject(dir);
+  }
+});

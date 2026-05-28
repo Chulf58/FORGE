@@ -84,27 +84,31 @@ function isIgnored(filePath, cwd) {
 }
 
 /**
- * Resolve the test file for a given source file. Both naming conventions are
+ * Resolve ALL test files for a given source file. Both naming conventions are
  * accepted at each location — dot form (<name>.test.{js,mjs}) AND hyphen form
- * (<name>-test.{js,mjs}). CLAUDE.md documents the hyphen form as valid and
- * isTestFile() (TEST_FILE_RE) recognizes it; resolveTestFile must too, otherwise
- * source files whose only test is hyphen-named are treated as "no test file found"
- * and forced into .tddguardignore (which fully disables TDD for them).
+ * (<name>-test.{js,mjs}). Additionally, descriptor-form variants
+ * (<name>-<descriptor>-test.{js,mjs} and <name>-<descriptor>.test.{js,mjs})
+ * are discovered via readdirSync on the adjacent dir.
  *
  * Deterministic search order:
- *   1. Adjacent:        <dir>/<name>.test.{js,mjs}        and <dir>/<name>-test.{js,mjs}
- *   2. Sibling tests/:  <cwd>/tests/<name>.test.{js,mjs}  and <cwd>/tests/<name>-test.{js,mjs}
- *   3. __tests__/:      <dir>/__tests__/<name>.test.{js,mjs} and <dir>/__tests__/<name>-test.{js,mjs}
- * Returns the first path that exists on disk, or null.
+ *   1. Adjacent explicit:  <dir>/<name>.test.{js,mjs}  and <dir>/<name>-test.{js,mjs}
+ *   2. Adjacent glob:      any <dir>/<name>[-.]<descriptor>[-.]test.[cm]?js via readdirSync
+ *   3. Sibling tests/:     <cwd>/tests/<name>.test.{js,mjs} and <cwd>/tests/<name>-test.{js,mjs}
+ *   4. __tests__/:         <dir>/__tests__/<name>.test.{js,mjs} and <dir>/__tests__/<name>-test.{js,mjs}
+ *
+ * Returns an array of paths that exist on disk (may be empty).
  * @param {string} filePath  - absolute source path
  * @param {string} cwd       - project root
- * @returns {string|null}
+ * @returns {string[]}
  */
-function resolveTestFile(filePath, cwd) {
+function resolveTestFiles(filePath, cwd) {
   const dir = path.dirname(filePath);
   const name = path.basename(filePath).replace(/\.[cm]?js$/, '');
 
-  const candidates = [
+  const found = [];
+
+  // Explicit candidates — exact-match names (adjacent, tests/, __tests__/)
+  const explicitCandidates = [
     path.join(dir, `${name}.test.js`),
     path.join(dir, `${name}.test.mjs`),
     path.join(dir, `${name}-test.js`),
@@ -119,15 +123,45 @@ function resolveTestFile(filePath, cwd) {
     path.join(dir, '__tests__', `${name}-test.mjs`),
   ];
 
-  for (const candidate of candidates) {
+  for (const candidate of explicitCandidates) {
     try {
       fs.accessSync(candidate);
-      return candidate;
+      if (!found.includes(candidate)) found.push(candidate);
     } catch {
       // not found — try next
     }
   }
-  return null;
+
+  // Descriptor-form discovery — scan adjacent dir for <name>[-.]<anything>[-.]test.[cm]?js
+  // Matches: widget-inject-test.mjs, widget-inject.test.mjs, widget.inject-test.js, etc.
+  const descriptorRe = new RegExp(
+    '^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\-.].+[-\\.]test\\.[cm]?js$',
+  );
+  try {
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      if (descriptorRe.test(entry)) {
+        const candidate = path.join(dir, entry);
+        if (!found.includes(candidate)) found.push(candidate);
+      }
+    }
+  } catch {
+    // readdirSync failed (permissions, etc.) — skip descriptor scan
+  }
+
+  return found;
+}
+
+/**
+ * Backward-compatible single-result wrapper (returns first match or null).
+ * Used internally when only one result is needed for logging.
+ * @param {string} filePath
+ * @param {string} cwd
+ * @returns {string|null}
+ */
+function resolveTestFile(filePath, cwd) {
+  const results = resolveTestFiles(filePath, cwd);
+  return results.length > 0 ? results[0] : null;
 }
 
 /**
@@ -238,9 +272,9 @@ async function runGuard(payload, env = process.env, _spawnImpl = null) {
     return { exitCode: 0, stderr: '' };
   }
 
-  // (f) Test-file resolution — deterministic order, first match wins
-  const testFile = resolveTestFile(filePath, cwd);
-  if (!testFile) {
+  // (f) Test-file resolution — all candidates (explicit + descriptor-form)
+  const testFiles = resolveTestFiles(filePath, cwd);
+  if (testFiles.length === 0) {
     const msg = [
       `TDD Guard: no test file found for ${path.relative(cwd, filePath)}.`,
       'Write a failing test first, then re-attempt this edit.',
@@ -249,30 +283,40 @@ async function runGuard(payload, env = process.env, _spawnImpl = null) {
     return { exitCode: 2, stderr: msg };
   }
 
-  // (g) Run the test file
+  // (g) Run each candidate test file; allow (exit 0) on the FIRST that has a failing test.
+  // If every candidate is green (or empty), block (exit 2).
+  // Fail-open on TIMEOUT or SPAWN_ERROR for any candidate.
   const spawnImpl = _spawnImpl || spawn;
-  const exitResult = await runNodeTest(testFile, spawnImpl);
+  let lastGreenTestFile = null;
 
-  // Fail-open on timeout or spawn error
-  if (exitResult === 'TIMEOUT' || exitResult === 'SPAWN_ERROR') {
-    const warn = exitResult === 'TIMEOUT'
-      ? 'TDD Guard: test runner timed out — failing open (allowing write).'
-      : 'TDD Guard: could not spawn node (ENOENT?) — failing open (allowing write).';
-    return { exitCode: 0, stderr: warn };
+  for (const testFile of testFiles) {
+    const exitResult = await runNodeTest(testFile, spawnImpl);
+
+    // Fail-open on timeout or spawn error — allow immediately
+    if (exitResult === 'TIMEOUT' || exitResult === 'SPAWN_ERROR') {
+      const warn = exitResult === 'TIMEOUT'
+        ? 'TDD Guard: test runner timed out — failing open (allowing write).'
+        : 'TDD Guard: could not spawn node (ENOENT?) — failing open (allowing write).';
+      return { exitCode: 0, stderr: warn };
+    }
+
+    if (exitResult !== 0) {
+      // Non-zero exit ⇒ failing test exists ⇒ allow immediately
+      return { exitCode: 0, stderr: '' };
+    }
+
+    // exitResult === 0: this candidate is all-green; remember it and try next
+    lastGreenTestFile = testFile;
   }
 
-  if (exitResult === 0) {
-    // All tests green (or no executing tests) — block
-    const msg = [
-      `TDD Guard: test file ${path.relative(cwd, testFile)} has no failing tests (exit 0).`,
-      'Ensure at least one test is failing (red bar) before writing source.',
-      '(v1 note: this hook checks any failing test in the resolved test file; v1 cannot semantically verify the failing test is *about* the target module.)',
-    ].join(' ');
-    return { exitCode: 2, stderr: msg };
-  }
-
-  // Non-zero exit ⇒ failing test exists ⇒ allow
-  return { exitCode: 0, stderr: '' };
+  // All candidates were green — block
+  const blockedFile = lastGreenTestFile || testFiles[0]; // safety: lastGreenTestFile always set here
+  const msg = [
+    `TDD Guard: test file ${path.relative(cwd, blockedFile)} has no failing tests (exit 0).`,
+    'Ensure at least one test is failing (red bar) before writing source.',
+    '(v1 note: this hook checks any failing test in the resolved test file; v1 cannot semantically verify the failing test is *about* the target module.)',
+  ].join(' ');
+  return { exitCode: 2, stderr: msg };
 }
 
 module.exports = { runGuard };
