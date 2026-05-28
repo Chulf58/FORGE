@@ -186,17 +186,11 @@ export function createWorktree(projectRoot, runId) {
     }
   }
 
-  // Overwrite the conductor CLAUDE.md that git checked out with worker-specific instructions.
-  // Claude Code loads <cwd>/CLAUDE.md before any hook additionalContext fires, so this must
-  // happen at worktree-creation time — a hook-time write is too late.
-  try {
-    const pluginRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
-    const workerMdContent = readFileSync(join(pluginRoot, 'CLAUDE-WORKER.md'), 'utf-8');
-    writeFileSync(join(wtPath, 'CLAUDE.md'), workerMdContent, 'utf-8');
-  } catch (_) {
-    // Fail-open: if CLAUDE-WORKER.md is unreadable, leave the checked-out CLAUDE.md
-    // in place. Worker will get conductor rules — degraded but not fatal.
-  }
+  // Phase-2 Task-9 (Option B): worktrees no longer carry a worker-specific CLAUDE.md.
+  // Per-agent systemPrompts come from agents/<type>.md via mcp/lib/orchestrator/agent-dispatch.mjs,
+  // and the SDK runs in isolation mode (settingSources: []) so no CLAUDE.md is auto-loaded.
+  // The conductor CLAUDE.md that git checkout produces is left in place untouched (harmless —
+  // no autonomous worker reads it).
 
   // Merge-copy directories: git checkout may have created these from tracked files,
   // but gitignored files (PLAN.md, board.json, etc.) still need copying from main.

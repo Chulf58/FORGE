@@ -211,6 +211,33 @@ test('taskBrief absent: hook injects no brief markers', async () => {
   }
 });
 
+test('CLAUDE-WORKER.md content NOT appended to additionalContext (Option B / Task 9)', async () => {
+  // Phase-2 Task-9 (Option B) retires CLAUDE-WORKER.md across all consumers, including
+  // this hook's old "append CLAUDE-WORKER.md content to additionalContext" block. The
+  // hook must NOT inject `# FORGE Worker — Runtime Instructions` (the CLAUDE-WORKER
+  // sentinel) into the SessionStart additionalContext anymore — per-agent systemPrompts
+  // come from agents/<type>.md via mcp/lib/orchestrator/agent-dispatch.mjs (Phase 1).
+  const dir = makeProjectWithTask({
+    runId: 'r-test',
+    feature: 'short feature',
+    pipelineType: 'research',
+  });
+  try {
+    const { stdout } = await runHookSubprocess(dir);
+    const ctx = extractAdditionalContext(stdout);
+    assert.ok(
+      !ctx.includes('FORGE Worker — Runtime Instructions'),
+      'additionalContext must NOT contain the CLAUDE-WORKER.md sentinel (Option B).',
+    );
+    assert.ok(
+      !ctx.includes('CLAUDE-WORKER'),
+      'additionalContext must NOT reference CLAUDE-WORKER at all (Option B).',
+    );
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('taskBrief with control characters: stripped, surrounding text preserved', async () => {
   // Use String.fromCharCode to ensure non-literal control bytes in the source.
   const NUL = String.fromCharCode(0);

@@ -174,20 +174,14 @@ async function main(rawInput) {
     }
   }
 
-  // Append CLAUDE-WORKER.md instructions so the worker session loads worker-specific rules
-  let workerInstructions = '';
-  try {
-    const pluginRoot = resolvePluginRoot();
-    const workerMdPath = path.join(pluginRoot, 'CLAUDE-WORKER.md');
-    workerInstructions = '\n\n' + fs.readFileSync(workerMdPath, 'utf8');
-  } catch (_) {
-    process.stderr.write('[worker-task] CLAUDE-WORKER.md not found or unreadable — continuing without worker instructions\n');
-  }
+  // Retired Phase-2 Task-9 (Option B): CLAUDE-WORKER.md is no longer appended to the
+  // SessionStart additionalContext. Per-agent systemPrompts now come from `agents/<type>.md`
+  // via mcp/lib/orchestrator/agent-dispatch.mjs; worktrees no longer carry a CLAUDE.md.
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
-      additionalContext: lines.join('\n') + workerInstructions,
+      additionalContext: lines.join('\n'),
     },
   }) + '\n');
 

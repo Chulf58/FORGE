@@ -121,13 +121,9 @@ function create() {
     copyDirSync(claudeSrc, claudeDst);
   }
 
-  const claudeWorkerSrc = path.join(path.resolve(__dirname, '..'), 'CLAUDE-WORKER.md');
-  if (fs.existsSync(claudeWorkerSrc)) {
-    fs.copyFileSync(claudeWorkerSrc, path.join(wtPath, 'CLAUDE.md'));
-  } else if (fs.existsSync('CLAUDE.md')) {
-    // Fallback: copy conductor CLAUDE.md if CLAUDE-WORKER.md is missing (degraded)
-    fs.copyFileSync('CLAUDE.md', path.join(wtPath, 'CLAUDE.md'));
-  }
+  // Phase-2 Task-9 (Option B): worktrees no longer carry a CLAUDE.md. Per-agent
+  // systemPrompts come from agents/<type>.md via mcp/lib/orchestrator/agent-dispatch.mjs,
+  // and the SDK runs in isolation mode (settingSources: []) so no CLAUDE.md is auto-loaded.
 
   console.log(JSON.stringify({ ok: true, path: wtPath, branch, exists: false }));
 }
@@ -214,14 +210,9 @@ function merge() {
       const wtStatus = run('git', ['-C', wtPath, 'diff', '--name-only', 'HEAD'], { allowFail: true });
       let uncommittedFiles = wtStatus ? wtStatus.split('\n').filter(Boolean) : [];
 
-      // CLAUDE.md inside the worktree is always overwritten by the create step
-      // (forge-worktree.js line 126: CLAUDE-WORKER.md → CLAUDE.md). If its
-      // content still matches CLAUDE-WORKER.md it was never touched by the
-      // worker — exclude it so the pre-flight does not fire a false positive.
-      const pluginRoot = path.resolve(__dirname, '..');
-      if (isWhitelistedWorktreeSwap(wtPath, pluginRoot)) {
-        uncommittedFiles = uncommittedFiles.filter((f) => f !== 'CLAUDE.md');
-      }
+      // Phase-2 Task-9 (Option B): no worktree CLAUDE.md is injected anymore,
+      // so there is no benign-swap false positive to filter. Any uncommitted
+      // CLAUDE.md in a worktree is real user/worker content and should block.
 
       if (uncommittedFiles.length > 0) {
         console.error(JSON.stringify({
@@ -492,29 +483,12 @@ function copyDirSync(src, dst, skip) {
   }
 }
 
-/**
- * Returns true if worktreePath/CLAUDE.md was injected by the create step
- * (i.e. its bytes match pluginRoot/CLAUDE-WORKER.md). Used by the merge
- * pre-flight to skip false-positive dirty-file rejections.
- * Pure function — no side effects, no git calls.
- */
-function isWhitelistedWorktreeSwap(worktreePath, pluginRoot) {
-  const workerSrc = path.join(pluginRoot, 'CLAUDE-WORKER.md');
-  const injectedDst = path.join(worktreePath, 'CLAUDE.md');
-  try {
-    const srcBuf = fs.readFileSync(workerSrc);
-    const dstBuf = fs.readFileSync(injectedDst);
-    return srcBuf.equals(dstBuf);
-  } catch (_) {
-    return false;
-  }
-}
-
 // Export pure helpers for regression-test access. Closes d9683d2a part B.
 // removeWorktreeDir is also exported for direct unit testing (AC-1 test harness).
 // Importable as a module without triggering the CLI dispatch below thanks to
 // the require.main === module guard.
-module.exports = { restoreAccidentalDeletions, isWhitelistedWorktreeSwap, removeWorktreeDir };
+// (isWhitelistedWorktreeSwap removed in Phase-2 Task-9 / Option B — see scripts/forge-worktree-preflight-test.mjs retirement.)
+module.exports = { restoreAccidentalDeletions, removeWorktreeDir };
 
 // Dispatch — only when invoked directly via the CLI, not on require().
 if (require.main === module) {

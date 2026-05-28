@@ -136,31 +136,23 @@ test('AC-1: dispatchAgent MUST pass extracted model to query(), not hardcoded de
   );
 });
 
-test('AC-1: dispatchAgent MUST extract body from agent file, not read CLAUDE-WORKER.md (RED BAR)', async () => {
-  // RED-BAR TEST: This assertion will FAIL because the current code reads CLAUDE-WORKER.md.
-  // When phase 2 implements the fix, it will PASS.
+test('AC-1: dispatchAgent extracts body from agent file (NOT a CLAUDE-WORKER.md path)', async () => {
+  // Post-Phase-1 behavior assertion. The original Phase-1 red bar had a "precondition"
+  // checking the source for `readFileSync(systemPromptPath` — that precondition was
+  // satisfied by the bug and inverted by the fix; it's been removed (Task-9 cleanup)
+  // since CLAUDE-WORKER.md is fully retired and the parameter is gone.
 
   const sourceCode = readFileSync(join(__dirname, 'agent-dispatch.mjs'), 'utf8');
 
-  // Verify that the code DOES read from CLAUDE-WORKER.md (the bug)
-  const readsCLAUDEWorker = sourceCode.includes('readFileSync(systemPromptPath');
-  assert.ok(
-    readsCLAUDEWorker,
-    'Precondition: The bug exists — code currently reads from systemPromptPath (CLAUDE-WORKER.md)'
-  );
-
-  // Check that the code does NOT extract systemPrompt from the agent body
+  // Real assertion: the source extracts systemPrompt from the parsed agent body.
   const extractsSystemPromptFromBody = sourceCode.includes('agentBody') ||
                                        sourceCode.includes('agentContent') ||
                                        sourceCode.includes('systemPrompt:' + ' ' + 'body') ||
                                        sourceCode.includes('systemPrompt:' + ' ' + 'agentBody');
 
-  // This assertion will FAIL because the code reads CLAUDE-WORKER.md
-  // When fixed, it will extract the systemPrompt from agents/<agentType>.md body
   assert.ok(
     extractsSystemPromptFromBody,
-    'AC-1 FAILING ASSERTION: query() systemPrompt must be extracted from agents/<agentType>.md body, ' +
-    'not read from CLAUDE-WORKER.md (currently reads from systemPromptPath)'
+    'AC-1: query() systemPrompt must be extracted from agents/<agentType>.md body',
   );
 });
 

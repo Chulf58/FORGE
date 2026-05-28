@@ -26,7 +26,7 @@ Before reading any other context, inspect your prompt and `docs/PLAN.md`:
 
 If 0–1 phase headings exist, this precondition does not apply — proceed normally.
 
-Why: r-4776c645 (2026-05-25) — worker dispatched 4 "Wave K of 4" coders for a 10-phase plan; multi-phase scope bloated context, tripped SDK proactive interrupts, and aborted the stream with no `failureReason`. See `docs/solutions/sdk-aborted-streaming-leaves-worker-dead-with-no-failurereason-harness-missing-outermost-catch.md` and `CLAUDE-WORKER.md` "Phase scoping discipline".
+Why: r-4776c645 (2026-05-25) — worker dispatched 4 "Wave K of 4" coders for a 10-phase plan; multi-phase scope bloated context, tripped SDK proactive interrupts, and aborted the stream with no `failureReason`. See `docs/solutions/sdk-aborted-streaming-leaves-worker-dead-with-no-failurereason-harness-missing-outermost-catch.md`. (The phase-scope discipline is enforced by the `[phase-scope:` precondition in `skills/implement/SKILL.md:135-148` and by the `[scope-error]` refusal block above.)
 
 ---
 
