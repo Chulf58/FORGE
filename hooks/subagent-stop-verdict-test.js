@@ -785,6 +785,72 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 27: coder-scout without scout.json artifact → outcome "truncated"
+  // (RED today — coder-scout isn't in the truncation detection yet)
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-scout-1', 'forge:coder-scout');
+    // Don't create scout.json — this should trigger truncation detection
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-scout-1',
+      agent_type: 'forge:coder-scout', last_assistant_message: 'Scout complete.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-scout-1');
+    assert(entry && entry.outcome === 'truncated',
+      'coder-scout without scout.json artifact: outcome is "truncated"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 28: coder-scout with fresh scout.json artifact → outcome "completed"
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-scout-2', 'forge:coder-scout');
+    // Create the scout.json artifact
+    mkdirSync(join(tmp, 'docs', 'context'), { recursive: true });
+    writeFileSync(join(tmp, 'docs', 'context', 'scout.json'), JSON.stringify({ status: 'ready' }));
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-scout-2',
+      agent_type: 'forge:coder-scout', last_assistant_message: 'Scout complete.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-scout-2');
+    assert(entry && entry.outcome === 'completed',
+      'coder-scout with fresh scout.json artifact: outcome is "completed"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 29: test-author without test-author-output.json artifact → outcome "truncated"
+  // (RED today — test-author isn't in the truncation detection yet)
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-tauthor-1', 'forge:test-author');
+    // Don't create test-author-output.json — this should trigger truncation detection
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-tauthor-1',
+      agent_type: 'forge:test-author', last_assistant_message: 'Tests written.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-tauthor-1');
+    assert(entry && entry.outcome === 'truncated',
+      'test-author without test-author-output.json artifact: outcome is "truncated"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Test 30: test-author with fresh test-author-output.json artifact → outcome "completed"
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'ssv-test-'));
+    makeProject(tmp, 'agent-tauthor-2', 'forge:test-author');
+    // Create the test-author-output.json artifact
+    mkdirSync(join(tmp, '.pipeline', 'context'), { recursive: true });
+    writeFileSync(join(tmp, '.pipeline', 'context', 'test-author-output.json'), JSON.stringify({ testFiles: [] }));
+    await runHook({ tool_name: 'agent_stop', agent_id: 'agent-tauthor-2',
+      agent_type: 'forge:test-author', last_assistant_message: 'Tests written.',
+      session_id: 'test' }, tmp);
+    const data = JSON.parse(readFileSync(join(tmp, '.pipeline', 'runs', 'r-test', 'run-active.json'), 'utf8'));
+    const entry = data.agents.find(a => a.agent_id === 'agent-tauthor-2');
+    assert(entry && entry.outcome === 'completed',
+      'test-author with fresh test-author-output.json artifact: outcome is "completed"');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log('');
   console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);

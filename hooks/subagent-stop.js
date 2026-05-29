@@ -435,6 +435,12 @@ async function main(rawInput) {
     'refactor': 'docs/context/handoff.md',
     'implementation-architect': 'docs/context/slice-brief.md',
     'researcher': '.pipeline/context/researcher-status.json',
+    // coder-scout writes ONLY docs/context/scout.json (agents/coder-scout.md:19,97);
+    // test-author writes .pipeline/context/test-author-output.json. Both were silently
+    // stamped "completed" on truncation before 2026-05-29 — added here so a scout/
+    // test-author that stops without its artifact is flagged "truncated".
+    'coder-scout': 'docs/context/scout.json',
+    'test-author': '.pipeline/context/test-author-output.json',
   };
 
   const artifactRelPath = EXPECTED_ARTIFACTS[normalizedType];
