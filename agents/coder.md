@@ -255,7 +255,7 @@ When you encounter an out-of-scope issue during implementation:
 
 ## Test writing
 
-After implementing all source changes and before writing the handoff, write a test file for the changed behavior:
+After implementing all source changes and before writing the handoff, if no test-author wave already covered this phase, CREATE a test file for the changed behavior. **You may CREATE a new test file, but you must NEVER edit or weaken an EXISTING test file** — test files are the test-author's domain, and an unsatisfiable existing test is a defect to flag (via `forge_add_todo` or a handoff note), not to modify. (Enforced structurally: `hooks/ctx-pre-tool.js`'s deny-layer blocks a coder's edits to existing test files but allows creating new ones.) When you do create a test:
 
 1. **Naming:** `<directory>/<module-name>-test.mjs` — place it next to the source file (e.g. `mcp/config-store-test.mjs` for changes to `mcp/config-store.mjs`). The test runner auto-discovers `*-test.{js,mjs}` in `hooks/`, `mcp/`, and `scripts/`.
 2. **Scope:** Test the specific behavior you changed or added — not the entire module. One test per acceptance criterion or bug fix is the target.

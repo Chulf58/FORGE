@@ -77,6 +77,9 @@ console.log('Testing deny-layer: agent_type normalization + deniedPaths enforcem
       },
     };
     createFixture(tmpDir, fixture);
+    // The test file ALREADY EXISTS → editing it is the weakening case → deny.
+    fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'scripts', 'phase-verify.test.mjs'), '// existing test\n', 'utf8');
 
     const payload = {
       tool_name: 'Write',
@@ -116,6 +119,9 @@ console.log('Testing deny-layer: agent_type normalization + deniedPaths enforcem
       },
     };
     createFixture(tmpDir, fixture);
+    // The test file ALREADY EXISTS → editing it is the weakening case → deny.
+    fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'scripts', 'foo-test.mjs'), '// existing test\n', 'utf8');
 
     const payload = {
       tool_name: 'Write',
@@ -130,6 +136,40 @@ console.log('Testing deny-layer: agent_type normalization + deniedPaths enforcem
     assert(
       decision === 'deny',
       'Case 2: bare coder denied on hyphen-test file'
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// ── Case 2b: code-writer ALLOWED to CREATE a NEW test file ──────────────────
+// The deny-layer blocks EDITING an existing test (the weakening case), NOT
+// creating a new one (legit where no test-author ran). File does NOT exist → allow.
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-pre-tool-test-'));
+  try {
+    const fixture = {
+      coder: {
+        allowedPaths: ['scripts/**'],
+        deniedPaths: ['*-test.*', '*.test.*'],
+      },
+    };
+    createFixture(tmpDir, fixture);
+    // Do NOT create the test file — this is a NEW test creation.
+
+    const payload = {
+      tool_name: 'Write',
+      agent_type: 'forge:coder',
+      tool_input: { file_path: 'scripts/brand-new-thing.test.mjs' },
+    };
+
+    const { exitCode, stdout } = runHook(payload, tmpDir);
+    const output = stdout ? JSON.parse(stdout) : {};
+    const decision = output.hookSpecificOutput?.permissionDecision;
+
+    assert(
+      decision !== 'deny',
+      'Case 2b: coder allowed to CREATE a new (non-existent) test file'
     );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

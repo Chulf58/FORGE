@@ -121,6 +121,7 @@ async function main(rawInput) {
     const rawFilePath = toolInput.file_path || toolInput.path || null;
     if (rawFilePath) {
       let normalizedPath;
+      let absTarget = null;
       try {
         const worktreePath = await readActiveWorktreePath(process.cwd(), payload);
         let relBase = process.cwd();
@@ -131,6 +132,7 @@ async function main(rawInput) {
         ) {
           relBase = worktreePath;
         }
+        absTarget = path.isAbsolute(rawFilePath) ? rawFilePath : path.join(relBase, rawFilePath);
         const resolved = path.isAbsolute(rawFilePath)
           ? path.relative(relBase, rawFilePath)
           : rawFilePath;
@@ -142,17 +144,26 @@ async function main(rawInput) {
       if (normalizedPath) {
         const matchedPattern = denyRole.deniedPaths.find(p => matchesPattern(normalizedPath, p));
         if (matchedPattern) {
-          process.stdout.write(
-            JSON.stringify({
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'deny',
-                permissionDecisionReason: `Agent '${agentType}' may not Write/Edit test files (matched deniedPaths pattern '${matchedPattern}'). A failing or unsatisfiable test is a test-author defect — flag it and stop; do NOT modify the test. Role manifest: .pipeline/agent-roles.json`,
-              },
-            }) + '\n'
-          );
-          exitOk();
-          return;
+          // Block only EDITS to an EXISTING test file (the weakening case the
+          // deny-layer exists to prevent). Allow CREATING a new test file — that
+          // is legitimate where no test-author wave ran (non-wave-split phases,
+          // orchestrator implement-stage). File existence is the discriminator.
+          let targetExists = false;
+          try { if (absTarget) targetExists = fs.existsSync(absTarget); } catch (_) { targetExists = false; }
+          if (targetExists) {
+            process.stdout.write(
+              JSON.stringify({
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'deny',
+                  permissionDecisionReason: `Agent '${agentType}' may not edit an EXISTING test file (matched deniedPaths pattern '${matchedPattern}'). An unsatisfiable test is a test-author defect — flag it and stop; do NOT modify the test. (Creating a NEW test file is allowed.) Role manifest: .pipeline/agent-roles.json`,
+                },
+              }) + '\n'
+            );
+            exitOk();
+            return;
+          }
+          // New (non-existent) test file → creation allowed; fall through.
         }
       }
     }
