@@ -13,7 +13,9 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 // projectDir = repo root (this test lives at mcp/lib/orchestrator/)
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -55,4 +57,23 @@ test('(d) morphological near-miss is a documented KNOWN MISS (records determinis
   // returns non-empty, matching improved (e.g. stemming) and AC-12(d) should be revisited.
   const out = buildInjectedKnowledge(['frontmatters'], projectDir);
   assert.equal(out, '', 'morphological variant "frontmatters" is a known miss under substring matching');
+});
+
+test('(e) solution patterns are auto-injected alongside gotchas (Gap-1 extended to solutions)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ki-sol-'));
+  try {
+    mkdirSync(join(dir, 'docs', 'gotchas'), { recursive: true });
+    mkdirSync(join(dir, 'docs', 'solutions'), { recursive: true });
+    writeFileSync(join(dir, 'docs', 'gotchas', 'GENERAL.md'),
+      '# GENERAL\n\n## Widget timeout\n\nThe widget times out after 30s.\n', 'utf8');
+    writeFileSync(join(dir, 'docs', 'solutions', 'widget-fix.md'),
+      '# Widget Fix\n\nHow we fixed the widget retry storm.\n', 'utf8');
+    writeFileSync(join(dir, 'docs', 'solutions', 'index.json'), JSON.stringify([
+      { title: 'Widget retry fix', file: 'docs/solutions/widget-fix.md', tags: ['widget'], keywords: ['widget', 'retry'] },
+    ]), 'utf8');
+    const out = buildInjectedKnowledge(['widget'], dir);
+    assert.ok(out.length > 0, 'expected injectable text');
+    assert.match(out, /Widget timeout/, 'gotcha section still injected');
+    assert.match(out, /Widget retry fix/, 'matching SOLUTION (searchPatterns) must be auto-injected too, not just gotchas');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

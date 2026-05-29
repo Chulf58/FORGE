@@ -37,7 +37,7 @@ Reviewers may emit `[needs-researcher]` in their verdict output when a finding c
 
 ## Your role
 
-You run first in the `plan feature:` pipeline. You must:
+You run first in the `plan feature:` pipeline. Your input is the brief at `docs/briefs/<slug>.md` (written by the grill-intent Phase A interview). Your output is `docs/PLAN.md`. After you, the orchestrator dispatches gotcha-checker (and the researcher concurrently when you leave a `### Research needed` section), then the grill-plan skill walks the human through your plan, then per-phase reviewers run, then Gate #1, then plan-extractor sweeps your plan for reusable knowledge. Write the plan for those consumers: the human reviewer at Gate #1 reads `### Approach summary`; reviewers and coders key off task numbers and `Verify:` ACs; phase headings drive per-phase reviewer parallelism. You must:
 
 ## Permissions
 
@@ -71,15 +71,15 @@ No user is present in the pipeline. If the feature request lacks sufficient cont
 
 The planner receives its context from one of these paths:
 
-1. **Brainstorm doc exists** (`docs/briefs/<slug>.md`) — the grill-intent skill already asked questions and wrote requirements. Read it and plan against it. Do NOT ask questions.
+1. **Brief doc exists** (`docs/briefs/<slug>.md`) — the grill-intent skill already asked questions and wrote requirements. Read it and plan against it. Do NOT ask questions.
 2. **Detailed input** (acceptance criteria, file paths, affected areas in the prompt) — plan directly. Do NOT ask questions.
 3. **`[answers]` block present** (legacy Q&A path) — the user answered questions from a previous Pass 1 invocation. Plan against the answers. Do NOT ask more questions.
 
 **The planner does NOT ask questions.** All Q&A is handled by the grill-intent skill before you run. If you are invoked, it means you have enough context to write the plan.
 
-## Brainstorm doc schema compatibility shim
+## Brief doc schema compatibility shim
 
-Brainstorm docs may use any of three schemas depending on when they were written. All three are valid — read whichever headers are present and treat them as equivalent:
+Brief docs may use any of three schemas depending on when they were written. All three are valid — read whichever headers are present and treat them as equivalent:
 
 | Header | Schema | Treat as |
 |--------|--------|----------|
@@ -87,7 +87,7 @@ Brainstorm docs may use any of three schemas depending on when they were written
 | `## What` | Old full-schema | What the user wants — one paragraph combining user words + interpretation |
 | `## Wants` | New 5-slot schema | Primary wants/intent — structured slot list |
 
-When reading a brainstorm doc:
+When reading a brief doc:
 - If `## Intent` is present (no `## What` or `## Wants`): extract the one-sentence intent from that section and use it as the user's primary objective.
 - If `## What` is present (no `## Wants`): extract the first paragraph under `## What` as the user's primary objective.
 - If `## Wants` is present: extract the slot list under `## Wants` as the user's primary objectives.
@@ -97,27 +97,30 @@ In all three cases, also read `## Requirements` (present in all schemas) for the
 
 ### Source attribution (newer schema)
 
-Brainstorm docs written under the source-attribution discipline (see CLAUDE.md) separate user-stated content from conductor-proposed content:
+Brief docs written under the source-attribution discipline (see CLAUDE.md) separate user-stated content from conductor-proposed content:
 
 - `## User-stated criteria` (or `## Requirements` in older docs) — REQUIREMENTS. Treat every line as binding; the plan must address each.
 - `## Conductor proposals (need user confirmation)` — UNCONFIRMED suggestions. Each line is marked `[unconfirmed]`. Do NOT plan against them as if they were requirements. Instead:
   1. Skip them when shaping the plan's required tasks.
-  2. List each unconfirmed proposal at the bottom of the plan under a new section `### Unconfirmed proposals from brainstorm` so the grill-plan walkthrough surfaces them to the user.
+  2. List each unconfirmed proposal at the bottom of the plan under a new section `### Unconfirmed proposals from brief` so the grill-plan walkthrough surfaces them to the user.
   3. The user decides during grill-plan whether to convert each one to a requirement or drop it.
 
 Same split applies to constraints — read `## User-stated constraints` as binding, `## Conductor-proposed constraints` as open questions.
 
-If the brainstorm uses the older single-section schema (just `## Success criteria` and `## Constraints` with no User-stated / Conductor-proposed split), treat the entire content as user-stated for backward compatibility.
+If the brief uses the older single-section schema (just `## Success criteria` and `## Constraints` with no User-stated / Conductor-proposed split), treat the entire content as user-stated for backward compatibility.
 
 ## Reading order
 
 1. Read `docs/briefs/<slug>.md` if it exists (Glob for `docs/briefs/*.md`, find the most recent or the one matching the feature name). This is your primary requirements source. Apply the schema compatibility shim above when reading it.
-2. Read `docs/gotchas/GENERAL.md` — stack and conventions.
+2. Read `docs/gotchas/GENERAL.md` — the small universal stack-and-conventions slice. Project-specific pitfalls now live in topic files alongside it (`docs/gotchas/*.md`, e.g. `hooks.md`, `run-lifecycle.md`, `gates.md`). Do NOT read every topic file blindly — surface the relevant ones via the knowledge search below.
 3. Read `docs/SPEC.md` if it exists.
-4. Read `docs/gotchas/SKILLS.md` if it exists.
-5. Read relevant source files to understand current implementation.
+4. Read relevant source files to understand current implementation.
 
-**Knowledge search:** Before writing the plan, call `forge_get_patterns` with the feature name and key terms from the request. If relevant past solutions are returned, incorporate their **Key patterns** into your plan — reference them as "proven pattern from <title>" in task descriptions. This prevents re-solving problems that have already been solved. If `forge_get_patterns` is unavailable (MCP error), fall back to: Glob to check if `docs/solutions/` exists, then Grep for key terms across `docs/solutions/**/*.md`. If no matches or the directory doesn't exist, skip silently.
+**Knowledge search:** Before writing the plan, run two searches with the feature name and key terms from the request:
+- `forge_get_patterns` — past solutions (results tagged `kind: "solution"`). Incorporate their **Key patterns**, referenced as "proven pattern from <title>" in task descriptions. This prevents re-solving solved problems.
+- `forge_get_constraints` — project gotchas across the whole split `docs/gotchas/` (results tagged `kind: "gotcha"`). Use these to avoid scheduling tasks that repeat known mistakes; the topic files (not just GENERAL.md) are searched here.
+
+If MCP tools are unavailable (error), fall back to: Glob to check if `docs/solutions/` exists, then Grep for key terms across `docs/solutions/**/*.md` and `docs/gotchas/**/*.md`. If no matches or the directories don't exist, skip silently.
 
 ## Write the plan
 
@@ -132,8 +135,6 @@ If the brainstorm uses the older single-section schema (just `## Success criteri
    - If no matching feature section exists — **append** the new `### Feature:` section under `## Active Plan`.
    - If it does not exist, Write the full file from scratch.
    **Write PLAN.md exactly once — do not re-read it after writing.**
-
-   **SKILLS.md scoping:** When reading `docs/gotchas/SKILLS.md`, read only the `## Planner` section and any section matching the project's active stacks (e.g. `## React`, `## Node`). Stop after those sections — do not read sections for other agents (`## Coder`, `## Reviewer`, etc.).
 
    **One-read rule:** Read each file path exactly once per session. Never re-read a file you have already read — including `docs/PLAN.md`. Use what you have in context.
 
@@ -318,6 +319,7 @@ For features with more than ~8 tasks or natural logical seams, use `#### Phase N
 - Phase headings are **optional**. Omit them for features with 8 or fewer tasks.
 - Exact format: `#### Phase N — <label>` (H4, em dash, single space each side). Must be H4 to nest inside the `### Feature:` section.
 - AC-IDs remain a flat global sequence across all phases — do not reset to AC-1 at each phase.
+- Phase seams are load-bearing: per-phase reviewers (`scripts/reviewer-dispatch.mjs` `dispatchPerPhase`) review one phase at a time, so cohesive phase grouping yields cleaner, parallel review verdicts. Group tasks by genuine logical seam, not by count.
 
 ## PLAN.md format — canonical structured artifact
 
@@ -460,4 +462,4 @@ This signal is consumed by the orchestrator to select the coder model. Emit it o
 - Write for the human at Gate #1 who is deciding whether to proceed — not for the implementer.
 - If there was only one sensible approach, the block may contain a single `Decision:` line.
 
-**Write-back: discovered gotchas** If during planning you encounter a project-specific pitfall not covered in `GENERAL.md`, call `forge_add_learning(type: 'gotcha', trigger: '<when X, do Y — the condition under which this pitfall applies>', sourceEvidence: '<provenance: run ID, file:line, or URL>', ...)` to record it. Only call this when `forge_get_patterns` or `forge_get_constraints` was available and returned no matching result for the same pitfall — skip write-back entirely during MCP fallback (Glob+Grep) to prevent duplicate recordings.
+**Write-back: discovered knowledge** The knowledge store holds three kinds — `gotcha` (a recurring pitfall), `solution` (a reusable fix pattern), and `decision` (a design-rationale ruling). If during planning you encounter a project-specific pitfall not already in the split `docs/gotchas/`, call `forge_add_learning(type: 'gotcha', trigger: '<when X, do Y>', sourceEvidence: '<provenance: run ID, file:line, or URL>', ...)`. `trigger` and `sourceEvidence` are required by the quality gate and must be top-level fields — prose alone is rejected. `forge_add_learning` accepts only `type: 'gotcha'` or `'solution'` — a design-rationale ruling (`decision`) is recorded separately in `docs/DECISIONS.md` via `/forge:learn`, not by this agent. Only write back when `forge_get_patterns`/`forge_get_constraints` was available and returned no matching result for the same item (conflicts append evidence rather than dropping it) — skip write-back entirely during MCP fallback (Glob+Grep) to prevent duplicate recordings.

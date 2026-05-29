@@ -9,7 +9,7 @@
 // prompt text. Returns '' when there are no matches or no valid keywords.
 // No side effects. Never console.log().
 
-import { searchConstraints } from '../knowledge-store.js';
+import { searchConstraints, searchPatterns } from '../knowledge-store.js';
 
 /**
  * Build injectable prompt text for the given keywords by searching the
@@ -44,7 +44,22 @@ export function buildInjectedKnowledge(keywords, projectDir) {
     }
   }
 
-  if (matched.length === 0) return '';
+  // Solutions (searchPatterns) — deduped by file. Gap-1 now injects matching solution
+  // summaries too, so the can't-skip retrieval principle is consistent across knowledge
+  // kinds (not gotchas only). Summaries are pointers; the agent reads the full doc to apply.
+  const seenFiles = new Set();
+  const solutions = [];
+  for (const keyword of trimmed) {
+    const hits = searchPatterns(projectDir, keyword, null);
+    for (const hit of hits) {
+      if (hit && hit.file && !seenFiles.has(hit.file)) {
+        seenFiles.add(hit.file);
+        solutions.push(hit);
+      }
+    }
+  }
+
+  if (matched.length === 0 && solutions.length === 0) return '';
 
   // Format as injectable prompt block
   const lines = ['## Relevant project knowledge', ''];
@@ -53,6 +68,14 @@ export function buildInjectedKnowledge(keywords, projectDir) {
     if (section.content) {
       lines.push(section.content, '');
     }
+  }
+  if (solutions.length > 0) {
+    lines.push('### Related solutions (patterns)', '');
+    for (const sol of solutions) {
+      const summary = sol.summary ? ` — ${sol.summary}` : '';
+      lines.push(`- ${sol.title} (\`${sol.file}\`)${summary}`);
+    }
+    lines.push('');
   }
 
   return lines.join('\n').trimEnd();
