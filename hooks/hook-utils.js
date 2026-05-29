@@ -221,11 +221,26 @@ function getForgeAgentSet() {
   }
 }
 
+/**
+ * Strip the 'forge:' namespace prefix from an agent type, returning the bare
+ * agent name. Inline Agent-tool dispatches deliver agent_type namespaced
+ * (e.g. 'forge:coder'); manifest keys, EXPECTED_ARTIFACTS, and APPLY_AGENTS use
+ * bare names ('coder'). Returns the input unchanged when falsy or unprefixed —
+ * so null → null, '' → '', 'coder' → 'coder', 'forge:coder' → 'coder'.
+ * @param {string|null|undefined} agentType
+ * @returns {string|null|undefined}
+ */
+function normalizeAgentType(agentType) {
+  return agentType && agentType.startsWith('forge:')
+    ? agentType.slice('forge:'.length)
+    : agentType;
+}
+
 function isForgeAgent(agentType) {
   if (!agentType) return false;
   const allowlist = getForgeAgentSet();
   if (!allowlist) return true;
-  const normalized = agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType;
+  const normalized = normalizeAgentType(agentType);
   return allowlist.has(normalized);
 }
 
@@ -446,7 +461,7 @@ function isProjectInitialized(projectDir) {
 
 module.exports = {
   resolveProjectDir, resolvePluginRoot, stripAnsi, hasValidApprovalToken,
-  getForgeAgentSet, isForgeAgent, isProjectInitialized,
+  getForgeAgentSet, isForgeAgent, normalizeAgentType, isProjectInitialized,
   STDIN_TIMEOUT_LONG, STDIN_TIMEOUT_SHORT, TERMINAL_STATUSES, readRunStatus,
   findActiveRun, resolveRunId,
   normalizeFeature, toMeaningfulWords, stemWord, featuresMatch,

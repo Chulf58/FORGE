@@ -4,7 +4,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { resolveProjectDir, resolvePluginRoot, stripAnsi } = require('./hook-utils');
+const { resolveProjectDir, resolvePluginRoot, stripAnsi, normalizeAgentType } = require('./hook-utils');
 
 let passed = 0;
 let failed = 0;
@@ -230,6 +230,14 @@ assert(stripAnsi('a\nb') === 'a\nb', 'stripAnsi: newline preserved');
 // 17. Non-string coerced to string
 assert(stripAnsi(null) === '', 'stripAnsi: null coerced to empty string');
 assert(stripAnsi(42) === '42', 'stripAnsi: number coerced to string');
+
+// ── normalizeAgentType() tests ────────────────────────────────────────────────
+
+assert(normalizeAgentType('forge:coder') === 'coder', 'normalizeAgentType: strips forge: prefix');
+assert(normalizeAgentType('coder') === 'coder', 'normalizeAgentType: bare name unchanged');
+assert(normalizeAgentType('forge:reviewer-tests') === 'reviewer-tests', 'normalizeAgentType: strips prefix from hyphenated name');
+assert(normalizeAgentType(null) === null, 'normalizeAgentType: null passes through');
+assert(normalizeAgentType('') === '', 'normalizeAgentType: empty string passes through');
 
 console.log('');
 console.log(`  ${passed + failed} tests: ${passed} passed, ${failed} failed`);
