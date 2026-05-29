@@ -29,9 +29,17 @@ async function main(rawInput) {
   try { payload = JSON.parse(rawInput); } catch (_) { exitOk(); return; }
 
   const agentType = payload.agent_type || null;
+  // Normalize the 'forge:' namespace prefix before matching — inline Agent-tool
+  // dispatches send agent_type as 'forge:documenter' (verified 2026-05-29), and
+  // without this the APPLY_AGENTS check misses and the worktree-redirect silently
+  // no-ops (documenter would target main instead of the worktree). Mirrors
+  // subagent-start.js:53-55.
+  const normalizedType = agentType
+    ? (agentType.startsWith('forge:') ? agentType.slice('forge:'.length) : agentType)
+    : null;
 
   // Only act on apply-phase agents
-  if (!agentType || !APPLY_AGENTS.has(agentType)) { exitOk(); return; }
+  if (!normalizedType || !APPLY_AGENTS.has(normalizedType)) { exitOk(); return; }
 
   const projectDir = resolveProjectDir(payload);
 

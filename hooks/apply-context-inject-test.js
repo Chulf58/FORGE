@@ -311,6 +311,40 @@ async function test() {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Test 9: NAMESPACED documenter (forge:documenter) → context injected.
+  // Inline Agent-tool dispatches send agent_type with the 'forge:' prefix (verified
+  // 2026-05-29). The hook must normalize it before the APPLY_AGENTS check, or it
+  // silently no-ops and the documenter targets main instead of the worktree.
+  console.log('\n--- Test 9: forge:documenter (namespaced inline format) + worktree run → context injected ---');
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'aci-test-'));
+    const wtPath = join(tmp, '.worktrees', 'r-wt9');
+    mkdirSync(join(wtPath, 'docs', 'context'), { recursive: true });
+    writeFileSync(join(wtPath, 'docs', 'context', 'handoff.md'), '# Handoff\n');
+
+    const entry = makeImplementRun(tmp, 'r-wt9', wtPath, 'forge/r-wt9');
+    writeFileSync(join(tmp, '.pipeline', 'runs', 'index.json'), JSON.stringify({ runs: [entry] }));
+
+    const { code, stdout, stderr } = await runHook({
+      agent_type: 'forge:documenter',
+      agent_id: 'test-doc-ns',
+      cwd: tmp,
+    });
+
+    let context = null;
+    try {
+      const parsed = JSON.parse(stdout);
+      context = parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext;
+    } catch (_) {}
+
+    console.log('Exit:', code);
+    console.log('stderr:', stderr);
+    console.log('Context injected:', context !== null);
+    assert(context !== null, 'forge:documenter (namespaced inline format) should get worktree context (prefix normalized)');
+    console.log(context !== null && stderr.includes('Injected worktree context') ? '✓ PASS' : '✗ FAIL');
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
   console.log('\nAll tests complete.');
   if (__failures > 0) {
     console.error(__failures + ' assertion(s) failed.');
