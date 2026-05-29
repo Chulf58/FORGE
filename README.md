@@ -1,132 +1,86 @@
 # FORGE
 
-**FORGE gives Claude Code a structured workflow — plan, review, implement, apply — with human approval gates at every major transition.**
+**FORGE turns Claude Code into a pipeline that plans, reviews, and ships features under human gates — and gets sharper every time it runs.**
 
-FORGE structures your Claude Code sessions into a multi-agent pipeline with planning gates, specialist reviewer waves, persistent project state, and human approval checkpoints. It does not replace Claude Code — it orchestrates it.
-
----
-
-## The bet
-
-The model can't be trusted to follow instructions when the instructions are inconvenient. So FORGE pushes leverage to the layer below the model — PreToolUse hooks that block bad actions, a pure-function classifier that routes reviewers without another LLM, and an approve token that only unlocks on typed user input (sanitized of injected context). The plan → implement → apply pipeline runs on top of that floor, with two human gates and policy enforced at the harness level rather than the prompt level.
+It doesn't replace Claude Code; it orchestrates it. The model proposes, specialist reviewers check, deterministic harness rules enforce, and you approve at the few moments that actually matter.
 
 ---
 
-## How it works
+## Why FORGE is different
+
+Most "AI dev" wrappers just re-prompt the model and hope. FORGE pushes the leverage *below* the model — and compounds what it learns.
+
+### 🧠 It has a learning loop — FORGE gets smarter the more you use it
+
+This is the part people don't expect. FORGE runs a **compound knowledge store** that turns every run into reusable institutional memory:
+
+- **Three kinds of knowledge, all retrievable:** `gotcha` (project pitfalls), `solution` (past fixes), and `decision` (logged architectural choices) — each index-backed and tagged by `kind` so the pipeline can weigh "⚠ hard gotcha" differently from "prior solution" or "you'd be reversing a logged decision."
+- **Retrieval is first-class — and can't-skip in the deterministic path:** every agent looks up project gotchas via `forge_get_constraints` before acting. In the opt-in deterministic orchestrator, FORGE goes further and *auto-injects* the task-relevant gotchas into each agent's prompt at dispatch (Gap-1) — so retrieval can't be skipped under pressure the way voluntary lookups can.
+- **A quality gate on every write:** new knowledge is rejected unless it carries a `trigger` ("when X, do Y") and `sourceEvidence` (provenance). No vague, un-actionable notes pollute the store.
+- **Evidence merges instead of duplicating:** when a new learning collides with an existing one, FORGE appends the new evidence to the existing entry rather than dropping it or spawning a near-duplicate.
+- **Everyone can teach it:** `/forge:learn` lets you record a lesson directly, an inline-capture hook offers to capture substantive work automatically, and the planner mines each session for new patterns — all through the same quality gate.
+
+The result: the gotcha that bit you in run #3 is the gotcha auto-injected into the coder's prompt in run #40, before it can bite again.
+
+### 🎛️ Attention-first — every stop changes an outcome
+
+Human attention is the scarcest resource in the loop, so FORGE spends it deliberately. Gates exist only where a pause *changes a decision or prevents a mistake* — not as ceremony. There are exactly two review gates (plan, implementation) plus a commit gate, and the pipeline refuses to let you approve past an unresolved blocker.
+
+### ⚙️ Deterministic where it counts — no LLM drift in the control loop
+
+Routing and orchestration don't go through another model that can wander:
+
+- **Reviewer dispatch is a pure function** — `reviewer-dispatch.mjs` scans the change for risk surfaces (shell, fs writes, auth, network, schema, tests) and picks the matching reviewers. No "mode dial," no LLM deciding who reviews.
+- **An opt-in deterministic orchestrator (experimental)** can drive the plan/implement state machine in plain JS — a fresh subagent per phase, no LLM in the control loop. Off by default; the gate resume + per-phase-review paths are still being hardened.
+
+### 🧱 Policy at the harness layer, not the prompt
+
+The model can't be trusted to follow inconvenient instructions, so the rules live *under* it: PreToolUse hooks hard-block bad edits (TDD without a test, commits inside a gated worktree, stuck-loop dispatch storms), and the approve token only unlocks on **typed user input**, sanitized of injected context. The prompt asks nicely; the hooks make it true.
+
+---
+
+## The pipeline
 
 ```
 /forge:plan "add OAuth login"
-    → planner + researcher + gotcha-checker run
-    → reviewers check the plan in parallel
-    → Gate #1: you read the plan and approve it
+   → grill your intent (grounded in the codebase + knowledge store)
+   → planner + researcher + gotcha-checker → reviewers critique in parallel
+   → Gate #1: you read the plan and approve
 
 /forge:implement
-    → coder writes implementation to handoff.md
-    → reviewers check: safety, logic, boundary, performance, tests
-    → Gate #2: you read the verdicts and approve
+   → coder-scout maps the files → coder writes the change
+   → reviewers check safety · logic · boundary · performance · tests
+   → Gate #2: you read the verdicts and approve
 
 /forge:apply
-    → documenter updates changelog and architecture docs
-    → commit gate appears for worktree merge
+   → documenter updates the changelog + architecture docs
+   → commit gate → merge
 ```
 
-No code touches your project until you approve Gate #2.
+Nothing touches your source until Gate #2, and nothing lands on `main` until you approve the commit.
 
 ---
 
-## Your first feature
+## What's inside (v0.6.0)
 
-After `/forge:init`, here is what a typical feature cycle looks like from start to finish.
-
-**1. Plan it**
-```
-/forge:plan "add password reset flow"
-```
-The planner breaks the feature into tasks. The researcher investigates anything unfamiliar. The gotcha-checker validates the approach against known pitfalls. Reviewers check the plan in parallel. When they finish, Gate #1 appears in the terminal with a summary of the plan and any concerns raised.
-
-**2. Approve or discard the plan**
-```
-/forge:approve    — proceed to implementation
-/forge:discard    — scrap it and start over
-```
-Read the plan. If it looks right, approve. If something is off, discard and re-plan with more context.
-
-**3. Implement it**
-```
-/forge:implement
-```
-The coder writes the implementation to a handoff document. Five specialist reviewers check it — safety, logic, boundary, performance, and tests — and emit verdicts. When they finish, Gate #2 appears with the implementation summary and all reviewer verdicts.
-
-**4. Approve or discard the implementation**
-```
-/forge:approve    — apply to source files
-/forge:discard    — reject the handoff and try again
-```
-Read the verdicts. If anything is blocked, the pipeline won't let you approve until it's resolved. If everything looks good, approve.
-
-**5. Apply it**
-```
-/forge:apply
-```
-The documenter writes the changelog and architecture-doc updates in the worktree. The worker pauses at a commit gate, and approving it merges the worktree into your main branch. Done.
-
-No changes land on your main branch until step 5.
+- **25 specialist agents** — planner, researcher, coder + coder-scout, 5 reviewers (safety/logic/boundary/performance/tests), technical-skeptic, documenter, architect, critic, and more — each a Claude instance with a defined role, tool scope, and model tier.
+- **33 skills** — the `/forge:*` slash commands that orchestrate agents into pipelines.
+- **29 hook scripts** across the session lifecycle — enforcement, context injection, board hygiene.
+- **40 MCP tools** — structured access to runs, gates, the board, the knowledge store, and model routing.
+- **16 modules** — including the deterministic orchestrator and the compound knowledge base.
+- **Per-agent model routing** across Anthropic tiers (Haiku/Sonnet/Opus by role), with an external-provider path for future expansion.
+- **All state is local** in `.pipeline/` — board, run history, gates, knowledge indexes. Nothing leaves your project; FORGE is stateless between sessions.
 
 ---
 
-## How it runs
-
-Five things happen when you install FORGE and start a session:
-
-- **21 specialist agents** are loaded from the plugin — each is a Claude instance with a defined role, tool access, and model assignment
-- **31 hook scripts** fire on 10 lifecycle events (session start, prompt submit, tool calls, subagent start/stop, and more) to enforce rules and inject context
-- **An MCP server** starts alongside your session and provides 39 tools for structured access to pipeline state, gates, and model routing
-- **All state lives in `.pipeline/`** in your project directory — board, run history, pending gates, config — nothing is sent anywhere else
-- **All agents route to Anthropic models** via frontmatter; external-provider routing exists via the MCP server's `forge_call_external` tool for future expansion
-
-Nothing runs in the background between sessions. FORGE is stateless until you invoke a command.
-
----
-
-## Install
-
-Clone the internal repo, then start Claude Code with the plugin loaded:
+## Install & start
 
 ```bash
 git clone https://github.com/Chulf58/FORGE.git
 claude --plugin-dir /path/to/forge-plugin
 ```
 
----
-
-## Quick start
-
-Start a Claude Code session with the plugin loaded, then run these commands in any project:
-
-```
-/forge:init      — scaffold pipeline state for this project
-/forge:plan      — plan a feature
-/forge:status    — project snapshot
-/forge:dashboard — pipeline and board overview
-```
-
----
-
-## Reviewer dispatch
-
-FORGE uses risk-surface-based reviewer dispatch — `scripts/reviewer-dispatch.mjs` scans your handoff for patterns (shell commands, fs writes, auth, network, schema changes) and routes to the matching reviewers automatically. No mode dial to configure.
-
----
-
-## Gates
-
-Two mandatory human checkpoints — nothing proceeds without your explicit approval.
-
-**Gate #1 — Plan approval** (after `/forge:plan`)
-You see the plan, task breakdown, and approach. `/forge:approve` moves to implementation. `/forge:discard` drops the plan.
-
-**Gate #2 — Implementation approval** (after `/forge:implement`)
-You see the implementation summary and all reviewer verdicts. `/forge:approve` moves to apply. `/forge:discard` drops the handoff.
+Then, in any project: `/forge:init` once to scaffold local state, and `/forge:plan "<feature>"` to start. `/forge:status` and `/forge:dashboard` show where things stand.
 
 ---
 
@@ -134,38 +88,20 @@ You see the implementation summary and all reviewer verdicts. `/forge:approve` m
 
 | Command | What it does |
 |---------|-------------|
-| `/forge:init` | Scaffold pipeline state for this project |
-| `/forge:plan` | Plan a feature — runs planners and reviewers, ends at Gate #1 |
-| `/forge:implement` | Implement an approved plan — runs coder and reviewers, ends at Gate #2 |
-| `/forge:apply` | Apply an approved implementation to source files |
-| `/forge:debug` | Debug a broken behaviour — runs diagnostics and reviewers |
-| `/forge:refactor` | Restructure existing code — runs refactor agent and reviewers |
-| `/forge:approve` | Approve the pending gate and proceed |
-| `/forge:discard` | Discard the pending gate and cancel the run |
-| `/forge:status` | Project snapshot with next-step hints |
-| `/forge:dashboard` | Active runs, pending gates, and board overview |
-| `/forge:todo` | View and manage the task board |
-| `/forge:resume` | Resume an interrupted pipeline run |
-
----
-
-## What's included
-
-- **21 specialist agents** — planner, researcher, coder, 5 reviewers (safety, logic, boundary, performance, tests), documenter, architect, critic, and more
-- **29 skills** — slash commands that orchestrate agents into pipelines
-- **31 hook scripts** across 10 lifecycle events — enforcement, context injection, board hygiene
-- **39 MCP tools** — structured access to pipeline state, board, gates, model routing, and dashboard
-- **Multi-model routing** — per-agent model selection across Anthropic models (sonnet for coder/planner/architect, haiku for reviewers, opus for critic). External-provider routing exists via `forge_call_external` for future expansion.
+| `/forge:plan "<feature>"` | Plan a feature → Gate #1 |
+| `/forge:implement` | Build the approved plan → Gate #2 |
+| `/forge:apply` | Apply + commit the approved work |
+| `/forge:approve` · `/forge:discard` | Act on the pending gate |
+| `/forge:status` · `/forge:dashboard` | Where things stand |
+| `/forge:debug` · `/forge:refactor` · `/forge:resume` · `/forge:todo` | Debug · restructure · resume · backlog |
 
 ---
 
 ## Docs
 
-- [FORGE-OVERVIEW.md](docs/FORGE-OVERVIEW.md) — what FORGE is, design principles, comparison with similar tools
-- [FORGE-REFERENCE.md](docs/FORGE-REFERENCE.md) — full agent tables, signal protocol, hook system, MCP tools, model routing
+- [FORGE-OVERVIEW.md](docs/FORGE-OVERVIEW.md) — what FORGE is, design principles, comparisons
+- [FORGE-REFERENCE.md](docs/FORGE-REFERENCE.md) — full agent/skill/hook/MCP tables, signal protocol, model routing
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — module map and key file locations
-
----
 
 ## License
 
