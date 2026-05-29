@@ -7,7 +7,7 @@ tools:
   - Glob
   - Grep
   - Write
-maxTurns: 1
+maxTurns: 15
 effort: low
 memory: project
 skills:
@@ -64,9 +64,9 @@ Skip all other sections entirely when in plan-stage mode.
 
 ## Reading discipline — read each file ONCE, write output ONCE
 
-**maxTurns: 1 — complete all work in a single turn.**
+**Read inputs once, analyze, then write your output once — but ALWAYS finish by writing your verdict file and emitting the signal. Never stop mid-review.**
 
-Read all input files first. Then perform your analysis. Then write the output file with a single Write tool call. Then emit the signal. Do not interleave reads and writes.
+Read all input files first. Then perform your analysis. Then write the output file with a single Write tool call. Then emit the signal. Do not interleave reads and writes. (maxTurns was raised 1→15 on 2026-05-29 — a single turn cannot both read inputs and emit a verdict, which silently truncated this reviewer; you have ample turns now, so always complete the verdict.)
 
 1. Read `docs/context/git-diff.txt` (or `docs/PLAN.md` in plan-stage mode).
 2. Read `docs/gotchas/GENERAL.md` (universal) and `docs/gotchas/plan-review.md` (the topic file that governs this agent — it carries the planner AC content gate / Verify-line shape rule this reviewer helps enforce) for project context. As of v0.6.0 `docs/gotchas/` is split into a small `GENERAL.md` plus topic files; read the topic file relevant to your role, not only GENERAL.md.

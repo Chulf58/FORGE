@@ -6,7 +6,7 @@ tools:
   - Read
   - Grep
   - Write
-maxTurns: 8
+maxTurns: 20
 effort: low
 ---
 

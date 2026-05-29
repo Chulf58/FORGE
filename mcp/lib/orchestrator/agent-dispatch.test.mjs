@@ -189,18 +189,24 @@ test('AC-1: Fixture verification — agents/coder-scout.md has non-empty body', 
 // AC-32: maxTurns propagation — frontmatter maxTurns must reach SDK query()
 // ──────────────────────────────────────────────────────────────────────────
 
-test('AC-32: Fixture verification — agents/coder-scout.md declares maxTurns: 8', async () => {
-  // Verify the fixture agent has maxTurns in its frontmatter
+test('AC-32: Fixture verification — agents/coder-scout.md declares a positive numeric maxTurns', async () => {
+  // Verify the fixture agent declares maxTurns in its frontmatter. Value-agnostic
+  // by design: the exact number is tuned over time (8→20 on 2026-05-29 to stop
+  // truncation), and the propagation test below is what verifies the value reaches
+  // query() — so pinning a specific number here only created a brittle break on
+  // every retune. This still fails if coder-scout LOSES its maxTurns or it becomes
+  // non-numeric.
 
   const pluginRoot = join(__dirname, '../../../');
   const agentPath = join(pluginRoot, 'agents', 'coder-scout.md');
   const agentContent = readFileSync(agentPath, 'utf8');
   const { frontmatter } = parseFrontmatter(agentContent);
 
-  assert.strictEqual(
-    frontmatter.maxTurns,
-    '8',
-    'Fixture: coder-scout.md frontmatter declares maxTurns: 8'
+  assert.ok(
+    frontmatter.maxTurns !== undefined &&
+      /^\d+$/.test(String(frontmatter.maxTurns)) &&
+      Number(frontmatter.maxTurns) > 0,
+    'Fixture: coder-scout.md frontmatter must declare a positive numeric maxTurns'
   );
 });
 
