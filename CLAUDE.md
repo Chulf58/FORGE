@@ -166,3 +166,11 @@ Any conductor-side call to `forge_add_learning` MUST include `trigger` (the "whe
 Always run `forge:coder-scout` before `forge:coder`, whether via `/forge:implement` or via an inline Agent-tool dispatch. The scout's output (`.pipeline/context/scout.json` for skill runs, or an explicit `[scout-output:` block in the inline-dispatch prompt) is a precondition — coder MUST NOT be dispatched without it.
 
 Rationale (run `r-4a09697c`, 2026-05-27): rediscovery-truncation pattern — retirement coders burned 38 tool_uses on consumer-set grep before any edits, then hit context limits with no code written. Scout-first prevents this by pre-mapping file scope so the coder starts editing immediately.
+
+### Reviewer dispatch discipline
+
+When selecting reviewers for an inline (conductor-driven) implement/debug/refactor review, do NOT hand-pick the set from intuition — run `node scripts/reviewer-dispatch.mjs --diff=<path> --coder-status=<path>` (or `--handoff=<path>`) and dispatch exactly the `reviewers` it returns. The deterministic dispatcher force-includes `reviewer-tests` on any test-touching diff (`addReviewerTestsIfNeeded`, `scripts/reviewer-dispatch.mjs:111`) and evaluates it BEFORE the `skipReviewers` short-circuit (`:178`), so a clean diff that only edits test files still gets it. The skill path already routes through this dispatcher; the inline path must too.
+
+If you genuinely cannot run the dispatcher, the floor is: ALWAYS include `reviewer-tests` whenever the change touches a test file (`*.test.*` / `*-test.*` / `/tests/` / `/spec/`) or adds a suppression keyword (`skip` / `mock` / `eslint-disable` / `@ts-ignore` / `noqa`).
+
+Rationale (2026-05-29): during an inline batch the conductor hand-picked reviewers per task and nearly shipped without `reviewer-tests` on two tasks whose coders had edited their own test files — caught manually, not structurally. Hand-picking the reviewer set is the inline-path analogue of skipping the scout; route through the deterministic dispatcher instead.
