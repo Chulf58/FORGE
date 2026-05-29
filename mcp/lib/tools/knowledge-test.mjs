@@ -340,6 +340,97 @@ async function main() {
       }
     }
 
+    // ── Test 10: forceNew:true bypasses conflict-detect and writes a distinct entry ──
+    // "Hook scripts exit codes" overlaps the seeded "## Hook scripts" heading (would conflict);
+    // forceNew:true must write it anyway (escape hatch for false-positive conflicts, bug 1a57df4e).
+    if (!failure) {
+      const forceRes = await callTool(client, 'forge_add_learning', {
+        type: 'gotcha',
+        title: 'Hook scripts exit codes',
+        content: 'Hooks must exit 0 on success, 2 to block.',
+        tags: ['hooks'],
+        trigger: 'When writing a hook exit path',
+        sourceEvidence: 'knowledge-test.mjs test 10',
+        forceNew: true,
+      });
+      if (forceRes.isError) {
+        failure = 'test 10 forceNew: unexpected isError — ' + JSON.stringify(forceRes.content);
+      } else {
+        const generalMd = readFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), 'utf8');
+        if (!generalMd.includes('## Hook scripts exit codes')) {
+          failure = 'test 10 forceNew: distinct section not written despite forceNew:true';
+        } else {
+          console.error('[knowledge-test] test 10 PASS — forceNew bypasses conflict-detect');
+        }
+      }
+    }
+
+    // ── Test 11: a plain conflict (no merge, no forceNew) returns rejectedContent (non-lossy) ──
+    if (!failure) {
+      const plainRes = await callTool(client, 'forge_add_learning', {
+        type: 'gotcha',
+        title: 'Hook scripts logging',
+        content: 'UNIQUE-REJECTED-BODY-12345',
+        tags: ['hooks'],
+        trigger: 'When logging from a hook',
+        sourceEvidence: 'knowledge-test.mjs test 11',
+      });
+      let parsed = null;
+      try {
+        const tb = (plainRes.content || []).find(c => c.type === 'text');
+        parsed = tb ? JSON.parse(tb.text) : null;
+      } catch (_) { /* parsed stays null */ }
+      if (!parsed || parsed.conflict !== true) {
+        failure = 'test 11: expected conflict:true, got ' + JSON.stringify(parsed);
+      } else if (parsed.rejectedContent !== 'UNIQUE-REJECTED-BODY-12345') {
+        failure = 'test 11: plain conflict must return rejectedContent (non-lossy), got ' + JSON.stringify(parsed);
+      } else {
+        console.error('[knowledge-test] test 11 PASS — plain conflict returns rejectedContent');
+      }
+    }
+
+    // ── Test 12: forceNew:true also bypasses conflict for solutions (symmetry with gotcha) ──
+    // "Worker gate poll timeout" solution exists (seeded in test 9) → would conflict.
+    if (!failure) {
+      const solForce = await callTool(client, 'forge_add_learning', {
+        type: 'solution',
+        title: 'Worker gate poll timeout',
+        content: 'A distinct solution forced past the conflict.',
+        tags: ['worker', 'gate', 'poll', 'timeout'],
+        trigger: 'When forcing a distinct solution',
+        sourceEvidence: 'knowledge-test.mjs test 12',
+        forceNew: true,
+      });
+      let parsed = null;
+      try { const tb = (solForce.content || []).find(c => c.type === 'text'); parsed = tb ? JSON.parse(tb.text) : null; } catch (_) { /* non-JSON success message is fine */ }
+      if (parsed && parsed.conflict === true) {
+        failure = 'test 12 forceNew(solution): expected write, got conflict — ' + JSON.stringify(parsed);
+      } else {
+        console.error('[knowledge-test] test 12 PASS — forceNew bypasses conflict for solutions');
+      }
+    }
+
+    // ── Test 13: plain solution conflict (no merge, no forceNew) returns rejectedContent ──
+    if (!failure) {
+      const solPlain = await callTool(client, 'forge_add_learning', {
+        type: 'solution',
+        title: 'Worker gate poll timeout',
+        content: 'SOLUTION-REJECTED-BODY-67890',
+        tags: ['worker', 'gate', 'poll', 'timeout'],
+        trigger: 'When testing solution plain-conflict',
+        sourceEvidence: 'knowledge-test.mjs test 13',
+      });
+      let parsed = null;
+      try { const tb = (solPlain.content || []).find(c => c.type === 'text'); parsed = tb ? JSON.parse(tb.text) : null; } catch (_) { /* parsed stays null */ }
+      if (!parsed || parsed.conflict !== true) {
+        failure = 'test 13: expected conflict:true, got ' + JSON.stringify(parsed);
+      } else if (parsed.rejectedContent !== 'SOLUTION-REJECTED-BODY-67890') {
+        failure = 'test 13: solution plain conflict must return rejectedContent (non-lossy), got ' + JSON.stringify(parsed);
+      } else {
+        console.error('[knowledge-test] test 13 PASS — solution plain conflict returns rejectedContent');
+      }
+    }
+
     if (!failure) {
       console.error('[knowledge-test] PASS');
     }

@@ -146,10 +146,11 @@ export function register(server, _shared) {
         sourceEvidence: z.string().min(1).describe('Provenance string — where this was observed (e.g. "run r-XXXX", "GENERAL.md line 47"). Required.'),
         sourceNotes: z.array(z.string()).optional().describe('Optional note IDs from .pipeline/notes.json that this learning entry was derived from. Each ID must exist; dead links are rejected.'),
         mergeEvidenceOnConflict: z.boolean().optional().describe('When true, on conflict-detect the new sourceEvidence is merged into the existing entry instead of returning a conflict signal.'),
+        forceNew: z.boolean().optional().describe('When true, bypass conflict-detect entirely and write the new entry even if a near-duplicate is flagged. Use to force a distinct entry after reviewing a (possibly false-positive) conflict.'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async ({ type, title, content, tags, trigger, sourceEvidence, sourceNotes, mergeEvidenceOnConflict }) => {
+    async ({ type, title, content, tags, trigger, sourceEvidence, sourceNotes, mergeEvidenceOnConflict, forceNew }) => {
       try {
         const projectDir = resolveProjectDir();
 
@@ -206,17 +207,20 @@ export function register(server, _shared) {
         }
 
         if (type === 'gotcha') {
-          const conflictGotcha = detectConflict(projectDir, { type: 'gotcha', title: safeTitle, tags: safeTags });
-          if (conflictGotcha !== null) {
-            if (mergeEvidenceOnConflict) {
-              const merged = appendEvidence(projectDir, { type: 'gotcha', title: conflictGotcha.title, sourceEvidence: safeSourceEvidence });
-              if (merged && merged.merged === true) {
-                return textResult({ merged: true, slug: conflictGotcha.slug, title: conflictGotcha.title });
+          if (!forceNew) {
+            const conflictGotcha = detectConflict(projectDir, { type: 'gotcha', title: safeTitle, tags: safeTags });
+            if (conflictGotcha !== null) {
+              if (mergeEvidenceOnConflict) {
+                const merged = appendEvidence(projectDir, { type: 'gotcha', title: conflictGotcha.title, sourceEvidence: safeSourceEvidence });
+                if (merged && merged.merged === true) {
+                  return textResult({ merged: true, slug: conflictGotcha.slug, title: conflictGotcha.title });
+                }
+                // Merge was requested but could not be completed — surface the failure explicitly
+                return textResult({ conflict: true, mergeFailed: true, slug: conflictGotcha.slug, title: conflictGotcha.title, rejectedContent: safeContent });
               }
-              // Merge was requested but could not be completed — surface the failure explicitly
-              return textResult({ conflict: true, mergeFailed: true, slug: conflictGotcha.slug, title: conflictGotcha.title, rejectedContent: safeContent });
+              // Non-lossy: return rejected content + escape-hatch hint so nothing is silently dropped
+              return textResult({ conflict: true, slug: conflictGotcha.slug, title: conflictGotcha.title, rejectedContent: safeContent, hint: 'If this is a false-positive conflict, re-call with forceNew:true to write it as a distinct entry.' });
             }
-            return textResult({ conflict: true, slug: conflictGotcha.slug, title: conflictGotcha.title });
           }
 
           const generalMdPath = join(projectDir, 'docs', 'gotchas', 'GENERAL.md');
@@ -260,13 +264,16 @@ export function register(server, _shared) {
         }
 
         if (type === 'solution') {
-          const conflictSolution = detectConflict(projectDir, { type: 'solution', title: safeTitle, tags: safeTags });
-          if (conflictSolution !== null) {
-            if (mergeEvidenceOnConflict) {
-              // solution-merge is not supported by appendEvidence — surface explicitly rather than silently ignoring
-              return textResult({ conflict: true, mergeFailed: true, slug: conflictSolution.slug, title: conflictSolution.title, rejectedContent: safeContent });
+          if (!forceNew) {
+            const conflictSolution = detectConflict(projectDir, { type: 'solution', title: safeTitle, tags: safeTags });
+            if (conflictSolution !== null) {
+              if (mergeEvidenceOnConflict) {
+                // solution-merge is not supported by appendEvidence — surface explicitly rather than silently ignoring
+                return textResult({ conflict: true, mergeFailed: true, slug: conflictSolution.slug, title: conflictSolution.title, rejectedContent: safeContent });
+              }
+              // Non-lossy: return rejected content + escape-hatch hint
+              return textResult({ conflict: true, slug: conflictSolution.slug, title: conflictSolution.title, rejectedContent: safeContent, hint: 'If this is a false-positive conflict, re-call with forceNew:true to write it as a distinct entry.' });
             }
-            return textResult({ conflict: true, slug: conflictSolution.slug, title: conflictSolution.title });
           }
 
           let result;

@@ -272,11 +272,22 @@ export function searchPatterns(projectDir, keyword, tags) {
  * @param {string} title
  * @returns {string[]}
  */
+// Generic/common tokens that carry no conflict signal. Filtered from keyword extraction so
+// two entries that share only filler words (or generic verbs/nouns) do not false-conflict.
+const STOPWORDS = new Set([
+  'with', 'that', 'this', 'from', 'into', 'when', 'then', 'than', 'them', 'they', 'their',
+  'there', 'here', 'what', 'which', 'where', 'while', 'such', 'each', 'have', 'has', 'had',
+  'will', 'would', 'should', 'could', 'must', 'shall', 'your', 'yours', 'you', 'are', 'not',
+  'but', 'and', 'the', 'for', 'use', 'used', 'using', 'only', 'also', 'more', 'less', 'any',
+  'all', 'one', 'two', 'via', 'per', 'set', 'get', 'real', 'value', 'data', 'about', 'over',
+  'under', 'after', 'before', 'because', 'been', 'being', 'does', 'done',
+]);
+
 function extractKeywords(title) {
   if (!title || typeof title !== 'string') return [];
   const tokens = title.split(/[\s\W]+/)
     .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 4);
+    .filter((t) => t.length >= 4 && !STOPWORDS.has(t));
   return [...new Set(tokens)];
 }
 
@@ -287,8 +298,9 @@ function extractKeywords(title) {
  * For type "solution": loads docs/solutions/index.json and checks keyword overlap (>= 50%
  * incoming-denominator) OR tag overlap (>= 2 matching tags, case-insensitive).
  *
- * For type "gotcha": reads docs/gotchas/GENERAL.md, parses into sections, checks each section's
- * heading + body for >= 2 key term matches AND >= ceil(0.4 * N) threshold.
+ * For type "gotcha": reads all docs/gotchas/*.md, parses into sections, and checks each section's
+ * HEADING token-set (word-boundary, stopword-filtered) for >= 2 shared distinctive tokens AND
+ * >= 50% of the incoming token set (matching the solution heuristic; body text is NOT scanned).
  *
  * Fail-open: returns null when files are missing/unreadable.
  *
@@ -351,20 +363,21 @@ export function detectConflict(projectDir, { type, title, tags }) {
     // Fail-open: no files readable → no conflict
     if (mdFiles.length === 0) return null;
 
-    const keyTerms = incomingKeywords; // same tokenisation
-    const N = keyTerms.length;
-
-    // Too short a title to yield meaningful signal
-    if (N < 2) return null;
-
-    const threshold = Math.ceil(0.4 * N);
+    // Too few distinctive tokens to yield meaningful signal (after stopword filtering)
+    if (incomingKeywords.length < 2) return null;
+    const incomingSet = new Set(incomingKeywords);
 
     for (const { path: filePath, text } of mdFiles) {
       const sections = parseSections(text, filePath);
       for (const section of sections) {
-        const sectionText = (section.heading + ' ' + section.content).toLowerCase();
-        const matchCount = keyTerms.filter((term) => sectionText.includes(term)).length;
-        if (matchCount >= 2 && matchCount >= threshold) {
+        // Match on the section HEADING token-set (word-boundary), NOT the full body.
+        // Prose bodies share generic/domain words and produce false conflicts (bug 1a57df4e).
+        // Reconciled with the solution heuristic: require >= 2 shared distinctive tokens AND
+        // >= 50% of the incoming distinctive token set, so a couple of shared domain words
+        // among many distinctive ones never trips it.
+        const headingSet = new Set(extractKeywords(section.heading));
+        const overlap = [...incomingSet].filter((k) => headingSet.has(k));
+        if (overlap.length >= 2 && overlap.length / incomingKeywords.length >= 0.5) {
           return { slug: section.heading, title: section.heading };
         }
       }

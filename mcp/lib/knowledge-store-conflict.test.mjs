@@ -243,3 +243,93 @@ test('existing entry empty keywords return null (fail-open)', () => {
     try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
   }
 });
+
+// ── Bug 1a57df4e: same-domain false-positive conflicts ──────────────────────
+
+// Test 9: a genuinely DISTINCT same-domain gotcha must NOT false-conflict against an
+// unrelated section that only shares domain/generic words. (The live Dataverse repro.)
+test('gotcha does NOT false-conflict on shared domain/generic words against an unrelated section', () => {
+  const projectDir = makeProjectDir();
+  try {
+    const generalPath = join(projectDir, 'docs', 'gotchas', 'GENERAL.md');
+    writeFileSync(generalPath, `
+## Excel Online (Business) connector reads schema from cloud Graph — OneDrive sync may lag
+
+When you rename a column in an Excel Online (Business) table, the connector reads the
+schema from the cloud Graph API. The local OneDrive sync state may lag, so the current
+view is not always in sync with your latest edit. Re-open the workbook to force a refresh.
+`, 'utf8');
+    // Distinct gotcha (idColumn/state-row corruption). Shares only excel/online/business/state/column/with
+    // with the OneDrive section; its distinctive tokens (seed, postitem, powerappsid, idcolumn) do not match.
+    const result = detectConflict(projectDir, {
+      type: 'gotcha',
+      title: 'Excel Online (Business) state-row: seed PostItem must key off a real column with a non-empty value — not PowerAppsId, not an empty data column',
+      tags: ['excel', 'online', 'business'],
+    });
+    assert.strictEqual(result, null, 'distinct same-domain gotcha must NOT false-conflict on shared domain/generic words');
+  } finally {
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// Test 10: a title that overlaps an existing section only on stopwords/generic words must not conflict.
+test('gotcha does not conflict on shared stopwords / generic words alone', () => {
+  const projectDir = makeProjectDir();
+  try {
+    writeFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), `
+## When you must validate input data with the value parser
+
+Body about validation of incoming data values.
+`, 'utf8');
+    const result = detectConflict(projectDir, {
+      type: 'gotcha',
+      title: 'You must set the data value with care',
+      tags: [],
+    });
+    assert.strictEqual(result, null, 'shared stopwords/generic words must not trigger a conflict');
+  } finally {
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// Test 11: matching is on the section HEADING, not the body — body-only token overlap must not conflict.
+test('gotcha matches the section heading, not the body', () => {
+  const projectDir = makeProjectDir();
+  try {
+    writeFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), `
+## Unrelated topic about caching layers
+
+This body happens to mention worker, gate, poll, and timeout in passing while
+discussing something entirely different, but the heading is about caching.
+`, 'utf8');
+    const result = detectConflict(projectDir, {
+      type: 'gotcha',
+      title: 'Worker gate poll timeout',
+      tags: [],
+    });
+    assert.strictEqual(result, null, 'body-only overlap must not conflict — match the heading');
+  } finally {
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// Test 12: a genuine near-duplicate (heading token-set overlap >= 50%) STILL conflicts (regression guard).
+test('gotcha still conflicts on a genuine near-duplicate heading', () => {
+  const projectDir = makeProjectDir();
+  try {
+    writeFileSync(join(projectDir, 'docs', 'gotchas', 'GENERAL.md'), `
+## Worker gate-poll timeout race
+
+A known race between an orphan worker PID and the sweep.
+`, 'utf8');
+    const result = detectConflict(projectDir, {
+      type: 'gotcha',
+      title: 'Worker gate-poll timeout',
+      tags: [],
+    });
+    assert.ok(result, 'genuine near-duplicate (heading overlap >= 50%) must still conflict');
+    assert.strictEqual(result.slug, 'Worker gate-poll timeout race');
+  } finally {
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
