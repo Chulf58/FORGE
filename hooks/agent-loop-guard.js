@@ -27,7 +27,16 @@ function exitOk() {
 }
 
 function deny(reason) {
-  process.stdout.write(JSON.stringify({ permissionDecision: 'deny', denyReason: reason }) + '\n');
+  // Canonical PreToolUse deny envelope — the harness only honors the hard-stop in
+  // the hookSpecificOutput shape (matching bash-guard.js / ctx-pre-tool.js). A flat
+  // { permissionDecision } is silently ignored, so the stuck-loop cap never fires.
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    },
+  }) + '\n');
   process.stderr.write(reason + '\n');
   process.exit(2);
 }

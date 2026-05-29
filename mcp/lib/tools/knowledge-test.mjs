@@ -293,6 +293,53 @@ async function main() {
       process.exit(1);
     }
 
+    // ── Test 9: mergeEvidenceOnConflict on solution type surfaces mergeFailed (F) ──
+    // solution-merge is not supported by appendEvidence → must return mergeFailed:true and
+    // rejectedContent, NOT silently fall through to a bare {conflict:true}.
+    if (!failure) {
+      // Seed a solution with tags that produce >= 50% keyword overlap with the conflict call below.
+      // "Worker gate poll timeout" → keywords: ['worker', 'gate', 'poll', 'timeout'] (4 terms).
+      // Conflict call uses same title → intersection 4/4 = 1.0 >= 0.5 → detectConflict fires.
+      await callTool(client, 'forge_add_learning', {
+        type: 'solution',
+        title: 'Worker gate poll timeout',
+        content: 'Body about worker gate poll timeout.',
+        tags: ['worker', 'gate', 'poll', 'timeout'],
+        trigger: 'When testing merge-failed signal',
+        sourceEvidence: 'knowledge-test.mjs test 9 seed',
+      });
+      // Now call with the same title + mergeEvidenceOnConflict:true (solution-merge is unsupported)
+      const mergeFailRes = await callTool(client, 'forge_add_learning', {
+        type: 'solution',
+        title: 'Worker gate poll timeout',
+        content: 'Conflicting body that should not be silently dropped.',
+        tags: ['worker', 'gate', 'poll', 'timeout'],
+        trigger: 'When testing merge-failed signal',
+        sourceEvidence: 'knowledge-test.mjs test 9 conflict',
+        mergeEvidenceOnConflict: true,
+      });
+      if (mergeFailRes.isError) {
+        failure = 'test 9: unexpected isError from merge-failed signal';
+      } else {
+        let parsed;
+        try {
+          const textBlock = (mergeFailRes.content || []).find(c => c.type === 'text');
+          parsed = textBlock ? JSON.parse(textBlock.text) : null;
+        } catch (e) {
+          failure = 'test 9: failed to parse tool result JSON: ' + e.message;
+        }
+        if (!failure) {
+          if (!parsed || parsed.mergeFailed !== true) {
+            failure = 'test 9: expected mergeFailed:true in response, got: ' + JSON.stringify(parsed);
+          } else if (!('rejectedContent' in parsed)) {
+            failure = 'test 9: expected rejectedContent field in response, got: ' + JSON.stringify(parsed);
+          } else {
+            console.error('[knowledge-test] test 9 PASS — mergeEvidenceOnConflict solution returns mergeFailed:true');
+          }
+        }
+      }
+    }
+
     if (!failure) {
       console.error('[knowledge-test] PASS');
     }

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { appendSolutionDoc, searchConstraints, searchPatterns, appendEvidence } from './knowledge-store.js';
+import { appendSolutionDoc, searchConstraints, searchPatterns, appendEvidence, detectConflict } from './knowledge-store.js';
 
 const ISO_8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -73,6 +73,36 @@ test('appendEvidence rejects empty sourceEvidence', () => {
     assert.ok(refused, 'empty sourceEvidence must be refused');
     const after = readFileSync(join(dir, 'docs', 'gotchas', 'GENERAL.md'), 'utf8');
     assert.equal(after, before, 'file must be unchanged when evidence is empty');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// --- Fix G: appendSolutionDoc must not duplicate index entry on slug collision ---
+
+test('appendSolutionDoc replaces index entry on slug collision (not duplicate)', () => {
+  const projectDir = makeProjectDir();
+  try {
+    appendSolutionDoc(projectDir, { title: 'Dup Entry', content: 'body one', tags: ['x'] });
+    appendSolutionDoc(projectDir, { title: 'Dup Entry', content: 'body two', tags: ['y'] });
+    const indexRaw = readFileSync(join(projectDir, 'docs', 'solutions', 'index.json'), 'utf8');
+    const entries = JSON.parse(indexRaw);
+    const matches = entries.filter((e) => e.file === 'docs/solutions/dup-entry.md');
+    assert.equal(matches.length, 1, 'slug collision must replace the existing index entry, not add a duplicate');
+  } finally { rmSync(projectDir, { recursive: true, force: true }); }
+});
+
+// --- Fix detectConflict: must read ALL docs/gotchas/*.md, not just GENERAL.md ---
+
+test('detectConflict(gotcha) detects conflict in a topic file (not just GENERAL.md)', () => {
+  const dir = makeGotchaProjectDir();
+  try {
+    mkdirSync(join(dir, 'docs', 'gotchas'), { recursive: true });
+    writeFileSync(
+      join(dir, 'docs', 'gotchas', 'worker-runtime.md'),
+      '# Worker Runtime\n\n## Worker gate-poll timeout behavior\n\nbody about worker gate poll timeout\n',
+      'utf8',
+    );
+    const hit = detectConflict(dir, { type: 'gotcha', title: 'Worker gate-poll timeout behavior', tags: [] });
+    assert.ok(hit !== null, 'gotcha in a topic file must be detected as a conflict');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

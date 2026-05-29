@@ -163,7 +163,16 @@ test('exits 2 and denies at the cap (count >= 25)', async (t) => {
   }, {}, dir);
   assert.equal(result.exitCode, 2, 'dispatch at cap should be denied');
   const parsed = JSON.parse(result.stdout.trim());
-  assert.equal(parsed.permissionDecision, 'deny');
+  // The PreToolUse hard-stop is only honored when emitted in the canonical
+  // hookSpecificOutput envelope (matching bash-guard.js / ctx-pre-tool.js). A flat
+  // {permissionDecision} is silently ignored by the harness.
+  assert.ok(parsed.hookSpecificOutput, 'deny must use the canonical hookSpecificOutput envelope');
+  assert.equal(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
+  assert.equal(parsed.hookSpecificOutput.permissionDecision, 'deny');
+  assert.ok(
+    parsed.hookSpecificOutput.permissionDecisionReason.includes('HARD STOP'),
+    'deny reason must be carried in permissionDecisionReason',
+  );
   assert.ok(result.stderr.includes('[forge-stuck] HARD STOP'));
 });
 

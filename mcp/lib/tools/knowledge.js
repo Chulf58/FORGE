@@ -213,6 +213,8 @@ export function register(server, _shared) {
               if (merged && merged.merged === true) {
                 return textResult({ merged: true, slug: conflictGotcha.slug, title: conflictGotcha.title });
               }
+              // Merge was requested but could not be completed — surface the failure explicitly
+              return textResult({ conflict: true, mergeFailed: true, slug: conflictGotcha.slug, title: conflictGotcha.title, rejectedContent: safeContent });
             }
             return textResult({ conflict: true, slug: conflictGotcha.slug, title: conflictGotcha.title });
           }
@@ -260,6 +262,10 @@ export function register(server, _shared) {
         if (type === 'solution') {
           const conflictSolution = detectConflict(projectDir, { type: 'solution', title: safeTitle, tags: safeTags });
           if (conflictSolution !== null) {
+            if (mergeEvidenceOnConflict) {
+              // solution-merge is not supported by appendEvidence — surface explicitly rather than silently ignoring
+              return textResult({ conflict: true, mergeFailed: true, slug: conflictSolution.slug, title: conflictSolution.title, rejectedContent: safeContent });
+            }
             return textResult({ conflict: true, slug: conflictSolution.slug, title: conflictSolution.title });
           }
 

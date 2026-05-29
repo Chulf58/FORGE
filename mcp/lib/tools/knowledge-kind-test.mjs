@@ -115,3 +115,25 @@ test('appendEvidence rejects empty sourceEvidence (quality gate not bypassed)', 
     assert.equal(after, before, 'file must be unchanged when evidence is empty');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('appendSolutionDoc replaces (does not duplicate) the index entry on slug collision (G)', () => {
+  const dir = makeProject();
+  try {
+    store.appendSolutionDoc(dir, { title: 'Dup Title', content: 'body one', tags: ['x'] });
+    store.appendSolutionDoc(dir, { title: 'Dup Title', content: 'body two', tags: ['y'] });
+    const idx = JSON.parse(readFileSync(join(dir, 'docs', 'solutions', 'index.json'), 'utf8'));
+    const matches = idx.filter((e) => e.file === 'docs/solutions/dup-title.md');
+    assert.equal(matches.length, 1, 'slug collision must update the existing index entry, not duplicate it');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('detectConflict(gotcha) detects a gotcha that lives in a topic file, not just GENERAL.md', () => {
+  const dir = makeProject();
+  try {
+    // A gotcha living in a split topic file (post-Phase-4 layout), NOT GENERAL.md.
+    writeFileSync(join(dir, 'docs', 'gotchas', 'worker-runtime.md'),
+      '# Worker Runtime\n\n## Worker gate-poll timeout behavior\n\nbody about worker gate poll timeout\n', 'utf8');
+    const hit = store.detectConflict(dir, { type: 'gotcha', title: 'Worker gate-poll timeout behavior', tags: [] });
+    assert.ok(hit !== null, 'a gotcha in a topic file must be detected as a conflict (read all of docs/gotchas/)');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

@@ -345,15 +345,12 @@ export function detectConflict(projectDir, { type, title, tags }) {
   }
 
   if (type === 'gotcha') {
-    const generalMdPath = join(resolve(projectDir), 'docs', 'gotchas', 'GENERAL.md');
-    let text;
-    try {
-      text = readFileSync(generalMdPath, 'utf8');
-    } catch {
-      return null;
-    }
+    const gotchasDir = join(resolve(projectDir), GOTCHAS_REL);
+    const mdFiles = readMdFiles(gotchasDir);
 
-    const sections = parseSections(text, generalMdPath);
+    // Fail-open: no files readable → no conflict
+    if (mdFiles.length === 0) return null;
+
     const keyTerms = incomingKeywords; // same tokenisation
     const N = keyTerms.length;
 
@@ -362,11 +359,14 @@ export function detectConflict(projectDir, { type, title, tags }) {
 
     const threshold = Math.ceil(0.4 * N);
 
-    for (const section of sections) {
-      const sectionText = (section.heading + ' ' + section.content).toLowerCase();
-      const matchCount = keyTerms.filter((term) => sectionText.includes(term)).length;
-      if (matchCount >= 2 && matchCount >= threshold) {
-        return { slug: section.heading, title: section.heading };
+    for (const { path: filePath, text } of mdFiles) {
+      const sections = parseSections(text, filePath);
+      for (const section of sections) {
+        const sectionText = (section.heading + ' ' + section.content).toLowerCase();
+        const matchCount = keyTerms.filter((term) => sectionText.includes(term)).length;
+        if (matchCount >= 2 && matchCount >= threshold) {
+          return { slug: section.heading, title: section.heading };
+        }
       }
     }
 
@@ -519,7 +519,8 @@ export function appendSolutionDoc(projectDir, { title, content, tags }) {
     // fail-open: start with empty array if index missing or unreadable
   }
 
-  existingEntries.push(newEntry);
+  const collisionIdx = existingEntries.findIndex((e) => e && e.file === repoRelFile);
+  if (collisionIdx >= 0) existingEntries[collisionIdx] = newEntry; else existingEntries.push(newEntry);
 
   try {
     atomicWrite(indexPath, JSON.stringify(existingEntries, null, 2) + '\n');
