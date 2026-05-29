@@ -1,6 +1,6 @@
 ---
 name: forge:supervise
-description: "Generate a supervisor brief for the next implementation slice. Uses the Gemini-backed supervisor agent via forge_call_external. Provide a task description as the argument."
+description: "Generate a supervisor brief for the next implementation slice. Uses the cross-model supervisor agent via forge_call_external (Gemini retired; transport moving to a Playwright→ChatGPT-browser bridge). Provide a task description as the argument."
 allowed-tools: "Read Grep Glob Bash"
 ---
 
@@ -55,7 +55,7 @@ Call `forge_call_external` with:
 - `modelId`: the value returned in Step 4
 - `prompt`: the constructed prompt from Step 3
 - `maxTokens`: `8192`
-- `reasoningEffort`: `"medium"` (only meaningful for OpenAI models; ignored by Gemini)
+- `reasoningEffort`: `"medium"` (only meaningful for OpenAI models)
 
 If the call fails with "API key env var not set," tell the user to set the relevant API key as a permanent environment variable and restart the Claude Code session.
 
@@ -80,4 +80,4 @@ Approve this brief and I'll execute it, or tell me what to adjust.
 - The supervisor agent is defined at `agents/supervisor.md`. Its prompt is the source of truth for how briefs should be formatted.
 - The supervisor does NOT have access to the repo, tools, or MCP — it reasons only from the state injected into its prompt.
 - If the user provides a previous slice's result (RESULT block), include it in the `[TASK]` section so the supervisor can produce the Scope check / Verdict / Solved review fields before the next brief.
-- Model routing is controlled by the `supervisor` entry in `agentModelMap` in `forge-config.default.json`. It uses `allowedVendors: ["openai"]` as an intentional force-override: only OpenAI models are in scope, and `gpt-5.4` is currently the only match for `reasoning+agentic`. When OpenAI is unavailable or exhausted, the router returns an explicit `source: "error"` result (handled in Step 4 above) — there is no silent Gemini fallback. Gemini was tested in this role and produced haiku-tier output, which is why the override exists. Requires `OPENAI_API_KEY`.
+- Model routing is controlled by the `supervisor` entry in `agentModelMap` in `forge-config.default.json`: `allowedVendors: ["openai"]`, with `gpt-5.4` the only match for `reasoning+agentic`. When OpenAI is unavailable, the router returns an explicit `source: "error"` result (handled in Step 4 above) — there is no fallback to any other vendor. **Gemini is retired and never used.** Going forward, cross-model supervision is moving to a Playwright→ChatGPT-browser bridge (parked); until then this OpenAI route is the only configured external path and requires `OPENAI_API_KEY`.

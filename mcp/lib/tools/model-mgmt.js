@@ -5,7 +5,6 @@ import { readForgeConfig, writeForgeConfig, resolvePluginDataDir } from '../conf
 import { readUsage, writeUsage, markModelQuotaExhausted, recordUsage } from '../usage-store.js';
 import { recommendModel } from '../router.js';
 import { callOpenAI } from '../openai-adapter.js';
-import { callGemini } from '../gemini-adapter.js';
 import { addModelToConfig, updateModelInConfig } from '../model-validation.js';
 
 // Session dispatch log — consumed by hooks/routing-enforcement.js.
@@ -147,8 +146,6 @@ export function register(server, shared) {
           try {
             if (provider.type === 'openai') {
               result = await callOpenAI(prompt, currentModelId, apiKey, { maxTokens, reasoningEffort });
-            } else if (provider.type === 'gemini') {
-              result = await callGemini(prompt, currentModelId, apiKey, { maxTokens });
             } else {
               return errorResult('Provider type not supported: ' + provider.type);
             }

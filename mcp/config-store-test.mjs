@@ -38,7 +38,6 @@ const MINIMAL_VALID = {
   providers: [
     { id: 'anthropic', type: 'anthropic', envVar: 'ANTHROPIC_API_KEY', enabled: true, name: 'Anthropic' },
     { id: 'openai',    type: 'openai',    envVar: 'OPENAI_API_KEY',    enabled: false, name: 'OpenAI' },
-    { id: 'gemini',    type: 'gemini',    envVar: 'GEMINI_API_KEY',    enabled: true,  name: 'Gemini' },
   ],
   models: [
     { id: 'claude-sonnet-4-6', providerId: 'anthropic', reasoningTier: 'sonnet', capabilities: ['reasoning'] },

@@ -31,7 +31,7 @@ function makeResponse(status, body, headers = {}) {
   };
 }
 
-// Standard GPT-5.4 Responses API success payload
+// Standard GPT-5.5 Responses API success payload
 const SUCCESS_BODY = {
   id: 'resp_abc123',
   object: 'response',
@@ -39,7 +39,7 @@ const SUCCESS_BODY = {
     {
       type: 'message',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'Hello from GPT-5.4' }],
+      content: [{ type: 'output_text', text: 'Hello from GPT-5.5' }],
     },
   ],
   usage: {
@@ -62,8 +62,8 @@ console.log('\n── openai-adapter-test.mjs ───────────�
 // 1. Successful response — correct text and token fields
 {
   mockFetch([makeResponse(200, SUCCESS_BODY)]);
-  const result = await callOpenAI('hello', 'gpt-5.4', 'test-key');
-  assert(result.text === 'Hello from GPT-5.4', 'success: text extracted from output[0].content[0].text');
+  const result = await callOpenAI('hello', 'gpt-5.5', 'test-key');
+  assert(result.text === 'Hello from GPT-5.5', 'success: text extracted from output[0].content[0].text');
   assert(result.inputTokens === 42, 'success: inputTokens from usage.input_tokens (not prompt_tokens)');
   assert(result.outputTokens === 10, 'success: outputTokens from usage.output_tokens (not completion_tokens)');
   assert(result.reasoningTokens === 3, 'success: reasoningTokens from usage.output_tokens_details.reasoning_tokens');
@@ -76,7 +76,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     capturedBody = JSON.parse(opts.body);
     return makeResponse(200, SUCCESS_BODY);
   };
-  await callOpenAI('hello', 'gpt-5.4', 'test-key');
+  await callOpenAI('hello', 'gpt-5.5', 'test-key');
   assert(capturedBody.reasoning === undefined, 'default: no reasoning field when reasoningEffort not set');
 }
 
@@ -87,7 +87,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     capturedBody = JSON.parse(opts.body);
     return makeResponse(200, SUCCESS_BODY);
   };
-  await callOpenAI('hello', 'gpt-5.4', 'test-key', { reasoningEffort: 'high' });
+  await callOpenAI('hello', 'gpt-5.5', 'test-key', { reasoningEffort: 'high' });
   assert(capturedBody.reasoning?.effort === 'high', 'explicit reasoningEffort forwarded as reasoning.effort');
 }
 
@@ -98,7 +98,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     capturedBody = JSON.parse(opts.body);
     return makeResponse(200, SUCCESS_BODY);
   };
-  await callOpenAI('hello', 'gpt-5.4', 'test-key', { reasoningEffort: 'medium' });
+  await callOpenAI('hello', 'gpt-5.5', 'test-key', { reasoningEffort: 'medium' });
   assert(capturedBody.reasoning?.effort === 'medium', 'explicit medium effort forwarded correctly');
 }
 
@@ -110,9 +110,9 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     if (callCount === 1) return makeResponse(429, '{"error":"rate limited"}', { 'retry-after': '2' });
     return makeResponse(200, SUCCESS_BODY);
   };
-  const result = await callOpenAI('hello', 'gpt-5.4', 'test-key');
+  const result = await callOpenAI('hello', 'gpt-5.5', 'test-key');
   assert(callCount === 2, '429 retry: called fetch twice');
-  assert(result.text === 'Hello from GPT-5.4', '429 retry: succeeded on second attempt');
+  assert(result.text === 'Hello from GPT-5.5', '429 retry: succeeded on second attempt');
 }
 
 // 6. 429 with Retry-After > 60s — does NOT retry, throws immediately
@@ -123,7 +123,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     return makeResponse(429, '{"error":"quota exhausted"}', { 'retry-after': '120' });
   };
   let threw = false;
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch { threw = true; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch { threw = true; }
   assert(threw && callCount === 1, '429 with long Retry-After: throws immediately without retry');
 }
 
@@ -135,9 +135,9 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     if (callCount === 1) return makeResponse(429, '{"error":"rate limited"}');
     return makeResponse(200, SUCCESS_BODY);
   };
-  const result = await callOpenAI('hello', 'gpt-5.4', 'test-key');
+  const result = await callOpenAI('hello', 'gpt-5.5', 'test-key');
   assert(callCount === 2, '429 no-header retry: retried once with fallback delay');
-  assert(result.text === 'Hello from GPT-5.4', '429 no-header retry: succeeded on second attempt');
+  assert(result.text === 'Hello from GPT-5.5', '429 no-header retry: succeeded on second attempt');
 }
 
 // 8. 429 on second attempt too — throws after one retry, no infinite loop
@@ -148,7 +148,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     return makeResponse(429, '{"error":"still rate limited"}', { 'retry-after': '2' });
   };
   let threw = false;
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch { threw = true; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch { threw = true; }
   assert(threw && callCount === 2, '429 persists: throws after exactly one retry, no infinite loop');
 }
 
@@ -160,7 +160,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     return makeResponse(401, '{"error":"unauthorized"}');
   };
   let threw = false;
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch { threw = true; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch { threw = true; }
   assert(threw && callCount === 1, 'non-retryable 401: throws immediately without retry');
 }
 
@@ -168,7 +168,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
 {
   globalThis.fetch = async () => { throw new Error('ECONNREFUSED'); };
   let msg = '';
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { msg = e.message; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch (e) { msg = e.message; }
   assert(msg.includes('network'), 'network failure: throws with network error message');
 }
 
@@ -180,7 +180,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
   });
   globalThis.fetch = async () => makeResponse(400, sensitiveBody);
   let msg = '';
-  try { await callOpenAI('hello', 'gpt-5.4', 'sk-secret-key'); } catch (e) { msg = e.message; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'sk-secret-key'); } catch (e) { msg = e.message; }
   assert(!msg.includes('sk-secret-key'), 'non-2xx: raw body (with potential key) not in error message');
   assert(!msg.includes('Authorization'), 'non-2xx: sensitive body content not in error message');
   assert(msg.includes('400'), 'non-2xx: status code present in message');
@@ -191,7 +191,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
 {
   globalThis.fetch = async () => makeResponse(503, 'Service Unavailable internal-token=abc123');
   let msg = '';
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { msg = e.message; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch (e) { msg = e.message; }
   assert(!msg.includes('internal-token'), 'non-2xx non-JSON: raw body not in error message');
   assert(msg.includes('503'), 'non-2xx non-JSON: status code present');
 }
@@ -204,7 +204,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     text: async () => 'not-json api_key=sk-leaked',
   });
   let msg = '';
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { msg = e.message; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch (e) { msg = e.message; }
   assert(!msg.includes('sk-leaked'), 'JSON parse error: raw body not in error message');
   assert(!msg.includes('not-json'), 'JSON parse error: body slice not in error message');
   assert(msg.includes('JSON parse failed'), 'JSON parse error: descriptive message present');
@@ -218,7 +218,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     text: async () => '{"error":{"type":"service_unavailable"}}',
   });
   let caughtErr = null;
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { caughtErr = e; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch (e) { caughtErr = e; }
   assert(caughtErr !== null, 'OpenAI 503: error thrown');
   assert(caughtErr.transient === true, 'OpenAI 503: err.transient is true (structured reroute signal)');
 }
@@ -231,7 +231,7 @@ console.log('\n── openai-adapter-test.mjs ───────────�
     text: async () => '{"error":{"type":"invalid_request_error"}}',
   });
   let caughtErr = null;
-  try { await callOpenAI('hello', 'gpt-5.4', 'test-key'); } catch (e) { caughtErr = e; }
+  try { await callOpenAI('hello', 'gpt-5.5', 'test-key'); } catch (e) { caughtErr = e; }
   assert(caughtErr !== null, 'OpenAI non-503: error thrown');
   assert(caughtErr.transient !== true, 'OpenAI non-503: err.transient not set (not reroute candidate)');
 }

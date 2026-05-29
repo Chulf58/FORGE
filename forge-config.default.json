@@ -18,15 +18,6 @@
       "enabled": false,
       "priority": 1,
       "notes": "Enable by setting OPENAI_API_KEY and flipping enabled to true"
-    },
-    {
-      "id": "gemini",
-      "name": "Google Gemini",
-      "type": "gemini",
-      "envVar": "GEMINI_API_KEY",
-      "enabled": true,
-      "priority": 2,
-      "notes": "Free tier; quota is per-model per-day; flash/lite models have generous limits, pro models exhaust quickly. Get key at https://aistudio.google.com/apikey"
     }
   ],
   "models": [
@@ -38,7 +29,17 @@
       "costTier": "high",
       "pricing": { "input": 15.0, "output": 75.0, "cached": 1.5 },
       "contextWindow": 1000000,
-      "notes": "Latest Anthropic flagship; step-change in agentic coding over 4.6; 1M context; knowledge cutoff Jan 2026. Pricing USD per 1M tokens; cached = cache-read (Anthropic 10% of input); cache-write is ~1.25x input and not tracked here."
+      "notes": "Previous flagship (superseded by 4.8); step-change in agentic coding over 4.6; 1M context; knowledge cutoff Jan 2026. Pricing USD per 1M tokens; cached = cache-read (Anthropic 10% of input); cache-write is ~1.25x input and not tracked here."
+    },
+    {
+      "id": "claude-opus-4-8",
+      "providerId": "anthropic",
+      "reasoningTier": "opus",
+      "capabilities": ["reasoning", "code", "long-context", "analysis", "agentic"],
+      "costTier": "high",
+      "pricing": { "input": 15.0, "output": 75.0, "cached": 1.5 },
+      "contextWindow": 1000000,
+      "notes": "Latest Anthropic flagship (supersedes 4.7); 1M context; knowledge cutoff Jan 2026. Pricing mirrors 4.7 — confirm against current Anthropic pricing. cached = cache-read."
     },
     {
       "id": "claude-opus-4-6",
@@ -91,7 +92,7 @@
       "notes": "Current recommended OpenAI production model; $2/$8 per 1M input/output; replaced GPT-4o as default; use forge_call_external"
     },
     {
-      "id": "gpt-5.4",
+      "id": "gpt-5.5",
       "providerId": "openai",
       "reasoningTier": "opus",
       "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
@@ -99,56 +100,6 @@
       "pricing": { "input": 2.5, "output": 15.0, "cached": 1.25 },
       "contextWindow": 1050000,
       "notes": "OpenAI frontier model for agentic/coding/professional workflows; $2.50/$15 per 1M input/output; supports reasoning_effort (none/low/medium/high/xhigh); 1M context; use forge_call_external"
-    },
-    {
-      "id": "gemini-2.5-flash",
-      "providerId": "gemini",
-      "reasoningTier": "haiku",
-      "capabilities": ["code", "analysis", "fast"],
-      "costTier": "free",
-      "pricing": { "input": 0.3, "output": 2.5, "cached": 0.075 },
-      "contextWindow": 1000000,
-      "notes": "Haiku-tier quality in practice (live-tested 2026-04-17 as supervisor — shallow output, poor reasoning). Fast/cheap for classification tasks. NOT for supervisor or complex reasoning. pricing is the paid-tier rate; effective cost on free tier is $0 until daily quota is exhausted."
-    },
-    {
-      "id": "gemini-2.5-flash-lite",
-      "providerId": "gemini",
-      "reasoningTier": "haiku",
-      "capabilities": ["code", "analysis", "fast"],
-      "costTier": "free",
-      "pricing": { "input": 0.1, "output": 0.4, "cached": 0.025 },
-      "contextWindow": 1000000,
-      "notes": "Haiku-tier quality; fastest/cheapest Gemini model; NOT for supervisor (reasoning too weak); verified working 2026-04-16"
-    },
-    {
-      "id": "gemini-3.1-flash-lite-preview",
-      "providerId": "gemini",
-      "reasoningTier": "haiku",
-      "capabilities": ["code", "analysis", "fast"],
-      "costTier": "free",
-      "pricing": { "input": 0.1, "output": 0.4, "cached": 0.025 },
-      "contextWindow": 1000000,
-      "notes": "Preview; claims frontier-class at fraction of cost; NOT for supervisor (preview-unstable); verified working 2026-04-16. Pricing estimated at flash-lite levels."
-    },
-    {
-      "id": "gemini-2.5-pro",
-      "providerId": "gemini",
-      "reasoningTier": "opus",
-      "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
-      "costTier": "free",
-      "pricing": { "input": 1.25, "output": 10.0, "cached": 0.31 },
-      "contextWindow": 1000000,
-      "notes": "Opus-tier quality; API free tier quota is 0 — requires billing to use via forge_call_external; web UI (aistudio.google.com) has limited free access but that does not apply to API calls"
-    },
-    {
-      "id": "gemini-3.1-pro-preview",
-      "providerId": "gemini",
-      "reasoningTier": "opus",
-      "capabilities": ["reasoning", "code", "analysis", "agentic", "long-context"],
-      "costTier": "free",
-      "pricing": { "input": 1.25, "output": 10.0, "cached": 0.31 },
-      "contextWindow": 1000000,
-      "notes": "Preview; advanced reasoning; API free tier quota is 0 — requires billing; web UI access does not apply to API calls; verified 2026-04-17. Pricing estimated at 2.5-pro levels."
     }
   ],
   "agentModelMap": {
@@ -246,7 +197,7 @@
     "supervisor": {
       "requiredCapabilities": ["reasoning", "agentic"],
       "allowedVendors": ["openai"],
-      "notes": "Runs via forge_call_external — not as a Claude subagent. allowedVendors: [openai] is an intentional force-override: Gemini tested as haiku-quality for this role. Requires OPENAI_API_KEY."
+      "notes": "Runs via forge_call_external — not as a Claude subagent. allowedVendors: [openai] force-override (Gemini retired; cross-model supervision moving to a Playwright→ChatGPT-browser bridge). Requires OPENAI_API_KEY."
     },
     "tool-call-auditor": {
       "requiredCapabilities": ["analysis"]

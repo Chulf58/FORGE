@@ -45,8 +45,8 @@ function assert(condition, label) {
 function baseConfig() {
   return {
     providers: [
+      { id: 'openai', type: 'openai', envVar: 'OPENAI_API_KEY', enabled: true, priority: 1 },
       { id: 'anthropic', type: 'anthropic', envVar: 'ANTHROPIC_API_KEY', enabled: true, priority: 3 },
-      { id: 'gemini',    type: 'gemini',    envVar: 'GEMINI_API_KEY',    enabled: true, priority: 2 },
     ],
     models: [
       {
@@ -58,12 +58,12 @@ function baseConfig() {
         reasoningTier: 'sonnet',
       },
       {
-        id: 'gemini-2.5-flash',
-        providerId: 'gemini',
+        id: 'gpt-4.1',
+        providerId: 'openai',
         capabilities: ['code', 'analysis', 'fast'],
-        costTier: 'free',
-        pricing: { input: 0.3, output: 2.5, cached: 0.075 },
-        reasoningTier: 'haiku',
+        costTier: 'medium',
+        pricing: { input: 2.0, output: 8.0, cached: 0.2 },
+        reasoningTier: 'sonnet',
       },
     ],
     agentModelMap: {},
@@ -73,7 +73,7 @@ function baseConfig() {
 function validAddParams(overrides = {}) {
   return {
     id: 'sonar-large',
-    providerId: 'gemini',
+    providerId: 'openai',
     capabilities: ['reasoning', 'code', 'analysis'],
     costTier: 'medium',
     pricing: { input: 1.0, output: 3.0, cached: 0.1 },
@@ -127,9 +127,9 @@ console.log('\n── model-mgmt-test.mjs ────────────�
 // 4. validateProviderId
 {
   const cfg = baseConfig();
-  assert(validateProviderId('gemini', cfg) === null, 'validateProviderId: known provider passes');
+  assert(validateProviderId('openai', cfg) === null, 'validateProviderId: known provider passes');
   assert(validateProviderId('anthropic', cfg) === null, 'validateProviderId: another known provider passes');
-  assert(typeof validateProviderId('openai', cfg) === 'string', 'validateProviderId: unknown provider rejected');
+  assert(typeof validateProviderId('gemini', cfg) === 'string', 'validateProviderId: retired provider (gemini) rejected');
   assert(typeof validateProviderId('', cfg) === 'string', 'validateProviderId: empty string rejected');
 }
 
@@ -197,7 +197,7 @@ console.log('\n── model-mgmt-test.mjs ────────────�
   assert(res.ok === true, 'addModelToConfig: returns ok:true on success');
   assert(cfg.models.length === before + 1, 'addModelToConfig: appends to models array');
   const added = cfg.models.find(m => m.id === 'sonar-large');
-  assert(added && added.providerId === 'gemini', 'addModelToConfig: entry stored with correct providerId');
+  assert(added && added.providerId === 'openai', 'addModelToConfig: entry stored with correct providerId');
   assert(added.pricing.input === 1.0 && added.pricing.output === 3.0 && added.pricing.cached === 0.1,
     'addModelToConfig: pricing stored correctly');
   assert(added.contextWindow === 128000, 'addModelToConfig: optional contextWindow stored');
@@ -269,7 +269,7 @@ console.log('\n── model-mgmt-test.mjs ────────────�
   const cfg = baseConfig();
   const minimal = {
     id: 'minimal-model',
-    providerId: 'gemini',
+    providerId: 'openai',
     capabilities: ['analysis'],
     costTier: 'free',
     pricing: { input: 0, output: 0, cached: 0 },
@@ -284,9 +284,9 @@ console.log('\n── model-mgmt-test.mjs ────────────�
 
 // 20. Add creates models array if missing from config
 {
-  const cfg = { providers: [{ id: 'gemini', type: 'gemini', envVar: 'X', enabled: true }] };
+  const cfg = { providers: [{ id: 'openai', type: 'openai', envVar: 'X', enabled: true }] };
   const res = addModelToConfig(cfg, {
-    id: 'x', providerId: 'gemini', capabilities: ['fast'],
+    id: 'x', providerId: 'openai', capabilities: ['fast'],
     costTier: 'free', pricing: { input: 0, output: 0, cached: 0 },
   });
   assert(res.ok === true, 'addModelToConfig: creates models array when missing');
@@ -415,7 +415,7 @@ console.log('\n── model-mgmt-test.mjs ────────────�
 
   const { config, configPath: readBackPath } = readForgeConfig(null, dir);
   const res = updateModelInConfig(config, {
-    id: 'gemini-2.5-flash',
+    id: 'gpt-4.1',
     pricing: { input: 0.5, output: 3.0, cached: 0.1 },
     notes: 'bumped pricing in test',
   });
@@ -423,7 +423,7 @@ console.log('\n── model-mgmt-test.mjs ────────────�
   writeForgeConfig(readBackPath, config);
 
   const { config: reread } = readForgeConfig(null, dir);
-  const updated = (reread.models || []).find(m => m.id === 'gemini-2.5-flash');
+  const updated = (reread.models || []).find(m => m.id === 'gpt-4.1');
   assert(updated && updated.pricing.input === 0.5 && updated.notes === 'bumped pricing in test',
     'round-trip update: touched fields persist to disk');
   assert(updated && JSON.stringify(updated.capabilities) === JSON.stringify(['code', 'analysis', 'fast']),

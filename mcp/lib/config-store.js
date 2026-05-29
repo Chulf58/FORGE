@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 // Known provider types supported by forge_call_external adapters.
 // Any type not in this set cannot dispatch to an adapter and must be rejected.
-const KNOWN_PROVIDER_TYPES = new Set(['anthropic', 'openai', 'gemini']);
+const KNOWN_PROVIDER_TYPES = new Set(['anthropic', 'openai']);
 
 // Environment variable names must be uppercase alphanumeric + underscores.
 // This blocks malicious strings like "$(...)", "../../etc", or injection attempts.
