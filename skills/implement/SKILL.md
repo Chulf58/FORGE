@@ -259,6 +259,12 @@ Before starting the next phase, clear `<worktreePath>/.pipeline/context/reviewer
      ```
      # wiring-verify.mjs runs as a Bash subprocess, not a registered agent — no agent-roles.json entry needed.
      Capture stderr. The script emits `[wiring] <N> exports verified, <M> gaps` as a diagnostic — log it but do NOT treat it as a control signal. If the script emits any `[wiring-gap] <symbol>` lines, collect them and append a `## Wiring gaps` section to `<worktreePath>/docs/context/handoff.md` listing each gap (for reviewer visibility). A gap does NOT block the pipeline.
+   - Post-coder phase diagnostic: after the wiring check, run:
+     ```
+     node scripts/phase-verify.mjs --root=<worktreePath>
+     ```
+     # phase-verify.mjs runs as a Bash subprocess, not a registered agent — no agent-roles.json entry needed.
+     Capture stderr. The script emits `[phase-verify] LoC delta: +<N>` and `[phase-verify] lint errors: <M> new` as diagnostics — log them but do NOT treat them as a control signal. A gap does NOT block the pipeline.
    - Post-coder verification: for each file listed under `## Files to create` and `## Files to modify` in `<worktreePath>/docs/context/handoff.md`, run:
      `node scripts/verify-output.mjs --file=<absoluteFilePath> --since=<coderStartedAtMs>`
      where `coderStartedAtMs` is the epoch-ms timestamp recorded when the coder agent was spawned.
