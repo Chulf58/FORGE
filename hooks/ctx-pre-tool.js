@@ -107,7 +107,59 @@ async function main(rawInput) {
     return;
   }
 
-  // Look up the agent in the manifest
+  // ── DENY-LAYER ──────────────────────────────────────────────────────────────
+  // Runs BEFORE the allow-list check.
+  // Normalize the agent type by stripping a leading 'forge:' prefix (mirrors
+  // agent-loop-guard.js:64-65) so manifest keys like "coder" match both
+  // "coder" and "forge:coder" payloads.
+  const normalizedType = agentType.startsWith('forge:')
+    ? agentType.slice('forge:'.length)
+    : agentType;
+
+  const denyRole = manifest[normalizedType];
+  if (denyRole && Array.isArray(denyRole.deniedPaths) && denyRole.deniedPaths.length > 0) {
+    const rawFilePath = toolInput.file_path || toolInput.path || null;
+    if (rawFilePath) {
+      let normalizedPath;
+      try {
+        const worktreePath = await readActiveWorktreePath(process.cwd(), payload);
+        let relBase = process.cwd();
+        if (
+          worktreePath &&
+          path.isAbsolute(rawFilePath) &&
+          isInside(rawFilePath, worktreePath)
+        ) {
+          relBase = worktreePath;
+        }
+        const resolved = path.isAbsolute(rawFilePath)
+          ? path.relative(relBase, rawFilePath)
+          : rawFilePath;
+        normalizedPath = path.normalize(resolved);
+      } catch (_) {
+        normalizedPath = null;
+      }
+
+      if (normalizedPath) {
+        const matchedPattern = denyRole.deniedPaths.find(p => matchesPattern(normalizedPath, p));
+        if (matchedPattern) {
+          process.stdout.write(
+            JSON.stringify({
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: `Agent '${agentType}' may not Write/Edit test files (matched deniedPaths pattern '${matchedPattern}'). A failing or unsatisfiable test is a test-author defect — flag it and stop; do NOT modify the test. Role manifest: .pipeline/agent-roles.json`,
+              },
+            }) + '\n'
+          );
+          exitOk();
+          return;
+        }
+      }
+    }
+  }
+  // ── END DENY-LAYER ──────────────────────────────────────────────────────────
+
+  // Look up the agent in the manifest (raw agentType — keep existing keying)
   const role = manifest[agentType];
   if (!role) {
     // Unknown agent — fail open
