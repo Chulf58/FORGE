@@ -225,6 +225,23 @@ function merge() {
     }
   }
 
+  // Data-loss guard (r-501eb714): refuse to merge a branch with 0 commits ahead
+  // of the base. A no-op `git merge` would otherwise report "Already up to date"
+  // (exit 0), mark the merge successful, and remove the worktree — silently
+  // discarding any recoverable work. Runs regardless of who opened the commit
+  // gate (the worker, or the conductor's inline /forge:approve merge).
+  const aheadCount = run('git', ['rev-list', '--count', `${currentBranch}..${branch}`], { allowFail: true });
+  if (aheadCount === '0') {
+    console.error(JSON.stringify({
+      ok: false,
+      error: `Worktree branch ${branch} has 0 commits ahead of ${currentBranch} — nothing to merge. Refusing to remove the worktree (the apply commit likely never landed; merging would discard any uncommitted work). Investigate, or use 'delete' to discard intentionally.`,
+      branch,
+      into: currentBranch,
+      worktreePath: wtPath,
+    }));
+    process.exit(1);
+  }
+
   // Single-pass merge — no auto-resolution with -X theirs.
   // If conflicts arise, fail and let the user resolve manually.
   // Auto-resolving with -X theirs is dangerous: the worktree branch silently
