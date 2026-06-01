@@ -589,6 +589,7 @@ async function main() {
       const { runImplementStageOrchestrator } = await import('./lib/orchestrator/implement-stage.mjs');
       const { dispatchAgent } = await import('./lib/orchestrator/agent-dispatch.mjs');
       const { buildInjectedKnowledge } = await import('./lib/orchestrator/knowledge-inject.mjs');
+      const { commitWorktree } = await import('./lib/orchestrator/commit-worktree.mjs');
       const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
 
       const orchDeps = {
@@ -639,6 +640,14 @@ async function main() {
             return { verdict: 'APPROVED' };
           }
         },
+        writeChangeSummary: async (_path, content) => {
+          // 94302649 (apply-phase wiring): the off-worktree documenter (WS2) reads this.
+          // Target MAIN's registry — the worktree is merged away post-gate2.
+          const dir = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId);
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, 'change-summary.md'), content, 'utf-8');
+        },
+        commitWorktree,
         buildInjectedKnowledge,
         writeLog,
       };

@@ -93,7 +93,7 @@ Branch on run mode using the `orchestratorState` field of the run object fetched
 
 ### 4a — Orchestrated path (when the run has `orchestratorState`)
 
-The implement orchestrator wrote gate2 and exited — there is no worker to resume, so the conductor performs apply inline, running the documenter and the merge **in parallel**:
+The implement orchestrator wrote gate2 and exited **after committing the worktree source on the all-APPROVED path** (task `94302649`) — so there is nothing for the conductor to stage or commit; it only merges. The conductor performs apply inline, running the documenter and the merge **in parallel**:
 
 - **Documenter (off-worktree, non-blocking):** dispatch the documenter against `<mainProjectRoot>` (the directory that contains `.pipeline/`), reading `.pipeline/runs/<runId>/change-summary.md` for what changed (the worktree is being merged away). Wrap in try/catch — on any failure log `[apply] documenter failed — continuing` and proceed. Apply never blocks on documentation.
 - **Merge:** run the merge via steps 1–5 below. On `git merge` **non-zero exit (conflict): surface the conflict to the user and SKIP the docs commit** — never auto-resolve, never half-merge. Print `[merge] conflict — resolve manually with: git merge forge/<runId>; docs commit skipped.` and stop without marking the run completed.

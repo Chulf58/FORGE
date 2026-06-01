@@ -15,6 +15,8 @@
 //   AC-36:    orchestrator writes a change-summary to .pipeline/runs/<runId>/ BEFORE gate2.
 //   AC-38/AC-35(b): when a dispatch returns outcome 'uncertain', the orchestrator stamps
 //             outcome:'uncertain' in run.agents AND surfaces it (never silent 'completed').
+//   AC-94(a): orchestrator calls commitWorktree BEFORE gate2 on all-APPROVED path.
+//   AC-94(b): orchestrator does NOT call commitWorktree on BLOCK path.
 //
 // Run: node --test mcp/lib/orchestrator/implement-stage-phase1.test.mjs
 
@@ -38,7 +40,7 @@ function createMockDispatch(outcomeByAgent = {}) {
   return { dispatch, calls };
 }
 
-function createMockFileOps() {
+function createMockFileOps(readReviewerOutputOverride = null) {
   const calls = [];
   return {
     readRunJson: async (runPath) => {
@@ -49,8 +51,17 @@ function createMockFileOps() {
     writeGateFile: async (gatePath, gateData) => { calls.push({ type: 'writeGateFile', gatePath, gateData }); },
     // The change-summary capture dep the orchestrator MUST call before gate2 (AC-36).
     writeChangeSummary: async (summaryPath, content) => { calls.push({ type: 'writeChangeSummary', summaryPath, content }); },
+    // Task 94302649: commitWorktree mock — records calls.
+    commitWorktree: async (workDir, message) => { calls.push({ type: 'commitWorktree', workDir, message }); return { committed: true, sha: 'abc123' }; },
     clearReviewerOutput: async (outputDir) => { calls.push({ type: 'clearReviewerOutput', outputDir }); },
-    readReviewerOutput: async (outputDir, reviewerName) => { calls.push({ type: 'readReviewerOutput', outputDir, reviewerName }); return { verdict: 'APPROVED' }; },
+    readReviewerOutput: async (outputDir, reviewerName) => {
+      calls.push({ type: 'readReviewerOutput', outputDir, reviewerName });
+      // Allow override for BLOCK scenario
+      if (readReviewerOutputOverride) {
+        return readReviewerOutputOverride(reviewerName);
+      }
+      return { verdict: 'APPROVED' };
+    },
     spawnScript: async (script, args) => {
       calls.push({ type: 'spawnScript', script, args });
       return { exitCode: 0, stdout: JSON.stringify({ reviewers: ['reviewer-boundary'], reasons: ['test'] }), stderr: '' };
@@ -133,4 +144,42 @@ test('RED AC-38 — an uncertain dispatch is stamped uncertain AND surfaced (not
     (c.type === 'writeRunJson' && c.data?.gateState && JSON.stringify(c.data.gateState).includes('uncertain'))
   );
   assert.ok(surfaced, 'an uncertain outcome must be surfaced to the conductor (gate-pending uncertain marker), not swallowed');
+});
+
+// ── AC-94(a): commitWorktree called before gate2 on all-APPROVED ──────────────
+
+test('RED AC-94a — orchestrator calls commitWorktree BEFORE gate2 when all reviewers APPROVE', async () => {
+  const fileOps = createMockFileOps();
+  const md = createMockDispatch();
+  await runToGate2({ ...fileOps, dispatch: md.dispatch });
+
+  const calls = fileOps.getCalls();
+  const commitIdx = calls.findIndex(c => c.type === 'commitWorktree');
+  const gate2Idx = calls.findIndex(c => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
+
+  assert.notEqual(commitIdx, -1, 'orchestrator must call commitWorktree on all-APPROVED path (never called)');
+  assert.ok(gate2Idx === -1 || commitIdx < gate2Idx, 'commitWorktree must be called BEFORE gate2 write');
+});
+
+// ── AC-94(b): commitWorktree NOT called on BLOCK ────────────────────────────
+
+test('RED AC-94b — orchestrator does NOT call commitWorktree when a reviewer returns BLOCK', async () => {
+  // Override readReviewerOutput to return BLOCK for reviewer-boundary
+  const fileOps = createMockFileOps((reviewerName) => {
+    if (reviewerName === 'reviewer-boundary') {
+      return { verdict: 'BLOCK' };
+    }
+    return { verdict: 'APPROVED' };
+  });
+  const md = createMockDispatch();
+  await runToGate2({ ...fileOps, dispatch: md.dispatch });
+
+  const calls = fileOps.getCalls();
+  const commitCalls = calls.filter(c => c.type === 'commitWorktree');
+  assert.equal(commitCalls.length, 0, 'orchestrator must NOT call commitWorktree on BLOCK path (but was called)');
+
+  // Verify gate2 was written with blockedBy marker
+  const gate2 = calls.find(c => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
+  assert.ok(gate2, 'gate2 must be written on BLOCK path');
+  assert.ok(gate2.gateData?.blockedBy, 'gate2 must include blockedBy marker when BLOCK occurs');
 });

@@ -428,6 +428,20 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         }
       }
 
+      // 94302649: commit the worktree source BEFORE gate2 — ONLY on the all-APPROVED
+      // path (the only branch that sets phase='apply' / flows to merge). A BLOCK or
+      // unresolved-revise is a stop-for-the-human state and is intentionally NOT
+      // committed here — the gate surfaces the problem and the human fixes via re-run.
+      if (typeof deps.commitWorktree === 'function') {
+        const safeFeature = (feature || '').replace(/[\r\n]/g, ' ').trim();
+        const commitResult = await deps.commitWorktree(workDir, 'feat(forge): ' + safeFeature + ' [' + runId + ']');
+        if (commitResult && commitResult.committed === false) {
+          writeLog('[orchestrator:implement] worktree commit skipped: ' + (commitResult.reason || 'unknown'));
+        }
+      } else {
+        writeLog('[orchestrator:implement] WARNING: deps.commitWorktree not wired — worktree source NOT committed; the zero-commit merge guard will refuse this run (data-loss risk). Wire deps.commitWorktree in forge-worker.mjs.');
+      }
+
       // AC-5/AC-36: All APPROVED — write change-summary BEFORE gate2.
       if (RUN_ID_PATTERN.test(runId)) {
         const summaryPath = join(runsDir, runId, 'change-summary.md');
