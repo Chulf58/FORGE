@@ -1,8 +1,100 @@
 // mcp/lib/orchestrator/agent-dispatch.mjs
 // Stateless agent dispatch primitive — wraps Anthropic SDK query() per-agent.
 
+import { checkMtime } from '../../../scripts/verify-output.mjs';
+
 // Allowed agent type characters — prevents path traversal via agentType parameter.
 const AGENT_TYPE_PATTERN = /^[a-z0-9-]+$/;
+
+/**
+ * Sentinel lines emitted by readonly agents to signal completion.
+ * Matches bracket-delimited tokens only — prevents false positives on prose.
+ * Known-good lines: [completeness-ok], [APPROVED], [verdict], [verdict-final], [reviewer-verdict]
+ */
+export const COMPLETION_SIGNAL = /\[\s*(?:completeness-ok|APPROVED|verdict(?:-final)?|reviewer-verdict)\s*\]/i;
+
+/**
+ * Classify a dispatch result as 'completed' or 'uncertain'.
+ *
+ * @param {object} opts
+ * @param {'writer'|'readonly'} opts.agentKind
+ * @param {{ ok: boolean, reason: string }|null} opts.mtimeResult - for writer agents
+ * @param {string} opts.streamText - accumulated stream output
+ * @param {RegExp} opts.completionPattern - pattern to test for readonly agents
+ * @param {Error|null} opts.error - thrown error if any
+ * @returns {{ outcome: 'completed'|'uncertain', reason?: string }}
+ */
+export function classifyOutcome({ agentKind, mtimeResult, streamText, completionPattern, error }) {
+  // Error path — always uncertain, surface the error message.
+  if (error) {
+    return {
+      outcome: 'uncertain',
+      reason: 'dispatch error: ' + (error.message || String(error)),
+    };
+  }
+
+  if (agentKind === 'writer') {
+    // Safe non-null: mtimeResult is required for writer agents.
+    // eslint-disable-next-line no-extra-boolean-cast
+    if (mtimeResult && mtimeResult.ok) {
+      return { outcome: 'completed' };
+    }
+    return {
+      outcome: 'uncertain',
+      reason: (mtimeResult && mtimeResult.reason) ? mtimeResult.reason : 'mtime check failed',
+    };
+  }
+
+  // readonly — check completion pattern against stream text.
+  if (completionPattern.test(streamText)) {
+    return { outcome: 'completed' };
+  }
+  return {
+    outcome: 'uncertain',
+    reason: 'no completion signal detected in stream output',
+  };
+}
+
+/**
+ * Readonly agents are verified by a completion signal in their stream output
+ * (they do not write a single canonical artifact). All others are verified by
+ * output-file mtime.
+ */
+const READONLY_AGENTS = new Set(['completeness-checker', 'gotcha-checker']);
+
+/**
+ * Map a writer agentType to its expected output artifact (relative to workDir).
+ * Reviewers write reviewer-output/<agentType>.md. Returns null when no single
+ * artifact is known — caller treats that as readonly (best-effort signal check).
+ * @param {string} agentType
+ * @returns {string|null}
+ */
+function expectedArtifact(agentType) {
+  if (agentType === 'coder-scout') return '.pipeline/context/scout.json';
+  if (agentType === 'coder') return 'docs/context/handoff.md';
+  if (agentType.startsWith('reviewer-')) return '.pipeline/context/reviewer-output/' + agentType + '.md';
+  return null;
+}
+
+/**
+ * Best-effort extraction of readable text from an SDK stream message. Falls back
+ * to JSON so completion-signal detection is robust to message shape.
+ * @param {unknown} msg
+ * @returns {string}
+ */
+function extractText(msg) {
+  if (msg == null) return '';
+  if (typeof msg === 'string') return msg;
+  const m = /** @type {Record<string, any>} */ (msg);
+  if (m.message && Array.isArray(m.message.content)) {
+    return m.message.content
+      .map((c) => (typeof c === 'string' ? c : (c && c.text) || ''))
+      .join(' ');
+  }
+  if (typeof m.text === 'string') return m.text;
+  if (typeof m.result === 'string') return m.result;
+  try { return JSON.stringify(msg); } catch (_) { return ''; }
+}
 
 /**
  * Parse YAML frontmatter and body from a markdown agent file.
@@ -38,7 +130,7 @@ function parseFrontmatter(content) {
  * @param {string} opts.pluginRoot - plugin root path
  * @param {string} opts.systemPromptPath - path to CLAUDE-WORKER.md (kept for caller compatibility)
  * @param {function(string): object} opts.buildMcpServer - factory: (workDir) => MCP server object
- * @returns {Promise<{ outcome: 'completed' }>}
+ * @returns {Promise<{ outcome: 'completed'|'uncertain', reason?: string }>}
  */
 export async function dispatchAgent({
   agentType,
@@ -77,6 +169,10 @@ export async function dispatchAgent({
 
   const prompt = promptLines.join('\n');
 
+  // Capture before the stream starts — the mtime check asks "was the output
+  // written AFTER dispatch began?", so `since` must predate the agent's writes.
+  const startMs = Date.now();
+
   const stream = query({
     prompt,
     model: agentModel,
@@ -89,10 +185,33 @@ export async function dispatchAgent({
     ...(Number.isInteger(agentMaxTurns) && agentMaxTurns > 0 ? { maxTurns: agentMaxTurns } : {}),
   });
 
-  // Drain the stream fully
-  for await (const _msg of stream) {
-    // consume — no-op
+  // Drain the stream fully, accumulating text for completion-signal detection.
+  // A thrown stream error is captured (not rethrown) so it surfaces as
+  // 'uncertain' rather than a silent success (GENERAL.md: surface failures inline).
+  let streamText = '';
+  let streamError = null;
+  try {
+    for await (const msg of stream) {
+      streamText += '\n' + extractText(msg);
+    }
+  } catch (err) {
+    streamError = err instanceof Error ? err : new Error(String(err));
   }
 
-  return { outcome: 'completed' };
+  // AC-38: verify the outcome instead of blindly reporting success. Writer
+  // agents are checked by output-file mtime; readonly agents by completion
+  // signal; any stream error → uncertain.
+  const artifact = READONLY_AGENTS.has(agentType) ? null : expectedArtifact(agentType);
+  const agentKind = artifact ? 'writer' : 'readonly';
+  const mtimeResult = agentKind === 'writer'
+    ? checkMtime(join(workDir, artifact), startMs)
+    : null;
+
+  return classifyOutcome({
+    agentKind,
+    mtimeResult,
+    streamText,
+    completionPattern: COMPLETION_SIGNAL,
+    error: streamError,
+  });
 }

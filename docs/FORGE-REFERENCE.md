@@ -365,7 +365,6 @@ Shared utilities in `hooks/hook-utils.js`: `resolveProjectDir(payload)` validate
 | `/forge:explore` | researcher (in-session subagent) | — |
 | `/forge:ideate` | critic | — |
 | `/forge:spawn` | (launches worker) | (depends on type) |
-| `/forge:ship` | Gate #2 approve + apply + commit combined | (single-action) |
 
 ### Gate skills
 

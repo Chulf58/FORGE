@@ -77,15 +77,28 @@ Then continue to Step 3.
    - Call `forge_advance_stage({ runId, targetStage: "implement", agents: <resolved agents> })`.
    - **This spawns the implement worker immediately as a side effect — a new background process starts now.**
    - Print "Gate 1 approved for '<feature>'. Implement worker spawned — use /forge:approve when Gate #2 is ready." (read `feature` from the gate file)
-4. If `gate` is `"gate2"`: print "Gate 2 approved for '<feature>'. The worker resumes automatically and the commit will be bundled when it is ready." (read `feature` from the gate file)
+4. If `gate` is `"gate2"`:
+   - **If the run has `orchestratorState`** (orchestrated implement — there is no worker to resume): print "Gate 2 approved for '<feature>'. Applying inline (documenter + merge)." and proceed to **Step 4** (the 4a orchestrated path) in this same turn.
+   - **Otherwise** (legacy prose worker): print "Gate 2 approved for '<feature>'. The worker resumes automatically and the commit will be bundled when it is ready." (read `feature` from the gate file)
 5. If `gate` is `"commit"`: print "Commit approved for '<feature>'. Proceeding with commit+merge." (read `feature` from the gate file). **MANDATORY: proceed to Step 4 immediately — the worker has already exited, nobody else will commit. Do NOT stop here.**
 
 If the run's status was already `"completed"`:
 - Print "Gate already approved for '<feature>'. Run /forge:implement (gate1) or wait for the worker to reach the commit gate (gate2)."
 
-## Step 4 — Merge (commit gates only)
+## Step 4 — Apply: documenter + merge
 
-This step only runs when `gate` is `"commit"`. Skip for gate1/gate2.
+This step runs for **commit gates** (debug/refactor prose path) AND for **orchestrated implement gate2 approvals** — runs that **have `orchestratorState`**. Skip for gate1 and for a non-orchestrated gate2 (the legacy prose worker handles its own apply).
+
+Branch on run mode using the `orchestratorState` field of the run object fetched in Step 1.
+
+### 4a — Orchestrated path (when the run has `orchestratorState`)
+
+The implement orchestrator wrote gate2 and exited — there is no worker to resume, so the conductor performs apply inline, running the documenter and the merge **in parallel**:
+
+- **Documenter (off-worktree, non-blocking):** dispatch the documenter against `<mainProjectRoot>` (the directory that contains `.pipeline/`), reading `.pipeline/runs/<runId>/change-summary.md` for what changed (the worktree is being merged away). Wrap in try/catch — on any failure log `[apply] documenter failed — continuing` and proceed. Apply never blocks on documentation.
+- **Merge:** run the merge via steps 1–5 below. On `git merge` **non-zero exit (conflict): surface the conflict to the user and SKIP the docs commit** — never auto-resolve, never half-merge. Print `[merge] conflict — resolve manually with: git merge forge/<runId>; docs commit skipped.` and stop without marking the run completed.
+
+### 4b — Commit-gate path (debug/refactor — no `orchestratorState`)
 
 **The worker has already committed in the worktree** (apply skill Step 3c — closes TODO `38bca814`). The conductor at the commit gate handles ONLY the merge: never stages, never commits. If the worktree has uncommitted files at this point, the worker's apply commit failed — log the warning and let the user investigate, but do NOT auto-stage and ship potentially BLOCKED phase work.
 

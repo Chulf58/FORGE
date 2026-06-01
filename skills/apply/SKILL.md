@@ -107,18 +107,7 @@ Read `gitIntegration` from `.pipeline/project.json` (prefer `forge_read_project`
 
 ## STEP 3 — Run apply pipeline (worker)
 
-**If a worktree was resolved in Step 2b:** When spawning documenter, prepend this to the agent's prompt:
-
-> Your working directory for this run is: `<worktreePath>`
-> Read and write all project files using absolute paths under this directory.
-> For example: `<worktreePath>/src/main.js`, `<worktreePath>/docs/context/handoff.md`, etc.
-> Do NOT read or write files in the main project root.
-> runId: `<runId>`
-> changelogFragmentPath: `<mainProjectRoot>/.pipeline/runs/<runId>/CHANGELOG-fragment.md`
-
-Where `<mainProjectRoot>` is the main project root, computed as two directory levels up from `<worktreePath>` (i.e. `<worktreePath>` is `<mainProjectRoot>/.worktrees/<runId>`). For example: if `<worktreePath>` is `C:\Users\user\project\.worktrees\r-abc123`, then `<mainProjectRoot>` is `C:\Users\user\project`.
-
-**If no worktree was resolved:** spawn the agent without the path prefix (it works in the main project directory).
+**The documenter runs OFF the worktree.** Under the orchestrated apply path the worktree may already be merged and removed, so the documenter does not run inside it and does not need live worktree access. `<mainProjectRoot>` is the main project root — the directory that contains `.pipeline/`. Its sole input is the change-summary the implement orchestrator captured before gate2 (at `.pipeline/runs/<runId>/change-summary.md`).
 
 1. **Git branch creation** (opt-in — only if `gitIntegration.enabled`):
    - Derive feature slug: use `$ARGUMENTS` if provided, else read the first `## Feature:` heading from `docs/PLAN.md`
@@ -133,11 +122,18 @@ Where `<mainProjectRoot>` is the main project root, computed as two directory le
    - On success (exit 0): log "Tests passed" and continue
    - On failure (non-zero exit): show full output, emit `[suggest] debug — tests failed after apply`. Do NOT auto-fix or retry.
 
-3. **Documenter:** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution.
+3. **Documenter (dispatched off-worktree against `<mainProjectRoot>`):** updates CHANGELOG, ARCHITECTURE, DECISIONS, captures solution — reading what changed from the change-summary, not the worktree.
 
-   Record `documenterStartedAt = Date.now()` (epoch-ms) immediately before spawning the documenter.
+   Record `documenterStartedAt = Date.now()` (epoch-ms) immediately before the documenter dispatch.
 
-   After documenter completes, verify its output via mtime check — do NOT use `git diff` (gitignored files never appear in git diff output):
+   Dispatch the documenter against `<mainProjectRoot>` (NOT the worktree). Prepend to its prompt:
+
+   > Your working directory is the main project root: `<mainProjectRoot>`
+   > changeSummaryPath: `<mainProjectRoot>/.pipeline/runs/<runId>/change-summary.md` — read this for the set of changes to document; the worktree is not available.
+   > changelogFragmentPath: `<mainProjectRoot>/.pipeline/runs/<runId>/CHANGELOG-fragment.md`
+   > runId: `<runId>`
+
+   After the documenter completes, verify its output via mtime check — do NOT use `git diff` (gitignored files never appear in git diff output):
 
    For each expected doc file the documenter should have written (typically `CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and any solution file under `docs/solutions/`), run:
    ```

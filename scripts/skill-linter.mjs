@@ -78,7 +78,6 @@ const KNOWN_SKILLS = new Set([
   '/forge:refresh-docs',
   '/forge:research',
   '/forge:resume',
-  '/forge:ship',
   '/forge:spawn',
   '/forge:status',
   '/forge:supervise',

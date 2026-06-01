@@ -155,6 +155,18 @@ function applierPromptLines(workDir, runId) {
   ];
 }
 
+// runId validation — prevents path traversal in change-summary write.
+const RUN_ID_PATTERN = /^r-[a-zA-Z0-9]+$/;
+
+/**
+ * Generate a unique agent ID for stamping run.agents[].
+ * @param {string} agentType
+ * @returns {string}
+ */
+function makeAgentId(agentType) {
+  return agentType + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+}
+
 /**
  * Runs the deterministic implement+apply stage orchestration sequence.
  *
@@ -168,7 +180,8 @@ function applierPromptLines(workDir, runId) {
  * @param {function(string?): Promise<void>} deps.clearReviewerOutput - clears reviewer output dir
  * @param {function(string, string): Promise<{verdict: string}>} deps.readReviewerOutput - reads reviewer verdict
  * @param {function(string, string[]): Promise<{stdout: string, exitCode: number}>} deps.spawnScript - spawns a node script
- * @param {function(string, string[]): Promise<object>} deps.dispatch - dispatches an agent
+ * @param {function(string, string[]): Promise<object>} deps.dispatch - dispatches an agent (returns {outcome})
+ * @param {function(string, string): Promise<void>} [deps.writeChangeSummary] - writes change-summary.md
  * @param {function(string[], string): string} [deps.buildInjectedKnowledge] - optional; returns task-relevant
  *   knowledge text to prepend to agent prompts. Called with (keywords, projectDir). If absent or not a
  *   function, injection is skipped — existing callers without this dep continue to work unchanged.
@@ -182,6 +195,60 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
   const runJsonPath = join(workDir, '..', '.pipeline', 'runs', runId, 'run.json');
   const reviewerOutputDir = join(workDir, '.pipeline', 'context', 'reviewer-output');
   const gatePendingPath = join(workDir, '.pipeline', 'gate-pending.json');
+
+  // Derive runsDir from runJsonPath — used for change-summary path (AC-36).
+  // runJsonPath = <workDir>/../.pipeline/runs/<runId>/run.json
+  // runsDir     = <workDir>/../.pipeline/runs
+  const runsDir = join(runJsonPath, '..', '..');
+
+  // Accumulated agents and phases for stamping on run.json.
+  // Using arrays that persist across the entire orchestration pass so a single
+  // final write carries ALL agent entries (matches observer expectation).
+  /** @type {object[]} */
+  const allAgents = [];
+  /** @type {string[]} */
+  const allPhases = [];
+
+  /**
+   * Dispatch a single agent, stamp its run.agents[] entry, and persist via writeRunJson.
+   * Returns the outcome from the dispatch result.
+   *
+   * @param {string} agentType
+   * @param {string[]} promptLines
+   * @returns {Promise<'completed'|'uncertain'>}
+   */
+  async function stampedDispatch(agentType, promptLines) {
+    const agentId = makeAgentId(agentType);
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
+
+    const result = await deps.dispatch(agentType, promptLines);
+
+    const completedAt = new Date().toISOString();
+    const durationMs = Date.now() - startMs;
+    // Outcome: dispatch returns { outcome } per mock contract; fall back to 'completed'
+    // for legacy callers that return only { exitCode, stdout, stderr }.
+    const outcome = (result && typeof result.outcome === 'string') ? result.outcome : 'completed';
+
+    const agentEntry = {
+      agentId,
+      agentType,
+      startedAt,
+      completedAt,
+      durationMs,
+      outcome,
+    };
+    allAgents.push(agentEntry);
+
+    // Persist stamped agents + current phases via writeRunJson.
+    const currentRun = await deps.readRunJson(runJsonPath);
+    await deps.writeRunJson(runJsonPath, mergeRun(
+      currentRun || {},
+      { agents: allAgents.slice(), phases: allPhases.slice() },
+    ));
+
+    return outcome;
+  }
 
   try {
     // Step 1: Read initial run state and extract orchestratorState
@@ -211,21 +278,47 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // If phase is 'apply', skip implement stages and go directly to apply.
     if (orchState.phase === 'apply') {
       writeLog('[orchestrator:implement] resuming at apply phase from orchestratorState');
-      await deps.dispatch('documenter', applierPromptLines(workDir, runId));
+      await stampedDispatch('documenter', applierPromptLines(workDir, runId));
       return;
     }
 
     // Step 2: Dispatch coder-scout
     writeLog('[orchestrator:implement] dispatching coder-scout');
-    await deps.dispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId)));
+    allPhases.push('coder-scout');
+    await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId)));
 
     // Step 3: Dispatch coder
     writeLog('[orchestrator:implement] dispatching coder');
-    await deps.dispatch('coder', prependInjection(injectedKnowledge, coderPromptLines(workDir, runId)));
+    allPhases.push('coder');
+    const coderOutcome = await stampedDispatch('coder', prependInjection(injectedKnowledge, coderPromptLines(workDir, runId)));
+
+    // AC-38/AC-35(b): uncertain coder outcome — stamp and surface immediately.
+    if (coderOutcome === 'uncertain') {
+      const currentRun = await deps.readRunJson(runJsonPath);
+      await deps.writeGateFile(gatePendingPath, {
+        runId,
+        gate: 'gate2',
+        feature,
+        status: 'pending',
+        uncertain: true,
+        blockedBy: { agentType: 'coder', reason: 'uncertain outcome — output not verified' },
+      });
+      await deps.writeRunJson(runJsonPath, mergeRun(
+        currentRun || {},
+        {
+          status: 'gate-pending',
+          gateState: { gate: 'gate2', uncertain: true },
+          agents: allAgents.slice(),
+          phases: allPhases.slice(),
+        },
+      ));
+      return;
+    }
 
     // Step 4: Dispatch completeness-checker
     writeLog('[orchestrator:implement] dispatching completeness-checker');
-    await deps.dispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId)));
+    allPhases.push('completeness-checker');
+    await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId)));
 
     // Reviewer loop — runs once initially, then iterates on REVISE verdicts (capped at M<2)
     let M = orchState.implementReviseCount;
@@ -253,7 +346,8 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
 
       // Step 7: Dispatch each reviewer sequentially
       for (const reviewer of reviewerList) {
-        await deps.dispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId));
+        allPhases.push(reviewer);
+        await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId));
       }
 
       // Step 8: Read verdicts
@@ -287,7 +381,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         const currentRun = await deps.readRunJson(runJsonPath);
         await deps.writeRunJson(runJsonPath, mergeRun(
           currentRun || {},
-          { status: 'gate-pending', gateState: { gate: 'gate2' } },
+          { status: 'gate-pending', gateState: { gate: 'gate2' }, agents: allAgents.slice(), phases: allPhases.slice() },
         ));
         // AC-7: return immediately — no gate-poll await
         return;
@@ -307,7 +401,8 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           M++;
 
           // Re-dispatch coder with revision-mode prefix
-          await deps.dispatch('coder', [
+          allPhases.push('coder-revise-' + M);
+          await stampedDispatch('coder', [
             '[revision-mode: ' + M + ']',
             ...coderPromptLines(workDir, runId),
           ]);
@@ -326,14 +421,34 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           const currentRun = await deps.readRunJson(runJsonPath);
           await deps.writeRunJson(runJsonPath, mergeRun(
             currentRun || {},
-            { status: 'gate-pending', gateState: { gate: 'gate2' } },
+            { status: 'gate-pending', gateState: { gate: 'gate2' }, agents: allAgents.slice(), phases: allPhases.slice() },
           ));
           // AC-7: return immediately — no gate-poll await
           return;
         }
       }
 
-      // AC-5: All APPROVED — write gate2 and persist phase='apply' in orchestratorState
+      // AC-5/AC-36: All APPROVED — write change-summary BEFORE gate2.
+      if (RUN_ID_PATTERN.test(runId)) {
+        const summaryPath = join(runsDir, runId, 'change-summary.md');
+        const summaryContent = [
+          '# Change Summary',
+          '',
+          'Feature: ' + feature,
+          'RunId: ' + runId,
+          'Completed: ' + new Date().toISOString(),
+          '',
+          '## Agents dispatched',
+          ...allAgents.map(a => '- ' + a.agentType + ' (' + a.outcome + ')'),
+        ].join('\n');
+        if (typeof deps.writeChangeSummary === 'function') {
+          await deps.writeChangeSummary(summaryPath, summaryContent);
+        }
+      } else {
+        writeLog('[orchestrator:implement] WARNING: invalid runId "' + runId + '" — skipping change-summary write');
+      }
+
+      // AC-5: Write gate2 and persist phase='apply' in orchestratorState
       // so that on re-invocation (after approval) the orchestrator resumes at apply.
       const currentRun = await deps.readRunJson(runJsonPath);
       const currentOrch = (currentRun && currentRun.orchestratorState)
@@ -354,6 +469,8 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           status: 'gate-pending',
           gateState: { gate: 'gate2', status: 'pending' },
           orchestratorState: postGate2OrchState,
+          agents: allAgents.slice(),
+          phases: allPhases.slice(),
         },
       ));
 

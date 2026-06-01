@@ -71,6 +71,16 @@ When you add a new intent-capture skill, add it to this list AND wire its skip-l
 
 Why: 2026-05-25 conductor session — same conductor that added Step 0 to /forge:debug to prevent unilateral framing skipped grill-intent's Pocock loop within the next hour by passing a brainstorm-pre-filled argument from TODO 65c1ad5f. Two discipline gates (skip-loop guard + pre-write attribution check) both failed because prose discipline gets ignored under "this is obvious, let me skip ahead" pressure. This rule is the upstream gate before the skill ever runs.
 
+## One-question-at-a-time discipline
+
+When the conductor needs the user to make a decision or answer an open question, ask ONE question at a time and WAIT for the answer before asking the next. Never batch multiple questions, decisions, or a numbered `Q1/Q2/Q3…` list into a single message — even when the questions feel related or answering them all at once seems more efficient. The user wants full focus on each decision in turn.
+
+This extends the grill skills' existing rule (`skills/grill-intent/SKILL.md`: "Ask the ONE most important clarifying question — no multi-part questions, no lists"; `skills/grill-plan/SKILL.md`: "Ask ONE question") to ALL conductor↔user Q&A — pre-grill design conversation, scope confirmation, and any inline decision-gathering outside a skill. Surfacing several considerations for context is fine; ending a message with several distinct asks the user must answer is not.
+
+If you have N open questions, present only the single most important/blocking one (with options + a recommendation), let the user answer, then move to the next. Track the rest yourself; do not dump them.
+
+Why: 2026-05-31 — during the orchestrator-finish design the conductor ended a message with four batched decision questions (Q1–Q4). User: "it isnt nice doing all at once and I want your full focus on 1 at the time… update that in the SOP, not just your memory." The grill skills already enforced one-at-a-time; the conductor's general chat Q&A did not — this rule closes that gap.
+
 ## TDD discipline
 
 When the work itself is TDD-enforcement infrastructure (hooks that gate edits, agents that audit testing, runners that score regressions, reviewers that scan for test weakening), you MUST build it test-first:

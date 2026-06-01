@@ -140,6 +140,46 @@ console.log('\n[skill-linter-test] Test 2: real skills/ passes clean');
   }
 }
 
+// --- Test 3: retired /forge:ship is flagged as an unknown skill --------------
+// Retirement guard (task 42): once /forge:ship is removed from KNOWN_SKILLS, any
+// skill still referencing it must be reported — preventing silent re-introduction.
+console.log('\n[skill-linter-test] Test 3: retired /forge:ship is flagged');
+{
+  const shipFixtureBase = mkdtempSync(join(tmpdir(), 'skill-linter-ship-retired-'));
+  const shipSkillDir = join(shipFixtureBase, 'skills', 'refs-ship');
+  mkdirSync(shipSkillDir, { recursive: true });
+  writeFileSync(
+    join(shipSkillDir, 'SKILL.md'),
+    `---\nname: refs-ship\ndescription: Fixture referencing the retired ship command\n---\n\n## Step\n\n- Run \`/forge:ship\` to deploy\n`,
+    'utf8',
+  );
+
+  const result = spawnSync(process.execPath, [LINTER, '--skills-dir', join(shipFixtureBase, 'skills')], {
+    encoding: 'utf8',
+  });
+
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    parsed = null;
+  }
+
+  assert(result.status === 1, `referencing retired /forge:ship should exit 1, got ${result.status}`);
+  if (parsed) {
+    assert(
+      parsed.errors['skill-names'].some((e) => e.token === '/forge:ship'),
+      `/forge:ship must be flagged as a retired/unknown skill, got: ${JSON.stringify(parsed.errors['skill-names'])}`,
+    );
+  }
+
+  try {
+    rmSync(shipFixtureBase, { recursive: true, force: true });
+  } catch {
+    // Non-fatal cleanup failure
+  }
+}
+
 // --- Cleanup ------------------------------------------------------------------
 try {
   rmSync(fixtureBase, { recursive: true, force: true });

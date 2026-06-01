@@ -8,7 +8,7 @@ tools:
   - Grep
   - Write
 maxTurns: 15
-effort: low
+effort: medium
 memory: project
 skills:
   - forge:gotchas

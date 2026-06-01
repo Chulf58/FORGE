@@ -8,6 +8,10 @@
 //       NOT the hardcoded 'claude-sonnet-4-6' and NOT the CLAUDE-WORKER.md content.
 // AC-32: maxTurns propagation — when an agent's frontmatter declares maxTurns: N,
 //        the dispatcher MUST pass maxTurns: N to the SDK query() call.
+// AC-38: outcome classification — classifyOutcome() must categorize dispatch results
+//        as 'completed' or 'uncertain' based on agent kind (writer vs readonly) and
+//        output verification (mtime or completion signal). COMPLETION_SIGNAL pattern
+//        must be pinned to prevent false positives on arbitrary prose output.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,8 +22,9 @@ import { readFileSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let dispatchAgent;
+let mod;
 try {
-  const mod = await import('./agent-dispatch.mjs');
+  mod = await import('./agent-dispatch.mjs');
   dispatchAgent = mod.dispatchAgent;
 } catch (err) {
   if (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND') {
@@ -252,5 +257,205 @@ test('AC-32: dispatchAgent MUST propagate frontmatter maxTurns to SDK query() ca
     expr !== 'undefined' && !/^\d+$/.test(expr),
     `AC-32 FAILING: query({...}) maxTurns must reference a variable derived from frontmatter, ` +
       `not the literal "${expr}" — a hardcoded literal or \`undefined\` would not propagate the frontmatter value.`,
+  );
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// AC-38: classifyOutcome & COMPLETION_SIGNAL pattern (outcome verification)
+// ──────────────────────────────────────────────────────────────────────────
+
+test('RED AC-38: classifyOutcome is exported as a function', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  assert.equal(
+    typeof classifyOutcome,
+    'function',
+    'AC-38 RED BAR: agent-dispatch.mjs must export classifyOutcome() (not found yet)'
+  );
+});
+
+test('RED AC-38: COMPLETION_SIGNAL is exported as a RegExp', () => {
+  const COMPLETION_SIGNAL = mod.COMPLETION_SIGNAL;
+  assert.ok(
+    COMPLETION_SIGNAL instanceof RegExp,
+    'AC-38 RED BAR: agent-dispatch.mjs must export COMPLETION_SIGNAL as a RegExp (not found yet)'
+  );
+});
+
+test('RED AC-38.1: classifyOutcome returns {outcome, reason} — writer + mtimeResult.ok=true', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  const result = classifyOutcome({
+    agentKind: 'writer',
+    mtimeResult: { ok: true, reason: 'fresh: mtime >= since' },
+    streamText: 'agent output',
+    completionPattern: /\[verdict\]/i,
+    error: null,
+  });
+
+  assert.ok(result, 'classifyOutcome must return an object');
+  assert.equal(result.outcome, 'completed', 'writer with mtimeResult.ok=true must return outcome:completed');
+  assert.ok(typeof result.reason === 'string' || result.reason === undefined,
+    'reason field must be string or absent (not required for completed)');
+});
+
+test('RED AC-38.2: classifyOutcome returns {outcome, reason} — writer + mtimeResult.ok=false', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  const result = classifyOutcome({
+    agentKind: 'writer',
+    mtimeResult: { ok: false, reason: 'file absent: /path/to/file' },
+    streamText: 'agent output',
+    completionPattern: /\[verdict\]/i,
+    error: null,
+  });
+
+  assert.ok(result, 'classifyOutcome must return an object');
+  assert.equal(result.outcome, 'uncertain', 'writer with mtimeResult.ok=false must return outcome:uncertain');
+  assert.ok(result.reason && result.reason.length > 0,
+    'uncertain outcome must include a non-empty reason');
+  assert.ok(result.reason.includes('file absent') || result.reason.includes('mtime'),
+    'reason for mtime-miss must surface the mtime reason');
+});
+
+test('RED AC-38.3: classifyOutcome returns {outcome, reason} — readonly + pattern match', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  const streamText = 'The agent has completed its work.\n[completeness-ok]\nFinal verdict: all done.';
+  const result = classifyOutcome({
+    agentKind: 'readonly',
+    mtimeResult: null,
+    streamText: streamText,
+    completionPattern: /\[completeness-ok\]/i,
+    error: null,
+  });
+
+  assert.ok(result, 'classifyOutcome must return an object');
+  assert.equal(result.outcome, 'completed',
+    'readonly agent with matching completion pattern must return outcome:completed');
+});
+
+test('RED AC-38.4: classifyOutcome returns {outcome, reason} — readonly + no pattern match', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  const streamText = 'The agent worked on the task but did not emit a completion signal.';
+  const result = classifyOutcome({
+    agentKind: 'readonly',
+    mtimeResult: null,
+    streamText: streamText,
+    completionPattern: /\[completeness-ok\]/i,
+    error: null,
+  });
+
+  assert.ok(result, 'classifyOutcome must return an object');
+  assert.equal(result.outcome, 'uncertain',
+    'readonly agent without matching completion pattern must return outcome:uncertain');
+  assert.ok(result.reason && result.reason.length > 0,
+    'uncertain outcome must include a non-empty reason');
+  assert.ok(result.reason.toLowerCase().includes('no completion signal') ||
+            result.reason.toLowerCase().includes('signal not found') ||
+            result.reason.toLowerCase().includes('pattern'),
+    'reason must indicate no completion signal was detected');
+});
+
+test('RED AC-38.5: classifyOutcome handles error (any agentKind) — returns uncertain + reason', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  const testError = new Error('Stream error: connection lost');
+  const result = classifyOutcome({
+    agentKind: 'writer',
+    mtimeResult: null,
+    streamText: '',
+    completionPattern: /\[verdict\]/i,
+    error: testError,
+  });
+
+  assert.ok(result, 'classifyOutcome must return an object even with error');
+  assert.equal(result.outcome, 'uncertain',
+    'error present must return outcome:uncertain (never completed, never re-throw)');
+  assert.ok(result.reason && result.reason.length > 0,
+    'error outcome must include a non-empty reason');
+  assert.ok(result.reason.includes('connection lost') || result.reason.toLowerCase().includes('error'),
+    'reason must mention the error that occurred');
+});
+
+test('RED AC-38.6: COMPLETION_SIGNAL pattern — matches known good completion lines', () => {
+  const COMPLETION_SIGNAL = mod.COMPLETION_SIGNAL;
+
+  // The pattern MUST match at least one known-good completion line.
+  // These are sentinel strings that readonly agents emit to signal completion:
+  const knownGoodLines = [
+    '[completeness-ok]',
+    '[APPROVED]',
+    '[verdict]',
+    '[verdict-final]',
+    '[reviewer-verdict]',
+  ];
+
+  const matches = knownGoodLines.filter(line => COMPLETION_SIGNAL.test(line));
+  assert.ok(matches.length > 0,
+    `AC-38 RED BAR: COMPLETION_SIGNAL pattern must match at least one known-good sentinel line. ` +
+    `Pattern: ${COMPLETION_SIGNAL}. Tested: ${knownGoodLines.join(', ')}. Matched: ${matches.join(', ') || '(none)'}`);
+});
+
+test('RED AC-38.7: COMPLETION_SIGNAL pattern — does NOT match arbitrary prose', () => {
+  const COMPLETION_SIGNAL = mod.COMPLETION_SIGNAL;
+
+  // The pattern MUST NOT match arbitrary output lines to prevent false positives:
+  const arbitraryProseLines = [
+    'the coder finished editing the files',
+    'the task is complete and all tests pass',
+    'completed successfully with no errors',
+    'the review found no issues',
+    'approval is granted for merging',
+    'this is some random text that mentions completion',
+  ];
+
+  const falsePositives = arbitraryProseLines.filter(line => COMPLETION_SIGNAL.test(line));
+  assert.equal(falsePositives.length, 0,
+    `AC-38 RED BAR: COMPLETION_SIGNAL pattern must NOT match arbitrary prose. ` +
+    `Pattern: ${COMPLETION_SIGNAL}. False positives: ${falsePositives.join(', ')}`);
+});
+
+test('RED AC-38.8: classifyOutcome symmetry — pattern in stream vs pattern not in stream', () => {
+  const classifyOutcome = mod.classifyOutcome;
+  const pattern = /\[sentinel\]/i;
+
+  // With pattern present
+  const resultWithPattern = classifyOutcome({
+    agentKind: 'readonly',
+    mtimeResult: null,
+    streamText: 'Work done. [sentinel] End of output.',
+    completionPattern: pattern,
+    error: null,
+  });
+  assert.equal(resultWithPattern.outcome, 'completed', 'should complete when pattern is found');
+
+  // Without pattern
+  const resultWithoutPattern = classifyOutcome({
+    agentKind: 'readonly',
+    mtimeResult: null,
+    streamText: 'Work done. No sentinel. End of output.',
+    completionPattern: pattern,
+    error: null,
+  });
+  assert.equal(resultWithoutPattern.outcome, 'uncertain', 'should be uncertain when pattern is not found');
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// AC-38 WIRING (RED BAR): dispatchAgent must delegate its outcome to
+// classifyOutcome — the blind unconditional `return { outcome: 'completed' }`
+// must be gone. Scoped to the dispatchAgent body (sliced AFTER the
+// classifyOutcome definition, whose own returns must not count).
+// ──────────────────────────────────────────────────────────────────────────
+test('RED AC-38 wiring — dispatchAgent delegates to classifyOutcome and drops the blind return', () => {
+  const sourceCode = readFileSync(join(__dirname, 'agent-dispatch.mjs'), 'utf8');
+  const declIdx = sourceCode.indexOf('export async function dispatchAgent');
+  assert.notEqual(declIdx, -1, 'dispatchAgent must exist in agent-dispatch.mjs');
+  const body = sourceCode.slice(declIdx);
+
+  assert.ok(
+    body.includes('classifyOutcome('),
+    'AC-38 WIRING FAILING: dispatchAgent must call classifyOutcome(...) to drive its return — ' +
+      'currently it returns a blind outcome without running verification.',
+  );
+  assert.ok(
+    !/return\s*\{\s*outcome:\s*'completed'\s*\}/.test(body),
+    "AC-38 WIRING FAILING: dispatchAgent must NOT keep an unconditional `return { outcome: 'completed' }` — " +
+      'the verification result (via classifyOutcome) must determine the outcome.',
   );
 });

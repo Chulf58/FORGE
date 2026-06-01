@@ -102,7 +102,6 @@ Keep interruptions brief. Don't dump the full plan — summarise in one line. Th
 - **apply feature** -> implementer -> documenter
 - **debug** -> debug -> reviewers -> Gate #2
 - **refactor** -> refactor -> reviewers -> Gate #2
-- **ship** (`/forge:ship`) -> approves Gate #2 + spawns apply worker + auto-commits. Trigger phrases: "ship it", "approve and apply", "go ahead and ship", "just ship it", "ship this"
 
 ## Gates
 When a gate is reached, ask conversationally — not formally:
