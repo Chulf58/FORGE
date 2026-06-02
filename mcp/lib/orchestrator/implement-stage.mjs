@@ -83,45 +83,206 @@ function prependInjection(injected, lines) {
 }
 
 /**
+ * @typedef {object} TaskContext
+ * @property {string} feature - the feature name from run.json
+ * @property {string} activeTasksText - extracted active [ ] task lines + Verify text from PLAN.md
+ * @property {number} phaseCount - number of #### Phase N headings in PLAN.md
+ */
+
+/**
+ * Parse PLAN.md content to extract active tasks and phase count for a given feature.
+ * Uses dynamic import for ESM-friendly fs access.
+ *
+ * @param {string} content - full PLAN.md content
+ * @param {string} feature - feature name to match
+ * @returns {{ activeTasksText: string, phaseCount: number }}
+ */
+function parsePlanContent(content, feature) {
+  if (!content) return { activeTasksText: '', phaseCount: 0 };
+
+  // Find the ### Feature: section matching this feature.
+  const featureHeading = '### Feature:';
+  const lines = content.split('\n');
+
+  let inFeatureSection = false;
+  let featureSectionStart = -1;
+
+  // Locate the feature section start line.
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith(featureHeading)) {
+      const sectionFeature = lines[i].slice(featureHeading.length).trim();
+      if (sectionFeature === feature || (feature && sectionFeature.toLowerCase().includes(feature.toLowerCase()))) {
+        inFeatureSection = true;
+        featureSectionStart = i;
+        break;
+      }
+    }
+  }
+
+  if (!inFeatureSection || featureSectionStart < 0) {
+    // No matching feature section — fall back to counting phases in full doc and returning empty tasks.
+    const phaseCount = (content.match(/^#{2,4} Phase \d/gm) || []).length;
+    return { activeTasksText: '', phaseCount };
+  }
+
+  // Collect lines from feature section until next ### heading.
+  const sectionLines = [];
+  for (let i = featureSectionStart; i < lines.length; i++) {
+    if (i > featureSectionStart && lines[i].startsWith('### ')) break;
+    sectionLines.push(lines[i]);
+  }
+
+  const sectionText = sectionLines.join('\n');
+
+  // Count #### Phase N headings within the section.
+  const phaseCount = (sectionText.match(/^#{2,4} Phase \d/gm) || []).length;
+
+  // Extract active [ ] task lines and their Verify:/AC annotations.
+  const activeTaskLines = [];
+  let i = 0;
+  while (i < sectionLines.length) {
+    const line = sectionLines[i];
+    if (/^\s*-\s*\[\s*\]\s/.test(line)) {
+      // Active task line.
+      activeTaskLines.push(line.trim());
+      // Look ahead for Verify: lines (indented continuation).
+      let j = i + 1;
+      while (j < sectionLines.length) {
+        const next = sectionLines[j];
+        if (/^\s*-\s*\[/.test(next)) break; // next task
+        if (/^\s*(Verify:|AC-\d+:)/.test(next)) {
+          activeTaskLines.push(next.trim());
+        }
+        j++;
+      }
+    }
+    i++;
+  }
+
+  const activeTasksText = activeTaskLines.join('\n');
+  return { activeTasksText, phaseCount };
+}
+
+/**
+ * Async version of extractPlanContext using dynamic import (ESM-compatible).
+ * PLAN.md lives at `workDir/../docs/PLAN.md` — one level above the worktree.
+ * @param {string} workDir
+ * @param {string} feature
+ * @returns {Promise<{ activeTasksText: string, phaseCount: number }>}
+ */
+async function extractPlanContextAsync(workDir, feature) {
+  try {
+    const { readFile } = await import('node:fs/promises');
+    const planPath = join(workDir, '..', 'docs', 'PLAN.md');
+    const content = await readFile(planPath, 'utf-8');
+    return parsePlanContent(content, feature);
+  } catch (_) {
+    return { activeTasksText: '', phaseCount: 0 };
+  }
+}
+
+/**
  * Prompt lines for coder-scout agent.
  * @param {string} workDir
  * @param {string} runId
+ * @param {TaskContext} taskCtx
  * @returns {string[]}
  */
-function coderScoutPromptLines(workDir, runId) {
-  return [
+function coderScoutPromptLines(workDir, runId, taskCtx) {
+  const lines = [
     'You are the coder-scout agent.',
     'WorkDir: ' + workDir,
     'RunId: ' + runId,
   ];
+  if (taskCtx && taskCtx.feature) {
+    lines.push('Feature: ' + taskCtx.feature);
+  }
+  if (taskCtx && taskCtx.activeTasksText) {
+    lines.push('');
+    lines.push('Active tasks from PLAN.md:');
+    lines.push(taskCtx.activeTasksText);
+  }
+  return lines;
+}
+
+/**
+ * Prompt lines for test-author agent.
+ * test-author writes the red-bar (failing) tests before the coder implements.
+ * Does NOT receive [scout-output: — that is the coder's precondition, not test-author's.
+ * @param {string} workDir
+ * @param {string} runId
+ * @param {TaskContext} taskCtx
+ * @returns {string[]}
+ */
+function testAuthorPromptLines(workDir, runId, taskCtx) {
+  const lines = [
+    'You are the test-author agent.',
+    'WorkDir: ' + workDir,
+    'RunId: ' + runId,
+  ];
+  if (taskCtx && taskCtx.feature) {
+    lines.push('Feature: ' + taskCtx.feature);
+  }
+  if (taskCtx && taskCtx.activeTasksText) {
+    lines.push('');
+    lines.push('Active tasks from PLAN.md:');
+    lines.push(taskCtx.activeTasksText);
+  }
+  return lines;
 }
 
 /**
  * Prompt lines for coder agent.
  * @param {string} workDir
  * @param {string} runId
+ * @param {TaskContext} taskCtx
  * @returns {string[]}
  */
-function coderPromptLines(workDir, runId) {
-  return [
+function coderPromptLines(workDir, runId, taskCtx) {
+  const lines = [
     'You are the coder agent.',
     'WorkDir: ' + workDir,
     'RunId: ' + runId,
   ];
+  if (taskCtx && taskCtx.feature) {
+    lines.push('Feature: ' + taskCtx.feature);
+  }
+  if (taskCtx && taskCtx.activeTasksText) {
+    lines.push('');
+    lines.push('Active tasks from PLAN.md:');
+    lines.push(taskCtx.activeTasksText);
+  }
+  // AC-3(ii): coder prompt must always include [scout-output: reference.
+  lines.push('[scout-output: docs/context/scout.json]');
+  // AC-3(iii): [phase-scope: ONLY when plan has ≥2 Phase headings.
+  if (taskCtx && taskCtx.phaseCount >= 2) {
+    lines.push('[phase-scope: ' + taskCtx.feature + ']');
+  }
+  return lines;
 }
 
 /**
  * Prompt lines for completeness-checker agent.
  * @param {string} workDir
  * @param {string} runId
+ * @param {TaskContext} taskCtx
  * @returns {string[]}
  */
-function completenessCheckerPromptLines(workDir, runId) {
-  return [
+function completenessCheckerPromptLines(workDir, runId, taskCtx) {
+  const lines = [
     'You are the completeness-checker agent.',
     'WorkDir: ' + workDir,
     'RunId: ' + runId,
   ];
+  if (taskCtx && taskCtx.feature) {
+    lines.push('Feature: ' + taskCtx.feature);
+  }
+  if (taskCtx && taskCtx.activeTasksText) {
+    lines.push('');
+    lines.push('Active tasks from PLAN.md:');
+    lines.push(taskCtx.activeTasksText);
+  }
+  return lines;
 }
 
 /**
@@ -129,15 +290,25 @@ function completenessCheckerPromptLines(workDir, runId) {
  * @param {string} reviewerType
  * @param {string} workDir
  * @param {string} runId
+ * @param {TaskContext} taskCtx
  * @returns {string[]}
  */
-function reviewerPromptLines(reviewerType, workDir, runId) {
-  return [
+function reviewerPromptLines(reviewerType, workDir, runId, taskCtx) {
+  const lines = [
     'You are the ' + reviewerType + ' agent.',
     'Stage: implement',
     'WorkDir: ' + workDir,
     'RunId: ' + runId,
   ];
+  if (taskCtx && taskCtx.feature) {
+    lines.push('Feature: ' + taskCtx.feature);
+  }
+  if (taskCtx && taskCtx.activeTasksText) {
+    lines.push('');
+    lines.push('Active tasks from PLAN.md:');
+    lines.push(taskCtx.activeTasksText);
+  }
+  return lines;
 }
 
 /**
@@ -206,7 +377,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
   // final write carries ALL agent entries (matches observer expectation).
   /** @type {object[]} */
   const allAgents = [];
-  /** @type {string[]} */
+  /** @type {Array<{index: number, label: string, status: string}>} */
   const allPhases = [];
 
   /**
@@ -219,13 +390,13 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
    */
   async function stampedDispatch(agentType, promptLines) {
     const agentId = makeAgentId(agentType);
-    const startedAt = new Date().toISOString();
-    const startMs = Date.now();
+    const startedAt = Date.now();
+    const startMs = startedAt;
 
     const result = await deps.dispatch(agentType, promptLines);
 
-    const completedAt = new Date().toISOString();
-    const durationMs = Date.now() - startMs;
+    const completedAt = Date.now();
+    const durationMs = completedAt - startMs;
     // Outcome: dispatch returns { outcome } per mock contract; fall back to 'completed'
     // for legacy callers that return only { exitCode, stdout, stderr }.
     const outcome = (result && typeof result.outcome === 'string') ? result.outcome : 'completed';
@@ -262,6 +433,19 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       ? initialRun.feature
       : '';
 
+    // Extract active task context from docs/PLAN.md. Read via the injected
+    // deps.readPlanMd (main-root resolved) — NOT path arithmetic off workDir:
+    // docs/PLAN.md is UNTRACKED so it lives only at the main project root, never
+    // in the worktree checkout (GENERAL.md gotcha #3 — deps resolve paths, the
+    // orchestrator must not do its own worktree-relative path math).
+    let planContent = '';
+    if (typeof deps.readPlanMd === 'function') {
+      try { planContent = (await deps.readPlanMd()) || ''; } catch (_) { planContent = ''; }
+    }
+    const { activeTasksText, phaseCount } = parsePlanContent(planContent, feature);
+    /** @type {TaskContext} */
+    const taskCtx = { feature, activeTasksText, phaseCount };
+
     // Gap-1 injection: prepend task-relevant knowledge to agent prompts when
     // deps.buildInjectedKnowledge is provided. Guard: skip silently if absent
     // (preserves AC-4/5/6/7 callers that do not supply this dep).
@@ -284,13 +468,18 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
 
     // Step 2: Dispatch coder-scout
     writeLog('[orchestrator:implement] dispatching coder-scout');
-    allPhases.push('coder-scout');
-    await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId)));
+    allPhases.push({ index: allPhases.length, label: 'coder-scout', status: 'completed' });
+    await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId, taskCtx)));
 
-    // Step 3: Dispatch coder
+    // Step 3: Dispatch test-author (writes red-bar tests before coder implements)
+    writeLog('[orchestrator:implement] dispatching test-author');
+    allPhases.push({ index: allPhases.length, label: 'test-author', status: 'completed' });
+    await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+
+    // Step 4: Dispatch coder
     writeLog('[orchestrator:implement] dispatching coder');
-    allPhases.push('coder');
-    const coderOutcome = await stampedDispatch('coder', prependInjection(injectedKnowledge, coderPromptLines(workDir, runId)));
+    allPhases.push({ index: allPhases.length, label: 'coder', status: 'completed' });
+    const coderOutcome = await stampedDispatch('coder', prependInjection(injectedKnowledge, coderPromptLines(workDir, runId, taskCtx)));
 
     // AC-38/AC-35(b): uncertain coder outcome — stamp and surface immediately.
     if (coderOutcome === 'uncertain') {
@@ -317,8 +506,8 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
 
     // Step 4: Dispatch completeness-checker
     writeLog('[orchestrator:implement] dispatching completeness-checker');
-    allPhases.push('completeness-checker');
-    await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId)));
+    allPhases.push({ index: allPhases.length, label: 'completeness-checker', status: 'completed' });
+    await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)));
 
     // Reviewer loop — runs once initially, then iterates on REVISE verdicts (capped at M<2)
     let M = orchState.implementReviseCount;
@@ -346,8 +535,8 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
 
       // Step 7: Dispatch each reviewer sequentially
       for (const reviewer of reviewerList) {
-        allPhases.push(reviewer);
-        await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId));
+        allPhases.push({ index: allPhases.length, label: reviewer, status: 'completed' });
+        await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId, taskCtx));
       }
 
       // Step 8: Read verdicts
@@ -401,10 +590,10 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           M++;
 
           // Re-dispatch coder with revision-mode prefix
-          allPhases.push('coder-revise-' + M);
+          allPhases.push({ index: allPhases.length, label: 'coder-revise-' + M, status: 'completed' });
           await stampedDispatch('coder', [
             '[revision-mode: ' + M + ']',
-            ...coderPromptLines(workDir, runId),
+            ...coderPromptLines(workDir, runId, taskCtx),
           ]);
 
           // Continue loop to re-dispatch reviewers

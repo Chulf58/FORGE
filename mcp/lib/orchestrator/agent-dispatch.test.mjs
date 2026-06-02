@@ -12,6 +12,8 @@
 //        as 'completed' or 'uncertain' based on agent kind (writer vs readonly) and
 //        output verification (mtime or completion signal). COMPLETION_SIGNAL pattern
 //        must be pinned to prevent false positives on arbitrary prose output.
+// AC-4: expectedArtifact canonical path — coder-scout artifact must resolve to
+//       docs/context/scout.json (not .pipeline/context/scout.json).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -457,5 +459,34 @@ test('RED AC-38 wiring — dispatchAgent delegates to classifyOutcome and drops 
     !/return\s*\{\s*outcome:\s*'completed'\s*\}/.test(body),
     "AC-38 WIRING FAILING: dispatchAgent must NOT keep an unconditional `return { outcome: 'completed' }` — " +
       'the verification result (via classifyOutcome) must determine the outcome.',
+  );
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// AC-4: expectedArtifact canonical path — coder-scout must map to docs/context/scout.json
+// ──────────────────────────────────────────────────────────────────────────
+
+test('RED AC-4: expectedArtifact is exported as a function', () => {
+  const expectedArtifact = mod.expectedArtifact;
+  assert.equal(
+    typeof expectedArtifact,
+    'function',
+    'AC-4 RED BAR: agent-dispatch.mjs must export expectedArtifact() — currently it is module-private'
+  );
+});
+
+test('RED AC-4: expectedArtifact("coder-scout") returns "docs/context/scout.json"', () => {
+  const expectedArtifact = mod.expectedArtifact;
+
+  // expectedArtifact must be callable; if it's undefined the previous test failed.
+  // This assertion ensures the function exists and returns the correct canonical path.
+  assert.ok(expectedArtifact, 'expectedArtifact must be a function (not undefined)');
+
+  const result = expectedArtifact('coder-scout');
+  assert.strictEqual(
+    result,
+    'docs/context/scout.json',
+    'AC-4 FAILING: expectedArtifact("coder-scout") must return "docs/context/scout.json" ' +
+    '(currently returns "' + result + '")'
   );
 });

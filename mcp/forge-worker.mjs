@@ -647,6 +647,13 @@ async function main() {
           mkdirSync(dir, { recursive: true });
           writeFileSync(join(dir, 'change-summary.md'), content, 'utf-8');
         },
+        // docs/PLAN.md is UNTRACKED — lives only at the main project root, never in
+        // the worktree checkout. Resolve via resolvedMainProjectRoot (not workDir).
+        readPlanMd: () => {
+          try {
+            return readFileSync(join(resolvedMainProjectRoot, 'docs', 'PLAN.md'), 'utf-8');
+          } catch (_) { return ''; }
+        },
         commitWorktree,
         buildInjectedKnowledge,
         writeLog,

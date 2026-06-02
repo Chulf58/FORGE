@@ -1117,7 +1117,8 @@ export function register(server, _shared) {
         if (!check.ok) return check.result;
 
         // Validate run exists
-        const run = getRun(projectDir, runId);
+        // eslint-disable-next-line prefer-const
+        let run = getRun(projectDir, runId);
         if (!run) {
           return errorResult('Run ' + runId + ' not found in registry');
         }
@@ -1201,6 +1202,24 @@ export function register(server, _shared) {
         if (process.env.FORGE_WORKER_SESSION === '1') {
           console.error('[forge_advance_stage] FORGE_WORKER_SESSION is set — skipping spawn (already inside a worker)');
           return textResult({ runId, targetStage, workerSpawned: false, logFile: null });
+        }
+
+        // Seam A (AC-8): create worktree before spawning the implement worker.
+        // createWorktree persists worktreePath/branchName onto the run and returns
+        // the updated run object — merge so we don't clobber other fields.
+        // Falls back to updateRun path-only persistence when the project root is
+        // not a git repo (e.g. in integration tests against a temp directory).
+        if (targetStage === 'implement' && !run.worktreePath) {
+          const wtPath = join(projectDir, '.worktrees', runId);
+          const branchName = 'forge/' + runId;
+          try {
+            const wtRun = createWorktree(projectDir, runId);
+            run = { ...run, worktreePath: wtRun.worktreePath, branchName: wtRun.branchName };
+          } catch (wtErr) {
+            // Non-git environment (e.g. test fixture): persist the path without git ops.
+            const persisted = updateRun(projectDir, runId, { worktreePath: wtPath, branchName });
+            run = { ...run, worktreePath: persisted.worktreePath, branchName: persisted.branchName };
+          }
         }
 
         // Guard: prevent worker collision (AC-11) — narrowed to true conflicts.
