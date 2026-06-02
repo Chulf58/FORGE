@@ -24,6 +24,7 @@ function parseArgs(argv) {
   let handoffPath = null;
   let rootDir = null;
   let strictGaps = false;
+  let changedFromGit = false;
 
   for (const arg of argv) {
     if (arg.startsWith('--handoff=')) {
@@ -32,10 +33,48 @@ function parseArgs(argv) {
       rootDir = arg.slice('--root='.length);
     } else if (arg === '--strict-gaps') {
       strictGaps = true;
+    } else if (arg === '--changed-from-git') {
+      changedFromGit = true;
     }
   }
 
-  return { handoffPath, rootDir, strictGaps };
+  return { handoffPath, rootDir, strictGaps, changedFromGit };
+}
+
+/**
+ * Resolve changed SOURCE files from the worktree's git state — modified tracked
+ * files (vs HEAD) plus untracked files — kept to code files and excluding test
+ * files (the @covers map is keyed by source path). Format-independent
+ * alternative to parsing the handoff: the orchestrator uses this because the
+ * coder's handoff sections ("## Files to create" / "## Files to modify" with
+ * content blocks) don't match the legacy "## Files modified" path-list shape.
+ *
+ * @param {string} rootDir - absolute worktree/repo root
+ * @returns {string[]} repo-relative source paths (forward-slash)
+ */
+function getGitChangedFiles(rootDir) {
+  const runGit = (args) => {
+    try {
+      const r = spawnSync('git', ['-C', rootDir, ...args], { encoding: 'utf8' });
+      return r.status === 0 && r.stdout ? r.stdout : '';
+    } catch (_) {
+      return '';
+    }
+  };
+  const blocks = [
+    runGit(['diff', '--name-only', 'HEAD']),                 // modified + staged tracked
+    runGit(['ls-files', '--others', '--exclude-standard']),  // untracked
+  ];
+  const collected = [];
+  for (const block of blocks) {
+    for (const line of block.split('\n')) {
+      const f = line.trim().replace(/\\/g, '/');
+      if (f) collected.push(f);
+    }
+  }
+  return [...new Set(collected)].filter(
+    (f) => /\.(js|mjs|cjs|ts)$/.test(f) && !/[-.]test\.[a-z]+$/.test(f),
+  );
 }
 
 // ─── Extract touched source files from handoff ──────────────────────────────
@@ -70,21 +109,23 @@ function extractTouchedFiles(handoffPath) {
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { handoffPath, rootDir, strictGaps } = parseArgs(process.argv.slice(2));
+  const { handoffPath, rootDir, strictGaps, changedFromGit } = parseArgs(process.argv.slice(2));
 
-  if (!handoffPath) {
-    process.stderr.write('[covers-verify] --handoff=<path> is required\n');
+  if (!handoffPath && !changedFromGit) {
+    process.stderr.write('[covers-verify] --handoff=<path> or --changed-from-git is required\n');
     process.exit(1);
   }
 
   const resolvedRoot = rootDir ? resolve(rootDir) : process.cwd();
-  const resolvedHandoff = resolve(handoffPath);
 
   // Build the impact map (src → [testFile, …])
   const map = await buildCoversMap(resolvedRoot);
 
-  // Extract touched files from the handoff
-  const touchedFiles = extractTouchedFiles(resolvedHandoff);
+  // Resolve touched source files. --changed-from-git reads the worktree's git
+  // state directly (format-independent); otherwise parse the handoff section.
+  const touchedFiles = changedFromGit
+    ? getGitChangedFiles(resolvedRoot)
+    : extractTouchedFiles(resolve(handoffPath));
 
   // Collect covering test files and identify gaps
   const testFilesToRun = new Set();

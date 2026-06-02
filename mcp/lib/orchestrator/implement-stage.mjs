@@ -504,6 +504,40 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       return;
     }
 
+    // Step 4b: Deterministic test verification — run ONLY the covering tests for
+    // the coder's changed files (resolved via the @covers map), through
+    // scripts/covers-verify.mjs, OFF the coder's turn budget. The coder no longer
+    // runs the full suite itself: in r-77a6fac8 that exhausted its turn budget on
+    // worktree SDK-dependency test noise before it could write handoff.md, leaving
+    // the coder 'uncertain'. A failing covering test blocks gate2 (parallel to the
+    // uncertain-coder defer) instead of proceeding to completeness-checker/reviewers.
+    writeLog('[orchestrator:implement] running covers-verify');
+    const coversResult = await deps.spawnScript(
+      'scripts/covers-verify.mjs',
+      ['--changed-from-git', '--root=' + workDir],
+    );
+    if (coversResult && coversResult.exitCode !== 0) {
+      const currentRun = await deps.readRunJson(runJsonPath);
+      await deps.writeGateFile(gatePendingPath, {
+        runId,
+        gate: 'gate2',
+        feature,
+        status: 'pending',
+        uncertain: true,
+        blockedBy: { agentType: 'covers-verify', reason: 'covering tests failed' },
+      });
+      await deps.writeRunJson(runJsonPath, mergeRun(
+        currentRun || {},
+        {
+          status: 'gate-pending',
+          gateState: { gate: 'gate2', uncertain: true },
+          agents: allAgents.slice(),
+          phases: allPhases.slice(),
+        },
+      ));
+      return;
+    }
+
     // Step 4: Dispatch completeness-checker
     writeLog('[orchestrator:implement] dispatching completeness-checker');
     allPhases.push({ index: allPhases.length, label: 'completeness-checker', status: 'completed' });
