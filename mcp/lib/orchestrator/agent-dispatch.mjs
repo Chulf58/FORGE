@@ -102,6 +102,52 @@ function extractText(msg) {
 }
 
 /**
+ * R1: detect a NON-throwing SDK `result` event signalling an error/abort. SDK
+ * stream aborts/limits arrive as a `result` event (sdk.d.ts SDKResultError:
+ * type:'result', subtype 'error_during_execution'|'error_max_turns'|… , is_error,
+ * terminal_reason), NOT a thrown error — so the stream-drain's try/catch never sees
+ * them. Returns a reason string for the dispatch-error path, or null for a normal,
+ * non-result, or successful message.
+ * @param {unknown} msg
+ * @returns {string|null}
+ */
+export function errorResultReason(msg) {
+  if (!msg || typeof msg !== 'object') return null;
+  const m = /** @type {Record<string, any>} */ (msg);
+  if (m.type !== 'result') return null;
+  const isErr = m.is_error === true || (typeof m.subtype === 'string' && m.subtype !== 'success');
+  if (!isErr) return null;
+  const sub = typeof m.subtype === 'string' ? m.subtype : 'error';
+  const tr = m.terminal_reason ? ' (' + m.terminal_reason + ')' : '';
+  return 'stream result error: ' + sub + tr;
+}
+
+/**
+ * Drain an SDK query() stream: accumulate readable text and capture the FIRST
+ * error signal — whether thrown OR a non-throwing error `result` event
+ * (errorResultReason, R1). A thrown error is captured (not rethrown) so it surfaces
+ * as 'uncertain' rather than a silent success (GENERAL.md: surface failures inline).
+ * @param {AsyncIterable<unknown>} stream
+ * @returns {Promise<{ streamText: string, streamError: Error|null }>}
+ */
+export async function drainStream(stream) {
+  let streamText = '';
+  let streamError = null;
+  try {
+    for await (const msg of stream) {
+      streamText += '\n' + extractText(msg);
+      if (streamError === null) {
+        const resultErr = errorResultReason(msg);
+        if (resultErr) streamError = new Error(resultErr);
+      }
+    }
+  } catch (err) {
+    streamError = err instanceof Error ? err : new Error(String(err));
+  }
+  return { streamText, streamError };
+}
+
+/**
  * Parse YAML frontmatter and body from a markdown agent file.
  *
  * @param {string} content - raw file content
@@ -231,15 +277,7 @@ export async function dispatchAgent({
   // Drain the stream fully, accumulating text for completion-signal detection.
   // A thrown stream error is captured (not rethrown) so it surfaces as
   // 'uncertain' rather than a silent success (GENERAL.md: surface failures inline).
-  let streamText = '';
-  let streamError = null;
-  try {
-    for await (const msg of stream) {
-      streamText += '\n' + extractText(msg);
-    }
-  } catch (err) {
-    streamError = err instanceof Error ? err : new Error(String(err));
-  }
+  const { streamText, streamError } = await drainStream(stream);
 
   // AC-38: verify the outcome instead of blindly reporting success. Writer
   // agents are checked by output-file mtime; readonly agents by completion
