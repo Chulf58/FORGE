@@ -25,7 +25,17 @@ export const COMPLETION_SIGNAL = /\[\s*(?:completeness-ok|APPROVED|verdict(?:-fi
  * @returns {{ outcome: 'completed'|'uncertain', reason?: string }}
  */
 export function classifyOutcome({ agentKind, mtimeResult, streamText, completionPattern, error }) {
-  // Error path — always uncertain, surface the error message.
+  // Artifact-wins-over-stream-error: for writer agents, a present + fresh output
+  // artifact proves the work landed — trust it even if the SDK stream errored or
+  // aborted afterwards. Checked BEFORE the error path because intermittent late
+  // stream aborts otherwise mark completed work 'uncertain' and block gate2
+  // (run r-074b94ba: coder wrote a full handoff.md, the stream aborted ~5s later).
+  // covers-verify runs afterwards as the net that still catches a broken impl.
+  if (agentKind === 'writer' && mtimeResult && mtimeResult.ok) {
+    return { outcome: 'completed' };
+  }
+
+  // Error path — uncertain, surface the error message.
   if (error) {
     return {
       outcome: 'uncertain',
@@ -34,11 +44,6 @@ export function classifyOutcome({ agentKind, mtimeResult, streamText, completion
   }
 
   if (agentKind === 'writer') {
-    // Safe non-null: mtimeResult is required for writer agents.
-    // eslint-disable-next-line no-extra-boolean-cast
-    if (mtimeResult && mtimeResult.ok) {
-      return { outcome: 'completed' };
-    }
     return {
       outcome: 'uncertain',
       reason: (mtimeResult && mtimeResult.reason) ? mtimeResult.reason : 'mtime check failed',
