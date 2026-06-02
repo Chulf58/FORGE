@@ -43,15 +43,26 @@ function defaultExec(cmd, args, opts = {}) {
 export async function commitWorktree(workDir, message, { exec = defaultExec } = {}) {
   const opts = { cwd: workDir };
 
-  // 1. List changed tracked files (vs HEAD). args[0] === 'diff' so callers/mocks can key on it.
-  const diff = await exec('git', ['diff', '--name-only', 'HEAD'], opts);
-  const files = String(diff.stdout || '')
+  // 1. List ALL changed files via porcelain — INCLUDING untracked (??) new files.
+  //    `git diff --name-only HEAD` omitted untracked files, so a new-file feature
+  //    committed nothing and gate2 had nothing to merge (r-91c5b2e9). Exclude
+  //    pipeline state + per-run context (.pipeline/, docs/context/) — not source.
+  const status = await exec('git', ['status', '--porcelain'], opts);
+  const files = String(status.stdout || '')
     .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean);
+    .map((line) => line.replace(/\r$/, ''))
+    .filter(Boolean)
+    .map((line) => {
+      // porcelain: 'XY <path>' (XY = 2-char status). Rename 'old -> new' → take new.
+      const p = line.slice(3).replace(/^"|"$/g, '');
+      const arrow = p.indexOf(' -> ');
+      return (arrow >= 0 ? p.slice(arrow + 4) : p).trim();
+    })
+    .filter(Boolean)
+    .filter((f) => !f.startsWith('.pipeline/') && !f.startsWith('docs/context/'));
 
   if (files.length === 0) {
-    return { committed: false, reason: 'nothing to commit: no changed files in worktree' };
+    return { committed: false, reason: 'nothing to commit: no changed source files in worktree' };
   }
 
   // 2. Stage each file INDIVIDUALLY — never `git add -A` / `.` / `--all`
