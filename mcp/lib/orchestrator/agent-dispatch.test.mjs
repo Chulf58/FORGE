@@ -217,48 +217,44 @@ test('AC-32: Fixture verification — agents/coder-scout.md declares a positive 
   );
 });
 
-test('AC-32: dispatchAgent MUST propagate frontmatter maxTurns to SDK query() call (RED BAR)', async () => {
-  // RED-BAR TEST: This assertion WILL FAIL because the current code does NOT
-  // pass maxTurns to query(). When Task 33 implements the fix, this will PASS.
-  //
-  // Strategy: read the source code and verify it passes maxTurns as part of the
-  // query() options object. Currently the code calls query() with specific fields
-  // (prompt, model, permissionMode, settingSources, systemPrompt, plugins, mcpServers, cwd).
-  // The assertion checks if maxTurns is included in that call.
+test('AC-32: frontmatter maxTurns propagates into the SDK query() options', () => {
+  // Behavioral check. Replaces the old brittle source-regex that matched a literal
+  // `query({...})` inline object — it broke when the args were extracted into the
+  // pure, testable buildQueryParams seam (and source-text regex was exactly the
+  // false-confidence pattern: it asserted the code's SHAPE, not its behavior).
+  assert.equal(
+    typeof mod.buildQueryParams,
+    'function',
+    'agent-dispatch must export buildQueryParams (the SDK query() params builder)',
+  );
 
-  // Static-source check (a true runtime behavior test would require dep-injection of the
-  // SDK query() function — a refactor beyond Phase 7's scope; see PLAN.md follow-up).
-  // The check below pins TWO requirements so a `maxTurns: undefined` or `maxTurns: 99`
-  // cheat cannot pass: (a) the source must reference `frontmatter.maxTurns` (proves the
-  // value is read from the parsed agent frontmatter, not hardcoded); (b) the query({...})
-  // call must include `maxTurns:` followed by a VARIABLE expression (not undefined and
-  // not a numeric literal).
   const sourceCode = readFileSync(join(__dirname, 'agent-dispatch.mjs'), 'utf8');
-
-  // (a) Source must read maxTurns from the parsed frontmatter.
+  // (a) Source still reads maxTurns from the parsed agent frontmatter (not hardcoded).
   assert.ok(
     /frontmatter\.maxTurns/.test(sourceCode),
-    'AC-32 FAILING: agent-dispatch.mjs must read maxTurns from the parsed agent frontmatter ' +
-      '(expected a `frontmatter.maxTurns` reference in the source) — current source does not.',
+    'agent-dispatch.mjs must read maxTurns from the parsed agent frontmatter',
+  );
+  // (b) dispatchAgent must feed the parsed value through buildQueryParams.
+  assert.ok(
+    /buildQueryParams\(\{[\s\S]*?agentMaxTurns/.test(sourceCode),
+    'dispatchAgent must pass agentMaxTurns into buildQueryParams',
   );
 
-  // (b) The query({...}) call must include a `maxTurns:` field whose value is a variable
-  //     (not `undefined`, not a numeric literal — those would not propagate the frontmatter value).
-  const queryCallMatch = sourceCode.match(/query\(\{([\s\S]*?)\}\)/);
-  assert.ok(queryCallMatch, 'AC-32: could not locate the query({...}) call in agent-dispatch.mjs');
-  const queryOptions = queryCallMatch[1];
-
-  const maxTurnsField = queryOptions.match(/maxTurns\s*:\s*([^\n,}]+)/);
-  assert.ok(
-    maxTurnsField,
-    'AC-32 FAILING ASSERTION: query({...}) options must include a `maxTurns:` field — ' +
-      'currently the query call does NOT include maxTurns.',
+  // (c) Behavior: a positive integer reaches options.maxTurns; absent/invalid is omitted
+  //     so the SDK default still applies — never a hardcoded literal.
+  const args = {
+    prompt: 'p', agentModel: 'm', agentBody: 'b', workDir: '/w',
+    pluginRoot: '/r', buildMcpServer: () => ({}),
+  };
+  assert.equal(
+    mod.buildQueryParams({ ...args, agentMaxTurns: 20 }).options.maxTurns,
+    20,
+    'a positive frontmatter maxTurns must reach options.maxTurns',
   );
-  const expr = maxTurnsField[1].trim();
-  assert.ok(
-    expr !== 'undefined' && !/^\d+$/.test(expr),
-    `AC-32 FAILING: query({...}) maxTurns must reference a variable derived from frontmatter, ` +
-      `not the literal "${expr}" — a hardcoded literal or \`undefined\` would not propagate the frontmatter value.`,
+  assert.equal(
+    'maxTurns' in mod.buildQueryParams({ ...args, agentMaxTurns: NaN }).options,
+    false,
+    'an absent/invalid maxTurns must be omitted so the SDK default applies',
   );
 });
 

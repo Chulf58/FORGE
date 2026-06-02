@@ -22,6 +22,12 @@ const { resolvePluginRoot, STDIN_TIMEOUT_SHORT } = require('./hook-utils');
 const STDIN_TIMEOUT_MS = STDIN_TIMEOUT_SHORT;
 
 function fire(rawInput) {
+  // Suppress in orchestrator-dispatched agent sessions — they inherit
+  // FORGE_WORKER_SESSION=1 from the worker process (forge-worker.mjs:481) and
+  // must not be told "FORGE plugin is active / available commands", which
+  // reinforces conductor framing that stops agents doing their work (r-de1491f6).
+  if (process.env.FORGE_WORKER_SESSION === '1') { process.exit(0); return; }
+
   const pluginRoot = resolvePluginRoot();
   const bannerPath = path.join(pluginRoot, 'forge-banner.txt');
 

@@ -49,6 +49,14 @@ async function main(rawInput) {
 
   const projectDir = resolveProjectDir(payload);
 
+  // Orchestrator-dispatched agents inherit FORGE_WORKER_SESSION=1 from the worker
+  // process (forge-worker.mjs:481) and load the full plugin, so this hook would
+  // otherwise frame each agent as a conductor — they then comment instead of
+  // coding and write nothing (run r-de1491f6). The env var is the reliable signal:
+  // a worktree-local .worker-session marker is invisible here because
+  // resolveProjectDir strips the .worktrees/r-<id> suffix and resolves to MAIN.
+  if (process.env.FORGE_WORKER_SESSION === '1') { process.exit(0); return; }
+
   // Check durable worker marker (survives worker-task.json deletion by worker-task-inject.js)
   const workerSession = path.join(projectDir, '.pipeline', '.worker-session');
   const workerTask = path.join(projectDir, '.pipeline', 'worker-task.json');

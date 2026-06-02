@@ -120,6 +120,46 @@ function parseFrontmatter(content) {
 }
 
 /**
+ * Build the SDK query() params for a dispatched agent.
+ *
+ * CRITICAL: the SDK signature is query({ prompt, options }) (sdk.d.ts:2165) —
+ * every field except `prompt` MUST be nested under `options`, or the SDK
+ * silently ignores it and runs on defaults: default permission mode (every
+ * Write/Edit prompts → blocked headless: "you haven't granted it yet"),
+ * default model, no systemPrompt, and CLAUDE.md leaks via default settingSources.
+ * `bypassPermissions` additionally REQUIRES allowDangerouslySkipPermissions:true
+ * (sdk.d.ts:1456), without which writes stay blocked. Regression: run r-15662c22
+ * — coder-scout (no Bash escape hatch) wrote no scout.json because its Write was
+ * permission-denied; test-author only landed its file by routing through Bash.
+ *
+ * @returns {{ prompt: string, options: object }}
+ */
+export function buildQueryParams({
+  prompt,
+  agentModel,
+  agentBody,
+  workDir,
+  pluginRoot,
+  buildMcpServer,
+  agentMaxTurns,
+}) {
+  return {
+    prompt,
+    options: {
+      model: agentModel,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      settingSources: [],
+      systemPrompt: agentBody,
+      plugins: [{ type: 'local', path: pluginRoot }],
+      mcpServers: { 'forge-pipeline': buildMcpServer(workDir) },
+      cwd: workDir,
+      ...(Number.isInteger(agentMaxTurns) && agentMaxTurns > 0 ? { maxTurns: agentMaxTurns } : {}),
+    },
+  };
+}
+
+/**
  * Dispatches a single agent via the Anthropic SDK query() stream.
  * Loads agents/<agentType>.md, extracts model from frontmatter and body as systemPrompt.
  *
@@ -173,17 +213,15 @@ export async function dispatchAgent({
   // written AFTER dispatch began?", so `since` must predate the agent's writes.
   const startMs = Date.now();
 
-  const stream = query({
+  const stream = query(buildQueryParams({
     prompt,
-    model: agentModel,
-    permissionMode: 'bypassPermissions',
-    settingSources: [],
-    systemPrompt: agentBody,
-    plugins: [{ type: 'local', path: pluginRoot }],
-    mcpServers: { 'forge-pipeline': buildMcpServer(workDir) },
-    cwd: workDir,
-    ...(Number.isInteger(agentMaxTurns) && agentMaxTurns > 0 ? { maxTurns: agentMaxTurns } : {}),
-  });
+    agentModel,
+    agentBody,
+    workDir,
+    pluginRoot,
+    buildMcpServer,
+    agentMaxTurns,
+  }));
 
   // Drain the stream fully, accumulating text for completion-signal detection.
   // A thrown stream error is captured (not rethrown) so it surfaces as
