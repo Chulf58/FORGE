@@ -79,5 +79,5 @@ test('dispatchAgent runs its attempt through runWithRetry (R2 wiring)', async ()
   const src = readFileSync(join(here, 'agent-dispatch.mjs'), 'utf-8');
   // Match the CALL site (not the function definition) — dispatchAgent must wrap its
   // per-attempt dispatch+verify in runWithRetry(attemptDispatch).
-  assert.ok(/runWithRetry\(attemptDispatch\)/.test(src), 'dispatchAgent must drive its dispatch attempt through runWithRetry(attemptDispatch)');
+  assert.ok(/runWithRetry\(attemptDispatch\b/.test(src), 'dispatchAgent must drive its dispatch attempt through runWithRetry(attemptDispatch …)');
 });

@@ -372,14 +372,18 @@ export async function dispatchAgent({
   pluginRoot,
   systemPromptPath,
   buildMcpServer,
+  query: injectedQuery,
+  retryOptions,
 }) {
   // Validate agentType before any path construction — prevents path traversal.
   if (!AGENT_TYPE_PATTERN.test(agentType)) {
     throw new Error('Invalid agentType: ' + agentType + ' — must match /^[a-z0-9-]+$/');
   }
 
-  // Dynamic import to avoid loading SDK at module level (same pattern as forge-worker.mjs)
-  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  // TEST SEAM: production omits `query`, so this dynamic-imports the real SDK (avoiding
+  // a module-level SDK load, same pattern as forge-worker.mjs). A deterministic
+  // recovery test injects a fault-injecting query to exercise the real R1→R2→R3 path.
+  const query = injectedQuery || (await import('@anthropic-ai/claude-agent-sdk')).query;
   const { readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
 
@@ -451,5 +455,5 @@ export async function dispatchAgent({
     });
   };
 
-  return runWithRetry(attemptDispatch);
+  return runWithRetry(attemptDispatch, retryOptions);
 }
