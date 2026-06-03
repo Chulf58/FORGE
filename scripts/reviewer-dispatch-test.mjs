@@ -14,7 +14,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dispatchPerPhase } from './reviewer-dispatch.mjs';
@@ -172,4 +172,32 @@ test('reviewer-tests fires on a `-test.mjs` file (repo convention), not only `.t
     result.reviewers.includes('reviewer-tests'),
     `a diff touching a -test.mjs file must force-include reviewer-tests (repo uses -test.mjs); got ${JSON.stringify(result.reviewers)}`,
   );
+});
+
+// TODO 04b5e6fa: reviewer-tests is a non-negotiable force-include (like technical-skeptic
+// at plan stage). When run.json.reviewerOverrides is non-empty, the override path used to
+// return the approved list VERBATIM — dropping reviewer-tests even on a test-touching diff.
+// It must survive the override. (Drives the override path via --run-id + a run.json fixture.)
+test('reviewerOverrides preserves the reviewer-tests force-include on a test-touching diff (04b5e6fa)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'rd-override-'));
+  const runId = 'r-ovr01';
+  try {
+    mkdirSync(join(root, '.pipeline', 'runs', runId), { recursive: true });
+    writeFileSync(join(root, '.pipeline', 'runs', runId, 'run.json'),
+      JSON.stringify({ reviewerOverrides: ['reviewer-safety'] }));
+    const handoffFile = join(root, 'handoff.md');
+    writeFileSync(handoffFile, HANDOFF_CLEAN);
+    const tdiff = join(root, 'tdiff.txt');
+    writeFileSync(tdiff, TESTS_DIFF_HYPHEN_TEST_FILE);
+    const r = spawnSync(process.execPath, [
+      join(process.cwd(), 'scripts', 'reviewer-dispatch.mjs'),
+      '--stage=implement', `--run-id=${runId}`, `--worktree=${root}`,
+      `--handoff=${handoffFile}`, `--tests-diff=${tdiff}`,
+    ], { encoding: 'utf8', cwd: process.cwd() });
+    const out = JSON.parse(r.stdout);
+    assert.ok(out.reviewers.includes('reviewer-safety'),
+      `the approved override reviewer must remain; got ${JSON.stringify(out.reviewers)}`);
+    assert.ok(out.reviewers.includes('reviewer-tests'),
+      `reviewer-tests force-include must survive reviewerOverrides on a test-touching diff; got ${JSON.stringify(out.reviewers)}`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

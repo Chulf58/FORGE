@@ -548,10 +548,15 @@ if (isMainModule()) {
           );
         }
       }
-      // Return approved list verbatim, ignoring classification result
+      // reviewer-tests is a non-negotiable force-include (like technical-skeptic at plan
+      // stage): a test-touching change must get the test-weakening reviewer even under a
+      // reviewerOverrides bypass (TODO 04b5e6fa). Preserve it from the classification.
+      const forceTests = classifiedResult.reviewers.includes('reviewer-tests')
+        && !reviewerOverrides.includes('reviewer-tests');
+      const finalOverrides = forceTests ? [...reviewerOverrides, 'reviewer-tests'].sort() : reviewerOverrides;
       const overrideResult = {
-        reviewers: reviewerOverrides,
-        reasons: ['reviewerOverrides-from-run'],
+        reviewers: finalOverrides,
+        reasons: forceTests ? ['reviewerOverrides-from-run', 'reviewer-tests-force-include'] : ['reviewerOverrides-from-run'],
         classifiedBy: classifiedResult.classifiedBy || 'diff',
       };
       process.stdout.write(JSON.stringify(overrideResult, null, 2) + '\n');
@@ -622,9 +627,15 @@ if (isMainModule()) {
         );
       }
     }
+    // reviewer-tests force-include must survive the override (TODO 04b5e6fa) — same invariant
+    // as technical-skeptic above. A test-touching change gets the test-weakening reviewer
+    // even under a reviewerOverrides bypass. This is the path the orchestrator uses (--tests-diff).
+    const forceTests = classifiedFallbackResult.reviewers.includes('reviewer-tests')
+      && !effectiveOverrides.includes('reviewer-tests');
+    const finalOverrides = forceTests ? [...effectiveOverrides, 'reviewer-tests'].sort() : effectiveOverrides;
     const overrideResult = {
-      reviewers: effectiveOverrides,
-      reasons: ['reviewerOverrides-from-run'],
+      reviewers: finalOverrides,
+      reasons: forceTests ? ['reviewerOverrides-from-run', 'reviewer-tests-force-include'] : ['reviewerOverrides-from-run'],
       classifiedBy: classifiedFallbackResult.classifiedBy || 'handoff',
     };
     process.stdout.write(JSON.stringify(overrideResult, null, 2) + '\n');
