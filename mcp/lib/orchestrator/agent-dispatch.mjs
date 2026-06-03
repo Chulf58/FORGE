@@ -148,6 +148,58 @@ export async function drainStream(stream) {
 }
 
 /**
+ * R2: is this uncertain `reason` a transient STREAM error worth retrying? True for
+ * thrown stream errors and non-throwing error `result` events (both surface as a
+ * 'dispatch error: …' reason, R1). False for logic failures — missing artifact
+ * ('file absent' / 'mtime check failed') or no completion signal — which a retry
+ * would not fix.
+ * @param {string|undefined|null} reason
+ * @returns {boolean}
+ */
+export function isRetryableStreamError(reason) {
+  return typeof reason === 'string' && reason.includes('dispatch error');
+}
+
+/**
+ * R2: bounded exponential backoff with jitter (ms). `attempt` is 1-based.
+ * base * 2^(attempt-1) + random jitter in [0, base), capped.
+ * @param {number} attempt
+ * @param {{ base?: number, cap?: number }} [opts]
+ * @returns {number}
+ */
+export function retryDelayMs(attempt, { base = 2000, cap = 30000 } = {}) {
+  const exp = base * Math.pow(2, Math.max(0, attempt - 1));
+  const jitter = Math.random() * base;
+  return Math.min(cap, exp + jitter);
+}
+
+/**
+ * R2: run a dispatch attempt with bounded retry on transient stream errors.
+ * `attemptFn(attempt)` returns { outcome, reason }. Retries (up to maxAttempts) ONLY
+ * when the result is uncertain AND isRetryable(reason) — never on logic failures.
+ * Sleeps delayFn(attempt) between attempts. Stamps `attempts` on the returned result.
+ * Worktree isolation makes a re-dispatch overwrite-same-file (idempotent).
+ * @param {(attempt:number) => Promise<{outcome:string, reason?:string}>} attemptFn
+ * @param {{ maxAttempts?: number, isRetryable?: (r?:string)=>boolean, delayFn?: (n:number)=>number, sleep?: (ms:number)=>Promise<void> }} [opts]
+ */
+export async function runWithRetry(attemptFn, opts = {}) {
+  const maxAttempts = opts.maxAttempts ?? 2;
+  const isRetryable = opts.isRetryable ?? isRetryableStreamError;
+  const delayFn = opts.delayFn ?? retryDelayMs;
+  const sleep = opts.sleep ?? ((ms) => new Promise((res) => setTimeout(res, ms)));
+  let result = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    result = await attemptFn(attempt);
+    if (!result || result.outcome === 'completed' || attempt >= maxAttempts || !isRetryable(result.reason)) {
+      if (result) result.attempts = attempt;
+      return result;
+    }
+    await sleep(delayFn(attempt));
+  }
+  return result;
+}
+
+/**
  * Parse YAML frontmatter and body from a markdown agent file.
  *
  * @param {string} content - raw file content
@@ -264,35 +316,44 @@ export async function dispatchAgent({
   // written AFTER dispatch began?", so `since` must predate the agent's writes.
   const startMs = Date.now();
 
-  const stream = query(buildQueryParams({
-    prompt,
-    agentModel,
-    agentBody,
-    workDir,
-    pluginRoot,
-    buildMcpServer,
-    agentMaxTurns,
-  }));
+  // R2: one attempt = dispatch the agent stream + verify the outcome. runWithRetry
+  // re-runs ONLY on a transient stream error (isRetryableStreamError) — capped,
+  // backoff+jitter; logic failures (missing artifact / no completion signal) do NOT
+  // retry. Worktree isolation (cwd=workDir) makes a re-dispatch overwrite-same-file
+  // safe. startMs is fixed across attempts so artifact-wins counts ANY attempt's write.
+  const attemptDispatch = async () => {
+    const stream = query(buildQueryParams({
+      prompt,
+      agentModel,
+      agentBody,
+      workDir,
+      pluginRoot,
+      buildMcpServer,
+      agentMaxTurns,
+    }));
 
-  // Drain the stream fully, accumulating text for completion-signal detection.
-  // A thrown stream error is captured (not rethrown) so it surfaces as
-  // 'uncertain' rather than a silent success (GENERAL.md: surface failures inline).
-  const { streamText, streamError } = await drainStream(stream);
+    // Drain the stream fully (accumulate text for completion-signal detection;
+    // capture the first error — thrown OR a non-throwing error `result` event, R1 —
+    // so it surfaces as 'uncertain', not a silent success).
+    const { streamText, streamError } = await drainStream(stream);
 
-  // AC-38: verify the outcome instead of blindly reporting success. Writer
-  // agents are checked by output-file mtime; readonly agents by completion
-  // signal; any stream error → uncertain.
-  const artifact = READONLY_AGENTS.has(agentType) ? null : expectedArtifact(agentType);
-  const agentKind = artifact ? 'writer' : 'readonly';
-  const mtimeResult = agentKind === 'writer'
-    ? checkMtime(join(workDir, artifact), startMs)
-    : null;
+    // AC-38: verify the outcome instead of blindly reporting success. Writer
+    // agents are checked by output-file mtime; readonly agents by completion
+    // signal; any stream error → uncertain.
+    const artifact = READONLY_AGENTS.has(agentType) ? null : expectedArtifact(agentType);
+    const agentKind = artifact ? 'writer' : 'readonly';
+    const mtimeResult = agentKind === 'writer'
+      ? checkMtime(join(workDir, artifact), startMs)
+      : null;
 
-  return classifyOutcome({
-    agentKind,
-    mtimeResult,
-    streamText,
-    completionPattern: COMPLETION_SIGNAL,
-    error: streamError,
-  });
+    return classifyOutcome({
+      agentKind,
+      mtimeResult,
+      streamText,
+      completionPattern: COMPLETION_SIGNAL,
+      error: streamError,
+    });
+  };
+
+  return runWithRetry(attemptDispatch);
 }
