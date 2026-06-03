@@ -73,6 +73,14 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observer-autosplit.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/cache-drift-guard.js\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
