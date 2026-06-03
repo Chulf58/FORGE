@@ -8,8 +8,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 import { runImplementStageOrchestrator } from './implement-stage.mjs';
+
+const STAGE_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'implement-stage.mjs'), 'utf-8');
 
 function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null } = {}) {
   const calls = [];
@@ -100,6 +105,18 @@ test('G2: no --tests-diff arg when buildReviewDiff yields null (fail-open to han
     !rd.args.some((a) => a.startsWith('--tests-diff=')),
     'no --tests-diff when no diff is available; got ' + JSON.stringify(rd.args),
   );
+});
+
+// 775944dd: the a8de840b worktree-guard fires on ANY new file under hooks/mcp/scripts in
+// main during the writer-dispatch window — including the conductor's own concurrent edits
+// (observed r-8c327c9a). The detection over-fires in the safe direction; the MESSAGE must
+// be framed as a POSSIBLE breach (could be a concurrent conductor edit), not a definitive one.
+test('worktree-escape message is advisory (POSSIBLE + notes concurrent conductor edit), not a definitive breach claim (775944dd)', () => {
+  const m = STAGE_SRC.match(/\[worktree-escape\][\s\S]{0,500}?\);/);
+  assert.ok(m, 'the [worktree-escape] writeLog must be present');
+  assert.match(m[0], /POSSIBLE/, 'message must be advisory (POSSIBLE), not assert a breach as fact');
+  assert.match(m[0], /conductor/i, 'message must note it ALSO fires on a concurrent conductor edit');
+  assert.doesNotMatch(m[0], /dispatched agent wrote into MAIN/, 'the definitive "dispatched agent wrote into MAIN" wording must be softened');
 });
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {

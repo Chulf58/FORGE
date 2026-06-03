@@ -567,8 +567,14 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     if (strayBaseline !== null) {
       const strays = detectMainStrays(strayBaseline, await deps.snapshotMainStrays());
       if (strays.length) {
-        writeLog('[worktree-escape] dispatched agent wrote into MAIN outside the worktree: '
-          + strays.join(', ') + ' — worktree-isolation breach (a8de840b). Remove from main before any regression.');
+        // 775944dd: this snapshot diff fires on ANY new file under hooks/mcp/scripts in main
+        // during the writer dispatch — which INCLUDES the conductor editing main concurrently
+        // (observed r-8c327c9a), not only a dispatched-agent leak. Detection over-fires in the
+        // safe direction (never misses a real leak), so the message is advisory, not a verdict.
+        writeLog('[worktree-escape] new file(s) under hooks/mcp/scripts appeared in MAIN during the writer dispatch: '
+          + strays.join(', ') + ' — POSSIBLE worktree-isolation breach (a8de840b), but this ALSO fires if the '
+          + 'conductor edited main concurrently during the soak. Investigate before any regression; if a dispatched '
+          + 'agent wrote these, remove them from main.');
       }
     }
 
