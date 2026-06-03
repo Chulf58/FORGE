@@ -11,7 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -77,6 +77,16 @@ test('--changed-from-git exits NON-ZERO when a covering test fails', () => {
     const r = run(root);
     assert.notEqual(r.status, 0, 'a failing covering test must make covers-verify exit non-zero');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+// G1 (orchestrator quality-gap audit): covers-verify runs as a spawned script in the
+// worker, whose PATH lacks git on Windows. A bare spawnSync('git') ENOENTs → 0 changed
+// files → the test-gate silently passes without running any covering test. It must resolve
+// git via getGitExecutable (PATH probe → install-location fallback), like commit-worktree (#7).
+test('G1: covers-verify resolves git via getGitExecutable, never bare spawnSync(\'git\')', () => {
+  const src = readFileSync(VERIFIER, 'utf-8');
+  assert.match(src, /getGitExecutable/, 'must resolve git via getGitExecutable (worker PATH lacks git)');
+  assert.doesNotMatch(src, /spawnSync\(\s*['"]git['"]/, 'must NOT spawn bare "git" — it no-ops in the worker');
 });
 
 test('--changed-from-git ignores non-source changes (no covering test, exit 0)', () => {

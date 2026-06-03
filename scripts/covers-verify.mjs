@@ -17,6 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { extractSection, extractCodeBlockContent } from './lib/handoff-utils.mjs';
 import { buildCoversMap } from './covers-map.mjs';
+import { getGitExecutable } from '../packages/forge-core/src/runs/index.js';
 
 // ─── CLI arg parsing ────────────────────────────────────────────────────────
 
@@ -55,7 +56,10 @@ function parseArgs(argv) {
 function getGitChangedFiles(rootDir) {
   const runGit = (args) => {
     try {
-      const r = spawnSync('git', ['-C', rootDir, ...args], { encoding: 'utf8' });
+      // Resolve git via getGitExecutable (PATH probe → Windows install-location fallback) —
+      // a bare 'git' ENOENTs in the worker (its PATH lacks git), silently returning 0 changed
+      // files so the whole test-gate no-ops (G1 / a8de840b-class, same fix as commit-worktree #7).
+      const r = spawnSync(getGitExecutable(), ['-C', rootDir, ...args], { encoding: 'utf8' });
       return r.status === 0 && r.stdout ? r.stdout : '';
     } catch (_) {
       return '';
