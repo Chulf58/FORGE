@@ -591,6 +591,7 @@ async function main() {
       const { buildInjectedKnowledge } = await import('./lib/orchestrator/knowledge-inject.mjs');
       const { commitWorktree } = await import('./lib/orchestrator/commit-worktree.mjs');
       const { parseReviewerVerdict } = await import('./lib/orchestrator/reviewer-verdict.mjs');
+      const { getGitExecutable } = await import('../packages/forge-core/src/runs/index.js');
       const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
 
       const orchDeps = {
@@ -646,6 +647,32 @@ async function main() {
           const dir = join(resolvedMainProjectRoot, '.pipeline', 'runs', runId);
           mkdirSync(dir, { recursive: true });
           writeFileSync(join(dir, 'change-summary.md'), content, 'utf-8');
+        },
+        // a8de840b #2: snapshot MAIN's changed paths under hooks/mcp/scripts so the
+        // orchestrator can detect a dispatched agent writing OUTSIDE its worktree. Uses
+        // the resolved git executable (the worker's PATH lacks git on Windows — #7), runs
+        // against resolvedMainProjectRoot. Fail-soft to [] (never crash the run).
+        snapshotMainStrays: async () => {
+          try {
+            const { execFileSync } = await import('node:child_process');
+            const out = execFileSync(
+              getGitExecutable(),
+              ['-C', resolvedMainProjectRoot, 'status', '--porcelain', '--', 'hooks/', 'mcp/', 'scripts/'],
+              { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 },
+            );
+            return String(out)
+              .split('\n')
+              .map((l) => l.replace(/\r$/, ''))
+              .filter(Boolean)
+              .map((l) => {
+                const p = l.slice(3).replace(/^"|"$/g, '');
+                const arrow = p.indexOf(' -> ');
+                return (arrow >= 0 ? p.slice(arrow + 4) : p).trim();
+              })
+              .filter(Boolean);
+          } catch (_) {
+            return [];
+          }
         },
         // docs/PLAN.md is UNTRACKED — lives only at the main project root, never in
         // the worktree checkout. Resolve via resolvedMainProjectRoot (not workDir).

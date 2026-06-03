@@ -57,3 +57,22 @@ test('soak #2: the coder prompt also carries the scope guard (any self-discoveri
   assert.ok(coder, 'coder was dispatched');
   assert.match(coder.prompt, /stale/i, 'coder prompt must carry the same scope guard');
 });
+
+// a8de840b #1 — worktree-write-confinement: the orchestrator builders must explicitly
+// tell agents to write ONLY under WorkDir and NEVER to the main project root (the skill
+// path has this instruction and does not leak; the orchestrator relied only on cwd).
+test('a8de840b #1: test-author prompt confines writes to the worktree (never main root)', async () => {
+  const calls = [];
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  const ta = calls.find((c) => c.agentType === 'test-author');
+  assert.ok(ta, 'test-author was dispatched');
+  assert.match(ta.prompt, /main project root/i, 'must forbid writing to the main project root');
+  assert.match(ta.prompt, /under (the )?WorkDir|absolute paths under/i, 'must instruct writes stay under WorkDir');
+});
+
+test('a8de840b #1: the coder prompt also carries the worktree-write-confinement instruction', async () => {
+  const calls = [];
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  const coder = calls.find((c) => c.agentType === 'coder');
+  assert.match(coder.prompt, /main project root/i, 'coder prompt must forbid writing to main root');
+});

@@ -8,6 +8,7 @@
 // it resumes at the apply step rather than re-dispatching completed phases.
 
 import { join, resolve } from 'node:path';
+import { detectMainStrays } from './worktree-guard.mjs';
 
 // Revise cap — mirrors plan-stage.mjs M<2 constraint.
 const REVISE_CAP = 2;
@@ -103,6 +104,21 @@ const SCOPE_GUARD =
   'git-diff.txt, prior PLAN.md history, .pipeline/context/, or any other in-worktree file — ' +
   'those may be STALE from a prior run. If a file you read disagrees with the stated Feature, ' +
   'trust the stated Feature.';
+
+/**
+ * a8de840b #1: worktree-write-confinement, appended to every dispatched agent prompt.
+ * The orchestrator binds the SDK `cwd: workDir` but, unlike the skill path, never told
+ * agents WHERE to write — and test-author (haiku) leaked its test file into the MAIN
+ * project root despite cwd. The non-leaking skill path prepends this exact instruction.
+ * This mirrors it so writes stay inside the worktree regardless of how the agent resolves
+ * a path (relative, absolute, or via a node/Bash command).
+ */
+const WRITE_CONFINEMENT =
+  'Write discipline: every file you create or modify MUST live under the WorkDir stated ' +
+  'above — use absolute paths under WorkDir, or paths relative to it. NEVER create or modify ' +
+  'any file in the main project root (the directory two levels above the `.worktrees/` segment ' +
+  'of WorkDir), not via a relative path, a computed/derived path, or a `node`/Bash command. ' +
+  'All output for this run stays inside WorkDir.';
 
 /**
  * Parse PLAN.md content to extract active tasks and phase count for a given feature.
@@ -220,7 +236,7 @@ function coderScoutPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
-  lines.push('', SCOPE_GUARD);
+  lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
 }
 
@@ -247,7 +263,7 @@ function testAuthorPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
-  lines.push('', SCOPE_GUARD);
+  lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
 }
 
@@ -278,7 +294,7 @@ function coderPromptLines(workDir, runId, taskCtx) {
   if (taskCtx && taskCtx.phaseCount >= 2) {
     lines.push('[phase-scope: ' + taskCtx.feature + ']');
   }
-  lines.push('', SCOPE_GUARD);
+  lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
 }
 
@@ -303,7 +319,7 @@ function completenessCheckerPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
-  lines.push('', SCOPE_GUARD);
+  lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
 }
 
@@ -330,7 +346,7 @@ function reviewerPromptLines(reviewerType, workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
-  lines.push('', SCOPE_GUARD);
+  lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
 }
 
@@ -489,6 +505,13 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       return;
     }
 
+    // a8de840b #2: snapshot MAIN's untracked strays BEFORE any dispatch, so the
+    // post-writer check flags only files an agent freshly wrote into main (not the
+    // pre-existing untracked files main always carries). null = dep absent → no-op.
+    const strayBaseline = typeof deps.snapshotMainStrays === 'function'
+      ? (await deps.snapshotMainStrays())
+      : null;
+
     // Step 2: Dispatch coder-scout
     writeLog('[orchestrator:implement] dispatching coder-scout');
     allPhases.push({ index: allPhases.length, label: 'coder-scout', status: 'completed' });
@@ -503,6 +526,18 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     writeLog('[orchestrator:implement] dispatching coder');
     allPhases.push({ index: allPhases.length, label: 'coder', status: 'completed' });
     const coderOutcome = await stampedDispatch('coder', prependInjection(injectedKnowledge, coderPromptLines(workDir, runId, taskCtx)));
+
+    // a8de840b #2: structural backstop — after the writer agents (test-author + coder),
+    // detect any file a dispatched agent wrote into MAIN, outside the worktree. Mechanism-
+    // independent (catches the breach however the path was computed). #1 (WRITE_CONFINEMENT)
+    // prevents it; this surfaces a leak loudly so it never reaches a clean regression silently.
+    if (strayBaseline !== null) {
+      const strays = detectMainStrays(strayBaseline, await deps.snapshotMainStrays());
+      if (strays.length) {
+        writeLog('[worktree-escape] dispatched agent wrote into MAIN outside the worktree: '
+          + strays.join(', ') + ' — worktree-isolation breach (a8de840b). Remove from main before any regression.');
+      }
+    }
 
     // AC-38/AC-35(b): uncertain coder outcome — stamp and surface immediately.
     if (coderOutcome === 'uncertain') {
