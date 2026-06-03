@@ -1,6 +1,7 @@
 // mcp/lib/orchestrator/agent-dispatch.mjs
 // Stateless agent dispatch primitive — wraps Anthropic SDK query() per-agent.
 
+import { readFileSync } from 'node:fs';
 import { checkMtime } from '../../../scripts/verify-output.mjs';
 
 // Allowed agent type characters — prevents path traversal via agentType parameter.
@@ -19,27 +20,43 @@ export const COMPLETION_SIGNAL = /\[\s*(?:completeness-ok|APPROVED|verdict(?:-fi
  * @param {object} opts
  * @param {'writer'|'readonly'} opts.agentKind
  * @param {{ ok: boolean, reason: string }|null} opts.mtimeResult - for writer agents
+ * @param {{ ok: boolean, reason?: string }|null} [opts.contentResult] - R3 content check (writer agents)
  * @param {string} opts.streamText - accumulated stream output
  * @param {RegExp} opts.completionPattern - pattern to test for readonly agents
  * @param {Error|null} opts.error - thrown error if any
  * @returns {{ outcome: 'completed'|'uncertain', reason?: string }}
  */
-export function classifyOutcome({ agentKind, mtimeResult, streamText, completionPattern, error }) {
-  // Artifact-wins-over-stream-error: for writer agents, a present + fresh output
-  // artifact proves the work landed — trust it even if the SDK stream errored or
-  // aborted afterwards. Checked BEFORE the error path because intermittent late
-  // stream aborts otherwise mark completed work 'uncertain' and block gate2
+export function classifyOutcome({ agentKind, mtimeResult, contentResult, streamText, completionPattern, error }) {
+  const contentOk = !contentResult || contentResult.ok;
+
+  // Artifact-wins-over-stream-error: for writer agents, a present + fresh + content-
+  // VALID output artifact proves the work landed — trust it even if the SDK stream
+  // errored or aborted afterwards. Checked BEFORE the error path because intermittent
+  // late stream aborts otherwise mark completed work 'uncertain' and block gate2
   // (run r-074b94ba: coder wrote a full handoff.md, the stream aborted ~5s later).
+  // R3 adds the content gate so a truncated/degenerate write does NOT win here.
   // covers-verify runs afterwards as the net that still catches a broken impl.
-  if (agentKind === 'writer' && mtimeResult && mtimeResult.ok) {
+  if (agentKind === 'writer' && mtimeResult && mtimeResult.ok && contentOk) {
     return { outcome: 'completed' };
   }
 
-  // Error path — uncertain, surface the error message.
+  // Error path — uncertain (retryable). Checked BEFORE the content-invalid path: a
+  // stream abort can truncate the write, so a degenerate artifact + stream error
+  // should RETRY (the transient class R2 handles), not escalate as content-junk.
   if (error) {
     return {
       outcome: 'uncertain',
       reason: 'dispatch error: ' + (error.message || String(error)),
+    };
+  }
+
+  // R3 — writer wrote a present + fresh artifact whose CONTENT is degenerate, and the
+  // stream did NOT error → the agent ran to completion and produced junk. NON-retryable
+  // (a blind re-run reproduces it); surface the reason for escalation.
+  if (agentKind === 'writer' && mtimeResult && mtimeResult.ok && contentResult && !contentResult.ok) {
+    return {
+      outcome: 'uncertain',
+      reason: contentResult.reason || 'artifact content invalid',
     };
   }
 
@@ -79,6 +96,58 @@ export function expectedArtifact(agentType) {
   if (agentType === 'coder') return 'docs/context/handoff.md';
   if (agentType.startsWith('reviewer-')) return '.pipeline/context/reviewer-output/' + agentType + '.md';
   return null;
+}
+
+/**
+ * R3: validate the CONTENT of a writer agent's artifact, not just its existence.
+ * A present+fresh file can still be degenerate (the false-positive documented in
+ * GENERAL.md): scout.json with files_to_read:[] (the agent had no real task), an
+ * empty handoff.md, an empty reviewer verdict. Returns { ok, reason }. Conservative
+ * by design — unknown types pass (do not over-gate; an over-blocking guard is worse
+ * than the skip). Reasons never contain 'dispatch error', so a content failure is
+ * correctly NON-retryable (isRetryableStreamError → false): the agent ran to
+ * completion and produced junk, so a blind re-run reproduces it → escalate.
+ * @param {string} agentType
+ * @param {string} absPath - absolute path to the artifact
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+export function validateArtifactContent(agentType, absPath) {
+  const read = () => {
+    try { return { raw: readFileSync(absPath, 'utf-8') }; }
+    catch (e) { return { err: (e && (e.code || e.message)) || 'unreadable' }; }
+  };
+
+  if (agentType === 'coder-scout') {
+    const { raw, err } = read();
+    if (err) return { ok: false, reason: 'artifact content invalid: scout.json unreadable (' + err + ')' };
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (_) { return { ok: false, reason: 'artifact content invalid: scout.json is not valid JSON' }; }
+    if (!parsed || !Array.isArray(parsed.files_to_read) || parsed.files_to_read.length === 0) {
+      return { ok: false, reason: 'artifact content invalid: scout.json files_to_read is empty (agent found no files)' };
+    }
+    return { ok: true };
+  }
+
+  if (agentType === 'coder') {
+    const { raw, err } = read();
+    if (err) return { ok: false, reason: 'artifact content invalid: handoff.md unreadable (' + err + ')' };
+    if (raw.trim().length === 0) return { ok: false, reason: 'artifact content invalid: handoff.md is empty' };
+    if (!/##\s+Files to (create|modify)/i.test(raw)) {
+      return { ok: false, reason: 'artifact content invalid: handoff.md missing a "## Files to create/modify" section' };
+    }
+    return { ok: true };
+  }
+
+  if (agentType.startsWith('reviewer-')) {
+    const { raw, err } = read();
+    if (err) return { ok: false, reason: 'artifact content invalid: reviewer verdict unreadable (' + err + ')' };
+    if (raw.trim().length === 0) return { ok: false, reason: 'artifact content invalid: reviewer verdict file is empty' };
+    return { ok: true };
+  }
+
+  // Unknown writer type — do not over-gate.
+  return { ok: true };
 }
 
 /**
@@ -345,10 +414,16 @@ export async function dispatchAgent({
     const mtimeResult = agentKind === 'writer'
       ? checkMtime(join(workDir, artifact), startMs)
       : null;
+    // R3: only validate content when the artifact is present + fresh — a stale/absent
+    // file is already handled by the mtime check, and reading it would be wasted I/O.
+    const contentResult = (agentKind === 'writer' && mtimeResult && mtimeResult.ok)
+      ? validateArtifactContent(agentType, join(workDir, artifact))
+      : null;
 
     return classifyOutcome({
       agentKind,
       mtimeResult,
+      contentResult,
       streamText,
       completionPattern: COMPLETION_SIGNAL,
       error: streamError,
