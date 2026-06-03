@@ -515,7 +515,23 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // Step 2: Dispatch coder-scout
     writeLog('[orchestrator:implement] dispatching coder-scout');
     allPhases.push({ index: allPhases.length, label: 'coder-scout', status: 'completed' });
-    await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId, taskCtx)));
+    const scoutOutcome = await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId, taskCtx)));
+
+    // G8: enforce the scout precondition — the coder MUST NOT run without verified scout
+    // output (CLAUDE.md coder-dispatch discipline). An uncertain coder-scout (e.g. absent or
+    // degenerate scout.json) blocks gate2 rather than dispatching a coder with no file map.
+    if (scoutOutcome === 'uncertain') {
+      const currentRun = await deps.readRunJson(runJsonPath);
+      await deps.writeGateFile(gatePendingPath, {
+        runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
+        blockedBy: { agentType: 'coder-scout', reason: 'scout output not verified — coder precondition unmet' },
+      });
+      await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
+        status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+        agents: allAgents.slice(), phases: allPhases.slice(),
+      }));
+      return;
+    }
 
     // Step 3: Dispatch test-author (writes red-bar tests before coder implements)
     writeLog('[orchestrator:implement] dispatching test-author');
@@ -599,7 +615,23 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // Step 4: Dispatch completeness-checker
     writeLog('[orchestrator:implement] dispatching completeness-checker');
     allPhases.push({ index: allPhases.length, label: 'completeness-checker', status: 'completed' });
-    await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)));
+    const completenessOutcome = await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)));
+
+    // G3: consume the completeness verdict. completeness-checker is readonly (judged by its
+    // [completeness-ok] signal); 'uncertain' = it did NOT confirm the handoff covers all plan
+    // tasks → block gate2 instead of proceeding to reviewers on a possibly-incomplete impl.
+    if (completenessOutcome === 'uncertain') {
+      const currentRun = await deps.readRunJson(runJsonPath);
+      await deps.writeGateFile(gatePendingPath, {
+        runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
+        blockedBy: { agentType: 'completeness-checker', reason: 'completeness not confirmed — handoff may not cover all plan tasks' },
+      });
+      await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
+        status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+        agents: allAgents.slice(), phases: allPhases.slice(),
+      }));
+      return;
+    }
 
     // Reviewer loop — runs once initially, then iterates on REVISE verdicts (capped at M<2)
     let M = orchState.implementReviseCount;
@@ -620,7 +652,19 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         const parsed = JSON.parse(stdout);
         reviewerList = Array.isArray(parsed && parsed.reviewers) ? parsed.reviewers : [];
       } catch (_) {
-        reviewerList = [];
+        // G5: unparseable reviewer-dispatch output = its selection FAILED. Do NOT treat that
+        // as "0 reviewers" (which would silently reach a clean gate2 with zero review). Block
+        // gate2 so the failure surfaces, never proceed unreviewed.
+        const currentRun = await deps.readRunJson(runJsonPath);
+        await deps.writeGateFile(gatePendingPath, {
+          runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
+          blockedBy: { agentType: 'reviewer-dispatch', reason: 'reviewer selection failed — unparseable reviewer-dispatch output' },
+        });
+        await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
+          status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+          agents: allAgents.slice(), phases: allPhases.slice(),
+        }));
+        return;
       }
 
       writeLog('[orchestrator:implement] reviewers=' + reviewerList.join(','));
