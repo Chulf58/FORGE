@@ -498,6 +498,7 @@ async function main() {
     if (process.env.FORGE_ORCHESTRATOR_PLAN === 'on' && pipelineType === 'plan') {
       const { runPlanStageOrchestrator } = await import('./lib/orchestrator/plan-stage.mjs');
       const { dispatchAgent } = await import('./lib/orchestrator/agent-dispatch.mjs');
+      const { parseReviewerVerdict } = await import('./lib/orchestrator/reviewer-verdict.mjs');
       const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
 
       const orchDeps = {
@@ -541,10 +542,9 @@ async function main() {
         readReviewerOutput: async (reviewerOutputDir, reviewerName) => {
           try {
             const content = readFileSync(join(reviewerOutputDir, reviewerName + '.md'), 'utf-8');
-            const firstLine = content.split('\n')[0].toUpperCase();
-            if (firstLine.includes('BLOCK')) return { verdict: 'BLOCK' };
-            if (firstLine.includes('REVISE')) return { verdict: 'REVISE' };
-            return { verdict: 'APPROVED' };
+            // Robust: anchor on the "### Verdict" section, fail-safe BLOCK-wins. The old
+            // first-line-only match silently dropped a BLOCK on a later line (soak #1).
+            return { verdict: parseReviewerVerdict(content) };
           } catch (_) {
             return { verdict: 'APPROVED' };
           }
@@ -590,6 +590,7 @@ async function main() {
       const { dispatchAgent } = await import('./lib/orchestrator/agent-dispatch.mjs');
       const { buildInjectedKnowledge } = await import('./lib/orchestrator/knowledge-inject.mjs');
       const { commitWorktree } = await import('./lib/orchestrator/commit-worktree.mjs');
+      const { parseReviewerVerdict } = await import('./lib/orchestrator/reviewer-verdict.mjs');
       const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
 
       const orchDeps = {
@@ -632,10 +633,9 @@ async function main() {
         readReviewerOutput: async (outputDir, reviewerName) => {
           try {
             const content = readFileSync(join(outputDir, reviewerName + '.md'), 'utf-8');
-            const firstLine = content.split('\n')[0].toUpperCase();
-            if (firstLine.includes('BLOCK')) return { verdict: 'BLOCK' };
-            if (firstLine.includes('REVISE')) return { verdict: 'REVISE' };
-            return { verdict: 'APPROVED' };
+            // Robust: anchor on the "### Verdict" section, fail-safe BLOCK-wins. The old
+            // first-line-only match silently dropped a BLOCK on a later line (soak #1).
+            return { verdict: parseReviewerVerdict(content) };
           } catch (_) {
             return { verdict: 'APPROVED' };
           }
