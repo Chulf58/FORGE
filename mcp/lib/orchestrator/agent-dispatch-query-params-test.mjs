@@ -50,7 +50,9 @@ test('bypassPermissions is set AND its required allowDangerouslySkipPermissions 
 test('model, systemPrompt, settingSources, cwd, mcpServers bind under options', () => {
   const o = sample().options;
   assert.equal(o.model, 'claude-haiku-4-5-20251001');
-  assert.equal(o.systemPrompt, 'AGENT-SYSTEM-PROMPT');
+  // R4: systemPrompt = the agent body PLUS the appended idempotency contract.
+  assert.ok(o.systemPrompt.startsWith('AGENT-SYSTEM-PROMPT'), 'agent body binds as the systemPrompt prefix');
+  assert.match(o.systemPrompt, /idempotent/i, 'R4 idempotency contract is appended to systemPrompt');
   assert.deepEqual(o.settingSources, []);
   assert.equal(o.cwd, '/wt/r-test');
   assert.ok(o.mcpServers && o.mcpServers['forge-pipeline'], 'forge-pipeline MCP server wired');

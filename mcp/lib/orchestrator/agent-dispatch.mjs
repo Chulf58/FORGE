@@ -292,6 +292,27 @@ function parseFrontmatter(content) {
 }
 
 /**
+ * R4: the idempotent-retry contract, appended to every dispatched agent's systemPrompt.
+ * R2 makes a retry HAPPEN (re-dispatch on a transient stream error); R4 makes it SAFE.
+ * A retry re-runs the agent from scratch in the SAME worktree, so its output must be
+ * idempotent — overwrite-same-file, never append/duplicate/incrementally extend — or a
+ * second attempt corrupts the first attempt's output. Worktree isolation already makes
+ * a re-dispatch overwrite-same-file at the FS level; this makes the agent honor it too.
+ */
+export const IDEMPOTENCY_CONTRACT = [
+  '',
+  '',
+  '---',
+  '',
+  'Reliability contract (idempotent retry): your dispatch MAY be retried — e.g. after a',
+  'transient stream abort. A retry re-runs you from scratch with the same inputs in the',
+  'same worktree. Your output MUST be idempotent: rewrite the same files with the same',
+  'content. Never append to, duplicate, or incrementally extend a file you may already',
+  'have written on an earlier attempt. Producing the same result on a re-run as on the',
+  'first run is required.',
+].join('\n');
+
+/**
  * Build the SDK query() params for a dispatched agent.
  *
  * CRITICAL: the SDK signature is query({ prompt, options }) (sdk.d.ts:2165) —
@@ -322,7 +343,7 @@ export function buildQueryParams({
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: [],
-      systemPrompt: agentBody,
+      systemPrompt: agentBody + IDEMPOTENCY_CONTRACT,
       plugins: [{ type: 'local', path: pluginRoot }],
       mcpServers: { 'forge-pipeline': buildMcpServer(workDir) },
       cwd: workDir,
