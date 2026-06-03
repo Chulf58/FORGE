@@ -536,7 +536,24 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // Step 3: Dispatch test-author (writes red-bar tests before coder implements)
     writeLog('[orchestrator:implement] dispatching test-author');
     allPhases.push({ index: allPhases.length, label: 'test-author', status: 'completed' });
-    await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+    const testAuthorOutcome = await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+
+    // G7/G8: consume the test-author outcome (G7 gave it a real expectedArtifact, so
+    // 'uncertain' now means its red-bar artifact was not verifiably written). The coder
+    // MUST NOT implement against an unverified red bar — that defeats TDD and risks a
+    // Red+Green collapse. Block gate2 instead, parallel to the scout precondition.
+    if (testAuthorOutcome === 'uncertain') {
+      const currentRun = await deps.readRunJson(runJsonPath);
+      await deps.writeGateFile(gatePendingPath, {
+        runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
+        blockedBy: { agentType: 'test-author', reason: 'red-bar tests not verified — coder TDD precondition unmet' },
+      });
+      await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
+        status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+        agents: allAgents.slice(), phases: allPhases.slice(),
+      }));
+      return;
+    }
 
     // Step 4: Dispatch coder
     writeLog('[orchestrator:implement] dispatching coder');

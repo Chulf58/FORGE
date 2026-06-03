@@ -48,6 +48,16 @@ test('G8: coder-scout uncertain → gate2 blocked, coder NOT dispatched (scout p
     'coder must NOT run after a failed scout (no scout output)');
 });
 
+test('G7/G8: test-author uncertain → gate2 blocked, coder NOT dispatched (red-bar precondition)', async () => {
+  const { deps, calls } = makeDeps({ outcomes: { 'test-author': 'uncertain' } });
+  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  const gate2 = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
+  assert.ok(gate2, 'an unverified test-author (no red-bar artifact) must open gate2');
+  assert.equal(gate2.gateData.blockedBy?.agentType, 'test-author', 'gate2 blockedBy test-author');
+  assert.equal(calls.findIndex((c) => c.type === 'dispatch' && c.agentType === 'coder'), -1,
+    'coder must NOT run without a verified red bar from test-author');
+});
+
 test('G3: completeness-checker uncertain → gate2 blocked, reviewers NOT dispatched', async () => {
   const { deps, calls } = makeDeps({ outcomes: { 'completeness-checker': 'uncertain' } });
   await runImplementStageOrchestrator(deps, 'r-test', '/wt');

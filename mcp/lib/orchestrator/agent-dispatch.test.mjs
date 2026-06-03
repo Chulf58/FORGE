@@ -486,3 +486,22 @@ test('RED AC-4: expectedArtifact("coder-scout") returns "docs/context/scout.json
     '(currently returns "' + result + '")'
   );
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// G7: test-author writes .pipeline/context/test-author-output.json (test-author.md
+// :24,:37,:74) but had no expectedArtifact mapping → classifyOutcome judged it
+// 'readonly' (completion-signal only) → always 'uncertain', its red-bar never
+// verified. The mapping makes test-author a writer judged by its output mtime.
+// ──────────────────────────────────────────────────────────────────────────
+
+test('G7: expectedArtifact("test-author") returns ".pipeline/context/test-author-output.json"', () => {
+  const expectedArtifact = mod.expectedArtifact;
+  assert.ok(expectedArtifact, 'expectedArtifact must be a function');
+  const result = expectedArtifact('test-author');
+  assert.strictEqual(
+    result,
+    '.pipeline/context/test-author-output.json',
+    'G7 FAILING: test-author must map to its real output artifact so its outcome is verified ' +
+    '(currently returns "' + result + '")'
+  );
+});

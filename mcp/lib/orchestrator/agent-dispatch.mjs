@@ -93,6 +93,7 @@ const READONLY_AGENTS = new Set(['completeness-checker', 'gotcha-checker']);
  */
 export function expectedArtifact(agentType) {
   if (agentType === 'coder-scout') return 'docs/context/scout.json';
+  if (agentType === 'test-author') return '.pipeline/context/test-author-output.json';
   if (agentType === 'coder') return 'docs/context/handoff.md';
   if (agentType.startsWith('reviewer-')) return '.pipeline/context/reviewer-output/' + agentType + '.md';
   return null;
