@@ -86,7 +86,10 @@ const RULE_TO_REVIEWERS = {
 
 // Test-file pattern — matches test-file paths in +++ b/ diff headers.
 // Used by addReviewerTestsIfNeeded to scope keyword detection to test hunks only (AC-7).
-const TEST_FILE_PATTERN = /(?:\.test\.|_test\.|\.spec\.|\/tests\/|\/spec\/)/;
+// `[.\-_]test\.` matches all three delimiters: foo.test.js, foo-test.mjs (this repo's
+// dominant convention), foo_test.py. The old pattern omitted `-test.` so reviewer-tests
+// never fired on the repo's own -test.mjs files (soak r-504f3c7a).
+const TEST_FILE_PATTERN = /(?:[.\-_]test\.|\.spec\.|\/tests\/|\/spec\/)/;
 
 // Suppression keywords that trigger reviewer-tests when found on + lines in test-file hunks.
 const TEST_SUPPRESSION_KEYWORDS = [

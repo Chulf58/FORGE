@@ -150,3 +150,26 @@ test('G2: handoff path WITH --tests-diff touching a test file DOES dispatch revi
     `--tests-diff with a test-file diff must force-include reviewer-tests on the handoff path; got ${JSON.stringify(result.reviewers)}`,
   );
 });
+
+// Soak r-504f3c7a: TEST_FILE_PATTERN matched `.test.` / `_test.` but NOT `-test.` — yet
+// this repo's dominant convention is `-test.mjs` (git-executable-test.mjs, dispatch-smoke-
+// test.mjs, soak-probe-clamp-test.mjs, ...). So reviewer-tests NEVER fired on the repo's
+// own test files. The existing fixtures all use `foo.test.js` (.test. form), so it passed
+// while real coverage was zero — "tested against a format nothing produces" (GENERAL.md).
+const TESTS_DIFF_HYPHEN_TEST_FILE = `diff --git a/scripts/foo-test.mjs b/scripts/foo-test.mjs
+index 1234567..abcdefg 100644
+--- a/scripts/foo-test.mjs
++++ b/scripts/foo-test.mjs
+@@ -1,3 +1,4 @@
+ import { test } from 'node:test';
++test('x', () => {});
+ // tail
+`;
+
+test('reviewer-tests fires on a `-test.mjs` file (repo convention), not only `.test.`', () => {
+  const result = runHandoffDispatch(HANDOFF_CLEAN, TESTS_DIFF_HYPHEN_TEST_FILE);
+  assert.ok(
+    result.reviewers.includes('reviewer-tests'),
+    `a diff touching a -test.mjs file must force-include reviewer-tests (repo uses -test.mjs); got ${JSON.stringify(result.reviewers)}`,
+  );
+});
