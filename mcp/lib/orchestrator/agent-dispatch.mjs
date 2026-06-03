@@ -124,8 +124,15 @@ export function validateArtifactContent(agentType, absPath) {
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch (_) { return { ok: false, reason: 'artifact content invalid: scout.json is not valid JSON' }; }
-    if (!parsed || !Array.isArray(parsed.files_to_read) || parsed.files_to_read.length === 0) {
-      return { ok: false, reason: 'artifact content invalid: scout.json files_to_read is empty (agent found no files)' };
+    // A scout is degenerate only when it identified NO work at all — neither existing
+    // files to read NOR new files to create. A purely-additive (greenfield) feature
+    // legitimately has files_to_read:[] with new_files populated; rejecting that on the
+    // files_to_read check alone false-flagged a valid scout and tripped the G8 block
+    // (soak r-1dc3d1fb).
+    const readList = Array.isArray(parsed && parsed.files_to_read) ? parsed.files_to_read : [];
+    const newList = Array.isArray(parsed && parsed.new_files) ? parsed.new_files : [];
+    if (!parsed || (readList.length === 0 && newList.length === 0)) {
+      return { ok: false, reason: 'artifact content invalid: scout.json lists no files to read or create (agent found no work)' };
     }
     return { ok: true };
   }

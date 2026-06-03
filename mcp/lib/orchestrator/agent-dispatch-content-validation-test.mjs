@@ -38,14 +38,37 @@ test('scout.json with a non-empty files_to_read is valid', () => {
   });
 });
 
-test('scout.json with an EMPTY files_to_read is degenerate (invalid)', () => {
+test('scout.json with an EMPTY files_to_read and no new_files is degenerate (invalid)', () => {
   withTmp((dir) => {
     const p = join(dir, 'scout.json');
     writeFileSync(p, JSON.stringify({ files_to_read: [] }));
     const r = validateArtifactContent('coder-scout', p);
     assert.equal(r.ok, false);
-    assert.match(r.reason, /files_to_read/);
+    assert.match(r.reason, /no files to read or create/);
     assert.equal(isRetryableStreamError(r.reason), false, 'content-invalid must be NON-retryable');
+  });
+});
+
+test('R3-greenfield: scout.json with empty files_to_read but populated new_files is VALID', () => {
+  withTmp((dir) => {
+    const p = join(dir, 'scout.json');
+    // A purely-additive feature reads no existing files but DOES identify new files to
+    // create — a real scout result, NOT a degenerate "found nothing" write. The old check
+    // (files_to_read.length === 0 → invalid) false-flagged this and the G8 block then fired
+    // on a perfectly good greenfield scout (soak r-1dc3d1fb).
+    writeFileSync(p, JSON.stringify({ files_to_read: [], new_files: ['scripts/x.mjs', 'scripts/x-test.mjs'] }));
+    assert.equal(validateArtifactContent('coder-scout', p).ok, true);
+  });
+});
+
+test('R3: scout.json with BOTH files_to_read and new_files empty is degenerate (invalid)', () => {
+  withTmp((dir) => {
+    const p = join(dir, 'scout.json');
+    writeFileSync(p, JSON.stringify({ files_to_read: [], new_files: [] }));
+    const r = validateArtifactContent('coder-scout', p);
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /no files to read or create|files_to_read/);
+    assert.equal(isRetryableStreamError(r.reason), false, 'a completed-but-degenerate scout must escalate, not loop');
   });
 });
 
