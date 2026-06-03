@@ -24,3 +24,13 @@ test('the first-line-only verdict antipattern is gone', () => {
   assert.doesNotMatch(SRC, /firstLine\.includes\('BLOCK'\)/,
     'the line-1-only BLOCK match (the soak #1 bug) must be removed');
 });
+
+// G4: a reviewer that fails to write its verdict (crash/truncate/timeout) must NOT be
+// silently treated as APPROVED. Both readReviewerOutput catches (plan + implement stage)
+// must return a no-verdict (REVISE), matching the skill path's no-verdict→REVISE handling.
+test('G4: no readReviewerOutput catch defaults a missing verdict to APPROVED', () => {
+  assert.doesNotMatch(SRC, /verdict: 'APPROVED'/,
+    'a missing/unreadable verdict file must NOT default to APPROVED (silent pass on a dead reviewer)');
+  assert.match(SRC, /verdict: 'REVISE'/,
+    'readReviewerOutput must return a no-verdict (REVISE) on a missing/unreadable verdict file');
+});

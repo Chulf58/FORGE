@@ -546,7 +546,11 @@ async function main() {
             // first-line-only match silently dropped a BLOCK on a later line (soak #1).
             return { verdict: parseReviewerVerdict(content) };
           } catch (_) {
-            return { verdict: 'APPROVED' };
+            // G4: a missing/unreadable verdict file means the reviewer crashed, truncated,
+            // or timed out before writing. Treat as NO-VERDICT → REVISE (matches the skill
+            // path's no-verdict→REVISE-unresolved handling). NEVER default to APPROVED —
+            // that silently passes a dead reviewer straight through gate2.
+            return { verdict: 'REVISE' };
           }
         },
         writeLog,
@@ -638,7 +642,11 @@ async function main() {
             // first-line-only match silently dropped a BLOCK on a later line (soak #1).
             return { verdict: parseReviewerVerdict(content) };
           } catch (_) {
-            return { verdict: 'APPROVED' };
+            // G4: a missing/unreadable verdict file means the reviewer crashed, truncated,
+            // or timed out before writing. Treat as NO-VERDICT → REVISE (matches the skill
+            // path's no-verdict→REVISE-unresolved handling). NEVER default to APPROVED —
+            // that silently passes a dead reviewer straight through gate2.
+            return { verdict: 'REVISE' };
           }
         },
         writeChangeSummary: async (_path, content) => {
