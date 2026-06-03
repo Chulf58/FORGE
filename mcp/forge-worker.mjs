@@ -580,7 +580,7 @@ async function main() {
       }
 
     // --- Deterministic orchestrator path (implement+apply stage) ---
-    } else if (process.env.FORGE_ORCHESTRATOR_IMPLEMENT === 'on' && pipelineType === 'implement') {
+    } else if (pipelineType === 'implement') {
       // TODO(phase2-wiring): gate2 poll + resume are not yet wired here.
       // The implement orchestrator uses the exit-and-resume defer-gate pattern:
       // it writes gate2 then returns — the worker exits, re-spawned on approval.
