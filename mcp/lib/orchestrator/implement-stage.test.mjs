@@ -295,6 +295,45 @@ test('AC-6b: unresolved-REVISE (M>=2) opens gate2 with revisingUnresolved marker
   assert.ok(gate2Write, 'AC-6b: run.json must be gate-pending, not failed');
 });
 
+// ── AC-6c: REVISE→APPROVE recovery (the in-run revise loop, M<2) ────────────
+// Exit-bar case (b): a reviewer REVISEs round 1, the orchestrator re-dispatches the
+// coder with [revision-mode], reviewers re-run and APPROVE → clean gate2 (no
+// revisingUnresolved, no blockedBy). This path can't be forced in a real soak (you
+// can't make a reviewer REVISE on demand), so it is cleared deterministically here.
+
+test('AC-6c: REVISE then APPROVED — coder re-dispatched once, then clean gate2 (recovery)', async () => {
+  const fileOps = createMockFileOps();
+  const mockDispatch = createMockDispatch();
+  const verdicts = ['REVISE', 'APPROVED']; // round 1 REVISE → round 2 APPROVED
+  let vi = 0;
+
+  const deps = {
+    ...fileOps,
+    dispatch: mockDispatch.dispatch,
+    readReviewerOutput: async () => ({ verdict: verdicts[Math.min(vi++, verdicts.length - 1)] }),
+    commitWorktree: async () => ({ committed: true, sha: 'abc123' }),
+    writeChangeSummary: async () => {},
+  };
+
+  await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+
+  // The coder is dispatched TWICE: the initial pass + one revision pass.
+  const coderDispatches = mockDispatch.calls.filter((c) => c.agentType === 'coder');
+  assert.equal(coderDispatches.length, 2, 'AC-6c: coder must be re-dispatched exactly once on REVISE');
+  assert.ok(
+    coderDispatches[1].promptLines.join('\n').includes('revision-mode'),
+    'AC-6c: the revision pass must be tagged [revision-mode]',
+  );
+
+  // Final gate2 is CLEAN — recovered, not unresolved, not blocked.
+  const gate2Writes = fileOps.getCalls().filter((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
+  const finalGate = gate2Writes[gate2Writes.length - 1];
+  assert.ok(finalGate, 'AC-6c: gate2 must be written');
+  assert.equal(finalGate.gateData.status, 'pending', 'AC-6c: clean gate2 is pending');
+  assert.ok(!finalGate.gateData.revisingUnresolved, 'AC-6c: NOT revisingUnresolved (it recovered)');
+  assert.ok(!finalGate.gateData.blockedBy, 'AC-6c: NOT blocked (it recovered)');
+});
+
 // ── AC-7: Exit-and-resume: dispatcher returns at gate2 ──────────────────────
 
 test('AC-7: orchestrator returns (does not await gate) after writing gate2', async () => {
