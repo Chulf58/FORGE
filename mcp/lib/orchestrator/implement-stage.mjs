@@ -160,12 +160,15 @@ function parsePlanContent(content, feature) {
     if (/^\s*-\s*\[\s*\]\s/.test(line)) {
       // Active task line.
       activeTaskLines.push(line.trim());
-      // Look ahead for Verify: lines (indented continuation).
+      // Look ahead for the task's Intent: (the HOW) + Verify:/AC- (the what-to-verify)
+      // continuation lines. Soak #6: dropping Intent meant requirements expressed there
+      // (e.g. "emit via additionalContext") never reached the coder, which then guessed
+      // wrong and got BLOCKed. The ACs alone are not enough to implement from.
       let j = i + 1;
       while (j < sectionLines.length) {
         const next = sectionLines[j];
         if (/^\s*-\s*\[/.test(next)) break; // next task
-        if (/^\s*(Verify:|AC-\d+:)/.test(next)) {
+        if (/^\s*(Intent:|Verify:|AC-\d+:)/.test(next)) {
           activeTaskLines.push(next.trim());
         }
         j++;
