@@ -12,6 +12,7 @@
 // Forbidden ops (--force/--amend/--no-verify/reset/clean/stash) are never issued.
 
 import { execFile } from 'node:child_process';
+import { getGitExecutable } from '../../../packages/forge-core/src/runs/index.js';
 
 /**
  * Default exec — runs a command (no shell), captures stdout/stderr/exitCode.
@@ -40,14 +41,26 @@ function defaultExec(cmd, args, opts = {}) {
  * @param {{ exec?: function }} [deps] - injectable exec for testing; defaults to a child_process runner
  * @returns {Promise<{ committed: boolean, sha?: string, reason?: string }>}
  */
-export async function commitWorktree(workDir, message, { exec = defaultExec } = {}) {
+export async function commitWorktree(workDir, message, { exec = defaultExec, resolveGit = getGitExecutable } = {}) {
   const opts = { cwd: workDir };
+
+  // Resolve the git executable the SAME way createWorktree does — the worker process
+  // (spawned by the MCP server) often lacks the user's full PATH on Windows, so a bare
+  // execFile('git') ENOENTs (soak r-29911e2c #7: all-APPROVED path reached but commit
+  // skipped with "git status failed (exit 1)"). getGitExecutable probes PATH then common
+  // install locations. If git truly can't be found it throws — surface that, don't swallow.
+  let gitExe;
+  try {
+    gitExe = resolveGit();
+  } catch (e) {
+    return { committed: false, reason: 'git executable not found: ' + ((e && e.message) || String(e)) };
+  }
 
   // 1. List ALL changed files via porcelain — INCLUDING untracked (??) new files.
   //    `git diff --name-only HEAD` omitted untracked files, so a new-file feature
   //    committed nothing and gate2 had nothing to merge (r-91c5b2e9). Exclude
   //    pipeline state + per-run context (.pipeline/, docs/context/) — not source.
-  const status = await exec('git', ['status', '--porcelain'], opts);
+  const status = await exec(gitExe, ['status', '--porcelain'], opts);
 
   // Surface a git FAILURE distinctly — never mask it as "nothing to commit" (soak #3:
   // a swallowed git error read identically to a clean tree and silently skipped the
@@ -88,11 +101,11 @@ export async function commitWorktree(workDir, message, { exec = defaultExec } = 
   // 2. Stage each file INDIVIDUALLY — never `git add -A` / `.` / `--all`
   //    (matches apply Step 3c discipline; avoids sweeping in unintended paths).
   for (const file of files) {
-    await exec('git', ['add', file], opts);
+    await exec(gitExe, ['add', file], opts);
   }
 
   // 3. Commit. Message passed verbatim as one arg (execFile, no shell → injection-safe).
-  const commit = await exec('git', ['commit', '-m', message], opts);
+  const commit = await exec(gitExe, ['commit', '-m', message], opts);
   if (typeof commit.exitCode === 'number' && commit.exitCode !== 0) {
     return { committed: false, reason: 'git commit failed: ' + (commit.stderr || ('exit ' + commit.exitCode)) };
   }

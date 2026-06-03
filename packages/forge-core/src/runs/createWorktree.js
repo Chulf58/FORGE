@@ -59,7 +59,11 @@ export function copyDirSync(src, dst, opts = {}) {
  */
 let _resolvedGit = null;
 let _searchedPaths = [];
-function getGitExecutable() {
+// Exported so other orchestrator code (e.g. commit-worktree.mjs) resolves git the
+// SAME way — the worker process spawned by the MCP server often lacks the user's full
+// PATH on Windows, so a bare `execFile('git')` fails (soak r-29911e2c #7). Single
+// source of truth for the PATH-probe-then-install-location fallback.
+export function getGitExecutable() {
   if (_resolvedGit) return _resolvedGit;
 
   // Try PATH-based 'git' first — execFileSync's process-level PATH lookup

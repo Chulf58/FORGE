@@ -163,6 +163,27 @@ test('"nothing to commit" reports git saw 0 when status output is empty', async 
   assert.match(result.reason, /0 changed entr/, 'an empty git status must report git-saw-0 (distinguishes from a filter eating entries)');
 });
 
+test('soak #7: commitWorktree resolves the git executable via resolveGit (worker PATH may lack git)', async () => {
+  // r-29911e2c: the all-APPROVED path was reached but the commit was skipped with
+  // "git status failed (exit 1)" — the worker process (spawned by the MCP server) lacks
+  // git on PATH on Windows, so a bare execFile('git') ENOENTs. createWorktree already
+  // resolves git via getGitExecutable (PATH probe → install-location fallback); commit
+  // must use the SAME resolver, not bare 'git'.
+  const calls = [];
+  const SENTINEL = 'C:/Program Files/Git/cmd/git.exe';
+  const mockExec = async (cmd, args, opts) => {
+    calls.push({ cmd, args, opts });
+    if (args[0] === 'status') return { stdout: ' M hooks/x.js', exitCode: 0 };
+    return { stdout: 'sha123\n', exitCode: 0 };
+  };
+  const result = await mod.commitWorktree('/wt', 'msg', { exec: mockExec, resolveGit: () => SENTINEL });
+  assert.ok(calls.length >= 2, 'must run git (status + add/commit)');
+  for (const c of calls) {
+    assert.equal(c.cmd, SENTINEL, 'every git call must use the RESOLVED executable, not bare "git"');
+  }
+  assert.equal(result.committed, true);
+});
+
 test('commitWorktree runs git against the worktree (cwd or -C)', async () => {
   const execCalls = [];
   const workDir = '/test/worktree-path';

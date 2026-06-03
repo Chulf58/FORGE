@@ -6,7 +6,7 @@ export { createRun, generateRunId } from './createRun.js';
 export { getRun } from './getRun.js';
 export { listRuns } from './listRuns.js';
 export { updateRun } from './updateRun.js';
-export { createWorktree, removeWorktree } from './createWorktree.js';
+export { createWorktree, removeWorktree, getGitExecutable } from './createWorktree.js';
 export { rebuildIndex } from './rebuildIndex.js';
 
 // -- Per-run active file helpers ---------------------------------------------
