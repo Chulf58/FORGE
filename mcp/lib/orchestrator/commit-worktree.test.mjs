@@ -126,6 +126,43 @@ test('commitWorktree never uses reset, clean, or stash commands', async () => {
   }
 });
 
+// --- Soak r-15ef051e finding #3: a silent "no changed source files" skip masked the
+// real cause. These assert the skip/failure reasons are DIAGNOSTIC (surface, don't swallow).
+
+test('commitWorktree surfaces a git status FAILURE distinctly (not masked as "nothing to commit")', async () => {
+  const execCalls = [];
+  const mockExec = async (cmd, args, opts) => {
+    execCalls.push({ cmd, args, opts });
+    if (cmd === 'git' && args[0] === 'status') {
+      return { stdout: '', stderr: 'fatal: not a git repository', exitCode: 128 };
+    }
+    return { stdout: '', exitCode: 0 };
+  };
+  const result = await mod.commitWorktree('/wt', 'msg', { exec: mockExec });
+  assert.equal(result.committed, false);
+  assert.match(result.reason, /git status failed/i, 'a git failure must be named, not hidden as nothing-to-commit');
+  assert.match(result.reason, /128|not a git repository/, 'must include the exit code or stderr');
+  assert.equal(execCalls.filter((c) => c.args[0] === 'add').length, 0, 'must not stage on a status failure');
+});
+
+test('"nothing to commit" reason names the cwd and how many raw entries git saw (filtered-out vs git-saw-nothing)', async () => {
+  const execCalls = [];
+  // git saw 2 entries, both excluded (docs/context, .pipeline) → filtered to 0 source files.
+  const mockExec = mockExecFor('?? docs/context/scout.json\n?? .pipeline/context/foo.json', execCalls);
+  const result = await mod.commitWorktree('/wt/path', 'msg', { exec: mockExec });
+  assert.equal(result.committed, false);
+  assert.match(result.reason, /\/wt\/path/, 'reason must name the cwd it inspected');
+  assert.match(result.reason, /2 changed entr/, 'reason must report how many raw entries git saw');
+});
+
+test('"nothing to commit" reports git saw 0 when status output is empty', async () => {
+  const execCalls = [];
+  const mockExec = mockExecFor('', execCalls);
+  const result = await mod.commitWorktree('/wt', 'msg', { exec: mockExec });
+  assert.equal(result.committed, false);
+  assert.match(result.reason, /0 changed entr/, 'an empty git status must report git-saw-0 (distinguishes from a filter eating entries)');
+});
+
 test('commitWorktree runs git against the worktree (cwd or -C)', async () => {
   const execCalls = [];
   const workDir = '/test/worktree-path';

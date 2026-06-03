@@ -48,10 +48,22 @@ export async function commitWorktree(workDir, message, { exec = defaultExec } = 
   //    committed nothing and gate2 had nothing to merge (r-91c5b2e9). Exclude
   //    pipeline state + per-run context (.pipeline/, docs/context/) — not source.
   const status = await exec('git', ['status', '--porcelain'], opts);
-  const files = String(status.stdout || '')
+
+  // Surface a git FAILURE distinctly — never mask it as "nothing to commit" (soak #3:
+  // a swallowed git error read identically to a clean tree and silently skipped the
+  // commit, leaving gate2 with nothing to merge). GENERAL.md: surface failures inline.
+  if (typeof status.exitCode === 'number' && status.exitCode !== 0) {
+    return {
+      committed: false,
+      reason: 'git status failed (exit ' + status.exitCode + '): ' + String(status.stderr || '').trim().slice(0, 300),
+    };
+  }
+
+  const rawLines = String(status.stdout || '')
     .split('\n')
     .map((line) => line.replace(/\r$/, ''))
-    .filter(Boolean)
+    .filter(Boolean);
+  const files = rawLines
     .map((line) => {
       // porcelain: 'XY <path>' (XY = 2-char status). Rename 'old -> new' → take new.
       const p = line.slice(3).replace(/^"|"$/g, '');
@@ -62,7 +74,15 @@ export async function commitWorktree(workDir, message, { exec = defaultExec } = 
     .filter((f) => !f.startsWith('.pipeline/') && !f.startsWith('docs/context/'));
 
   if (files.length === 0) {
-    return { committed: false, reason: 'nothing to commit: no changed source files in worktree' };
+    // Diagnostic reason (soak #3): name the cwd inspected and how many raw entries git
+    // saw — distinguishes "git saw nothing in this cwd" (0 entries → wrong cwd / env)
+    // from "every changed file was filtered as non-source" (>0 entries).
+    const n = rawLines.length;
+    return {
+      committed: false,
+      reason: 'nothing to commit: no changed source files in worktree (cwd=' + workDir +
+        '; git saw ' + n + ' changed entr' + (n === 1 ? 'y' : 'ies') + ')',
+    };
   }
 
   // 2. Stage each file INDIVIDUALLY — never `git add -A` / `.` / `--all`
