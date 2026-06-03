@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { workerLogPath, killPillPath, resetPillPath } from './lib/worker-paths.js';
 import { stampOrphanAgents } from './lib/stamp-orphan-agents.js';
+import { shouldStampSilentExit } from './lib/watchdog-stamp.mjs';
 import { consumeGateApproval } from './lib/gate-helpers.js';
 import { evaluateBudget, proactiveInterruptStep } from './lib/proactive-interrupt.mjs';
 import buildInProcessMcpServer from './forge-worker-mcp.mjs';
@@ -1352,7 +1353,11 @@ async function main() {
       if (existsSync(runJsonPath)) {
         const raw = readFileSync(runJsonPath, 'utf-8');
         const runData = JSON.parse(raw);
-        if (!runData.failureReason) {
+        // Only stamp a GENUINE silent failure — NOT a gate-pending defer-gate exit or any
+        // terminal state (shouldStampSilentExit, TODO c469a000). The orchestrator writes
+        // gate2 and returns by design, leaving status:"gate-pending" + no failureReason;
+        // stamping that "failed" was a false positive (soak r-1dc3d1fb / r-8c327c9a).
+        if (shouldStampSilentExit(runData)) {
           writeFileSync(
             watchdogStampPath,
             JSON.stringify({
