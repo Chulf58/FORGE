@@ -1,0 +1,59 @@
+// @covers mcp/lib/orchestrator/implement-stage.mjs
+//
+// Soak r-15ef051e finding #2: reviewer-boundary CONFABULATED a different feature
+// ("Feature 3 / tasks 11-13 / TODO 9a9d29b2") that it self-discovered from a STALE
+// docs/context/git-diff.txt + handoff.md present in the worktree — even though its
+// prompt carried the correct Feature + Active tasks. The documented fix (GENERAL.md
+// stale-context gotcha) is to pass explicit scope AND instruct the agent NOT to
+// self-discover the feature from in-worktree artifacts. This asserts every dispatched
+// agent's prompt carries that scope guard.
+//
+// Run: node --test mcp/lib/orchestrator/implement-stage-scope-guard-test.mjs
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { runImplementStageOrchestrator } from './implement-stage.mjs';
+
+function makeDeps(calls) {
+  const run = {
+    runId: 'r-test',
+    status: 'running',
+    feature: 'SessionStart cache-drift guard',
+    orchestratorState: {},
+  };
+  return {
+    dispatch: async (agentType, promptLines) => {
+      calls.push({ agentType, prompt: promptLines.join('\n') });
+      return { exitCode: 0, stdout: '{}', stderr: '' };
+    },
+    readRunJson: async () => ({ ...run }),
+    writeRunJson: async () => {},
+    writeGateFile: async () => {},
+    clearReviewerOutput: async () => {},
+    readReviewerOutput: async () => ({ verdict: 'APPROVED' }),
+    spawnScript: async () => ({ stdout: '{"reviewers":["reviewer-boundary"]}', exitCode: 0 }),
+    buildInjectedKnowledge: () => '',
+    readPlanMd: () => '## Active Plan\n### Feature: SessionStart cache-drift guard\n- [ ] 1. write the guard',
+    commitWorktree: async () => ({ committed: true, sha: 'abc123' }),
+    writeChangeSummary: async () => {},
+    writeLog: () => {},
+  };
+}
+
+test('soak #2: the reviewer prompt hard-scopes against stale self-discovery', async () => {
+  const calls = [];
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  const rev = calls.find((c) => c.agentType === 'reviewer-boundary');
+  assert.ok(rev, 'reviewer-boundary was dispatched');
+  assert.match(rev.prompt, /stale/i, 'reviewer prompt must warn in-worktree artifacts may be stale');
+  assert.match(rev.prompt, /trust the stated [Ff]eature/, 'must instruct to trust the stated Feature over self-discovered files');
+});
+
+test('soak #2: the coder prompt also carries the scope guard (any self-discovering agent)', async () => {
+  const calls = [];
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  const coder = calls.find((c) => c.agentType === 'coder');
+  assert.ok(coder, 'coder was dispatched');
+  assert.match(coder.prompt, /stale/i, 'coder prompt must carry the same scope guard');
+});

@@ -90,6 +90,21 @@ function prependInjection(injected, lines) {
  */
 
 /**
+ * Soak r-15ef051e #2: scope-guard appended to every dispatched agent prompt. Agents
+ * self-discover their task by reading in-worktree files; stale per-run artifacts
+ * (docs/context/git-diff.txt, handoff.md, prior PLAN.md, .pipeline/context/) caused
+ * reviewer-boundary to confabulate a DIFFERENT feature even though its prompt carried the
+ * correct Feature + Active tasks. This tells the agent to TRUST the stated scope over
+ * anything it self-discovers (GENERAL.md stale-context gotcha — explicit-scope half).
+ */
+const SCOPE_GUARD =
+  'Scope discipline: act ONLY on the Feature and Active tasks stated above, against the ' +
+  'actual worktree diff. Do NOT infer or re-scope the feature from docs/context/, handoff.md, ' +
+  'git-diff.txt, prior PLAN.md history, .pipeline/context/, or any other in-worktree file — ' +
+  'those may be STALE from a prior run. If a file you read disagrees with the stated Feature, ' +
+  'trust the stated Feature.';
+
+/**
  * Parse PLAN.md content to extract active tasks and phase count for a given feature.
  * Uses dynamic import for ESM-friendly fs access.
  *
@@ -202,6 +217,7 @@ function coderScoutPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
+  lines.push('', SCOPE_GUARD);
   return lines;
 }
 
@@ -228,6 +244,7 @@ function testAuthorPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
+  lines.push('', SCOPE_GUARD);
   return lines;
 }
 
@@ -258,6 +275,7 @@ function coderPromptLines(workDir, runId, taskCtx) {
   if (taskCtx && taskCtx.phaseCount >= 2) {
     lines.push('[phase-scope: ' + taskCtx.feature + ']');
   }
+  lines.push('', SCOPE_GUARD);
   return lines;
 }
 
@@ -282,6 +300,7 @@ function completenessCheckerPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
+  lines.push('', SCOPE_GUARD);
   return lines;
 }
 
@@ -308,6 +327,7 @@ function reviewerPromptLines(reviewerType, workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
+  lines.push('', SCOPE_GUARD);
   return lines;
 }
 
