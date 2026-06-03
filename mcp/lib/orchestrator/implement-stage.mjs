@@ -657,11 +657,19 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       // Step 5: Clear stale reviewer output before dispatching reviewers
       await deps.clearReviewerOutput(reviewerOutputDir);
 
-      // Step 6: Spawn reviewer-dispatch script to get the reviewer list
-      const { stdout } = await deps.spawnScript(
-        'scripts/reviewer-dispatch.mjs',
-        ['--stage=implement', '--run-id=' + runId],
-      );
+      // Step 6: Spawn reviewer-dispatch script to get the reviewer list.
+      // G2: thread the real worktree diff (incl. untracked test files) via --tests-diff
+      // so the dispatcher's addReviewerTestsIfNeeded force-include fires reviewer-tests on
+      // test-touching changes. Without it, reviewer-dispatch falls to handoff-PROSE
+      // classification where the force-include never runs (and the test-author's NEW test
+      // files aren't in the coder's handoff anyway). Fail-open: null path → no flag → the
+      // prior handoff-only behavior.
+      const reviewDiffPath = typeof deps.buildReviewDiff === 'function'
+        ? await deps.buildReviewDiff(workDir)
+        : null;
+      const reviewerDispatchArgs = ['--stage=implement', '--run-id=' + runId];
+      if (reviewDiffPath) reviewerDispatchArgs.push('--tests-diff=' + reviewDiffPath);
+      const { stdout } = await deps.spawnScript('scripts/reviewer-dispatch.mjs', reviewerDispatchArgs);
 
       // reviewer-dispatch.mjs returns JSON shape: { reviewers: [...], reasons: [...] }.
       let reviewerList;

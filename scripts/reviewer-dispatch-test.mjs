@@ -13,6 +13,10 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { dispatchPerPhase } from './reviewer-dispatch.mjs';
 
 // 3-phase fixture — each phase carries keywords that map to a DISTINCT reviewer, so a
@@ -71,4 +75,78 @@ test('total dispatch count stays within the per-run loop-guard cap', () => {
   assert.equal(typeof result.cap, 'number', 'cap must be reported');
   assert.ok(result.totalDispatches <= result.cap, `totalDispatches (${result.totalDispatches}) must be <= cap (${result.cap})`);
   assert.equal(result.withinCap, true, 'withinCap must be true for a 3-phase plan');
+});
+
+// --- G2: --tests-diff threads the real worktree diff into the HANDOFF path ---
+// The orchestrator classifies via the handoff path (it passes no --diff). G2 threads
+// the real worktree diff (incl. untracked test files) via --tests-diff so the
+// dispatcher's addReviewerTestsIfNeeded force-include fires reviewer-tests on
+// test-touching changes — WITHOUT switching to the diff-classification path
+// (coderStatus stays undefined → classifyHandoff, not classifyDiff). These spawn the
+// real CLI (a degenerate empty-mock would never catch the path-routing bug — G0).
+
+const HANDOFF_CLEAN = `# Handoff
+
+## Files to modify
+
+\`\`\`
+src/util.js
+\`\`\`
+
+## Verification
+
+All checks pass. No blockers.
+`;
+
+const TESTS_DIFF_TOUCHING_TEST_FILE = `diff --git a/foo.test.js b/foo.test.js
+index 1234567..abcdefg 100644
+--- a/foo.test.js
++++ b/foo.test.js
+@@ -1,5 +1,6 @@
+ describe('foo', () => {
+   it('returns value', () => {
++    expect(x).toBe(1);
+   });
+ });
+`;
+
+function runHandoffDispatch(handoffContent, testsDiffContent) {
+  const handoffFile = join(tmpdir(), `rd-handoff-${process.pid}-${Date.now()}.md`);
+  const testsDiffFile = testsDiffContent !== undefined
+    ? join(tmpdir(), `rd-tdiff-${process.pid}-${Date.now()}.txt`)
+    : null;
+  try {
+    writeFileSync(handoffFile, handoffContent, 'utf8');
+    const args = [
+      join(process.cwd(), 'scripts', 'reviewer-dispatch.mjs'),
+      `--handoff=${handoffFile}`,
+      '--stage=implement',
+    ];
+    if (testsDiffFile) {
+      writeFileSync(testsDiffFile, testsDiffContent, 'utf8');
+      args.push(`--tests-diff=${testsDiffFile}`);
+    }
+    const result = spawnSync(process.execPath, args, { encoding: 'utf8', cwd: process.cwd() });
+    if (result.error) throw result.error;
+    return JSON.parse(result.stdout);
+  } finally {
+    try { unlinkSync(handoffFile); } catch (_) { /* ignore */ }
+    if (testsDiffFile) { try { unlinkSync(testsDiffFile); } catch (_) { /* ignore */ } }
+  }
+}
+
+test('G2: handoff path WITHOUT --tests-diff does NOT dispatch reviewer-tests (baseline)', () => {
+  const result = runHandoffDispatch(HANDOFF_CLEAN, undefined);
+  assert.ok(
+    !result.reviewers.includes('reviewer-tests'),
+    `reviewer-tests must NOT appear without a test-touching diff; got ${JSON.stringify(result.reviewers)}`,
+  );
+});
+
+test('G2: handoff path WITH --tests-diff touching a test file DOES dispatch reviewer-tests', () => {
+  const result = runHandoffDispatch(HANDOFF_CLEAN, TESTS_DIFF_TOUCHING_TEST_FILE);
+  assert.ok(
+    result.reviewers.includes('reviewer-tests'),
+    `--tests-diff with a test-file diff must force-include reviewer-tests on the handoff path; got ${JSON.stringify(result.reviewers)}`,
+  );
 });

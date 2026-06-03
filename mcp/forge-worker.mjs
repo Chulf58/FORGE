@@ -595,6 +595,7 @@ async function main() {
       const { buildInjectedKnowledge } = await import('./lib/orchestrator/knowledge-inject.mjs');
       const { commitWorktree } = await import('./lib/orchestrator/commit-worktree.mjs');
       const { parseReviewerVerdict } = await import('./lib/orchestrator/reviewer-verdict.mjs');
+      const { synthesizeReviewDiff } = await import('./lib/orchestrator/review-diff.mjs');
       const { getGitExecutable } = await import('../packages/forge-core/src/runs/index.js');
       const buildMcpServer = (await import('./forge-worker-mcp.mjs')).default;
 
@@ -680,6 +681,50 @@ async function main() {
               .filter(Boolean);
           } catch (_) {
             return [];
+          }
+        },
+        // G2: build a unified diff (tracked `git diff HEAD` + untracked NEW files as
+        // new-file hunks) that reviewer-dispatch's addReviewerTestsIfNeeded can read, so
+        // reviewer-tests fires on test-touching changes. The test-author's red-bar files
+        // are UNTRACKED, so tracked-only diff would miss them — hence the ls-files pass.
+        // Resolves git via getGitExecutable (worker PATH lacks git on Windows — #7); runs
+        // against workDir (the worktree). Writes the patch under .pipeline/context/ and
+        // returns its path. Fail-soft to null → orchestrator falls back to handoff-only
+        // classification (no --tests-diff). synthesizeReviewDiff is unit-tested separately.
+        buildReviewDiff: async () => {
+          try {
+            const { execFileSync } = await import('node:child_process');
+            const git = (gitArgs) => {
+              try {
+                return String(execFileSync(getGitExecutable(), ['-C', workDir, ...gitArgs], {
+                  encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000, maxBuffer: 64 * 1024 * 1024,
+                }));
+              } catch (_) { return ''; }
+            };
+            const trackedDiff = git(['diff', 'HEAD']);
+            const untrackedList = git(['ls-files', '--others', '--exclude-standard'])
+              .split('\n').map((l) => l.replace(/\r$/, '').trim()).filter(Boolean);
+            const untracked = [];
+            for (const rel of untrackedList) {
+              const norm = rel.replace(/\\/g, '/');
+              try {
+                // Cap per-file content (path-only header still triggers the test-file rule);
+                // skip oversized/binary blobs so the patch stays small and the read can't blow up.
+                const raw = readFileSync(join(workDir, rel), 'utf-8');
+                untracked.push({ path: norm, content: raw.length > 256 * 1024 ? '' : raw });
+              } catch (_) {
+                untracked.push({ path: norm, content: '' });
+              }
+            }
+            const diff = synthesizeReviewDiff({ trackedDiff, untracked });
+            if (!diff.trim()) return null;
+            const outDir = join(workDir, '.pipeline', 'context');
+            mkdirSync(outDir, { recursive: true });
+            const outPath = join(outDir, 'review-diff.patch');
+            writeFileSync(outPath, diff, 'utf-8');
+            return outPath;
+          } catch (_) {
+            return null;
           }
         },
         // docs/PLAN.md is UNTRACKED — lives only at the main project root, never in

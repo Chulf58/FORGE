@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import { runImplementStageOrchestrator } from './implement-stage.mjs';
 
-function makeDeps({ outcomes = {}, reviewerStdout } = {}) {
+function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null } = {}) {
   const calls = [];
   const run = { runId: 'r-test', feature: 'X', status: 'running', orchestratorState: { implementReviseCount: 0 } };
   const deps = {
@@ -25,11 +25,14 @@ function makeDeps({ outcomes = {}, reviewerStdout } = {}) {
     writeGateFile: async (p, gateData) => { calls.push({ type: 'writeGateFile', gateData }); },
     clearReviewerOutput: async () => {},
     readReviewerOutput: async () => ({ verdict: 'APPROVED' }),
-    spawnScript: async (script) => {
-      calls.push({ type: 'spawnScript', script });
+    spawnScript: async (script, args) => {
+      calls.push({ type: 'spawnScript', script, args });
       if (script.includes('covers-verify')) return { exitCode: 0, stdout: '', stderr: '' };
       return { exitCode: 0, stdout: reviewerStdout ?? JSON.stringify({ reviewers: ['reviewer-boundary'] }), stderr: '' };
     },
+    // G2: returns the path to a synthesized review diff (or null when none). Default null
+    // so existing tests see current behavior (no --tests-diff arg threaded).
+    buildReviewDiff: async () => reviewDiffPath,
     readPlanMd: () => '',
     commitWorktree: async () => ({ committed: true, sha: 'abc' }),
     writeChangeSummary: async () => {},
@@ -75,6 +78,28 @@ test('G5: reviewer-dispatch failure (unparseable output) → gate2 blocked, not 
   assert.ok(gate2, 'a reviewer-dispatch failure must open gate2');
   assert.equal(gate2.gateData.blockedBy?.agentType, 'reviewer-dispatch',
     'gate2 blockedBy reviewer-dispatch when selection fails — never silently proceed with zero reviewers');
+});
+
+test('G2: reviewer-dispatch is invoked with --tests-diff=<path> when buildReviewDiff yields a diff', async () => {
+  const { deps, calls } = makeDeps({ reviewDiffPath: '/wt/.pipeline/context/review-diff.patch' });
+  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  const rd = calls.find((c) => c.type === 'spawnScript' && c.script.includes('reviewer-dispatch'));
+  assert.ok(rd, 'reviewer-dispatch must be spawned');
+  assert.ok(
+    Array.isArray(rd.args) && rd.args.includes('--tests-diff=/wt/.pipeline/context/review-diff.patch'),
+    'reviewer-dispatch must receive --tests-diff=<path> so reviewer-tests fires on test-touching changes; got ' + JSON.stringify(rd.args),
+  );
+});
+
+test('G2: no --tests-diff arg when buildReviewDiff yields null (fail-open to handoff classification)', async () => {
+  const { deps, calls } = makeDeps({ reviewDiffPath: null });
+  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  const rd = calls.find((c) => c.type === 'spawnScript' && c.script.includes('reviewer-dispatch'));
+  assert.ok(rd, 'reviewer-dispatch must be spawned');
+  assert.ok(
+    !rd.args.some((a) => a.startsWith('--tests-diff=')),
+    'no --tests-diff when no diff is available; got ' + JSON.stringify(rd.args),
+  );
 });
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {

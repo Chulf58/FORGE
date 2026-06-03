@@ -576,9 +576,23 @@ if (isMainModule()) {
     process.exit(1);
   }
 
+  // G2: --tests-diff threads the real worktree diff (incl. untracked test files) into
+  // the handoff path's reviewer-tests force-include WITHOUT switching classification to
+  // the diff path. Passed as diffContent with coderStatus left undefined → dispatchFor-
+  // ImplementStage keeps classifyHandoff (line ~174) but runs addReviewerTestsIfNeeded
+  // against this diff (line ~183), so reviewer-tests fires on test-touching changes.
+  let testsDiff;
+  if (args['tests-diff'] && stage !== 'plan') {
+    try {
+      testsDiff = fs.readFileSync(args['tests-diff'], 'utf8');
+    } catch (err) {
+      process.stderr.write(`[reviewer-dispatch] --tests-diff unreadable: ${err.message} — proceeding without it\n`);
+    }
+  }
+
   const classifiedFallbackResult = stage === 'plan'
     ? dispatchForPlanStage(content, filePath)
-    : dispatchForImplementStage(content, forceReview, pipeline);
+    : dispatchForImplementStage(content, forceReview, pipeline, testsDiff);
 
   // Apply reviewerOverrides bypass on handoff/plan path too (task 2 + task 3)
   if (reviewerOverrides !== null) {
