@@ -89,6 +89,19 @@ test('G1: covers-verify resolves git via getGitExecutable, never bare spawnSync(
   assert.doesNotMatch(src, /spawnSync\(\s*['"]git['"]/, 'must NOT spawn bare "git" — it no-ops in the worker');
 });
 
+// G1b (soak r-8c327c9a): covers-verify is a SPAWNED script that runs from the worktree,
+// which has NO node_modules (gitignored, not carried by `git worktree add`). Importing
+// getGitExecutable from the forge-core BARREL (runs/index.js) transitively pulls
+// schemas.js -> zod -> ERR_MODULE_NOT_FOUND in the worktree, crashing the whole test-gate.
+// It MUST import from the dependency-free leaf module (git-executable.js, node builtins only).
+test('G1b: covers-verify imports getGitExecutable from the zod-free leaf, not the barrel', () => {
+  const src = readFileSync(VERIFIER, 'utf-8');
+  assert.match(src, /from '\.\.\/packages\/forge-core\/src\/runs\/git-executable\.js'/,
+    'must import getGitExecutable from the leaf git-executable.js (no zod) — runs in a node_modules-less worktree');
+  assert.doesNotMatch(src, /from '\.\.\/packages\/forge-core\/src\/runs\/index\.js'/,
+    'must NOT import from the runs/index.js barrel — it re-exports schemas.js (zod) and crashes in the worktree');
+});
+
 test('--changed-from-git ignores non-source changes (no covering test, exit 0)', () => {
   const root = makeRepo();
   try {

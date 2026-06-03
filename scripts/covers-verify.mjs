@@ -17,7 +17,10 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { extractSection, extractCodeBlockContent } from './lib/handoff-utils.mjs';
 import { buildCoversMap } from './covers-map.mjs';
-import { getGitExecutable } from '../packages/forge-core/src/runs/index.js';
+// Import from the dependency-free leaf (NOT runs/index.js): covers-verify runs as a
+// spawned script FROM THE WORKTREE, which has no node_modules. The barrel re-exports
+// schemas.js → zod → ERR_MODULE_NOT_FOUND there (soak r-8c327c9a). The leaf is node-only.
+import { getGitExecutable } from '../packages/forge-core/src/runs/git-executable.js';
 
 // ─── CLI arg parsing ────────────────────────────────────────────────────────
 

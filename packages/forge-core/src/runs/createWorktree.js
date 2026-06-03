@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRun } from './getRun.js';
 import { updateRun } from './updateRun.js';
+import { getGitExecutable } from './git-executable.js';
 
 /**
  * Recursively copies a directory. Skips node_modules and .git.
@@ -44,71 +45,11 @@ export function copyDirSync(src, dst, opts = {}) {
   }
 }
 
-/**
- * Resolves the git executable path for the current process.
- * On Windows, the MCP server subprocess spawned by Claude Code often lacks
- * the user's full PATH, so `git` may not be directly invokable even when
- * Git for Windows is installed. This tries plain `git` first (via PATH
- * lookup), then falls back to common Windows Git install locations.
- *
- * Returns an UNQUOTED executable path/name — used as execFileSync's `file`
- * argument, not concatenated into a shell string.
- *
- * Cached per process — probed once, then reused.
- * Throws an actionable error listing searched paths if git cannot be found.
- */
-let _resolvedGit = null;
-let _searchedPaths = [];
-// Exported so other orchestrator code (e.g. commit-worktree.mjs) resolves git the
-// SAME way — the worker process spawned by the MCP server often lacks the user's full
-// PATH on Windows, so a bare `execFile('git')` fails (soak r-29911e2c #7). Single
-// source of truth for the PATH-probe-then-install-location fallback.
-export function getGitExecutable() {
-  if (_resolvedGit) return _resolvedGit;
-
-  // Try PATH-based 'git' first — execFileSync's process-level PATH lookup
-  // works on Linux/macOS and on Windows when PATH contains git
-  try {
-    execFileSync('git', ['--version'], { stdio: 'pipe' });
-    _resolvedGit = 'git';
-    return _resolvedGit;
-  } catch (_) {
-    // Fall through to filesystem candidate search
-  }
-
-  // Fall back to common Git for Windows install locations.
-  // Covers both system-wide installs (Program Files) and per-user installs
-  // (LOCALAPPDATA\Programs\Git) used by the current Git for Windows installer.
-  const candidates = ['PATH (git)'];
-  const probePaths = [];
-  const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
-  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-  const localAppData = process.env['LOCALAPPDATA'] || (process.env['USERPROFILE'] ? process.env['USERPROFILE'] + '\\AppData\\Local' : null);
-
-  for (const base of [programFiles, programFilesX86, localAppData && localAppData + '\\Programs']) {
-    if (!base) continue;
-    probePaths.push(base + '\\Git\\cmd\\git.exe');
-    probePaths.push(base + '\\Git\\bin\\git.exe');
-    probePaths.push(base + '\\Git\\mingw64\\bin\\git.exe');
-  }
-
-  for (const candidate of probePaths) {
-    candidates.push(candidate);
-    if (existsSync(candidate)) {
-      // Return unquoted path — execFileSync takes it as a separate arg,
-      // no shell parsing, no quoting concerns
-      _resolvedGit = candidate;
-      _searchedPaths = candidates;
-      return _resolvedGit;
-    }
-  }
-
-  _searchedPaths = candidates;
-  throw new Error(
-    'Git executable not found. Searched: ' + candidates.join(' | ') +
-    '. Ensure Git for Windows is installed, or add git.exe to the MCP server process PATH.'
-  );
-}
+// getGitExecutable now lives in the dependency-free leaf ./git-executable.js so it can
+// be imported from a node_modules-less git worktree (covers-verify.mjs runs there and a
+// zod-pulling chain crashed it — soak r-8c327c9a). Re-exported here for back-compat:
+// callers historically import it from this module and via runs/index.js.
+export { getGitExecutable };
 
 /**
  * Runs a git command in a given cwd. Uses execFileSync to bypass shell
