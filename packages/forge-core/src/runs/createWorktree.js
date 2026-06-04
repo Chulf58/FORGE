@@ -9,7 +9,7 @@
 // No Claude dependency. No MCP dependency. Pure git + filesystem.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync, readFileSync, writeFileSync, symlinkSync, lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRun } from './getRun.js';
@@ -75,6 +75,25 @@ function git(args, cwd) {
     stdio: ['pipe', 'pipe', 'pipe'],
     timeout: 30000, // 30s safety valve — prevents indefinite worker hang when a git call stalls (TODO 4db4d05c). On Windows, `git worktree add` has been observed to never return; a hung command throws ETIMEDOUT here, the caller propagates an error, and the worker gets a tool_result instead of freezing.
   }).trim();
+}
+
+/**
+ * d5e63ffd: relative dirs (under the project root) that may hold their own node_modules.
+ * This repo has no root install — deps live in per-package node_modules (mcp/, packages/*).
+ * '' (root) is included for portability. createWorktree junctions each existing one into the
+ * worktree; removeWorktree unlinks them first. Shared so the link and unlink sets never drift.
+ *
+ * @param {string} absRoot - absolute project root (main checkout)
+ * @returns {string[]} relative dir paths to check for a node_modules child
+ */
+function nodeModulesParents(absRoot) {
+  const rels = ['', 'mcp'];
+  try {
+    for (const e of readdirSync(join(absRoot, 'packages'), { withFileTypes: true })) {
+      if (e.isDirectory()) rels.push(join('packages', e.name));
+    }
+  } catch (_) { /* no packages/ dir — fine */ }
+  return rels;
 }
 
 /**
@@ -173,6 +192,23 @@ export function createWorktree(projectRoot, runId) {
   mkdirSync(join(wtPath, '.pipeline', 'context'), { recursive: true });
   mkdirSync(join(wtPath, 'docs', 'context'), { recursive: true });
 
+  // d5e63ffd: junction main's node_modules into the worktree. `git worktree add` checks out only
+  // tracked files, so a fresh worktree has NO node_modules — any worktree-run test that imports
+  // forge-core (zod, in packages/forge-core/node_modules) or mcp deps would crash ERR_MODULE_NOT_FOUND.
+  // Use a junction on Windows / dir symlink on POSIX (no admin needed). Fail-soft: a link error
+  // (e.g. missing symlink privilege) logs nothing and leaves the worktree usable for non-dep work.
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+  for (const rel of nodeModulesParents(absRoot)) {
+    const srcNm = join(absRoot, rel, 'node_modules');
+    const dstNm = join(wtPath, rel, 'node_modules');
+    if (existsSync(srcNm) && !existsSync(dstNm)) {
+      try {
+        mkdirSync(join(wtPath, rel), { recursive: true });
+        symlinkSync(srcNm, dstNm, linkType);
+      } catch (_) { /* link unavailable — worktree still usable, just no resolvable deps */ }
+    }
+  }
+
   // Persist onto the run
   const updated = updateRun(absRoot, runId, {
     worktreePath: wtPath,
@@ -207,6 +243,20 @@ export function removeWorktree(projectRoot, runId, worktreePath) {
     // Nothing on disk — still attempt git prune in case git metadata is stale
     try { git(['worktree', 'prune'], absRoot); } catch (_) {}
     return false;
+  }
+
+  // d5e63ffd DATA-LOSS GUARD: unlink the node_modules junctions FIRST, before git/rmSync touch
+  // the worktree. createWorktree junctions main's node_modules into the worktree; if a junction
+  // is still live when `git worktree remove --force` or the recursive rmSync fallback runs, it
+  // could be FOLLOWED into MAIN's node_modules and delete it. rmSync(recursive:false) removes the
+  // LINK only, never the target. (Verified by the create→remove survival test — main survives.)
+  for (const rel of nodeModulesParents(absRoot)) {
+    const j = join(wtPath, rel, 'node_modules');
+    try {
+      if (existsSync(j) && lstatSync(j).isSymbolicLink()) {
+        rmSync(j, { recursive: false, force: true });
+      }
+    } catch (_) { /* best effort — if it lingers, git/rmSync handle it (link, not target) */ }
   }
 
   // Ask git to deregister and remove the worktree.
