@@ -21,7 +21,10 @@ import { getGitExecutable } from './git-executable.js';
  *
  * @param {string} src
  * @param {string} dst
- * @param {{ skipExisting?: boolean }} [opts]
+ * @param {{ skipExisting?: boolean, excludeDirs?: string[] }} [opts]
+ *   excludeDirs (default []): directory names to skip entirely (at any depth) — used by the
+ *   worktree overlay to drop the per-run 'context' scratch so a fresh worktree is not seeded
+ *   with the prior run's leftovers (607543b7 / r-6938359b stale-context confabulation vector).
  *   skipExisting (default false): when true, files whose destination already
  *   exists are NOT overwritten. Used by the docs/ and .pipeline/ overlays
  *   in createWorktree so that tracked files already checked out by
@@ -32,9 +35,13 @@ import { getGitExecutable } from './git-executable.js';
  */
 export function copyDirSync(src, dst, opts = {}) {
   const skipExisting = !!(opts && opts.skipExisting);
+  const excludeDirs = (opts && Array.isArray(opts.excludeDirs)) ? opts.excludeDirs : [];
   mkdirSync(dst, { recursive: true });
   for (const entry of readdirSync(src, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name === '.git') continue;
+    // excludeDirs (607543b7): skip named subdirs (e.g. the per-run 'context' scratch) at ANY
+    // depth — the recursive call below passes opts through, so the name match propagates.
+    if (entry.isDirectory() && excludeDirs.includes(entry.name)) continue;
     const srcPath = join(src, entry.name);
     const dstPath = join(dst, entry.name);
     if (entry.isDirectory()) {
@@ -142,17 +149,29 @@ export function createWorktree(projectRoot, runId) {
   // skipExisting:true preserves git's checked-out bytes for tracked files — without
   // it, copyDirSync overwrites with main's working-tree bytes which may differ on
   // Windows due to line-ending conversion, causing phantom `M` status (10575378).
+  // 607543b7 (approach B): exclude the per-run 'context' scratch from the overlay so a fresh
+  // worktree is not seeded with the prior run's leftovers (the r-6938359b stale-context
+  // confabulation vector). 'context' is name-matched at any depth — confirmed benign: the only
+  // context/ dirs under .pipeline/ and docs/ are the per-run scratch (.pipeline/context,
+  // docs/context, and the nested .pipeline/context/verdicts).
   const pipelineSrc = join(absRoot, '.pipeline');
   const pipelineDst = join(wtPath, '.pipeline');
   if (existsSync(pipelineSrc)) {
-    copyDirSync(pipelineSrc, pipelineDst, { skipExisting: true });
+    copyDirSync(pipelineSrc, pipelineDst, { skipExisting: true, excludeDirs: ['context'] });
   }
 
   const docsSrc = join(absRoot, 'docs');
   const docsDst = join(wtPath, 'docs');
   if (existsSync(docsSrc)) {
-    copyDirSync(docsSrc, docsDst, { skipExisting: true });
+    copyDirSync(docsSrc, docsDst, { skipExisting: true, excludeDirs: ['context'] });
   }
+
+  // Recreate the (empty) context dirs after the overlay so they always EXIST in the worktree —
+  // clean of stale scratch but present — and no writer trips on a missing parent. .pipeline/context
+  // has no tracked keeper (git ls-files shows none), so without this it would be absent entirely;
+  // docs/context survives via its tracked .gitkeep but we create both for symmetry.
+  mkdirSync(join(wtPath, '.pipeline', 'context'), { recursive: true });
+  mkdirSync(join(wtPath, 'docs', 'context'), { recursive: true });
 
   // Persist onto the run
   const updated = updateRun(absRoot, runId, {
