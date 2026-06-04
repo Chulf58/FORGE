@@ -263,6 +263,18 @@ function testAuthorPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
+  // r-69a1f868: the agent's own spec (test-author.md:24) says to write this manifest, but on
+  // haiku without prompt reinforcement it wrote the red-bar tests and SKIPPED the manifest — so
+  // the G7 outcome check (expectedArtifact = .pipeline/context/test-author-output.json) marked it
+  // 'uncertain' and the precondition block fired even though the tests were written. Reinforce it.
+  lines.push('');
+  lines.push(
+    'REQUIRED OUTPUT ARTIFACT: before emitting any completion signal, you MUST write your JSON '
+    + 'manifest to `.pipeline/context/test-author-output.json` (relative to WorkDir) — recording the '
+    + 'test file(s) you created and the red-bar exitCode (per test-author.md). The orchestrator '
+    + 'verifies this exact file; if it is ABSENT the run is marked uncertain and BLOCKED even if you '
+    + 'wrote the tests correctly. Write the tests first, then this manifest, then your signal.',
+  );
   lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
 }

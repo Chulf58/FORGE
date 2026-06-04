@@ -401,6 +401,31 @@ test('RED AC-3(ii) — coder prompt contains [scout-output: reference', async ()
   );
 });
 
+// r-69a1f868: test-author wrote its red-bar tests but NOT .pipeline/context/test-author-output.json
+// (its expectedArtifact / G7 outcome signal), because testAuthorPromptLines never instructed the
+// manifest write — so the orchestrator marked it 'uncertain' and the precondition block fired even
+// though the work was done. The prompt MUST instruct the manifest write (mirrors test-author.md:24).
+test('test-author prompt instructs writing the test-author-output.json manifest (G7 precondition)', async () => {
+  const planMd = `## Active Plan
+
+### Feature: Test Feature
+
+#### Phase 1 — First phase
+
+- [ ] 1. Write a failing test
+`;
+  const result = await runOrchestratorWithFixture(planMd, { feature: 'Test Feature' });
+  const taCall = result.dispatchCalls.find((c) => c.agentType === 'test-author');
+  assert.ok(taCall, 'test-author must be dispatched');
+  const promptText = (taCall.promptLines || []).join('\n');
+  assert.ok(
+    promptText.includes('test-author-output.json'),
+    `test-author prompt must instruct writing its .pipeline/context/test-author-output.json manifest ` +
+    `(its expectedArtifact) — without it the G7 outcome check marks the agent uncertain even when it ` +
+    `wrote the tests (run r-69a1f868); prompt was: ${promptText}`
+  );
+});
+
 test('RED AC-3(iii) — coder prompt CONTAINS [phase-scope: when fixture plan has ≥2 Phase headings', async () => {
   const planMd = `## Active Plan
 
