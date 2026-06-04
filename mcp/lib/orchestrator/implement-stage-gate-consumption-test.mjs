@@ -16,7 +16,7 @@ import { runImplementStageOrchestrator } from './implement-stage.mjs';
 
 const STAGE_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'implement-stage.mjs'), 'utf-8');
 
-function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null } = {}) {
+function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFilesWritten = [] } = {}) {
   const calls = [];
   const run = { runId: 'r-test', feature: 'X', status: 'running', orchestratorState: { implementReviseCount: 0 } };
   const deps = {
@@ -38,6 +38,9 @@ function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null } = {})
     // G2: returns the path to a synthesized review diff (or null when none). Default null
     // so existing tests see current behavior (no --tests-diff arg threaded).
     buildReviewDiff: async () => reviewDiffPath,
+    // 53dea988: the test files test-author wrote into the worktree (real output). Default []
+    // so the existing "uncertain test-author → blocked" test still blocks (no tests written).
+    changedTestFiles: async () => testFilesWritten,
     readPlanMd: () => '',
     commitWorktree: async () => ({ committed: true, sha: 'abc' }),
     writeChangeSummary: async () => {},
@@ -64,6 +67,19 @@ test('G7/G8: test-author uncertain → gate2 blocked, coder NOT dispatched (red-
   assert.equal(gate2.gateData.blockedBy?.agentType, 'test-author', 'gate2 blockedBy test-author');
   assert.equal(calls.findIndex((c) => c.type === 'dispatch' && c.agentType === 'coder'), -1,
     'coder must NOT run without a verified red bar from test-author');
+});
+
+// 53dea988: test-author (haiku) reliably writes its red-bar TEST FILES but not always its
+// manifest (.pipeline/context/test-author-output.json, the G7 expectedArtifact). The manifest
+// is a proxy; the test files are the real output. When the outcome is 'uncertain' (manifest
+// absent) BUT test-author actually wrote test files into the worktree, artifact-wins → completed.
+test('53dea988: test-author uncertain BUT test files written → artifact-wins, NOT blocked, coder runs', async () => {
+  const { deps, calls } = makeDeps({ outcomes: { 'test-author': 'uncertain' }, testFilesWritten: ['scripts/foo-test.mjs'] });
+  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  const taBlock = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.blockedBy?.agentType === 'test-author');
+  assert.ok(!taBlock, 'test-author must NOT block gate2 when it actually wrote test files (manifest is only a proxy)');
+  assert.notEqual(calls.findIndex((c) => c.type === 'dispatch' && c.agentType === 'coder'), -1,
+    'coder MUST run when test-author wrote the red-bar test files, even if the manifest is absent');
 });
 
 test('G3: completeness-checker uncertain → gate2 blocked, reviewers NOT dispatched', async () => {

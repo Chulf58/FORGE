@@ -36,3 +36,14 @@ test('buildReviewDiff resolves git via getGitExecutable and calls synthesizeRevi
   assert.match(window, /synthesizeReviewDiff\(/,
     'buildReviewDiff must call synthesizeReviewDiff() to assemble the patch');
 });
+
+// 53dea988: changedTestFiles lets the orchestrator verify test-author by its REAL output
+// (test files written into the worktree) instead of the unreliable manifest proxy.
+test('forge-worker wires a changedTestFiles dep that resolves git via getGitExecutable', () => {
+  assert.match(SRC, /changedTestFiles\s*:/,
+    'orchDeps must include a changedTestFiles dep so the orchestrator can artifact-win on test-author');
+  const body = SRC.slice(SRC.indexOf('changedTestFiles'));
+  const window = body.slice(0, 1500);
+  assert.match(window, /getGitExecutable\(\)/,
+    'changedTestFiles must resolve git via getGitExecutable (worker PATH lacks git on Windows)');
+});

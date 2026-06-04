@@ -728,6 +728,33 @@ async function main() {
             return null;
           }
         },
+        // 53dea988: list the TEST files test-author changed in the worktree (modified-tracked +
+        // untracked), so the orchestrator can verify test-author by its REAL output rather than
+        // the unreliable manifest proxy. Resolves git via getGitExecutable (worker PATH lacks git
+        // on Windows). Test pattern matches the repo convention incl. -test.mjs. Fail-soft to [].
+        changedTestFiles: async () => {
+          try {
+            const { execFileSync } = await import('node:child_process');
+            const git = (gitArgs) => {
+              try {
+                return String(execFileSync(getGitExecutable(), ['-C', workDir, ...gitArgs], {
+                  encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000, maxBuffer: 64 * 1024 * 1024,
+                }));
+              } catch (_) { return ''; }
+            };
+            const TEST_RE = /(?:[.\-_]test\.|\.spec\.|\/tests\/|\/spec\/)/;
+            const lines = [
+              git(['diff', '--name-only', 'HEAD']),
+              git(['ls-files', '--others', '--exclude-standard']),
+            ].join('\n');
+            const files = lines.split('\n')
+              .map((l) => l.replace(/\r$/, '').trim().replace(/\\/g, '/'))
+              .filter(Boolean);
+            return [...new Set(files)].filter((f) => TEST_RE.test(f));
+          } catch (_) {
+            return [];
+          }
+        },
         // docs/PLAN.md is UNTRACKED — lives only at the main project root, never in
         // the worktree checkout. Resolve via resolvedMainProjectRoot (not workDir).
         readPlanMd: () => {

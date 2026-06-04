@@ -548,12 +548,28 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // Step 3: Dispatch test-author (writes red-bar tests before coder implements)
     writeLog('[orchestrator:implement] dispatching test-author');
     allPhases.push({ index: allPhases.length, label: 'test-author', status: 'completed' });
-    const testAuthorOutcome = await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+    let testAuthorOutcome = await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+
+    // 53dea988: verify test-author by its REAL output, not the manifest proxy. test-author
+    // (haiku) reliably writes its red-bar TEST FILES but not always its manifest
+    // (.pipeline/context/test-author-output.json, the G7 expectedArtifact) — so a manifest-
+    // missing 'uncertain' falsely blocked even though the tests were written (r-69a1f868 /
+    // r-1e3ea3e8). When uncertain BUT test files actually landed in the worktree, artifact-wins
+    // → treat as completed. Only a genuine no-tests-written case still blocks below.
+    if (testAuthorOutcome === 'uncertain' && typeof deps.changedTestFiles === 'function') {
+      const tests = await deps.changedTestFiles(workDir);
+      if (Array.isArray(tests) && tests.length > 0) {
+        writeLog('[orchestrator:implement] test-author manifest absent but ' + tests.length
+          + ' test file(s) written (' + tests.join(', ') + ') — artifact-wins over the proxy, '
+          + 'treating test-author as completed (53dea988)');
+        testAuthorOutcome = 'completed';
+      }
+    }
 
     // G7/G8: consume the test-author outcome (G7 gave it a real expectedArtifact, so
-    // 'uncertain' now means its red-bar artifact was not verifiably written). The coder
-    // MUST NOT implement against an unverified red bar — that defeats TDD and risks a
-    // Red+Green collapse. Block gate2 instead, parallel to the scout precondition.
+    // 'uncertain' now means its red-bar artifact was not verifiably written AND — per 53dea988 —
+    // no test files landed either). The coder MUST NOT implement against an unverified red bar —
+    // that defeats TDD and risks a Red+Green collapse. Block gate2, parallel to the scout precondition.
     if (testAuthorOutcome === 'uncertain') {
       const currentRun = await deps.readRunJson(runJsonPath);
       await deps.writeGateFile(gatePendingPath, {
