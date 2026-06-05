@@ -82,6 +82,7 @@ const RULE_TO_REVIEWERS = {
   'plugin-manifest': ['reviewer-boundary'],
   'pipeline-state-schema': ['reviewer-boundary'],
   'merge-apply-worktree-boundary': ['reviewer-safety', 'reviewer-boundary'],
+  'agent-dispatch-permission': ['reviewer-safety', 'reviewer-logic'],
 };
 
 // Test-file pattern — matches test-file paths in +++ b/ diff headers.

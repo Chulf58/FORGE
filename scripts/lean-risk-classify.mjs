@@ -120,6 +120,14 @@ const RISK_CONTENT_PATTERNS = [
     regex: /\[reviewer-verdict\]|\[todo\]|\[suggest\]|\[health\]|\[task-block\]|\[solution-hit\]|\[promote-gotcha\]/,
     suggestedCheck: 'Review signal-format change for downstream parser compatibility',
   },
+  {
+    // 81b8f299: a change to the agent-dispatch permission/write-confinement boundary needs
+    // reviewer-LOGIC (callback path-resolution edge cases) on top of the safety/boundary that
+    // the mcp-tool file-path rule already pulls — the canUseTool leak fix got only reviewer-tests.
+    rule: 'agent-dispatch-permission',
+    regex: /\b(permissionMode|canUseTool|bypassPermissions|allowDangerouslySkipPermissions)\b/,
+    suggestedCheck: 'Review agent-dispatch permission/write-confinement change for escape paths, over-blocking, and the Bash route',
+  },
 ];
 
 // --- Section extraction -----------------------------------------------------

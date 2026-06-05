@@ -10,6 +10,16 @@ const { tmpdir } = require('os');
 const { execSync } = require('child_process');
 const { spawn } = require('child_process');
 
+// Make assertion failures FAIL the harness (exit non-zero). This file used bare
+// console.assert (non-fatal), so a failed assertion printed "✗ FAIL" yet the process
+// still exited 0 — a silent failure run-tests.mjs could not gate on (the gate-sync
+// handoff-copy bug hid here for exactly this reason). Count failures; exit 1 at the end.
+let __assertFailures = 0;
+{
+  const __origAssert = console.assert.bind(console);
+  console.assert = (cond, ...args) => { if (!cond) __assertFailures++; __origAssert(cond, ...args); };
+}
+
 async function runHook(payload, projectDir) {
   // Spawn with cwd = projectDir so process.cwd() inside the hook matches
   // the project root. Claude Code sets each hook's working directory to the
@@ -400,4 +410,11 @@ async function test() {
   console.log('\nAll tests complete.');
 }
 
-test().catch(e => { console.error(e); process.exit(1); });
+test()
+  .then(() => {
+    if (__assertFailures > 0) {
+      console.error('\n' + __assertFailures + ' assertion(s) FAILED');
+      process.exit(1);
+    }
+  })
+  .catch(e => { console.error(e); process.exit(1); });

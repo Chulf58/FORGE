@@ -211,15 +211,31 @@ async function main(rawInput) {
       // needs a worktree for branch isolation. If the model skipped
       // forge_create_worktree, auto-create one now.
       //
-      // createWorktree copies docs/ and .pipeline/ into the worktree, so the
-      // coder's handoff.md (written in the main tree) lands in the worktree
-      // automatically. The implementer can then read it from the worktree.
+      // createWorktree (forge-core) intentionally EXCLUDES the per-run 'context'
+      // scratch from its docs/ overlay (607543b7) so a fresh worktree is not seeded
+      // with a prior run's leftovers — so it does NOT copy docs/context/handoff.md.
+      // In THIS late-create path the coder already ran in the MAIN tree (no worktree
+      // existed yet), so the CURRENT handoff.md sits in main and the apply phase needs
+      // it in the worktree. Carry that ONE file explicitly (never the whole graveyard).
       if ((gateData.gate || 'gate1') === 'gate2' || (gateData.gate || 'gate1') === 'code') {
         try {
           const currentRun = getRun(projectRoot, active.runId);
           if (currentRun && !currentRun.worktreePath) {
             const updated = createWorktree(projectRoot, active.runId);
             console.error('[gate-sync] Auto-created worktree for run ' + active.runId + ' at ' + updated.worktreePath);
+            // Carry the current handoff.md into the worktree (createWorktree's docs/
+            // overlay excludes docs/context). existsSync-guarded; failure is non-fatal.
+            try {
+              const handoffSrc = path.join(projectRoot, 'docs', 'context', 'handoff.md');
+              if (updated.worktreePath && fs.existsSync(handoffSrc)) {
+                const handoffDst = path.join(updated.worktreePath, 'docs', 'context', 'handoff.md');
+                fs.mkdirSync(path.dirname(handoffDst), { recursive: true });
+                fs.copyFileSync(handoffSrc, handoffDst);
+                console.error('[gate-sync] Carried handoff.md into the auto-created worktree');
+              }
+            } catch (hoErr) {
+              console.error('[gate-sync] handoff.md carry failed (non-fatal): ' + hoErr.message);
+            }
           }
         } catch (wtErr) {
           // Non-fatal — log and continue. The apply phase will proceed
