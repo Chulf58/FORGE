@@ -286,7 +286,7 @@ function testAuthorPromptLines(workDir, runId, taskCtx) {
  * @param {TaskContext} taskCtx
  * @returns {string[]}
  */
-function coderPromptLines(workDir, runId, taskCtx) {
+function coderPromptLines(workDir, runId, taskCtx, opts = {}) {
   const lines = [
     'You are the coder agent.',
     'WorkDir: ' + workDir,
@@ -300,11 +300,43 @@ function coderPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
-  // AC-3(ii): coder prompt must always include [scout-output: reference.
-  lines.push('[scout-output: docs/context/scout.json]');
+  // AC-3(ii): include the [scout-output: reference ONLY when coder-scout actually ran
+  // (opts.scoutRan, default true). When coder-scout is omitted from the configured team it
+  // is never dispatched and scout.json is never written — injecting the token then would be
+  // a DANGLING reference that falsely satisfies the coder's scout-precondition (degraded,
+  // map-less coder). Default true preserves the always-on behavior for the normal path.
+  if (opts.scoutRan !== false) {
+    lines.push('[scout-output: docs/context/scout.json]');
+  }
   // AC-3(iii): [phase-scope: ONLY when plan has ≥2 Phase headings.
   if (taskCtx && taskCtx.phaseCount >= 2) {
     lines.push('[phase-scope: ' + taskCtx.feature + ']');
+  }
+  lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
+  return lines;
+}
+
+/**
+ * Prompt lines for implementation-architect agent.
+ * Writes docs/context/slice-brief.md to scope the coder's work.
+ * @param {string} workDir
+ * @param {string} runId
+ * @param {TaskContext} taskCtx
+ * @returns {string[]}
+ */
+function implementationArchitectPromptLines(workDir, runId, taskCtx) {
+  const lines = [
+    'You are the implementation-architect agent.',
+    'WorkDir: ' + workDir,
+    'RunId: ' + runId,
+  ];
+  if (taskCtx && taskCtx.feature) {
+    lines.push('Feature: ' + taskCtx.feature);
+  }
+  if (taskCtx && taskCtx.activeTasksText) {
+    lines.push('');
+    lines.push('Active tasks from PLAN.md:');
+    lines.push(taskCtx.activeTasksText);
   }
   lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
@@ -484,6 +516,34 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       ? initialRun.feature
       : '';
 
+    // Compute configured agent team from run.stages.implement.agents.
+    // KNOWN agents: the full set that can appear in a configured team.
+    const KNOWN_AGENTS = new Set([
+      'coder-scout', 'coder', 'completeness-checker', 'implementation-architect',
+    ]);
+    // CORE DEFAULT: used when configured list is absent/null/empty.
+    const CORE_DEFAULT_TEAM = ['coder-scout', 'coder', 'completeness-checker'];
+    const configuredAgents = initialRun &&
+      initialRun.stages &&
+      initialRun.stages.implement &&
+      Array.isArray(initialRun.stages.implement.agents)
+      ? initialRun.stages.implement.agents
+      : null;
+    let team;
+    if (configuredAgents && configuredAgents.length > 0) {
+      // Filter to known agents, logging dropped unknowns.
+      team = configuredAgents.filter((name) => {
+        if (KNOWN_AGENTS.has(name)) return true;
+        writeLog('[orchestrator:implement] dropping unknown configured agent ' + name);
+        return false;
+      });
+      // If all were unknown, fall back to core default.
+      if (team.length === 0) team = CORE_DEFAULT_TEAM.slice();
+    } else {
+      team = CORE_DEFAULT_TEAM.slice();
+    }
+    const teamSet = new Set(team);
+
     // Extract active task context from docs/PLAN.md. Read via the injected
     // deps.readPlanMd (main-root resolved) — NOT path arithmetic off workDir:
     // docs/PLAN.md is UNTRACKED so it lives only at the main project root, never
@@ -524,15 +584,38 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       ? (await deps.snapshotMainStrays())
       : null;
 
-    // Step 2: Dispatch coder-scout
-    writeLog('[orchestrator:implement] dispatching coder-scout');
-    allPhases.push({ index: allPhases.length, label: 'coder-scout', status: 'completed' });
-    const scoutOutcome = await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId, taskCtx)));
+    // Step 2a: Dispatch implementation-architect (ONLY when in configured team) — BEFORE coder-scout.
+    // When present, it writes docs/context/slice-brief.md to scope the coder's work.
+    const archInTeam = teamSet.has('implementation-architect');
+    if (archInTeam) {
+      writeLog('[orchestrator:implement] dispatching implementation-architect');
+      allPhases.push({ index: allPhases.length, label: 'implementation-architect', status: 'completed' });
+      await stampedDispatch('implementation-architect', prependInjection(injectedKnowledge, implementationArchitectPromptLines(workDir, runId, taskCtx)));
+    }
+
+    // Step 2b: Dispatch coder-scout (ONLY when in configured team).
+    // When skipped, the coder proceeds without a scout-output precondition.
+    let scoutOutcome = 'completed';
+    if (teamSet.has('coder-scout')) {
+      writeLog('[orchestrator:implement] dispatching coder-scout');
+      allPhases.push({ index: allPhases.length, label: 'coder-scout', status: 'completed' });
+      // When implementation-architect ran, reference its slice-brief in the scout prompt.
+      const scoutLines = archInTeam
+        ? prependInjection(injectedKnowledge, [
+          '[slice-brief: docs/context/slice-brief.md] Scope your work to this slice brief when present.',
+          ...coderScoutPromptLines(workDir, runId, taskCtx),
+        ])
+        : prependInjection(injectedKnowledge, coderScoutPromptLines(workDir, runId, taskCtx));
+      scoutOutcome = await stampedDispatch('coder-scout', scoutLines);
+    } else {
+      writeLog('[orchestrator:implement] coder-scout not in configured team — skipping');
+    }
 
     // G8: enforce the scout precondition — the coder MUST NOT run without verified scout
     // output (CLAUDE.md coder-dispatch discipline). An uncertain coder-scout (e.g. absent or
     // degenerate scout.json) blocks gate2 rather than dispatching a coder with no file map.
-    if (scoutOutcome === 'uncertain') {
+    // Only applies when coder-scout was actually dispatched.
+    if (teamSet.has('coder-scout') && scoutOutcome === 'uncertain') {
       const currentRun = await deps.readRunJson(runJsonPath);
       await deps.writeGateFile(gatePendingPath, {
         runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
@@ -583,10 +666,20 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       return;
     }
 
-    // Step 4: Dispatch coder
+    // Step 4: Dispatch coder (always — protected floor, not gated on team).
     writeLog('[orchestrator:implement] dispatching coder');
     allPhases.push({ index: allPhases.length, label: 'coder', status: 'completed' });
-    const coderOutcome = await stampedDispatch('coder', prependInjection(injectedKnowledge, coderPromptLines(workDir, runId, taskCtx)));
+    // When implementation-architect ran, reference its slice-brief in the coder prompt.
+    // coderScoutRan gates the [scout-output:] reference — omit it when coder-scout was not
+    // in the configured team (no scout.json written), so the coder gets no dangling reference.
+    const coderScoutRan = teamSet.has('coder-scout');
+    const coderLines = archInTeam
+      ? prependInjection(injectedKnowledge, [
+        '[slice-brief: docs/context/slice-brief.md] Scope your work to this slice brief when present.',
+        ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: coderScoutRan }),
+      ])
+      : prependInjection(injectedKnowledge, coderPromptLines(workDir, runId, taskCtx, { scoutRan: coderScoutRan }));
+    const coderOutcome = await stampedDispatch('coder', coderLines);
 
     // a8de840b #2: structural backstop — after the writer agents (test-author + coder),
     // detect any file a dispatched agent wrote into MAIN, outside the worktree. Mechanism-
@@ -663,25 +756,29 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       return;
     }
 
-    // Step 4: Dispatch completeness-checker
-    writeLog('[orchestrator:implement] dispatching completeness-checker');
-    allPhases.push({ index: allPhases.length, label: 'completeness-checker', status: 'completed' });
-    const completenessOutcome = await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)));
+    // Step 4c: Dispatch completeness-checker (ONLY when in configured team).
+    if (teamSet.has('completeness-checker')) {
+      writeLog('[orchestrator:implement] dispatching completeness-checker');
+      allPhases.push({ index: allPhases.length, label: 'completeness-checker', status: 'completed' });
+      const completenessOutcome = await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)));
 
-    // G3: consume the completeness verdict. completeness-checker is readonly (judged by its
-    // [completeness-ok] signal); 'uncertain' = it did NOT confirm the handoff covers all plan
-    // tasks → block gate2 instead of proceeding to reviewers on a possibly-incomplete impl.
-    if (completenessOutcome === 'uncertain') {
-      const currentRun = await deps.readRunJson(runJsonPath);
-      await deps.writeGateFile(gatePendingPath, {
-        runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
-        blockedBy: { agentType: 'completeness-checker', reason: 'completeness not confirmed — handoff may not cover all plan tasks' },
-      });
-      await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
-        status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
-        agents: allAgents.slice(), phases: allPhases.slice(),
-      }));
-      return;
+      // G3: consume the completeness verdict. completeness-checker is readonly (judged by its
+      // [completeness-ok] signal); 'uncertain' = it did NOT confirm the handoff covers all plan
+      // tasks → block gate2 instead of proceeding to reviewers on a possibly-incomplete impl.
+      if (completenessOutcome === 'uncertain') {
+        const currentRun = await deps.readRunJson(runJsonPath);
+        await deps.writeGateFile(gatePendingPath, {
+          runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
+          blockedBy: { agentType: 'completeness-checker', reason: 'completeness not confirmed — handoff may not cover all plan tasks' },
+        });
+        await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
+          status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+          agents: allAgents.slice(), phases: allPhases.slice(),
+        }));
+        return;
+      }
+    } else {
+      writeLog('[orchestrator:implement] completeness-checker not in configured team — skipping');
     }
 
     // Reviewer loop — runs once initially, then iterates on REVISE verdicts (capped at M<2)
@@ -788,7 +885,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           allPhases.push({ index: allPhases.length, label: 'coder-revise-' + M, status: 'completed' });
           await stampedDispatch('coder', [
             '[revision-mode: ' + M + ']',
-            ...coderPromptLines(workDir, runId, taskCtx),
+            ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: teamSet.has('coder-scout') }),
           ]);
 
           // Continue loop to re-dispatch reviewers
