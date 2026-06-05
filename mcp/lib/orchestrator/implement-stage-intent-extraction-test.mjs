@@ -56,7 +56,7 @@ function makeDeps(calls) {
 
 test('soak #6: the task Intent (the HOW) reaches the coder prompt, not just title + ACs', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const coder = calls.find((c) => c.agentType === 'coder');
   assert.ok(coder, 'coder was dispatched');
   assert.match(
@@ -68,7 +68,7 @@ test('soak #6: the task Intent (the HOW) reaches the coder prompt, not just titl
 
 test('soak #6: the Intent also reaches coder-scout (it maps files from the HOW)', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const scout = calls.find((c) => c.agentType === 'coder-scout');
   assert.ok(scout, 'coder-scout was dispatched');
   assert.match(scout.prompt, /INTENT-MARKER-6/, 'coder-scout prompt must carry the task Intent');
@@ -76,7 +76,7 @@ test('soak #6: the Intent also reaches coder-scout (it maps files from the HOW)'
 
 test('soak #6: Verify:/AC- lines are still carried (no regression to existing extraction)', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const coder = calls.find((c) => c.agentType === 'coder');
   assert.match(coder.prompt, /AC-1: WHEN node x is run/, 'Verify/AC extraction must remain intact');
 });

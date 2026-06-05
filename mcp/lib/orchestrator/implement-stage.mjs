@@ -9,6 +9,7 @@
 
 import { join, resolve } from 'node:path';
 import { detectMainStrays } from './worktree-guard.mjs';
+import { isWorktreePath } from '../worktree-intent.mjs';
 
 // Revise cap — mirrors plan-stage.mjs M<2 constraint.
 const REVISE_CAP = 2;
@@ -543,6 +544,21 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       team = CORE_DEFAULT_TEAM.slice();
     }
     const teamSet = new Set(team);
+
+    // DEFENSE-IN-DEPTH: an orchestrated implement MUST run in its own worktree.
+    // If workDir is not a `.worktrees/<runId>` layout (e.g. forge_create_run made no
+    // worktree and the worker fell back to main), refuse to dispatch ANY writer agent —
+    // fail-closed before test-author/coder can pollute the main project root. This is
+    // independent of which create-time path is used (forge_create_run / forge_advance_stage).
+    if (!isWorktreePath(workDir, runId)) {
+      writeLog('[orchestrator:implement] workDir is not an isolated worktree (' + workDir
+        + ') — refusing to dispatch writers (fail-closed)');
+      await deps.writeRunJson(runJsonPath, mergeRun(initialRun || {}, {
+        status: 'failed',
+        failureReason: 'orchestrated implement requires an isolated worktree; workDir resolved to main — refusing to dispatch writers',
+      }));
+      return;
+    }
 
     // Extract active task context from docs/PLAN.md. Read via the injected
     // deps.readPlanMd (main-root resolved) — NOT path arithmetic off workDir:

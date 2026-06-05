@@ -51,7 +51,7 @@ function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFi
 
 test('G8: coder-scout uncertain → gate2 blocked, coder NOT dispatched (scout precondition enforced)', async () => {
   const { deps, calls } = makeDeps({ outcomes: { 'coder-scout': 'uncertain' } });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const gate2 = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
   assert.ok(gate2, 'a failed coder-scout must open gate2');
   assert.equal(gate2.gateData.blockedBy?.agentType, 'coder-scout', 'gate2 blockedBy coder-scout');
@@ -61,7 +61,7 @@ test('G8: coder-scout uncertain → gate2 blocked, coder NOT dispatched (scout p
 
 test('G7/G8: test-author uncertain → gate2 blocked, coder NOT dispatched (red-bar precondition)', async () => {
   const { deps, calls } = makeDeps({ outcomes: { 'test-author': 'uncertain' } });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const gate2 = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
   assert.ok(gate2, 'an unverified test-author (no red-bar artifact) must open gate2');
   assert.equal(gate2.gateData.blockedBy?.agentType, 'test-author', 'gate2 blockedBy test-author');
@@ -75,7 +75,7 @@ test('G7/G8: test-author uncertain → gate2 blocked, coder NOT dispatched (red-
 // absent) BUT test-author actually wrote test files into the worktree, artifact-wins → completed.
 test('53dea988: test-author uncertain BUT test files written → artifact-wins, NOT blocked, coder runs', async () => {
   const { deps, calls } = makeDeps({ outcomes: { 'test-author': 'uncertain' }, testFilesWritten: ['scripts/foo-test.mjs'] });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const taBlock = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.blockedBy?.agentType === 'test-author');
   assert.ok(!taBlock, 'test-author must NOT block gate2 when it actually wrote test files (manifest is only a proxy)');
   assert.notEqual(calls.findIndex((c) => c.type === 'dispatch' && c.agentType === 'coder'), -1,
@@ -84,7 +84,7 @@ test('53dea988: test-author uncertain BUT test files written → artifact-wins, 
 
 test('G3: completeness-checker uncertain → gate2 blocked, reviewers NOT dispatched', async () => {
   const { deps, calls } = makeDeps({ outcomes: { 'completeness-checker': 'uncertain' } });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const gate2 = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
   assert.ok(gate2, 'an incomplete impl must open gate2');
   assert.equal(gate2.gateData.blockedBy?.agentType, 'completeness-checker', 'gate2 blockedBy completeness-checker');
@@ -94,7 +94,7 @@ test('G3: completeness-checker uncertain → gate2 blocked, reviewers NOT dispat
 
 test('G5: reviewer-dispatch failure (unparseable output) → gate2 blocked, not a silent clean pass', async () => {
   const { deps, calls } = makeDeps({ reviewerStdout: 'NOT JSON {' });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const gate2 = calls.find((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
   assert.ok(gate2, 'a reviewer-dispatch failure must open gate2');
   assert.equal(gate2.gateData.blockedBy?.agentType, 'reviewer-dispatch',
@@ -103,7 +103,7 @@ test('G5: reviewer-dispatch failure (unparseable output) → gate2 blocked, not 
 
 test('G2: reviewer-dispatch is invoked with --tests-diff=<path> when buildReviewDiff yields a diff', async () => {
   const { deps, calls } = makeDeps({ reviewDiffPath: '/wt/.pipeline/context/review-diff.patch' });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const rd = calls.find((c) => c.type === 'spawnScript' && c.script.includes('reviewer-dispatch'));
   assert.ok(rd, 'reviewer-dispatch must be spawned');
   assert.ok(
@@ -114,7 +114,7 @@ test('G2: reviewer-dispatch is invoked with --tests-diff=<path> when buildReview
 
 test('G2: no --tests-diff arg when buildReviewDiff yields null (fail-open to handoff classification)', async () => {
   const { deps, calls } = makeDeps({ reviewDiffPath: null });
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const rd = calls.find((c) => c.type === 'spawnScript' && c.script.includes('reviewer-dispatch'));
   assert.ok(rd, 'reviewer-dispatch must be spawned');
   assert.ok(
@@ -137,7 +137,7 @@ test('worktree-escape message is advisory (POSSIBLE + notes concurrent conductor
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {
   const { deps, calls } = makeDeps({});
-  await runImplementStageOrchestrator(deps, 'r-test', '/wt');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   const gate2s = calls.filter((c) => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
   const finalGate = gate2s[gate2s.length - 1];
   assert.ok(finalGate, 'clean run reaches gate2');

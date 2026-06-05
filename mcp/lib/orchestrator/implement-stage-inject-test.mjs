@@ -41,7 +41,7 @@ function makeDeps(calls, injected) {
 test('AC-13: injected knowledge from buildInjectedKnowledge is prepended to the dispatched coder prompt', async () => {
   const calls = [];
   const injected = `## Relevant project knowledge\n### Some gotcha\n${INJECT_MARKER}`;
-  await runImplementStageOrchestrator(makeDeps(calls, injected), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls, injected), 'r-test', '/proj/.worktrees/r-test');
 
   const coderCall = calls.find((c) => c.agentType === 'coder');
   assert.ok(coderCall, 'coder was dispatched');
@@ -54,7 +54,7 @@ test('AC-13: injected knowledge from buildInjectedKnowledge is prepended to the 
 
 test('AC-13: empty injection (no match) produces no stray injection artifact in the coder prompt', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls, ''), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls, ''), 'r-test', '/proj/.worktrees/r-test');
 
   const coderCall = calls.find((c) => c.agentType === 'coder');
   assert.ok(coderCall, 'coder was dispatched');

@@ -79,7 +79,7 @@ function createMockFileOps(readReviewerOutputOverride = null) {
 
 const RUN_AGENT_KEYS = ['agentId', 'agentType', 'startedAt', 'completedAt', 'durationMs', 'outcome'];
 
-async function runToGate2(deps, runId = 'r-test', workDir = '/test/worktree') {
+async function runToGate2(deps, runId = 'r-test', workDir = '/proj/.worktrees/r-test') {
   try { await runImplementStageOrchestrator(deps, runId, workDir); } catch (_) { /* tolerate incomplete impl */ }
 }
 
@@ -266,7 +266,7 @@ async function runOrchestratorWithFixture(planMd, opts = {}) {
 
   // Create temp fixture directory structure (no docs/PLAN.md written — that's the point)
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-test-'));
-  const workDir = path.join(tempDir, 'worktree');
+  const workDir = path.join(tempDir, '.worktrees', 'r-test');
   const pipelineDir = path.join(tempDir, '.pipeline', 'runs', 'r-test');
 
   await fs.mkdir(path.join(workDir, '.pipeline', 'context'), { recursive: true });

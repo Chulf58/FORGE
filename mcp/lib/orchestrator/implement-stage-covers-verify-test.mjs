@@ -48,7 +48,7 @@ function idxOf(calls, pred) {
 
 test('covers-verify runs after the coder and before the completeness-checker (passing → proceeds)', async () => {
   const { deps, calls } = makeDeps({ coversExitCode: 0 });
-  await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
 
   const coversIdx = idxOf(calls, c => c.type === 'spawnScript' && c.script.includes('covers-verify'));
   const coderIdx = idxOf(calls, c => c.type === 'dispatch' && c.agentType === 'coder');
@@ -69,7 +69,7 @@ test('covers-verify runs after the coder and before the completeness-checker (pa
 
 test('covers-verify FAILURE blocks gate2 and skips completeness-checker + reviewers', async () => {
   const { deps, calls } = makeDeps({ coversExitCode: 1 });
-  await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
 
   const gate2 = calls.find(c => c.type === 'writeGateFile' && c.gateData?.gate === 'gate2');
   assert.ok(gate2, 'a failing covers-verify must open gate2');

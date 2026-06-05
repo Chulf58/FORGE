@@ -41,6 +41,7 @@ import { buildDashboardState } from '../dashboard-state.js';
 import { sanitizeFeatureName } from '../sanitize.js';
 import { workerLogPath, killPillPath } from '../worker-paths.js';
 import { sweepStalePids } from '../worker-pids.js';
+import { wantsWorktree } from '../worktree-intent.mjs';
 
 // -- Run pruning -------------------------------------------------------------
 
@@ -305,8 +306,12 @@ export function register(server, _shared) {
         //   (a.worktreePath && a.worktreePath === b.worktreePath) ||
         //   (a.branchName   && a.branchName   === b.branchName)   ||
         //   (a.worktreePath === null && b.worktreePath === null && a.projectRoot === b.projectRoot)
+        // An implement run ALWAYS gets a worktree (wantsWorktree forces it even when the
+        // skill passes useWorktree:false), so it routes through the unique-worktree-path
+        // branch below, never the main-root slot. Other pipelines opt in via useWorktree.
+        const wantWt = wantsWorktree({ pipelineType, useWorktree });
         const runningRuns = listRuns(projectDir, { status: 'running' }).filter(r => r.runId !== started.runId);
-        if (!useWorktree) {
+        if (!wantWt) {
           // New run will use the main-root slot — block only main-root runs in the same project.
           const conflicts = runningRuns.filter(b => b.worktreePath == null && b.projectRoot === projectDir);
           if (conflicts.length > 0) {
@@ -320,9 +325,17 @@ export function register(server, _shared) {
 
         // --- Worker spawning (headless) ---
         let workDir = projectDir;
-        if (useWorktree) {
-          const wtRun = createWorktree(projectDir, started.runId);
-          workDir = wtRun.worktreePath;
+        if (wantWt) {
+          // Mirror forge_advance_stage Seam-A (run-lifecycle.js): create the isolated worktree;
+          // a non-git environment (e.g. test fixture) falls back to path-only persistence.
+          try {
+            const wtRun = createWorktree(projectDir, started.runId);
+            workDir = wtRun.worktreePath;
+          } catch (wtErr) {
+            const wtPath = join(projectDir, '.worktrees', started.runId);
+            const persisted = updateRun(projectDir, started.runId, { worktreePath: wtPath, branchName: 'forge/' + started.runId });
+            workDir = persisted.worktreePath || wtPath;
+          }
         }
 
         const taskDir = join(workDir, '.pipeline');

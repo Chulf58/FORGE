@@ -143,7 +143,7 @@ test('AC-Team-1: team omits coder-scout → coder-scout NOT dispatched', async (
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -168,7 +168,7 @@ test('AC-Team-2: team includes implementation-architect → dispatched first', a
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -200,7 +200,7 @@ test('AC-Team-3: team omits completeness-checker → NOT dispatched', async () =
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -225,7 +225,7 @@ test('AC-Team-4: FLOOR — test-author ALWAYS dispatched even if omitted from te
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -248,7 +248,7 @@ test('AC-Team-4b: FLOOR — coder ALWAYS dispatched even if omitted from team', 
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -273,7 +273,7 @@ test('AC-Team-5: empty team → core default agents dispatched', async () => {
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -312,7 +312,7 @@ test('AC-Team-5b: absent stages → core default agents dispatched', async () =>
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -345,7 +345,7 @@ test('AC-Team-6: unknown agent names are dropped (not dispatched)', async () => 
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -384,7 +384,7 @@ test('AC-Team-7: dispatch order respects the fixed ordering rule', async () => {
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -437,7 +437,7 @@ test('AC-Team-8: mixed team — implementation-architect omitted, both floor age
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -481,7 +481,7 @@ test('AC-Team-9: team omits coder-scout → coder prompt does NOT inject [scout-
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -507,7 +507,7 @@ test('AC-Team-10: team includes coder-scout → coder prompt DOES include [scout
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }
@@ -548,7 +548,7 @@ test('AC-Team-11: revise coder re-dispatch also drops [scout-output:] when coder
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-team-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-team-test', '/proj/.worktrees/r-team-test');
   } catch (e) {
     // Ignore errors
   }

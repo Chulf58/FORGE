@@ -36,7 +36,7 @@ function makeDeps(calls, logs, snapshots) {
 test('a8de840b #2: a NEW main stray after the writer dispatches logs [worktree-escape]', async () => {
   const calls = [], logs = [];
   // baseline empty; after writers a stray appeared in main
-  await runImplementStageOrchestrator(makeDeps(calls, logs, [[], ['hooks/cache-drift-guard-test.mjs']]), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls, logs, [[], ['hooks/cache-drift-guard-test.mjs']]), 'r-test', '/proj/.worktrees/r-test');
   const escapeLog = logs.find((m) => /\[worktree-escape\]/.test(m));
   assert.ok(escapeLog, 'must log [worktree-escape] when a dispatched agent wrote into main');
   assert.match(escapeLog, /hooks\/cache-drift-guard-test\.mjs/, 'must name the leaked file');
@@ -44,7 +44,7 @@ test('a8de840b #2: a NEW main stray after the writer dispatches logs [worktree-e
 
 test('a8de840b #2: no [worktree-escape] when main is unchanged (baseline == current)', async () => {
   const calls = [], logs = [];
-  await runImplementStageOrchestrator(makeDeps(calls, logs, [['scripts/observer-preflight-test.mjs'], ['scripts/observer-preflight-test.mjs']]), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls, logs, [['scripts/observer-preflight-test.mjs'], ['scripts/observer-preflight-test.mjs']]), 'r-test', '/proj/.worktrees/r-test');
   assert.ok(!logs.some((m) => /\[worktree-escape\]/.test(m)), 'pre-existing untracked files must NOT trigger an escape log');
 });
 
@@ -52,6 +52,6 @@ test('a8de840b #2: absent snapshotMainStrays dep is a silent no-op (back-compat)
   const calls = [], logs = [];
   const deps = makeDeps(calls, logs, [[]]);
   delete deps.snapshotMainStrays;
-  await runImplementStageOrchestrator(deps, 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   assert.ok(!logs.some((m) => /\[worktree-escape\]/.test(m)), 'no snapshot dep → no escape check, no crash');
 });

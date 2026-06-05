@@ -43,7 +43,7 @@ function makeDeps(calls) {
 
 test('soak #2: the reviewer prompt hard-scopes against stale self-discovery', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const rev = calls.find((c) => c.agentType === 'reviewer-boundary');
   assert.ok(rev, 'reviewer-boundary was dispatched');
   assert.match(rev.prompt, /stale/i, 'reviewer prompt must warn in-worktree artifacts may be stale');
@@ -52,7 +52,7 @@ test('soak #2: the reviewer prompt hard-scopes against stale self-discovery', as
 
 test('soak #2: the coder prompt also carries the scope guard (any self-discovering agent)', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const coder = calls.find((c) => c.agentType === 'coder');
   assert.ok(coder, 'coder was dispatched');
   assert.match(coder.prompt, /stale/i, 'coder prompt must carry the same scope guard');
@@ -63,7 +63,7 @@ test('soak #2: the coder prompt also carries the scope guard (any self-discoveri
 // path has this instruction and does not leak; the orchestrator relied only on cwd).
 test('a8de840b #1: test-author prompt confines writes to the worktree (never main root)', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const ta = calls.find((c) => c.agentType === 'test-author');
   assert.ok(ta, 'test-author was dispatched');
   assert.match(ta.prompt, /main project root/i, 'must forbid writing to the main project root');
@@ -72,7 +72,7 @@ test('a8de840b #1: test-author prompt confines writes to the worktree (never mai
 
 test('a8de840b #1: the coder prompt also carries the worktree-write-confinement instruction', async () => {
   const calls = [];
-  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/work/dir');
+  await runImplementStageOrchestrator(makeDeps(calls), 'r-test', '/proj/.worktrees/r-test');
   const coder = calls.find((c) => c.agentType === 'coder');
   assert.match(coder.prompt, /main project root/i, 'coder prompt must forbid writing to main root');
 });

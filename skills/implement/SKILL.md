@@ -58,9 +58,9 @@ Call `forge_create_run` (only after user approves) with:
 - `reviewerOverrides`: the `reviewers` array from the `forge_classify_risk` result
 - `stages`: `{ "implement": { "agents": ["coder-scout", "coder", "completeness-checker"], "status": "pending" } }`
 
-Do NOT pass `useWorktree: true` — the worker creates its own worktree via `forge_create_worktree` inside the pipeline.
+You do NOT need to pass `useWorktree: true` — `forge_create_run` now creates the isolated worktree automatically for `pipelineType: "implement"` runs (`run-lifecycle.js`, mirroring `forge_advance_stage`), and the orchestrator fail-closes (refuses to dispatch writers) if it ever finds itself running outside a worktree.
 
-The worker runs the full implement pipeline autonomously — worktree creation, coder-scout, coder, completeness-checker, reviewers, and Gate #2. It pauses at Gate #2 waiting for approval via `/forge:approve`.
+The worker runs the full implement pipeline autonomously — coder-scout, coder, completeness-checker, reviewers, and Gate #2 (the worktree is already created before the worker spawns). It pauses at Gate #2 waiting for approval via `/forge:approve`.
 
 Report to the user:
 - Run ID: `<runId>`

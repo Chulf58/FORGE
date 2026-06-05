@@ -124,7 +124,7 @@ test('AC-4: implement-stage dispatches agents deterministically in sequence', as
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   } catch (e) {
     // Ignore errors from incomplete implementation
   }
@@ -169,7 +169,7 @@ test('AC-5: APPROVED verdict writes gate2 with correct shape', async () => {
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   } catch (e) {
     // Ignore errors
   }
@@ -201,7 +201,7 @@ test('AC-5: run.json updated with gate-pending, preserving orchestratorState fie
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   } catch (e) {
     // Ignore
   }
@@ -233,7 +233,7 @@ test('AC-6a: BLOCK verdict opens gate2 with blockedBy marker (no auto-fail)', as
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   } catch (e) {
     // Ignore
   }
@@ -279,7 +279,7 @@ test('AC-6b: unresolved-REVISE (M>=2) opens gate2 with revisingUnresolved marker
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   } catch (e) {
     // Ignore
   }
@@ -315,7 +315,7 @@ test('AC-6c: REVISE then APPROVED — coder re-dispatched once, then clean gate2
     writeChangeSummary: async () => {},
   };
 
-  await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
 
   // The coder is dispatched TWICE: the initial pass + one revision pass.
   const coderDispatches = mockDispatch.calls.filter((c) => c.agentType === 'coder');
@@ -356,7 +356,7 @@ test('AC-7: orchestrator returns (does not await gate) after writing gate2', asy
 
   let didReturn = false;
   try {
-    const result = await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    const result = await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
     // If we reach here, the function returned (did not hang or throw)
     didReturn = true;
   } catch (e) {
@@ -391,7 +391,7 @@ test('AC-7: resume from orchestratorState does not re-dispatch completed phases'
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
   } catch (e) {
     // Ignore
   }
@@ -423,7 +423,7 @@ test('Gate2 contract: APPROVED gate2 payload includes gate, status, runId, featu
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-gate-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-gate-test', '/proj/.worktrees/r-gate-test');
   } catch (e) {
     // Ignore
   }
@@ -458,7 +458,7 @@ test('Gate2 BLOCK contract: blockedBy gate includes gate, status, runId, feature
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-block-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-block-test', '/proj/.worktrees/r-block-test');
   } catch (e) {
     // Ignore
   }
@@ -504,7 +504,7 @@ test('Gate2 revisingUnresolved contract: M>=2 gate includes gate, status, runId,
   };
 
   try {
-    await runImplementStageOrchestrator(deps, 'r-revise-test', '/test/worktree');
+    await runImplementStageOrchestrator(deps, 'r-revise-test', '/proj/.worktrees/r-revise-test');
   } catch (e) {
     // Ignore
   }
