@@ -59,6 +59,10 @@ This is distinct from pre-filling worker task briefs, agent prompts, TODO bodies
 
 If the user's verbatim input is minimal (e.g., "pick option 2"), pass that minimal input. The skill's Pocock loop will fill the gap by asking questions. Resist the urge to "help" by pre-stuffing the slots — that produces the failure mode documented in `docs/solutions/forge-debug-pipeline-lacks-the-lightweight-bug-intent-capture-that-plan-pipeline-has-via-phase-a.md` and the analogous gap in grill-intent filed under the skill-feedback lane.
 
+**No depth/thoroughness directives — the post-plan grill runs full regardless of familiarity.** A distinct, recurring violation of the above: do NOT inject a directive about HOW THOROUGH the walkthrough should be — e.g. "the walkthrough can be light", "this is well-understood, skim it", "designed before, go fast". `grill-plan` (Phase C, the post-plan grill-me) and `grill-intent` run DELIBERATELY, ONE phase/task-group at a time, in full — regardless of how familiar or pre-designed the plan seems. The urge to skim is HIGHEST for re-planned or "we already designed this" features, which is exactly when a real edge slips through. Pass `grill-plan` only `[run-id:]` + the brief pointer + the user's verbatim concerns (if any) — never an editorialization of effort. This is the conductor-side complement to the grill-plan skill's own "the conductor MUST NOT pre-fill task-by-task walkthrough framing."
+
+Why: 2026-06-02 (run `r-90e5c1fc`, the cache-drift-guard re-plan) — the conductor passed `grill-plan` an argument saying "the walkthrough can be light unless the user wants to dig in" and opened with a thin Phase-1 question. The user caught it immediately: "No post-plan grill-me?" A re-plan of a previously-designed feature is NOT a license to skim the walkthrough.
+
 **Allowed exception — `[user-prefilled]` token:** the conductor may pass `[user-prefilled]` on its own line in the skill argument ONLY when the user explicitly typed or pasted `[user-prefilled]` in their actual message to the conductor. The conductor MUST NOT add this token unilaterally — that would re-create the failure mode.
 
 Intent-capture surfaces in scope (current):
@@ -94,6 +98,21 @@ Anti-pattern to avoid (research §3.2 — Red+Green collapse): writing tests + i
 For non-enforcement work, pragmatic TDD vs. direct fix is a judgment call — see the planner's guidance in `docs/PLAN.md` for the run.
 
 Source: `docs/RESEARCH/tdd-agentic-llm-setups.md` — research catalogues 11 failure modes; §3.2 documents Red+Green collapse as the second-most-common; §4.1 names hook-enforced TDD as the strongest single intervention.
+
+## Root-cause debugging SOP
+
+Debugging and bug-fixing run **inline** (the `/forge:debug` worker is the retired LLM-prose path — do NOT spawn it). Follow this protocol; it exists because the failure mode is proposing surface fixes and only reaching the real cause when the user repeatedly says "go deeper" (2026-06-05: heal → hook → … before reading the dispatch/permission layer where the cause actually lived).
+
+1. **Trace to the floor BEFORE proposing any fix.** Start from evidence, not the symptom: identify the exact actor + tool-call + arguments that produced it (read the transcript / dispatch code / log FIRST). Then descend one governing mechanism at a time, **citing file:line at each step**, until a layer you cannot go below (an OS/SDK boundary or a single controlling line). Write the chain out: `symptom → … → ⌊cited floor⌋`.
+2. **Gate (the rule most often broken):** no fix proposal until the chain bottoms out at a cited floor. If you're reaching for a fix and can't cite the controlling line at the bottom, you stopped early — keep reading. Front-load the mechanism/dispatch/API reads; 2-3 files up front beats N "go deeper" round-trips.
+3. **Rank fixes by intervention point:** floor = root fix (the single recommendation); mid-chain = workaround; symptom = heal/patch. Present the root fix as ONE recommendation — anything above it is optional defense-in-depth, **never a co-equal menu**. Healing a symptom is not a root-cause fix.
+4. **Verification fan-out (when warranted / user-authorized):** spawn parallel subagents to **triangulate and refute, not to generate more options** — an independent codebase tracer (confirm/REFUTE the floor), an online/API researcher (verify the facts the fix depends on, cite official docs + local type defs), and a skeptic (attack both diagnosis and fix). Synthesize only after all report; a refutation revises the diagnosis. This rebuilds trust that the conclusion is triangulated, not a shifting single assertion.
+5. **Test before AND after — deterministic, at the real seam:**
+   - For intermittent / LLM-nondeterministic bugs, **deterministically force** the failing condition (don't wait for it to recur).
+   - Layer 1 — logic unit test of the decision in isolation (RED before, GREEN after).
+   - Layer 2 — **real-dispatch smoke test (the actual proof):** a real dispatch that forces the bad operation. It MUST reproduce pre-fix (proves the test has teeth — a test green on the broken state tests nothing) and be PREVENTED post-fix. Verify the artifact/seam, never a proxy (call-count, file-existence, duration) — see `docs/gotchas/GENERAL.md` "Unit/mock tests pass on broken dispatch."
+   - Layer 3 — don't-re-break: the legitimate path still works post-fix (guards against "fixed" by blocking everything).
+   - Layer 4 — end-to-end re-run/re-soak: the full system, the way the bug was originally found.
 
 ## Tool efficiency
 
