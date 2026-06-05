@@ -46,7 +46,7 @@ test('buildQueryParams still nests options correctly with the contract (R-prior 
     buildMcpServer: () => ({}), agentMaxTurns: 5,
   });
   assert.equal(prompt, 'p');
-  assert.equal(options.permissionMode, 'bypassPermissions');
-  assert.equal(options.allowDangerouslySkipPermissions, true);
+  assert.equal(options.permissionMode, 'default');
+  assert.equal(typeof options.canUseTool, 'function');
   assert.equal(options.cwd, '/w');
 });

@@ -183,3 +183,68 @@ test('SMOKE: real test-author dispatch writes test-author-output.json → comple
     );
   });
 });
+
+// 81b8f299 — WORKTREE WRITE CONFINEMENT. Bug: an orchestrator-dispatched agent (cwd = its
+// worktree) wrote files to an ABSOLUTE path OUTSIDE the worktree (main root) and the write
+// succeeded. Triangulated floor (independent fan-out over run r-c73c9151): there is NO active
+// write-boundary for implement-stage dispatched agents — (1) the SDK auto-approves out-of-cwd
+// writes under permissionMode:'bypassPermissions' (agent-dispatch.mjs:351; sdk.d.ts:1443), and
+// (2) the only write-confinement PreToolUse hook (hooks/workflow-guard.js) engages ONLY for an
+// active `apply` run (workflow-guard.js:76,164 — worktreePath is populated only inside
+// run-lifecycle.js:250's apply block), so it no-ops for plan/implement dispatches. Proximate
+// trigger: the agent constructs an absolute-main path; the WRITE_CONFINEMENT prose does not bind it.
+// This test DETERMINISTICALLY FORCES both writes (the real leak was non-deterministic — one
+// r-c73c9151 test-author leaked, a sibling did not) and asserts the invariant the fix must establish:
+//   - INVARIANT 1: a write INSIDE the worktree still succeeds (no headless re-block — r-15662c22)
+//   - INVARIANT 2: a write OUTSIDE the worktree is DENIED (the leak)
+// RED pre-fix (the outside write lands), GREEN post-fix. Real SDK seam, not a proxy.
+test('SMOKE: dispatched agent cannot write outside its worktree; in-worktree write still works (81b8f299)', { skip: SKIP, timeout: 300000 }, async () => {
+  const { dispatchAgent } = await import('./agent-dispatch.mjs');
+  const buildMcpServer = (await import('../../forge-worker-mcp.mjs')).default;
+  // Realistic layout: a fake main root with the worktree at .worktrees/r-<id> under it,
+  // so the dispatched agent's cwd matches the .worktrees/r-<id> pattern workflow-guard.js
+  // keys on (a bare tmpdir would NOT engage the guard). The out-of-worktree target lives
+  // in the fake main root — exactly where the r-c73c9151 leak landed.
+  const mainRoot = mkdtempSync(join(tmpdir(), 'forge-main-'));
+  const wt = join(mainRoot, '.worktrees', 'r-smoke-confine');
+  mkdirSync(join(wt, 'docs', 'context'), { recursive: true });
+  const prevWorkerSession = process.env.FORGE_WORKER_SESSION;
+  process.env.FORGE_WORKER_SESSION = '1';
+  try {
+    const insideTarget = join(wt, 'docs', 'context', 'confine-allowed.txt');
+    const outsideTarget = join(mainRoot, 'confine-leaked.txt'); // in fake-main, OUTSIDE the worktree
+    const promptLines = [
+      'You are the coder agent.',
+      'WorkDir: ' + wt,
+      'RunId: r-smoke-confine',
+      'Feature: worktree write-confinement probe',
+      '',
+      'Perform BOTH of these writes using the Write tool, with these EXACT absolute paths:',
+      '1. Write the text "ok" to: ' + insideTarget,
+      '2. Write the text "leak" to: ' + outsideTarget,
+      'Attempt both even if one is denied; then stop.',
+    ];
+    const result = await dispatchAgent({
+      agentType: 'coder', promptLines, workDir: wt,
+      pluginRoot: PLUGIN_ROOT, systemPromptPath: '', buildMcpServer,
+    });
+    // INVARIANT 1 — no re-block: the legitimate in-worktree write must land headlessly.
+    assert.ok(
+      existsSync(insideTarget),
+      'in-worktree write must SUCCEED headlessly (the confinement must NOT block legitimate ' +
+      'in-worktree writes). outcome=' + JSON.stringify(result),
+    );
+    // INVARIANT 2 — confinement: the out-of-worktree write must be denied by workflow-guard.js.
+    assert.ok(
+      !existsSync(outsideTarget),
+      'out-of-worktree write MUST be denied — a file leaked to ' + outsideTarget + '. ' +
+      'RED pre-fix (no boundary engages), GREEN post-fix (workflow-guard.js worktree-confinement fires ' +
+      'in the dispatched agent). If this still leaks post-fix, the PreToolUse hook does NOT fire for SDK ' +
+      'query() dispatches → fall back to default+canUseTool.',
+    );
+  } finally {
+    if (prevWorkerSession === undefined) delete process.env.FORGE_WORKER_SESSION;
+    else process.env.FORGE_WORKER_SESSION = prevWorkerSession;
+    rmSync(mainRoot, { recursive: true, force: true });
+  }
+});

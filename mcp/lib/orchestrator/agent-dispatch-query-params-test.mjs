@@ -8,8 +8,9 @@
 // silently ignored and the agent ran on SDK defaults. Most visibly: default
 // permission mode → every Write/Edit blocked ("you haven't granted it yet"),
 // so coder-scout (no Bash escape hatch) wrote no scout.json (run r-15662c22).
-// Also: bypassPermissions requires allowDangerouslySkipPermissions: true
-// (sdk.d.ts:1456).
+// Update (81b8f299): the dispatch now uses permissionMode:'default' + a canUseTool
+// callback (NOT bypassPermissions) — bypass disabled the SDK's cwd write-confinement
+// AND skipped canUseTool, letting a dispatched agent write to the main project root.
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
@@ -37,13 +38,22 @@ test('query params nest everything under options — top-level is only prompt + 
   }
 });
 
-test('bypassPermissions is set AND its required allowDangerouslySkipPermissions flag', () => {
+test('permission mode is "default" with a canUseTool confinement callback (NOT bypassPermissions — 81b8f299)', () => {
   const o = sample().options;
-  assert.equal(o.permissionMode, 'bypassPermissions');
   assert.equal(
-    o.allowDangerouslySkipPermissions,
-    true,
-    'SDK requires allowDangerouslySkipPermissions:true for bypassPermissions (sdk.d.ts:1456)',
+    o.permissionMode,
+    'default',
+    'must be "default" so the SDK invokes canUseTool — bypassPermissions skips it AND disables cwd write-confinement (81b8f299)',
+  );
+  assert.equal(
+    'allowDangerouslySkipPermissions' in o,
+    false,
+    'allowDangerouslySkipPermissions must be ABSENT — it was only required for bypassPermissions, which we no longer use',
+  );
+  assert.equal(
+    typeof o.canUseTool,
+    'function',
+    'canUseTool is the worktree write-confinement boundary — the only permission gate that fires for query() dispatches',
   );
 });
 

@@ -2,6 +2,7 @@
 // Stateless agent dispatch primitive — wraps Anthropic SDK query() per-agent.
 
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { checkMtime } from '../../../scripts/verify-output.mjs';
 
 // Allowed agent type characters — prevents path traversal via agentType parameter.
@@ -328,10 +329,13 @@ export const IDEMPOTENCY_CONTRACT = [
  * silently ignores it and runs on defaults: default permission mode (every
  * Write/Edit prompts → blocked headless: "you haven't granted it yet"),
  * default model, no systemPrompt, and CLAUDE.md leaks via default settingSources.
- * `bypassPermissions` additionally REQUIRES allowDangerouslySkipPermissions:true
- * (sdk.d.ts:1456), without which writes stay blocked. Regression: run r-15662c22
- * — coder-scout (no Bash escape hatch) wrote no scout.json because its Write was
- * permission-denied; test-author only landed its file by routing through Bash.
+ * Permission mode is `'default'` + a `canUseTool` callback (NOT `'bypassPermissions'`):
+ * bypass disables the SDK's cwd write-confinement AND skips canUseTool, so a dispatched
+ * agent could write to the main project root (81b8f299, run r-c73c9151). 'default' invokes
+ * canUseTool before each tool; the callback ALLOWS in-worktree writes — so headless writes
+ * still land, avoiding the r-15662c22 regression where coder-scout (no Bash escape hatch)
+ * wrote no scout.json because its Write was permission-denied — and DENIES any Write/Edit
+ * resolving outside workDir. (Bash write-targets aren't reliably parseable → Bash allowed.)
  *
  * @returns {{ prompt: string, options: object }}
  */
@@ -348,8 +352,33 @@ export function buildQueryParams({
     prompt,
     options: {
       model: agentModel,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
+      // 81b8f299 worktree write-confinement. NOT 'bypassPermissions' — that disables the
+      // SDK's cwd write-confinement AND skips canUseTool, letting a dispatched agent write to
+      // the main project root (observed r-c73c9151). The plugin PreToolUse hook does NOT fire
+      // for query() dispatches (settingSources:[] + headless — proven by dispatch-smoke-test),
+      // so canUseTool is the only boundary that fires. It allows everything EXCEPT a Write/Edit
+      // resolving outside workDir (in-worktree writes still land headlessly — no r-15662c22).
+      // resolve(workDir, target): relative → under the worktree; absolute → itself.
+      permissionMode: 'default',
+      canUseTool: async (toolName, input) => {
+        if (toolName === 'Write' || toolName === 'Edit') {
+          const target = input && (input.file_path || input.path);
+          if (typeof target === 'string' && target.length > 0) {
+            const norm = (s) => s.replace(/\\/g, '/').toLowerCase();
+            const w = norm(resolve(workDir));
+            const t = norm(resolve(workDir, target));
+            if (t !== w && !t.startsWith(w + '/')) {
+              return {
+                behavior: 'deny',
+                message:
+                  'FORGE: worktree write-confinement — a dispatched agent may only write under its ' +
+                  'worktree (' + workDir + '). Blocked out-of-worktree write to: ' + target,
+              };
+            }
+          }
+        }
+        return { behavior: 'allow', updatedInput: input };
+      },
       settingSources: [],
       systemPrompt: agentBody + IDEMPOTENCY_CONTRACT,
       plugins: [{ type: 'local', path: pluginRoot }],
