@@ -625,6 +625,48 @@ function buildHeader(cols) {
   return lines;
 }
 
+// ── Observer render helpers (pure, testable) ────────────────────────────
+
+function computeStageLabel(pipelineType, runningStage, mode) {
+  const stage = (runningStage && runningStage !== pipelineType) ? runningStage : (pipelineType || '');
+  if (mode && stage !== 'research') return stage + ' (' + mode + ')';
+  return stage;
+}
+
+function renderPhaseRows(phases, agents) {
+  if (!Array.isArray(phases) || phases.length === 0) return [];
+  const rows = [];
+  const isLoopMode = phases[0] && phases[0].label !== undefined;
+  if (isLoopMode) {
+    for (const phase of phases) {
+      const statusIcon = phase.status === 'completed' ? '✓' :
+        phase.status === 'running' ? '⟳' :
+        phase.status === 'blocked' ? '✗' : '○';
+      const hashStr = phase.committedAt ? ' #' + String(phase.committedAt).slice(0, 7) : '';
+      const phaseLabel = phase.label || ('Phase ' + (phase.index + 1));
+      rows.push([phaseLabel, statusIcon + ' ' + phase.status + hashStr]);
+    }
+  } else {
+    const agentsArr = Array.isArray(agents) ? agents : [];
+    for (const agent of agentsArr) {
+      rows.push(['Agent', agent.agentType || '?']);
+    }
+    if (agentsArr.length === 0) {
+      for (const phase of phases) {
+        const statusIcon = phase.status === 'completed' ? '✓' :
+          phase.status === 'running' ? '⟳' : '○';
+        rows.push(['Agent', statusIcon + ' phase ' + (phase.index + 1)]);
+      }
+    }
+  }
+  return rows;
+}
+
+function computePhaseCount(phases, completed) {
+  const total = Array.isArray(phases) ? phases.length : 0;
+  return String(completed) + '/' + String(total);
+}
+
 // ── Tab 1: Sessions ─────────────────────────────────────────────────────
 
 function buildSessionsTab(cols) {
@@ -673,21 +715,17 @@ function buildSessionsTab(cols) {
         const fullRun = loadFullRun(PROJECT_DIR, run.runId) || run;
         const merged = { ...run, ...fullRun, actionNeeded: run.actionNeeded || null };
         const runningStage = merged.stages ? Object.entries(merged.stages).find(([_, v]) => v && v.status === 'running')?.[0] : null;
-        const stageSuffix = (runningStage && runningStage !== merged.pipelineType) ? ' → ' + runningStage : '';
-        detailRows.push(['Pipeline', (merged.pipelineType || '') + (merged.mode && merged.pipelineType !== 'research' ? ' (' + merged.mode + ')' : '') + stageSuffix]);
+        detailRows.push(['Pipeline', computeStageLabel(merged.pipelineType, runningStage, merged.mode)]);
         detailRows.push(['Status', (merged.status || '') + (merged.stageLabel ? ' — ' + merged.stageLabel : '')]);
         // Phase indicator — only when phases are present. Shows "X/Y" plus the
         // currently-running phase label for quick context. Pending/blocked
         // phases are not summarised here (Stage 2 of e7ebd631 adds full per-phase rows).
         if (Array.isArray(merged.phases) && merged.phases.length > 0) {
-          const total = merged.phases.length;
-          const completed = merged.phases.filter(p => p.status === 'completed').length;
-          const running = merged.phases.find(p => p.status === 'running');
-          const blocked = merged.phases.find(p => p.status === 'blocked');
-          let phaseStr = completed + '/' + total;
-          if (running) phaseStr += ' (running ' + (running.label || ('phase ' + (running.index + 1))) + ')';
-          else if (blocked) phaseStr += ' (blocked: ' + (blocked.label || ('phase ' + (blocked.index + 1))) + ')';
-          detailRows.push(['Phases', phaseStr]);
+          const completedCount = merged.phases.filter(p => p.status === 'completed').length;
+          detailRows.push(['Phases', computePhaseCount(merged.phases, completedCount)]);
+          for (const row of renderPhaseRows(merged.phases, Array.isArray(merged.agents) ? merged.agents : [])) {
+            detailRows.push(row);
+          }
         }
         // Branch row only when branchName uses a non-default prefix (default
         // `forge/<runId>` is redundant with the runId already shown in the header).
