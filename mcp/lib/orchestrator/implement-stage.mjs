@@ -517,6 +517,21 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       ? initialRun.feature
       : '';
 
+    // GateState contract (bug r-5d8837d6): every run.json gateState the orchestrator
+    // writes MUST carry the full GateState shape — gate/status/feature/createdAt are
+    // REQUIRED by packages/forge-core/src/runs/schemas.js (GateState), and getRun THROWS
+    // on a partial gateState (a minimal { gate:'gate2', uncertain:true } made the whole
+    // run unreadable → forge_get_run/dashboard/approve broke). Extra fields (uncertain,
+    // blockedBy, revisingUnresolved) are tolerated (stripped on read). Use this builder
+    // for ALL run.json gate2 gateState writes; createdAt mirrors run-gate.js:409.
+    const gate2State = (extra = {}) => ({
+      gate: 'gate2',
+      status: 'pending',
+      feature,
+      createdAt: new Date().toISOString(),
+      ...extra,
+    });
+
     // Compute configured agent team from run.stages.implement.agents.
     // KNOWN agents: the full set that can appear in a configured team.
     const KNOWN_AGENTS = new Set([
@@ -638,7 +653,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         blockedBy: { agentType: 'coder-scout', reason: 'scout output not verified — coder precondition unmet' },
       });
       await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
-        status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+        status: 'gate-pending', gateState: gate2State({ uncertain: true }),
         agents: allAgents.slice(), phases: allPhases.slice(),
       }));
       return;
@@ -676,7 +691,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         blockedBy: { agentType: 'test-author', reason: 'red-bar tests not verified — coder TDD precondition unmet' },
       });
       await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
-        status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+        status: 'gate-pending', gateState: gate2State({ uncertain: true }),
         agents: allAgents.slice(), phases: allPhases.slice(),
       }));
       return;
@@ -730,7 +745,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         currentRun || {},
         {
           status: 'gate-pending',
-          gateState: { gate: 'gate2', uncertain: true },
+          gateState: gate2State({ uncertain: true }),
           agents: allAgents.slice(),
           phases: allPhases.slice(),
         },
@@ -764,7 +779,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         currentRun || {},
         {
           status: 'gate-pending',
-          gateState: { gate: 'gate2', uncertain: true },
+          gateState: gate2State({ uncertain: true }),
           agents: allAgents.slice(),
           phases: allPhases.slice(),
         },
@@ -788,7 +803,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           blockedBy: { agentType: 'completeness-checker', reason: 'completeness not confirmed — handoff may not cover all plan tasks' },
         });
         await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
-          status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+          status: 'gate-pending', gateState: gate2State({ uncertain: true }),
           agents: allAgents.slice(), phases: allPhases.slice(),
         }));
         return;
@@ -833,7 +848,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           blockedBy: { agentType: 'reviewer-dispatch', reason: 'reviewer selection failed — unparseable reviewer-dispatch output' },
         });
         await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
-          status: 'gate-pending', gateState: { gate: 'gate2', uncertain: true },
+          status: 'gate-pending', gateState: gate2State({ uncertain: true }),
           agents: allAgents.slice(), phases: allPhases.slice(),
         }));
         return;
@@ -878,7 +893,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         const currentRun = await deps.readRunJson(runJsonPath);
         await deps.writeRunJson(runJsonPath, mergeRun(
           currentRun || {},
-          { status: 'gate-pending', gateState: { gate: 'gate2' }, agents: allAgents.slice(), phases: allPhases.slice() },
+          { status: 'gate-pending', gateState: gate2State(), agents: allAgents.slice(), phases: allPhases.slice() },
         ));
         // AC-7: return immediately — no gate-poll await
         return;
@@ -918,7 +933,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           const currentRun = await deps.readRunJson(runJsonPath);
           await deps.writeRunJson(runJsonPath, mergeRun(
             currentRun || {},
-            { status: 'gate-pending', gateState: { gate: 'gate2' }, agents: allAgents.slice(), phases: allPhases.slice() },
+            { status: 'gate-pending', gateState: gate2State(), agents: allAgents.slice(), phases: allPhases.slice() },
           ));
           // AC-7: return immediately — no gate-poll await
           return;
@@ -978,7 +993,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
         currentRun || {},
         {
           status: 'gate-pending',
-          gateState: { gate: 'gate2', status: 'pending' },
+          gateState: gate2State(),
           orchestratorState: postGate2OrchState,
           agents: allAgents.slice(),
           phases: allPhases.slice(),

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { runImplementStageOrchestrator } from './implement-stage.mjs';
+import { GateState } from '../../../packages/forge-core/src/runs/schemas.js';
 
 const STAGE_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'implement-stage.mjs'), 'utf-8');
 
@@ -133,6 +134,34 @@ test('worktree-escape message is advisory (POSSIBLE + notes concurrent conductor
   assert.match(m[0], /POSSIBLE/, 'message must be advisory (POSSIBLE), not assert a breach as fact');
   assert.match(m[0], /conductor/i, 'message must note it ALSO fires on a concurrent conductor edit');
   assert.doesNotMatch(m[0], /dispatched agent wrote into MAIN/, 'the definitive "dispatched agent wrote into MAIN" wording must be softened');
+});
+
+// bug #2 (r-5d8837d6): the orchestrator wrote a PARTIAL gateState into run.json
+// (e.g. { gate: 'gate2', uncertain: true }) missing the GateState-required fields
+// status/feature/createdAt — so forge_get_run THREW on schema validation and the
+// run became unreadable (dashboard + /forge:approve broke). Every run.json gateState
+// the orchestrator writes must satisfy the real GateState schema.
+test('bug #2: uncertain-coder run.json gateState satisfies GateState schema (getRun must not throw)', async () => {
+  const { deps, calls } = makeDeps({ outcomes: { coder: 'uncertain' } });
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const runWrites = calls.filter((c) => c.type === 'writeRunJson' && c.data && c.data.gateState);
+  assert.ok(runWrites.length > 0, 'orchestrator must write a gateState to run.json');
+  for (const w of runWrites) {
+    assert.doesNotThrow(() => GateState.parse(w.data.gateState),
+      'run.json gateState must satisfy GateState schema; got ' + JSON.stringify(w.data.gateState));
+    assert.equal(w.data.gateState.feature, 'X', 'gateState.feature must be carried (observer display)');
+  }
+});
+
+test('bug #2: clean-APPROVED run.json gateState also satisfies GateState schema', async () => {
+  const { deps, calls } = makeDeps({});
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const runWrites = calls.filter((c) => c.type === 'writeRunJson' && c.data && c.data.gateState);
+  assert.ok(runWrites.length > 0, 'orchestrator must write a gateState to run.json');
+  for (const w of runWrites) {
+    assert.doesNotThrow(() => GateState.parse(w.data.gateState),
+      'run.json gateState must satisfy GateState schema; got ' + JSON.stringify(w.data.gateState));
+  }
 });
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {
