@@ -79,3 +79,48 @@ test('maxTurns included when a positive integer, omitted otherwise', () => {
   assert.equal('maxTurns' in sample({ agentMaxTurns: NaN }).options, false);
   assert.equal('maxTurns' in sample({ agentMaxTurns: 0 }).options, false);
 });
+
+// Bug #2 (r-aa25fa1c): when a test-author wave ran, the coder must write NO test files (the
+// red bar is test-author's domain — coder.md:258). That rule was PROSE-only and sonnet ignored
+// it (the coder created implement-stage-phase-status-test.mjs despite the [test-author-output:]
+// signal). ctx-pre-tool.js does NOT fire for headless query() dispatches, so canUseTool — the only
+// boundary that DOES fire — must enforce it structurally. denyTestCreation=true => deny Write/Edit
+// to a *-test path; source writes still land; non-wave (denyTestCreation falsey) coders still author.
+test('bug #2: canUseTool DENIES a wave-coder Write to a *-test file (denyTestCreation=true)', async () => {
+  const o = sample({ denyTestCreation: true }).options;
+  const v = await o.canUseTool('Write', { file_path: '/wt/r-test/mcp/lib/orchestrator/foo-test.mjs' });
+  assert.equal(v.behavior, 'deny', 'a wave-coder must NOT create a test file — test-author owns the red bar');
+});
+
+test('bug #2: canUseTool DENIES a wave-coder Edit to an existing *-test file (denyTestCreation=true)', async () => {
+  const o = sample({ denyTestCreation: true }).options;
+  const v = await o.canUseTool('Edit', { file_path: '/wt/r-test/scripts/thing-test.mjs' });
+  assert.equal(v.behavior, 'deny', 'a wave-coder must not modify test files either');
+});
+
+test('bug #2: canUseTool ALLOWS a wave-coder Write to a SOURCE file (only tests blocked when a wave ran)', async () => {
+  const o = sample({ denyTestCreation: true }).options;
+  const v = await o.canUseTool('Write', { file_path: '/wt/r-test/mcp/lib/orchestrator/foo.mjs' });
+  assert.equal(v.behavior, 'allow', 'source writes must still land — making the red tests green is the coder job');
+});
+
+test('bug #2: canUseTool ALLOWS a *-test Write when NO wave ran (denyTestCreation falsey — coder authors its own)', async () => {
+  const o = sample().options; // denyTestCreation defaults falsey
+  const v = await o.canUseTool('Write', { file_path: '/wt/r-test/foo-test.mjs' });
+  assert.equal(v.behavior, 'allow', 'with no test-author wave the coder writes its own tests — must be allowed');
+});
+
+// Bug #2 wiring: the canUseTool deny above only protects anything if dispatchAgent actually DERIVES
+// denyTestCreation (agentType===coder AND the [test-author-output:] wave signal in the prompt) and
+// threads it into buildQueryParams. Source-grep mirrors the runWithRetry(attemptDispatch) wiring test.
+test('bug #2 (wiring): dispatchAgent derives denyTestCreation from coder+wave-signal and passes it to buildQueryParams', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(join(here, 'agent-dispatch.mjs'), 'utf-8');
+  assert.match(src, /denyTestCreation\s*=\s*agentType === 'coder'[\s\S]{0,160}test-author-output/,
+    'dispatchAgent must derive denyTestCreation from agentType===coder AND the [test-author-output:] signal');
+  assert.match(src, /query\(buildQueryParams\(\{[\s\S]*?\bdenyTestCreation\b[\s\S]*?\}\)\)/,
+    'denyTestCreation must be threaded into the buildQueryParams CALL — query(buildQueryParams({…})) — not just the signature');
+});

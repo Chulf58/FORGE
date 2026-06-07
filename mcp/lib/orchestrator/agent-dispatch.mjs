@@ -348,6 +348,7 @@ export function buildQueryParams({
   pluginRoot,
   buildMcpServer,
   agentMaxTurns,
+  denyTestCreation,
 }) {
   return {
     prompt,
@@ -374,6 +375,19 @@ export function buildQueryParams({
                 message:
                   'FORGE: worktree write-confinement — a dispatched agent may only write under its ' +
                   'worktree (' + workDir + '). Blocked out-of-worktree write to: ' + target,
+              };
+            }
+            // Bug #2 (r-aa25fa1c): when a test-author wave already wrote the red-bar tests, the
+            // coder writes source ONLY — never a test file (coder.md:258). The prose rule did not
+            // bind the sonnet coder, and ctx-pre-tool does not fire for headless query() dispatches,
+            // so canUseTool — the only boundary that DOES fire — enforces it structurally.
+            if (denyTestCreation && /(?:-test|\.test|\.spec)\.[cm]?[jt]sx?$/.test(t)) {
+              return {
+                behavior: 'deny',
+                message:
+                  'FORGE: a test-author wave already wrote the red-bar tests for this phase — the coder ' +
+                  "writes source ONLY (make the red tests green). Test files are the test-author's domain. " +
+                  'Blocked test-file write: ' + target,
               };
             }
           }
@@ -444,6 +458,12 @@ export async function dispatchAgent({
 
   const prompt = promptLines.join('\n');
 
+  // Bug #2 (r-aa25fa1c): a coder dispatched AFTER a test-author wave (signalled by
+  // [test-author-output:] in its prompt) must write NO test files — the red bar is the
+  // test-author's domain (coder.md:258). Enforced structurally in canUseTool because the
+  // prose rule did not bind the sonnet coder and ctx-pre-tool does not fire for headless dispatches.
+  const denyTestCreation = agentType === 'coder' && prompt.includes('[test-author-output:');
+
   // Capture before the stream starts — the mtime check asks "was the output
   // written AFTER dispatch began?", so `since` must predate the agent's writes.
   const startMs = Date.now();
@@ -462,6 +482,7 @@ export async function dispatchAgent({
       pluginRoot,
       buildMcpServer,
       agentMaxTurns,
+      denyTestCreation,
     }));
 
     // Drain the stream fully (accumulate text for completion-signal detection;
