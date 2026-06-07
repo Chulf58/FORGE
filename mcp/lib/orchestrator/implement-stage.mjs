@@ -406,7 +406,7 @@ function completenessCheckerPromptLines(workDir, runId, taskCtx) {
  * @param {TaskContext} taskCtx
  * @returns {string[]}
  */
-function reviewerPromptLines(reviewerType, workDir, runId, taskCtx) {
+function reviewerPromptLines(reviewerType, workDir, runId, taskCtx, reviewDiffPath) {
   const lines = [
     'You are the ' + reviewerType + ' agent.',
     'Stage: implement',
@@ -420,6 +420,21 @@ function reviewerPromptLines(reviewerType, workDir, runId, taskCtx) {
     lines.push('');
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
+  }
+  // r-aa25fa1c (bug #3): scope the reviewer to THIS run's diff. Without this the reviewer
+  // self-discovers the change by roaming the worktree and confabulates pre-existing tracked
+  // code (e.g. earlier worktree-isolation modules) as "the diff" — producing a false BLOCK on
+  // correct work. review-diff.patch is the complete, authoritative change set for this run.
+  if (reviewDiffPath) {
+    lines.push('');
+    lines.push(
+      "REVIEW SCOPE — review ONLY this run's diff. The complete change set for this run is the "
+      + 'unified diff at `' + reviewDiffPath + '` (read it). Review only the additions/modifications '
+      + 'in THAT patch. Pre-existing files present in the worktree but ABSENT from the patch are '
+      + "prior committed work, NOT this run's change — they are OUT OF SCOPE: do not attribute them "
+      + 'to the coder, do not flag them, and never BLOCK on them. If the patch is empty, report that '
+      + 'rather than reviewing unrelated worktree files.',
+    );
   }
   lines.push('', SCOPE_GUARD, '', WRITE_CONFINEMENT);
   return lines;
@@ -904,7 +919,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       // Step 7: Dispatch each reviewer sequentially
       for (const reviewer of reviewerList) {
         allPhases.push({ index: allPhases.length, label: reviewer, status: 'completed' });
-        await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId, taskCtx));
+        await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId, taskCtx, reviewDiffPath));
       }
 
       // Step 8: Read verdicts

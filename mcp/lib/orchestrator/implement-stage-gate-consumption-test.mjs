@@ -233,6 +233,24 @@ test('slowness: test-author prompt forbids the full regression suite (run only i
     'the prohibition must name scripts/run-tests.mjs — the exact command the haiku agent obeyed from its Verify line');
 });
 
+// Bug #3 (r-aa25fa1c): reviewer-boundary BLOCKed a CORRECT phase-stamping diff, claiming the coder
+// "implemented worktree-intent enforcement" — citing pre-existing tracked files (worktree-intent.mjs,
+// implement-stage.mjs:599-612 from commit 2e455157). Root cause: reviewerPromptLines never handed the
+// reviewer the diff (review-diff.patch is built + threaded to reviewer-DISPATCH only), so the reviewer
+// self-discovered the change from the worktree and confabulated pre-existing code as the diff. The
+// reviewer prompt MUST scope review to the run's diff so pre-existing worktree code is out of scope.
+test('bug #3: reviewer prompt scopes review to review-diff.patch (no self-discovery of pre-existing code)', async () => {
+  const { deps, calls } = makeDeps({ reviewDiffPath: '/wt/.pipeline/context/review-diff.patch' });
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const rev = calls.find((c) => c.type === 'dispatch' && /^reviewer-/.test(c.agentType));
+  assert.ok(rev, 'at least one reviewer must be dispatched');
+  const joined = rev.promptLines.join('\n');
+  assert.match(joined, /review-diff\.patch/,
+    'reviewer prompt must point to the run diff (review-diff.patch) so it reviews the actual change, not the whole worktree');
+  assert.match(joined, /pre-existing|out of scope/i,
+    'reviewer prompt must mark pre-existing worktree code OUT OF SCOPE (the confabulation that caused the false BLOCK)');
+});
+
 // Step-1 read-side: the diagnosability write (reason+attempts on the agent entry) is useless if
 // the RunAgent schema strips them on read — forge_get_run + dashboard parse through RunAgent, so
 // the two fields must be in the schema or they never surface (observed validating r-08832e73).
