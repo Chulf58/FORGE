@@ -251,6 +251,33 @@ test('bug #3: reviewer prompt scopes review to review-diff.patch (no self-discov
     'reviewer prompt must mark pre-existing worktree code OUT OF SCOPE (the confabulation that caused the false BLOCK)');
 });
 
+// Observer W2: the orchestrator must stamp a phase status:'running' BEFORE its dispatch (today
+// every phase is stamped 'completed' only, so the observer's "(running X)" branch never fires).
+test('W2: orchestrator persists a phase status:running before dispatch (running-then-completed stamping)', async () => {
+  const { deps, calls } = makeDeps({});
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const sawRunning = calls.some((c) => c.type === 'writeRunJson'
+    && Array.isArray(c.data?.phases) && c.data.phases.some((p) => p.status === 'running'));
+  assert.ok(sawRunning, 'orchestrator must persist at least one phase with status:running (running stamped before the agent dispatch)');
+});
+
+// W2: stampedDispatch now OWNS the phase push (running→completed), so the per-agent call-site
+// `allPhases.push({...status:'completed'})` lines must be removed or each agent gets TWO phase entries.
+test('W2: a clean run has exactly one phase entry per agent (no duplicate labels from call-site pushes)', async () => {
+  const { deps, calls } = makeDeps({});
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const lastPhasesWrite = [...calls].reverse().find((c) => c.type === 'writeRunJson' && Array.isArray(c.data?.phases));
+  const labels = (lastPhasesWrite ? lastPhasesWrite.data.phases : []).map((p) => p.label);
+  const dupes = labels.filter((l, i) => labels.indexOf(l) !== i);
+  assert.deepEqual(dupes, [], `each agent must have ONE phase entry in a clean run; duplicates: ${JSON.stringify(dupes)}`);
+});
+
+// W2: the REVISE loop must persist via mergeRun(), never bare Object.assign({}, currentRun, …).
+test('W2: implement-stage.mjs REVISE-loop uses mergeRun, not bare Object.assign({}, currentRun, …)', () => {
+  assert.doesNotMatch(STAGE_SRC, /Object\.assign\(\{\}\s*,\s*currentRun/,
+    'REVISE-loop run.json write must use mergeRun() — bare Object.assign({}, currentRun, …) drops sibling run.agents[]/run.phases[]');
+});
+
 // Step-1 read-side: the diagnosability write (reason+attempts on the agent entry) is useless if
 // the RunAgent schema strips them on read — forge_get_run + dashboard parse through RunAgent, so
 // the two fields must be in the schema or they never surface (observed validating r-08832e73).

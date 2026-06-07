@@ -517,15 +517,27 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
    * @param {string[]} promptLines
    * @returns {Promise<'completed'|'uncertain'>}
    */
-  async function stampedDispatch(agentType, promptLines) {
+  async function stampedDispatch(agentType, promptLines, phaseLabel) {
+    const label = phaseLabel || agentType;
     const agentId = makeAgentId(agentType);
     const startedAt = Date.now();
-    const startMs = startedAt;
+
+    // W2 (Observer overhaul): stamp this phase 'running' BEFORE the dispatch and PERSIST it, so
+    // the observer's "(running X)" branch reflects accurate in-flight state. stampedDispatch now
+    // OWNS the phase push (callers must NOT pre-push the phase). `phaseLabel` overrides the label
+    // when it differs from agentType (e.g. 'coder-revise-N' for REVISE re-dispatches of 'coder').
+    const phaseIndex = allPhases.length;
+    allPhases.push({ index: phaseIndex, label, status: 'running' });
+    const preRun = await deps.readRunJson(runJsonPath);
+    await deps.writeRunJson(runJsonPath, mergeRun(
+      preRun || {},
+      { agents: allAgents.slice(), phases: allPhases.slice() },
+    ));
 
     const result = await deps.dispatch(agentType, promptLines);
 
     const completedAt = Date.now();
-    const durationMs = completedAt - startMs;
+    const durationMs = completedAt - startedAt;
     // Outcome: dispatch returns { outcome } per mock contract; fall back to 'completed'
     // for legacy callers that return only { exitCode, stdout, stderr }.
     const outcome = (result && typeof result.outcome === 'string') ? result.outcome : 'completed';
@@ -546,7 +558,8 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     };
     allAgents.push(agentEntry);
 
-    // Persist stamped agents + current phases via writeRunJson.
+    // W2: update THIS phase entry to 'completed' AFTER dispatch, then persist agents + phases.
+    allPhases[phaseIndex] = { index: phaseIndex, label, status: 'completed' };
     const currentRun = await deps.readRunJson(runJsonPath);
     await deps.writeRunJson(runJsonPath, mergeRun(
       currentRun || {},
@@ -671,7 +684,6 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     const archInTeam = teamSet.has('implementation-architect');
     if (archInTeam) {
       writeLog('[orchestrator:implement] dispatching implementation-architect');
-      allPhases.push({ index: allPhases.length, label: 'implementation-architect', status: 'completed' });
       await stampedDispatch('implementation-architect', prependInjection(injectedKnowledge, implementationArchitectPromptLines(workDir, runId, taskCtx)));
     }
 
@@ -680,7 +692,6 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     let scoutOutcome = 'completed';
     if (teamSet.has('coder-scout')) {
       writeLog('[orchestrator:implement] dispatching coder-scout');
-      allPhases.push({ index: allPhases.length, label: 'coder-scout', status: 'completed' });
       // When implementation-architect ran, reference its slice-brief in the scout prompt.
       const scoutLines = archInTeam
         ? prependInjection(injectedKnowledge, [
@@ -718,7 +729,6 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     let testAuthorOutcome = 'completed';
     if (testAuthorRan) {
       writeLog('[orchestrator:implement] dispatching test-author');
-      allPhases.push({ index: allPhases.length, label: 'test-author', status: 'completed' });
       testAuthorOutcome = await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
     } else {
       writeLog('[orchestrator:implement] plan names no *-test file — skipping test-author wave (coder authors its own tests)');
@@ -759,7 +769,6 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
 
     // Step 4: Dispatch coder (always — protected floor, not gated on team).
     writeLog('[orchestrator:implement] dispatching coder');
-    allPhases.push({ index: allPhases.length, label: 'coder', status: 'completed' });
     // When implementation-architect ran, reference its slice-brief in the coder prompt.
     // coderScoutRan gates the [scout-output:] reference — omit it when coder-scout was not
     // in the configured team (no scout.json written), so the coder gets no dangling reference.
@@ -850,7 +859,6 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // Step 4c: Dispatch completeness-checker (ONLY when in configured team).
     if (teamSet.has('completeness-checker')) {
       writeLog('[orchestrator:implement] dispatching completeness-checker');
-      allPhases.push({ index: allPhases.length, label: 'completeness-checker', status: 'completed' });
       const completenessOutcome = await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)));
 
       // G3: consume the completeness verdict. completeness-checker is readonly (judged by its
@@ -918,7 +926,6 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
 
       // Step 7: Dispatch each reviewer sequentially
       for (const reviewer of reviewerList) {
-        allPhases.push({ index: allPhases.length, label: reviewer, status: 'completed' });
         await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId, taskCtx, reviewDiffPath));
       }
 
@@ -967,17 +974,16 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
             ? currentRun.orchestratorState
             : {};
           const newOrchState = Object.assign({}, currentOrch, { implementReviseCount: M + 1 });
-          await deps.writeRunJson(runJsonPath, Object.assign({}, currentRun || {}, {
+          await deps.writeRunJson(runJsonPath, mergeRun(currentRun || {}, {
             orchestratorState: newOrchState,
           }));
           M++;
 
           // Re-dispatch coder with revision-mode prefix
-          allPhases.push({ index: allPhases.length, label: 'coder-revise-' + M, status: 'completed' });
           await stampedDispatch('coder', [
             '[revision-mode: ' + M + ']',
             ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: teamSet.has('coder-scout'), testAuthorCovered: testAuthorRan }),
-          ]);
+          ], 'coder-revise-' + M);
 
           // Continue loop to re-dispatch reviewers
           continue;
