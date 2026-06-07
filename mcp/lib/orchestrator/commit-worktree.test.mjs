@@ -184,6 +184,26 @@ test('soak #7: commitWorktree resolves the git executable via resolveGit (worker
   assert.equal(result.committed, true);
 });
 
+// AC-16 soak (r-43611a31): commitWorktree returned the RAW `git commit` stdout as `.sha` — a
+// multi-line blob ("[branch sha] msg\n N files changed...") — which the W3 loop stored as the
+// phase's committedAt, bloating run.json and rendering a garbage hash in the observer. `.sha` MUST
+// be a clean short hash (via git rev-parse), not the commit stdout. The old mock returned a clean
+// single-line stdout, so it never reproduced this — assert against realistic multi-line output.
+test('commitWorktree returns a CLEAN short sha (git rev-parse), not the raw multi-line git commit stdout', async () => {
+  const execCalls = [];
+  const mockExec = async (cmd, args) => {
+    execCalls.push({ cmd, args });
+    if (args[0] === 'status') return { stdout: ' M scripts/x.mjs', exitCode: 0 };
+    if (args[0] === 'commit') return { stdout: '[forge/r-x 18ce5ee0] msg\n 3 files changed, 17 insertions(+)\n create mode 100644 scripts/x.mjs\n', exitCode: 0 };
+    if (args[0] === 'rev-parse') return { stdout: '18ce5ee0\n', exitCode: 0 };
+    return { stdout: '', exitCode: 0 };
+  };
+  const result = await mod.commitWorktree('/wt', 'msg', { exec: mockExec });
+  assert.equal(result.committed, true);
+  assert.equal(result.sha, '18ce5ee0', 'sha must be the clean short hash from git rev-parse, not the multi-line commit stdout');
+  assert.doesNotMatch(result.sha, /\s|\[|insertion/, 'sha must not contain raw git commit output (no whitespace/brackets/"insertion")');
+});
+
 test('commitWorktree runs git against the worktree (cwd or -C)', async () => {
   const execCalls = [];
   const workDir = '/test/worktree-path';

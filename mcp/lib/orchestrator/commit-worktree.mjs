@@ -110,5 +110,11 @@ export async function commitWorktree(workDir, message, { exec = defaultExec, res
     return { committed: false, reason: 'git commit failed: ' + (commit.stderr || ('exit ' + commit.exitCode)) };
   }
 
-  return { committed: true, sha: String(commit.stdout || '').trim() || undefined };
+  // Return a CLEAN short sha via `git rev-parse --short HEAD` — NOT the raw `git commit` stdout,
+  // which is a multi-line blob ("[branch sha] msg\n N files changed...") that bloats run.json and
+  // renders as a garbage hash in the observer when the W3 loop stores it as committedAt
+  // (caught by the AC-16 soak r-43611a31).
+  const rev = await exec(gitExe, ['rev-parse', '--short', 'HEAD'], opts);
+  const sha = String(rev.stdout || '').trim() || undefined;
+  return { committed: true, sha };
 }
