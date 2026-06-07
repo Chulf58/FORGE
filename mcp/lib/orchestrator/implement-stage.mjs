@@ -492,6 +492,12 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       completedAt,
       durationMs,
       outcome,
+      // Diagnosability (r-5d8837d6): persist WHY uncertain + how many dispatch attempts ran.
+      // classifyOutcome computes `reason`; runWithRetry stamps `attempts` (agent-dispatch.mjs:273).
+      // Both were previously dropped here, leaving every 'uncertain' a guess (couldn't tell
+      // max_turns vs artifact-absent vs stream-abort).
+      reason: (result && result.reason) || null,
+      attempts: (result && result.attempts) || 1,
     };
     allAgents.push(agentEntry);
 

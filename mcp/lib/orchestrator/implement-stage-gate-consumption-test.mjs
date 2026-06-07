@@ -23,8 +23,11 @@ function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFi
   const deps = {
     dispatch: async (agentType) => {
       calls.push({ type: 'dispatch', agentType });
-      // outcomes map lets a test mark a specific agent 'uncertain' (stampedDispatch reads result.outcome)
-      return outcomes[agentType] ? { outcome: outcomes[agentType] } : { exitCode: 0, stdout: '{}', stderr: '' };
+      // outcomes map lets a test mark a specific agent 'uncertain' (string) OR pass a full
+      // result object { outcome, reason, attempts } to assert reason/attempts propagation.
+      const o = outcomes[agentType];
+      if (o && typeof o === 'object') return o;
+      return o ? { outcome: o } : { exitCode: 0, stdout: '{}', stderr: '' };
     },
     readRunJson: async () => ({ ...run }),
     writeRunJson: async (p, data) => { calls.push({ type: 'writeRunJson', data }); },
@@ -162,6 +165,22 @@ test('bug #2: clean-APPROVED run.json gateState also satisfies GateState schema'
     assert.doesNotThrow(() => GateState.parse(w.data.gateState),
       'run.json gateState must satisfy GateState schema; got ' + JSON.stringify(w.data.gateState));
   }
+});
+
+// Step 1 diagnosability (r-5d8837d6): stampedDispatch recorded only `outcome` and DROPPED
+// the classifyOutcome `reason` + runWithRetry `attempts` — so every 'uncertain' was a guess
+// (couldn't tell max_turns vs artifact-absent vs stream-abort). dispatchAgent already returns
+// { outcome, reason, attempts }; persist them on the run.json agents[] entry.
+test('diagnosability: uncertain agent persists `reason` + `attempts` on run.json agents[]', async () => {
+  const { deps, calls } = makeDeps({ outcomes: { coder: { outcome: 'uncertain', reason: 'file absent: docs/context/handoff.md', attempts: 2 } } });
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const coderEntry = calls
+    .filter((c) => c.type === 'writeRunJson' && c.data && Array.isArray(c.data.agents))
+    .flatMap((c) => c.data.agents)
+    .find((a) => a.agentType === 'coder');
+  assert.ok(coderEntry, 'coder agent entry must be stamped on run.json');
+  assert.equal(coderEntry.reason, 'file absent: docs/context/handoff.md', 'the uncertain reason must be persisted, not dropped');
+  assert.equal(coderEntry.attempts, 2, 'the dispatch attempt count must be persisted');
 });
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {
