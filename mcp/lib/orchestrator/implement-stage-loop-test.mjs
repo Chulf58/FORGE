@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runImplementStageOrchestrator } from './implement-stage.mjs';
+import { PhaseEntry } from '../../../packages/forge-core/src/runs/schemas.js';
 
 const PLAN_2PHASE = [
   '## Active Plan', '', '### Feature: Two-Phase X', '',
@@ -70,7 +71,7 @@ test('AC-8(b): run.phases holds ONE entry per PLAN-phase, each completed+APPROVE
     'run.phases must be the PLAN phases (loop-owned) — not agent dispatches');
   for (const p of phases) {
     assert.equal(p.status, 'completed', `phase ${p.label} completed`);
-    assert.equal(p.reviewerVerdict, 'APPROVED', `phase ${p.label} APPROVED`);
+    assert.equal(p.reviewerVerdict, 'approved', `phase ${p.label} approved (lowercase — PhaseEntry-valid)`);
     assert.ok(p.committedAt, `phase ${p.label} carries committedAt (per-phase commit sha)`);
   }
 });
@@ -111,7 +112,7 @@ test('AC-11: BLOCK mid-loop — prior phase keeps committedAt; blocked phase car
   assert.equal(phases[0].status, 'completed', 'phase 1 stays completed');
   assert.ok(phases[0].committedAt, 'phase 1 RETAINS its committedAt after a later phase BLOCKs');
   assert.equal(phases[1].status, 'blocked', 'phase 2 is blocked');
-  assert.equal(phases[1].reviewerVerdict, 'BLOCK', 'phase 2 carries BLOCK verdict');
+  assert.equal(phases[1].reviewerVerdict, 'blocked', 'phase 2 carries blocked verdict (lowercase — PhaseEntry-valid)');
   const gate2 = gateFiles.find((g) => g.gate === 'gate2' && g.blockedBy);
   assert.ok(gate2, 'a gate2 with blockedBy was written');
   assert.equal(gate2.blockedBy.phase, 1, 'blockedBy.phase === 1 (the blocked phase index)');
@@ -127,4 +128,21 @@ test('AC-11: REVISE-unresolved — phase fails after REVISE_CAP; run failed with
   assert.match(getRun().failureReason || '', /Phase 1 — Alpha/, 'failureReason names the phase label (phase-scoped)');
   const phases = getRun().phases || [];
   assert.equal(phases[0].status, 'revise-unresolved', 'phase 1 stamped revise-unresolved');
+  assert.doesNotThrow(() => PhaseEntry.parse(phases[0]),
+    'the revise-unresolved phase entry must satisfy PhaseEntry (lowercase reviewerVerdict + in-enum status) — forge_get_run parses it');
+});
+
+// Schema guard (the one the unit tests were MISSING — the soak r-43611a31 caught it via forge_get_run):
+// every run.phases entry the loop writes MUST satisfy the PhaseEntry Zod schema, because forge_get_run
+// + the observer parse run.json through it. Uppercase verdicts ('APPROVED'/'BLOCK') or an out-of-enum
+// status make forge_get_run THROW on a real run.
+test('schema: loop-produced run.phases entries all validate against PhaseEntry (lowercase verdicts, in-enum status)', async () => {
+  const { deps, getRun } = makeDeps();
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const phases = getRun().phases || [];
+  assert.ok(phases.length > 0, 'phases populated');
+  for (const p of phases) {
+    assert.doesNotThrow(() => PhaseEntry.parse(p),
+      `phase "${p.label}" must satisfy PhaseEntry — forge_get_run parses run.json through it; got ${JSON.stringify(p)}`);
+  }
 });

@@ -789,7 +789,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
               continue;
             }
             // REVISE-unresolved for this phase → fail the run with a phase-scoped reason.
-            allPhases[phase.index] = { index: phase.index, label: phase.label, status: 'revise-unresolved', reviewerVerdict: 'REVISE' };
+            allPhases[phase.index] = { index: phase.index, label: phase.label, status: 'revise-unresolved', reviewerVerdict: 'revise' };
             const r = await deps.readRunJson(runJsonPath);
             await deps.writeRunJson(runJsonPath, mergeRun(r || {}, {
               status: 'failed',
@@ -809,7 +809,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           sha = (cres && cres.sha) || null;
           if (cres && cres.committed === false) writeLog('[orchestrator:implement] [' + phase.label + '] commit skipped: ' + (cres.reason || 'unknown'));
         }
-        allPhases[phase.index] = makeCompletedEntry(phase.index, phase.label, 'APPROVED', sha);
+        allPhases[phase.index] = makeCompletedEntry(phase.index, phase.label, 'approved', sha);
         await persistPhases();
       }
 

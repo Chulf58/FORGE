@@ -64,5 +64,6 @@ export function makeCompletedEntry(index, label, reviewerVerdict, committedAt) {
 
 /** Phase entry stamped when a reviewer BLOCKs the phase mid-loop. */
 export function makeBlockedEntry(index, label) {
-  return { index, label, status: 'blocked', reviewerVerdict: 'BLOCK' };
+  // reviewerVerdict is lowercase to satisfy the PhaseEntry Zod schema (forge_get_run parses through it).
+  return { index, label, status: 'blocked', reviewerVerdict: 'blocked' };
 }

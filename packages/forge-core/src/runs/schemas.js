@@ -40,7 +40,9 @@ export const RunAgent = z.object({
 export const PhaseEntry = z.object({
   index: z.number().int(),
   label: z.string(),
-  status: z.enum(['pending', 'running', 'completed', 'skipped', 'blocked']),
+  // 'revise-unresolved' (W3 Phase Execution Loop): a phase that hit the REVISE cap — the run-level
+  // status goes 'failed' with a phase-scoped failureReason; the phase entry records this terminal state.
+  status: z.enum(['pending', 'running', 'completed', 'skipped', 'blocked', 'revise-unresolved']),
   committedAt: z.string().nullable().default(null),
   reviewerVerdict: z.enum(['approved', 'revise', 'blocked']).nullable().default(null),
 });

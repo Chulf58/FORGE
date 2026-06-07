@@ -57,9 +57,9 @@ test('AC-7: makeCompletedEntry → {index,label,status:"completed",reviewerVerdi
   );
 });
 
-test('AC-7: makeBlockedEntry → {index,label,status:"blocked",reviewerVerdict:"BLOCK"}', () => {
+test('AC-7: makeBlockedEntry → {index,label,status:"blocked",reviewerVerdict:"blocked"} (lowercase — PhaseEntry-valid)', () => {
   assert.deepEqual(
     makeBlockedEntry(1, 'Phase 2 — Beta'),
-    { index: 1, label: 'Phase 2 — Beta', status: 'blocked', reviewerVerdict: 'BLOCK' },
+    { index: 1, label: 'Phase 2 — Beta', status: 'blocked', reviewerVerdict: 'blocked' },
   );
 });
