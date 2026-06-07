@@ -1287,9 +1287,18 @@ export function register(server, _shared) {
             stdio: ['ignore', logFd, logFd],
             env: { ...process.env, FORGE_WORKER_RUN_ID: runId },
           });
+          // Mirror forge_create_run: record the worker PID so liveness sweeps (sweepStalePids)
+          // and external watchers can detect this advance-spawned worker. advance_stage previously
+          // skipped this — only forge_create_run wrote it — so pid-based death-detection saw the
+          // run as having no worker for advance→implement runs.
+          const pidDir = join(projectDir, '.pipeline', 'worker-pids');
+          mkdirSync(pidDir, { recursive: true });
+          const pidFile = join(pidDir, runId + '.json');
+          writeJsonSafe(pidFile, { runId, pid: child.pid, startedAt: new Date().toISOString() });
           child.on('error', (err) => {
             console.error('[forge_advance_stage] worker spawn failed: ' + err.message);
             try { unlinkSync(taskFilePath); } catch (_) {}
+            try { unlinkSync(pidFile); } catch (_) {}
             // Mark run as failed so conductor can see the spawn failure
             try {
               const runFilePath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');
@@ -1307,6 +1316,7 @@ export function register(server, _shared) {
           });
           child.on('exit', (code) => {
             try { closeSync(logFd); } catch (_) {}
+            try { unlinkSync(pidFile); } catch (_) {}
             if (code !== 0 && code !== null) {
               try {
                 const runFilePath = join(projectDir, '.pipeline', 'runs', runId, 'run.json');

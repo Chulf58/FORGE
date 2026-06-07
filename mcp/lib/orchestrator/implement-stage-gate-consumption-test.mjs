@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { runImplementStageOrchestrator } from './implement-stage.mjs';
-import { GateState } from '../../../packages/forge-core/src/runs/schemas.js';
+import { GateState, RunAgent } from '../../../packages/forge-core/src/runs/schemas.js';
 
 const STAGE_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'implement-stage.mjs'), 'utf-8');
 
@@ -213,6 +213,18 @@ test('(b)-gated: plan WITH a *-test task → test-author dispatched, coder promp
   assert.ok(coderCall, 'coder must run');
   assert.ok(coderCall.promptLines.join('\n').includes('[test-author-output:'),
     'coder prompt must carry [test-author-output:] when a test-author wave ran (so the coder writes no tests)');
+});
+
+// Step-1 read-side: the diagnosability write (reason+attempts on the agent entry) is useless if
+// the RunAgent schema strips them on read — forge_get_run + dashboard parse through RunAgent, so
+// the two fields must be in the schema or they never surface (observed validating r-08832e73).
+test('Step-1 read-side: RunAgent schema PRESERVES reason + attempts (getRun/dashboard must not strip)', () => {
+  const parsed = RunAgent.parse({
+    agentId: 'a1', agentType: 'coder', startedAt: 1, completedAt: 2, durationMs: 1,
+    outcome: 'uncertain', reason: 'file absent: docs/context/handoff.md', attempts: 2,
+  });
+  assert.equal(parsed.reason, 'file absent: docs/context/handoff.md', 'reason must survive the schema parse (not be stripped)');
+  assert.equal(parsed.attempts, 2, 'attempts must survive the schema parse');
 });
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {

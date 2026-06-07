@@ -29,6 +29,12 @@ export const RunAgent = z.object({
   completedAt: z.number().nullable().default(null),
   durationMs: z.number().nullable().default(null),
   outcome: z.string().nullable().default(null),
+  // Diagnosability (r-5d8837d6): the orchestrator stamps WHY an agent was uncertain (reason) and
+  // how many dispatch attempts ran (attempts) via implement-stage.mjs stampedDispatch. Without
+  // these in the schema, getRun + dashboard strip them on read, so the persisted reason never
+  // surfaces. Nullable + default null so pre-existing agent entries parse unchanged.
+  reason: z.string().nullable().default(null),
+  attempts: z.number().int().nullable().default(null),
 });
 
 export const PhaseEntry = z.object({
