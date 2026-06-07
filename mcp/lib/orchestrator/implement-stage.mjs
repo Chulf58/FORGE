@@ -275,6 +275,19 @@ function testAuthorPromptLines(workDir, runId, taskCtx) {
     lines.push('Active tasks from PLAN.md:');
     lines.push(taskCtx.activeTasksText);
   }
+  // r-82c06b51 (slowness): the haiku test-author obeyed a Verify: line naming `node scripts/run-tests.mjs`
+  // and ran the full 168-file suite (~22 min, + a stream-error retry) for red-bar verification. Counter
+  // it right here, adjacent to the Verify line, so the agent need not rely on reading test-author.md.
+  // Mirrors coder.md:266 / coderPromptLines's "never run the full suite" rule.
+  lines.push('');
+  lines.push(
+    'TEST COMMAND DISCIPLINE: to verify the red bar, run ONLY the test file(s) you wrote — '
+    + '`node --test <your-test-file>` (per test-author.md). NEVER run the full regression suite '
+    + '(`node scripts/run-tests.mjs` or `npm test`), even if a Verify:/AC line above names it — the '
+    + "full-suite criterion is satisfied later by the orchestrator's covers-verify step, NOT by you. "
+    + 'Running the 168-file suite costs ~20 min per attempt (and risks a stream-error retry that doubles '
+    + 'it); your single red-bar file runs in seconds.',
+  );
   // r-69a1f868: the agent's own spec (test-author.md:24) says to write this manifest, but on
   // haiku without prompt reinforcement it wrote the red-bar tests and SKIPPED the manifest — so
   // the G7 outcome check (expectedArtifact = .pipeline/context/test-author-output.json) marked it

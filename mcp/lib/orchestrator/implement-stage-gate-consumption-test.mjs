@@ -215,6 +215,24 @@ test('(b)-gated: plan WITH a *-test task → test-author dispatched, coder promp
     'coder prompt must carry [test-author-output:] when a test-author wave ran (so the coder writes no tests)');
 });
 
+// Slowness fix (r-82c06b51, 2026-06-07): the haiku test-author ran the full 168-file suite
+// (`node scripts/run-tests.mjs`, ~22 min) for red-bar verification — because its injected Verify:
+// line named run-tests.mjs and the orchestrator prompt carried no counter-instruction, so it
+// obeyed the conflicting command over test-author.md's own `node --test <files>` rule. The
+// orchestrator-built prompt MUST forbid the full suite (mirrors coder.md:266 / coderPromptLines),
+// so the directive sits right next to the Verify line instead of relying on the agent reading the .md.
+test('slowness: test-author prompt forbids the full regression suite (run only its own test file)', async () => {
+  const { deps, calls } = makeDeps({});
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  const ta = calls.find((c) => c.type === 'dispatch' && c.agentType === 'test-author');
+  assert.ok(ta, 'test-author must be dispatched (PLAN_WITH_TEST names a *-test)');
+  const joined = ta.promptLines.join('\n');
+  assert.match(joined, /never run the full regression suite/i,
+    'test-author prompt must explicitly forbid the full regression suite (it wrongly ran the 168-file suite on r-82c06b51)');
+  assert.match(joined, /run-tests\.mjs/,
+    'the prohibition must name scripts/run-tests.mjs — the exact command the haiku agent obeyed from its Verify line');
+});
+
 // Step-1 read-side: the diagnosability write (reason+attempts on the agent entry) is useless if
 // the RunAgent schema strips them on read — forge_get_run + dashboard parse through RunAgent, so
 // the two fields must be in the schema or they never surface (observed validating r-08832e73).
