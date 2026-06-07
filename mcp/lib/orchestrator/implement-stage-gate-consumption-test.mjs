@@ -17,12 +17,18 @@ import { GateState } from '../../../packages/forge-core/src/runs/schemas.js';
 
 const STAGE_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'implement-stage.mjs'), 'utf-8');
 
-function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFilesWritten = [] } = {}) {
+// A realistic plan — the orchestrated implement REQUIRES a gate1-approved plan, so in production
+// activeTasksText is non-empty. PLAN_WITH_TEST names a *-test file in a task → test-author runs
+// (the wave-gate is satisfied); PLAN_NO_TEST has tasks but no *-test → test-author is gated off.
+const PLAN_WITH_TEST = '## Active Plan\n\n### Feature: X\n\n#### Phase 1 — W\n- [ ] 1. Implement — create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`\n  Verify: AC-1: `node scripts/thing-test.mjs` exits 0\n';
+const PLAN_NO_TEST = '## Active Plan\n\n### Feature: X\n\n#### Phase 1 — W\n- [ ] 1. Update config `forge-config.default.json`\n  Verify: config loads without error\n';
+
+function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFilesWritten = [], planMd = PLAN_WITH_TEST } = {}) {
   const calls = [];
   const run = { runId: 'r-test', feature: 'X', status: 'running', orchestratorState: { implementReviseCount: 0 } };
   const deps = {
-    dispatch: async (agentType) => {
-      calls.push({ type: 'dispatch', agentType });
+    dispatch: async (agentType, promptLines) => {
+      calls.push({ type: 'dispatch', agentType, promptLines });
       // outcomes map lets a test mark a specific agent 'uncertain' (string) OR pass a full
       // result object { outcome, reason, attempts } to assert reason/attempts propagation.
       const o = outcomes[agentType];
@@ -45,7 +51,7 @@ function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFi
     // 53dea988: the test files test-author wrote into the worktree (real output). Default []
     // so the existing "uncertain test-author → blocked" test still blocks (no tests written).
     changedTestFiles: async () => testFilesWritten,
-    readPlanMd: () => '',
+    readPlanMd: async () => planMd,
     commitWorktree: async () => ({ committed: true, sha: 'abc' }),
     writeChangeSummary: async () => {},
     writeLog: () => {},
@@ -181,6 +187,32 @@ test('diagnosability: uncertain agent persists `reason` + `attempts` on run.json
   assert.ok(coderEntry, 'coder agent entry must be stamped on run.json');
   assert.equal(coderEntry.reason, 'file absent: docs/context/handoff.md', 'the uncertain reason must be persisted, not dropped');
   assert.equal(coderEntry.attempts, 2, 'the dispatch attempt count must be persisted');
+});
+
+// (b)-gated: the orchestrator must GATE test-author on whether the plan names a *-test file
+// (mirroring skills/implement/SKILL.md:170-196), and SIGNAL the coder via [test-author-output:]
+// when a wave ran so the coder writes NO tests (source-only) — closing the duplicate-test /
+// Red+Green-collapse / turn-budget hole observed on r-5d8837d6.
+test('(b)-gated: plan with NO *-test task → test-author SKIPPED, coder runs without [test-author-output:]', async () => {
+  const { deps, calls } = makeDeps({ planMd: PLAN_NO_TEST });
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  assert.equal(calls.findIndex((c) => c.type === 'dispatch' && c.agentType === 'test-author'), -1,
+    'test-author must NOT be dispatched when the plan names no *-test file');
+  const coderCall = calls.find((c) => c.type === 'dispatch' && c.agentType === 'coder');
+  assert.ok(coderCall, 'coder must still run');
+  assert.ok(!coderCall.promptLines.join('\n').includes('[test-author-output:'),
+    'coder prompt must NOT carry [test-author-output:] when no test-author wave ran');
+});
+
+test('(b)-gated: plan WITH a *-test task → test-author dispatched, coder prompt carries [test-author-output:]', async () => {
+  const { deps, calls } = makeDeps({});
+  await runImplementStageOrchestrator(deps, 'r-test', '/proj/.worktrees/r-test');
+  assert.notEqual(calls.findIndex((c) => c.type === 'dispatch' && c.agentType === 'test-author'), -1,
+    'test-author must be dispatched when the plan names a *-test file');
+  const coderCall = calls.find((c) => c.type === 'dispatch' && c.agentType === 'coder');
+  assert.ok(coderCall, 'coder must run');
+  assert.ok(coderCall.promptLines.join('\n').includes('[test-author-output:'),
+    'coder prompt must carry [test-author-output:] when a test-author wave ran (so the coder writes no tests)');
 });
 
 test('control: all-clean still reaches a clean gate2 (no spurious block from the new guards)', async () => {

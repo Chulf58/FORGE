@@ -34,7 +34,7 @@ function makeDeps(calls) {
     readReviewerOutput: async () => ({ verdict: 'APPROVED' }),
     spawnScript: async () => ({ stdout: '{"reviewers":["reviewer-boundary"]}', exitCode: 0 }),
     buildInjectedKnowledge: () => '',
-    readPlanMd: () => '## Active Plan\n### Feature: SessionStart cache-drift guard\n- [ ] 1. write the guard',
+    readPlanMd: () => '## Active Plan\n### Feature: SessionStart cache-drift guard\n- [ ] 1. write the guard `hooks/cache-drift-guard-test.mjs` (red) then `hooks/cache-drift-guard.js`',
     commitWorktree: async () => ({ committed: true, sha: 'abc123' }),
     writeChangeSummary: async () => {},
     writeLog: () => {},

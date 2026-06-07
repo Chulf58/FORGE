@@ -71,7 +71,7 @@ function createMockFileOpsWithWorktreeGuard() {
       writeRunJsonPayloads.push(data);
     },
 
-    readPlanMd: async () => '',
+    readPlanMd: async () => '## Active Plan\n### Feature: Test feature\n- [ ] 1. create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`',
 
     writeGateFile: async (gatePath, gateData) => {
       // No-op

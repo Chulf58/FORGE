@@ -50,7 +50,7 @@ For each task line, extract:
 For each file path extracted from task lines:
 1. Use Grep to confirm the file exists: grep for a known symbol name or the file path string in the project
 2. If the task says "modify function X in file Y": grep for `function X\|X =\|const X` in file Y to confirm it exists
-3. If the task says "create file": add to `new_files`, do NOT add to `files_to_read`
+3. If the task says "create file": add to `new_files`, do NOT add to `files_to_read` — EXCEPT `*-test.{js,mjs}` files: those are written by the test-author, NOT the coder, so never add a test file to `new_files`
 4. If a task line references a hook event or command name by quoted string (e.g. `'SessionStart'`), add to `hook_events`
 
 Do not open any source file with Read — Grep only.
@@ -73,7 +73,7 @@ Write `docs/context/scout.json`:
 **Rules:**
 - `files_to_read`: only files that already exist and are modified by active `[ ]` tasks. Maximum 5 files. Do not guess — only include paths explicitly in task lines.
 - `functions_to_modify`: for each file in `files_to_read`, list only functions explicitly named in task lines. Omit the key for a file if no function names appear in the task lines for that file.
-- `new_files`: files the tasks say to CREATE. Do not include files that already exist.
+- `new_files`: files the tasks say to CREATE. Do not include files that already exist, and do NOT include `*-test.{js,mjs}` files — test files are the test-author's domain, not the coder's.
 - `hook_events`: hook event or command name strings from task lines. Empty array `[]` if none.
 
 **Quality guardrail:** If task lines reference more than 5 existing files, you MUST trim to 5. Priority order: (1) files with named functions in `functions_to_modify`, (2) files at module boundaries (hooks, agents, commands, skills, mcp, bin), (3) remaining. Drop lower-priority files and add them to a `"trimmed_files"` array in scout.json — the coder will note the gap in its self-review.

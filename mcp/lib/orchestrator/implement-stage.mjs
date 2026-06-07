@@ -199,6 +199,17 @@ function parsePlanContent(content, feature) {
 }
 
 /**
+ * True when the plan's active task text names a test file (backtick-quoted *-test.{js,mjs}).
+ * Mirrors the skill's wave-gate (skills/implement/SKILL.md:170-196): test-author runs only for
+ * phases whose tasks name a test file; otherwise the coder authors its own tests.
+ * @param {string} activeTasksText
+ * @returns {boolean}
+ */
+function planHasTestFileTask(activeTasksText) {
+  return typeof activeTasksText === 'string' && /`[^`\n]*-test\.(?:m?js)`/.test(activeTasksText);
+}
+
+/**
  * Async version of extractPlanContext using dynamic import (ESM-compatible).
  * PLAN.md lives at `workDir/../docs/PLAN.md` — one level above the worktree.
  * @param {string} workDir
@@ -308,6 +319,12 @@ function coderPromptLines(workDir, runId, taskCtx, opts = {}) {
   // map-less coder). Default true preserves the always-on behavior for the normal path.
   if (opts.scoutRan !== false) {
     lines.push('[scout-output: docs/context/scout.json]');
+  }
+  // (b)-gated: signal that a test-author wave already wrote the red-bar tests, so the coder
+  // writes NO test files (source-only, make red→green). Present only when test-author ran
+  // (opts.testAuthorCovered); its ABSENCE tells the coder it owns the tests (no-wave phase).
+  if (opts.testAuthorCovered) {
+    lines.push('[test-author-output: .pipeline/context/test-author-output.json]');
   }
   // AC-3(iii): [phase-scope: ONLY when plan has ≥2 Phase headings.
   if (taskCtx && taskCtx.phaseCount >= 2) {
@@ -665,10 +682,19 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
       return;
     }
 
-    // Step 3: Dispatch test-author (writes red-bar tests before coder implements)
-    writeLog('[orchestrator:implement] dispatching test-author');
-    allPhases.push({ index: allPhases.length, label: 'test-author', status: 'completed' });
-    let testAuthorOutcome = await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+    // Step 3: Dispatch test-author — GATED on whether the plan names a *-test file (mirrors
+    // skills/implement/SKILL.md:170-196). When the plan has no test-file task, the coder authors
+    // its own tests (no wave); when it does, test-author owns the red bar and the coder writes
+    // source only — signalled via [test-author-output:] in coderPromptLines (testAuthorCovered).
+    const testAuthorRan = planHasTestFileTask(activeTasksText);
+    let testAuthorOutcome = 'completed';
+    if (testAuthorRan) {
+      writeLog('[orchestrator:implement] dispatching test-author');
+      allPhases.push({ index: allPhases.length, label: 'test-author', status: 'completed' });
+      testAuthorOutcome = await stampedDispatch('test-author', prependInjection(injectedKnowledge, testAuthorPromptLines(workDir, runId, taskCtx)));
+    } else {
+      writeLog('[orchestrator:implement] plan names no *-test file — skipping test-author wave (coder authors its own tests)');
+    }
 
     // 53dea988: verify test-author by its REAL output, not the manifest proxy. test-author
     // (haiku) reliably writes its red-bar TEST FILES but not always its manifest
@@ -676,7 +702,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // missing 'uncertain' falsely blocked even though the tests were written (r-69a1f868 /
     // r-1e3ea3e8). When uncertain BUT test files actually landed in the worktree, artifact-wins
     // → treat as completed. Only a genuine no-tests-written case still blocks below.
-    if (testAuthorOutcome === 'uncertain' && typeof deps.changedTestFiles === 'function') {
+    if (testAuthorRan && testAuthorOutcome === 'uncertain' && typeof deps.changedTestFiles === 'function') {
       const tests = await deps.changedTestFiles(workDir);
       if (Array.isArray(tests) && tests.length > 0) {
         writeLog('[orchestrator:implement] test-author manifest absent but ' + tests.length
@@ -690,7 +716,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     // 'uncertain' now means its red-bar artifact was not verifiably written AND — per 53dea988 —
     // no test files landed either). The coder MUST NOT implement against an unverified red bar —
     // that defeats TDD and risks a Red+Green collapse. Block gate2, parallel to the scout precondition.
-    if (testAuthorOutcome === 'uncertain') {
+    if (testAuthorRan && testAuthorOutcome === 'uncertain') {
       const currentRun = await deps.readRunJson(runJsonPath);
       await deps.writeGateFile(gatePendingPath, {
         runId, gate: 'gate2', feature, status: 'pending', uncertain: true,
@@ -713,9 +739,9 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     const coderLines = archInTeam
       ? prependInjection(injectedKnowledge, [
         '[slice-brief: docs/context/slice-brief.md] Scope your work to this slice brief when present.',
-        ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: coderScoutRan }),
+        ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: coderScoutRan, testAuthorCovered: testAuthorRan }),
       ])
-      : prependInjection(injectedKnowledge, coderPromptLines(workDir, runId, taskCtx, { scoutRan: coderScoutRan }));
+      : prependInjection(injectedKnowledge, coderPromptLines(workDir, runId, taskCtx, { scoutRan: coderScoutRan, testAuthorCovered: testAuthorRan }));
     const coderOutcome = await stampedDispatch('coder', coderLines);
 
     // a8de840b #2: structural backstop — after the writer agents (test-author + coder),
@@ -922,7 +948,7 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
           allPhases.push({ index: allPhases.length, label: 'coder-revise-' + M, status: 'completed' });
           await stampedDispatch('coder', [
             '[revision-mode: ' + M + ']',
-            ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: teamSet.has('coder-scout') }),
+            ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: teamSet.has('coder-scout'), testAuthorCovered: testAuthorRan }),
           ]);
 
           // Continue loop to re-dispatch reviewers

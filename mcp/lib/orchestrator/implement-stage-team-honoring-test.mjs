@@ -7,7 +7,8 @@
 //
 // Behavior rules:
 // - CONFIGURABLE agents (gated on list membership): coder-scout, completeness-checker, implementation-architect
-// - PROTECTED FLOOR (always dispatched): coder, test-author
+// - PROTECTED FLOOR (not gated on TEAM membership): coder (always); test-author (when the plan
+//   names a *-test file — gated on the PLAN, not the team; (b)-gated)
 // - Empty/null/absent list → fall back to core default ["coder-scout","coder","completeness-checker"]
 // - Unknown agent names are dropped (not dispatched)
 // - Dispatch ORDER stays fixed: implementation-architect (if listed) FIRST, then coder-scout, test-author, coder, completeness-checker
@@ -90,7 +91,7 @@ function createMockFileOpsWithTeam(configuredTeam) {
       // No-op
     },
 
-    readPlanMd: async () => '',
+    readPlanMd: async () => '## Active Plan\n### Feature: Test feature\n- [ ] 1. create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`',
 
     writeGateFile: async (gatePath, gateData) => {
       // No-op
@@ -212,9 +213,9 @@ test('AC-Team-3: team omits completeness-checker → NOT dispatched', async () =
   );
 });
 
-// ── AC-Team-4: FLOOR — team omits coder/test-author, but they are still dispatched ──
+// ── AC-Team-4: FLOOR — test-author dispatched regardless of TEAM membership (gated on the PLAN, not the team) ──
 
-test('AC-Team-4: FLOOR — test-author ALWAYS dispatched even if omitted from team', async () => {
+test('AC-Team-4: FLOOR — test-author dispatched regardless of team membership when the plan names a *-test file', async () => {
   const tracker = createDispatchTracker();
   const configuredTeam = ['coder-scout'];
   const fileOps = createMockFileOpsWithTeam(configuredTeam);
@@ -233,7 +234,7 @@ test('AC-Team-4: FLOOR — test-author ALWAYS dispatched even if omitted from te
   const dispatched = tracker.getDispatchedAgents();
   assert.ok(
     dispatched.includes('test-author'),
-    'AC-Team-4: test-author must ALWAYS be dispatched (protected floor) even if omitted from team'
+    'AC-Team-4: test-author must be dispatched regardless of TEAM membership when the plan names a *-test file (gated on plan, not team)'
   );
 });
 

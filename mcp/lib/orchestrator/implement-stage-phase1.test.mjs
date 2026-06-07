@@ -55,6 +55,7 @@ function createMockFileOps(readReviewerOutputOverride = null) {
       return { runId: 'r-test', feature: 'Phase-1 test', status: 'running', orchestratorState: { implementReviseCount: 0 } };
     },
     writeRunJson: async (runPath, data) => { calls.push({ type: 'writeRunJson', runPath, data }); },
+    readPlanMd: async () => '## Active Plan\n### Feature: Phase-1 test\n- [ ] 1. create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`',
     writeGateFile: async (gatePath, gateData) => { calls.push({ type: 'writeGateFile', gatePath, gateData }); },
     // The change-summary capture dep the orchestrator MUST call before gate2 (AC-36).
     writeChangeSummary: async (summaryPath, content) => { calls.push({ type: 'writeChangeSummary', summaryPath, content }); },
@@ -412,7 +413,7 @@ test('test-author prompt instructs writing the test-author-output.json manifest 
 
 #### Phase 1 — First phase
 
-- [ ] 1. Write a failing test
+- [ ] 1. Write a failing test \`scripts/thing-test.mjs\`
 `;
   const result = await runOrchestratorWithFixture(planMd, { feature: 'Test Feature' });
   const taCall = result.dispatchCalls.find((c) => c.agentType === 'test-author');
