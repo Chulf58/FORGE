@@ -23,7 +23,9 @@ const STAGE_PATH = join(
 const STAGE_SRC = readFileSync(STAGE_PATH, 'utf-8');
 
 // PLAN names a *-test file so the gated test-author wave runs (a representative multi-agent path).
-const PLAN = '## Active Plan\n\n### Feature: X\n\n#### Phase 1 — W\n- [ ] 1. Implement — create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`\n  Verify: AC-1: `node --test scripts/thing-test.mjs` exits 0\n';
+// No `#### Phase N` heading → SINGLE-PASS path, where stampedDispatch owns the per-agent phase
+// stamping that this W2 test asserts. (Multi-phase loop behavior: implement-stage-loop-test.mjs.)
+const PLAN = '## Active Plan\n\n### Feature: X\n\n- [ ] 1. Implement — create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`\n  Verify: AC-1: `node --test scripts/thing-test.mjs` exits 0\n';
 
 function makeDeps() {
   let run = { runId: 'r-test', feature: 'X', status: 'running', orchestratorState: { implementReviseCount: 0 }, phases: [], agents: [] };

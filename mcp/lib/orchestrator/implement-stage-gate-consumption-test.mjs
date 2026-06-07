@@ -20,8 +20,10 @@ const STAGE_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'im
 // A realistic plan — the orchestrated implement REQUIRES a gate1-approved plan, so in production
 // activeTasksText is non-empty. PLAN_WITH_TEST names a *-test file in a task → test-author runs
 // (the wave-gate is satisfied); PLAN_NO_TEST has tasks but no *-test → test-author is gated off.
-const PLAN_WITH_TEST = '## Active Plan\n\n### Feature: X\n\n#### Phase 1 — W\n- [ ] 1. Implement — create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`\n  Verify: AC-1: `node scripts/thing-test.mjs` exits 0\n';
-const PLAN_NO_TEST = '## Active Plan\n\n### Feature: X\n\n#### Phase 1 — W\n- [ ] 1. Update config `forge-config.default.json`\n  Verify: config loads without error\n';
+// No `#### Phase N` heading → detectPhases() returns [] → the SINGLE-PASS path (what these tests
+// exercise). Multi-phase loop behavior is covered separately by implement-stage-loop-test.mjs.
+const PLAN_WITH_TEST = '## Active Plan\n\n### Feature: X\n\n- [ ] 1. Implement — create `scripts/thing-test.mjs` (red) then `scripts/thing.mjs`\n  Verify: AC-1: `node scripts/thing-test.mjs` exits 0\n';
+const PLAN_NO_TEST = '## Active Plan\n\n### Feature: X\n\n- [ ] 1. Update config `forge-config.default.json`\n  Verify: config loads without error\n';
 
 function makeDeps({ outcomes = {}, reviewerStdout, reviewDiffPath = null, testFilesWritten = [], planMd = PLAN_WITH_TEST } = {}) {
   const calls = [];

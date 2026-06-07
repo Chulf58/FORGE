@@ -10,6 +10,7 @@
 import { join, resolve } from 'node:path';
 import { detectMainStrays } from './worktree-guard.mjs';
 import { isWorktreePath } from '../worktree-intent.mjs';
+import { detectPhases, phaseScopePrefix, makeRunningEntry, makeCompletedEntry, makeBlockedEntry } from './phase-loop.mjs';
 
 // Revise cap — mirrors plan-stage.mjs M<2 constraint.
 const REVISE_CAP = 2;
@@ -517,22 +518,28 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
    * @param {string[]} promptLines
    * @returns {Promise<'completed'|'uncertain'>}
    */
-  async function stampedDispatch(agentType, promptLines, phaseLabel) {
+  async function stampedDispatch(agentType, promptLines, phaseLabel, opts = {}) {
+    // W3: in single-pass mode stampedDispatch OWNS the run.phases push (running→completed). In LOOP
+    // mode the Phase Execution Loop owns run.phases (plan-phases), so it passes {trackPhase:false}
+    // and stampedDispatch stamps run.agents ONLY (no phase entry — agents are NOT plan-phases).
+    const trackPhase = opts.trackPhase !== false;
     const label = phaseLabel || agentType;
     const agentId = makeAgentId(agentType);
     const startedAt = Date.now();
 
-    // W2 (Observer overhaul): stamp this phase 'running' BEFORE the dispatch and PERSIST it, so
-    // the observer's "(running X)" branch reflects accurate in-flight state. stampedDispatch now
-    // OWNS the phase push (callers must NOT pre-push the phase). `phaseLabel` overrides the label
-    // when it differs from agentType (e.g. 'coder-revise-N' for REVISE re-dispatches of 'coder').
-    const phaseIndex = allPhases.length;
-    allPhases.push({ index: phaseIndex, label, status: 'running' });
-    const preRun = await deps.readRunJson(runJsonPath);
-    await deps.writeRunJson(runJsonPath, mergeRun(
-      preRun || {},
-      { agents: allAgents.slice(), phases: allPhases.slice() },
-    ));
+    // W2 (Observer overhaul): stamp this phase 'running' BEFORE the dispatch and PERSIST it, so the
+    // observer's "(running X)" branch reflects accurate in-flight state. `phaseLabel` overrides the
+    // label when it differs from agentType (e.g. 'coder-revise-N' for REVISE re-dispatches).
+    let phaseIndex = -1;
+    if (trackPhase) {
+      phaseIndex = allPhases.length;
+      allPhases.push({ index: phaseIndex, label, status: 'running' });
+      const preRun = await deps.readRunJson(runJsonPath);
+      await deps.writeRunJson(runJsonPath, mergeRun(
+        preRun || {},
+        { agents: allAgents.slice(), phases: allPhases.slice() },
+      ));
+    }
 
     const result = await deps.dispatch(agentType, promptLines);
 
@@ -558,8 +565,10 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     };
     allAgents.push(agentEntry);
 
-    // W2: update THIS phase entry to 'completed' AFTER dispatch, then persist agents + phases.
-    allPhases[phaseIndex] = { index: phaseIndex, label, status: 'completed' };
+    // W2: update THIS phase entry to 'completed' AFTER dispatch (single-pass only), then persist.
+    if (trackPhase) {
+      allPhases[phaseIndex] = { index: phaseIndex, label, status: 'completed' };
+    }
     const currentRun = await deps.readRunJson(runJsonPath);
     await deps.writeRunJson(runJsonPath, mergeRun(
       currentRun || {},
@@ -678,6 +687,172 @@ export async function runImplementStageOrchestrator(deps, runId, workDir) {
     const strayBaseline = typeof deps.snapshotMainStrays === 'function'
       ? (await deps.snapshotMainStrays())
       : null;
+
+    // ───────────────────────────────────────────────────────────────────────────────────────
+    // W3: Phase Execution Loop — runs ONLY for MULTI-phase plans (≥2 `#### Phase N` headings),
+    // dispatching the implement pipeline PER PHASE. run.phases holds the PLAN phases (loop-owned);
+    // agents are stamped into run.agents via stampedDispatch({trackPhase:false}). A plan with 0 or 1
+    // phase heading falls through to the single-pass path below — preserving the existing ≥2 contract
+    // (AC-12 + implement-stage-phase1 AC-3(iii)) and the AC-14 single-pass fallback. A 1-phase loop
+    // would be a no-op wrapper over single-pass anyway.
+    const planPhases = detectPhases(planContent);
+    if (planPhases.length >= 2) {
+      writeLog('[orchestrator:implement] Phase Execution Loop — ' + planPhases.length + ' phase(s)');
+      const loopOpts = { trackPhase: false };
+      const persistPhases = async () => {
+        const r = await deps.readRunJson(runJsonPath);
+        await deps.writeRunJson(runJsonPath, mergeRun(r || {}, { agents: allAgents.slice(), phases: allPhases.slice() }));
+      };
+      const blockGate2AtPhase = async (gateData) => {
+        await deps.writeGateFile(gatePendingPath, gateData);
+        const r = await deps.readRunJson(runJsonPath);
+        await deps.writeRunJson(runJsonPath, mergeRun(r || {}, {
+          status: 'gate-pending',
+          gateState: gate2State(gateData.uncertain ? { uncertain: true } : {}),
+          agents: allAgents.slice(),
+          phases: allPhases.slice(),
+        }));
+      };
+
+      // Pre-populate ALL phase stubs BEFORE any dispatch (stable X/Y denominator — AC-8a).
+      for (const p of planPhases) {
+        allPhases.push({ index: p.index, label: p.label, status: 'pending' });
+      }
+      await persistPhases();
+
+      for (const phase of planPhases) {
+        allPhases[phase.index] = makeRunningEntry(phase.index, phase.label);
+        await persistPhases();
+
+        const scope = phaseScopePrefix(phase.label, phase.taskLines);
+        const phaseHasTests = planHasTestFileTask(phase.taskLines);
+
+        if (phaseHasTests) {
+          writeLog('[orchestrator:implement] [' + phase.label + '] dispatching test-author');
+          await stampedDispatch('test-author', prependInjection(injectedKnowledge, [scope, ...testAuthorPromptLines(workDir, runId, taskCtx)]), undefined, loopOpts);
+        }
+        if (teamSet.has('coder-scout')) {
+          writeLog('[orchestrator:implement] [' + phase.label + '] dispatching coder-scout');
+          await stampedDispatch('coder-scout', prependInjection(injectedKnowledge, [scope, ...coderScoutPromptLines(workDir, runId, taskCtx)]), undefined, loopOpts);
+        }
+        writeLog('[orchestrator:implement] [' + phase.label + '] dispatching coder');
+        const coderOutcome = await stampedDispatch('coder', prependInjection(injectedKnowledge, [scope, ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: teamSet.has('coder-scout'), testAuthorCovered: phaseHasTests })]), undefined, loopOpts);
+        if (coderOutcome === 'uncertain') {
+          allPhases[phase.index] = makeBlockedEntry(phase.index, phase.label);
+          await blockGate2AtPhase({ runId, gate: 'gate2', feature, status: 'pending', uncertain: true, blockedBy: { agentType: 'coder', reason: 'uncertain outcome — output not verified', phase: phase.index } });
+          return;
+        }
+
+        const cov = await deps.spawnScript('scripts/covers-verify.mjs', ['--changed-from-git', '--root=' + workDir]);
+        if (cov && cov.exitCode !== 0) {
+          allPhases[phase.index] = makeBlockedEntry(phase.index, phase.label);
+          await blockGate2AtPhase({ runId, gate: 'gate2', feature, status: 'pending', uncertain: true, blockedBy: { agentType: 'covers-verify', reason: 'covering tests failed', phase: phase.index } });
+          return;
+        }
+
+        // Per-phase reviewer round (REVISE handled per-phase, capped at REVISE_CAP).
+        let phaseRevise = 0;
+        for (;;) {
+          await deps.clearReviewerOutput(reviewerOutputDir);
+          const reviewDiffPath = typeof deps.buildReviewDiff === 'function' ? await deps.buildReviewDiff(workDir) : null;
+          const rdArgs = ['--stage=implement', '--run-id=' + runId];
+          if (reviewDiffPath) rdArgs.push('--tests-diff=' + reviewDiffPath);
+          const { stdout } = await deps.spawnScript('scripts/reviewer-dispatch.mjs', rdArgs);
+          let reviewerList;
+          try {
+            const parsed = JSON.parse(stdout);
+            reviewerList = Array.isArray(parsed && parsed.reviewers) ? parsed.reviewers : [];
+          } catch (_) {
+            allPhases[phase.index] = makeBlockedEntry(phase.index, phase.label);
+            await blockGate2AtPhase({ runId, gate: 'gate2', feature, status: 'pending', uncertain: true, blockedBy: { agentType: 'reviewer-dispatch', reason: 'reviewer selection failed — unparseable reviewer-dispatch output', phase: phase.index } });
+            return;
+          }
+          writeLog('[orchestrator:implement] [' + phase.label + '] reviewers=' + reviewerList.join(','));
+          for (const reviewer of reviewerList) {
+            await stampedDispatch(reviewer, reviewerPromptLines(reviewer, workDir, runId, taskCtx, reviewDiffPath), undefined, loopOpts);
+          }
+          let hasBlock = false; let blockingReviewer = ''; let hasRevise = false;
+          for (const reviewer of reviewerList) {
+            const { verdict } = await deps.readReviewerOutput(reviewerOutputDir, reviewer);
+            if (verdict === 'BLOCK') { hasBlock = true; blockingReviewer = reviewer; break; }
+            if (verdict === 'REVISE') hasRevise = true;
+          }
+          if (hasBlock) {
+            allPhases[phase.index] = makeBlockedEntry(phase.index, phase.label);
+            await blockGate2AtPhase({ runId, gate: 'gate2', feature, status: 'pending', blockedBy: { reviewer: blockingReviewer, reason: 'BLOCK verdict from reviewer', phase: phase.index } });
+            return;
+          }
+          if (hasRevise) {
+            if (phaseRevise < REVISE_CAP) {
+              phaseRevise++;
+              await stampedDispatch('coder', prependInjection(injectedKnowledge, [scope, '[revision-mode: ' + phaseRevise + ']', ...coderPromptLines(workDir, runId, taskCtx, { scoutRan: teamSet.has('coder-scout'), testAuthorCovered: phaseHasTests })]), 'coder-revise-' + phaseRevise, loopOpts);
+              continue;
+            }
+            // REVISE-unresolved for this phase → fail the run with a phase-scoped reason.
+            allPhases[phase.index] = { index: phase.index, label: phase.label, status: 'revise-unresolved', reviewerVerdict: 'REVISE' };
+            const r = await deps.readRunJson(runJsonPath);
+            await deps.writeRunJson(runJsonPath, mergeRun(r || {}, {
+              status: 'failed',
+              failureReason: 'phase ' + phase.index + ' REVISE-unresolved: ' + phase.label,
+              agents: allAgents.slice(), phases: allPhases.slice(),
+            }));
+            return;
+          }
+          break; // APPROVED
+        }
+
+        // APPROVED → per-phase commit + stamp completed.
+        let sha = null;
+        if (typeof deps.commitWorktree === 'function') {
+          const safeLabel = String(phase.label).replace(/[\r\n]/g, ' ').trim();
+          const cres = await deps.commitWorktree(workDir, 'forge: ' + safeLabel + ' [' + runId + ']');
+          sha = (cres && cres.sha) || null;
+          if (cres && cres.committed === false) writeLog('[orchestrator:implement] [' + phase.label + '] commit skipped: ' + (cres.reason || 'unknown'));
+        }
+        allPhases[phase.index] = makeCompletedEntry(phase.index, phase.label, 'APPROVED', sha);
+        await persistPhases();
+      }
+
+      // Completeness-checker runs ONCE after the loop (not per-phase) — AC-8f.
+      if (teamSet.has('completeness-checker')) {
+        writeLog('[orchestrator:implement] dispatching completeness-checker (post-loop)');
+        const completenessOutcome = await stampedDispatch('completeness-checker', prependInjection(injectedKnowledge, completenessCheckerPromptLines(workDir, runId, taskCtx)), undefined, loopOpts);
+        if (completenessOutcome === 'uncertain') {
+          await blockGate2AtPhase({ runId, gate: 'gate2', feature, status: 'pending', uncertain: true, blockedBy: { agentType: 'completeness-checker', reason: 'completeness not confirmed — handoff may not cover all plan tasks' } });
+          return;
+        }
+      }
+
+      // Post-loop worktree-escape advisory (a8de840b #2 — log-only; canUseTool is the real guard).
+      if (strayBaseline !== null) {
+        const strays = detectMainStrays(strayBaseline, await deps.snapshotMainStrays());
+        if (strays.length) {
+          writeLog('[worktree-escape] new file(s) under hooks/mcp/scripts appeared in MAIN during the loop: ' + strays.join(', ') + ' — POSSIBLE worktree-isolation breach (also fires on concurrent conductor edits).');
+        }
+      }
+
+      // All phases APPROVED + committed per-phase → change-summary + gate2 (phase='apply').
+      // No whole-run commit here: each phase already committed.
+      if (RUN_ID_PATTERN.test(runId) && typeof deps.writeChangeSummary === 'function') {
+        const summaryPath = join(runsDir, runId, 'change-summary.md');
+        await deps.writeChangeSummary(summaryPath, [
+          '# Change Summary', '', 'Feature: ' + feature, 'RunId: ' + runId, 'Completed: ' + new Date().toISOString(),
+          '', '## Phases', ...planPhases.map((p) => '- ' + p.label),
+          '', '## Agents dispatched', ...allAgents.map((a) => '- ' + a.agentType + ' (' + a.outcome + ')'),
+        ].join('\n'));
+      }
+      {
+        const r = await deps.readRunJson(runJsonPath);
+        const currentOrch = (r && r.orchestratorState) ? r.orchestratorState : {};
+        const postGate2OrchState = Object.assign({}, currentOrch, { phase: 'apply' });
+        await deps.writeGateFile(gatePendingPath, { runId, gate: 'gate2', feature, status: 'pending' });
+        await deps.writeRunJson(runJsonPath, mergeRun(r || {}, {
+          status: 'gate-pending', gateState: gate2State(), orchestratorState: postGate2OrchState,
+          agents: allAgents.slice(), phases: allPhases.slice(),
+        }));
+      }
+      return;
+    }
 
     // Step 2a: Dispatch implementation-architect (ONLY when in configured team) — BEFORE coder-scout.
     // When present, it writes docs/context/slice-brief.md to scope the coder's work.
